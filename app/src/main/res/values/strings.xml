@@ -1,4 +1,109 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Walcott</string>
+
+    <!-- Common actions -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+    <string name="action_grant">Grant</string>
+    <string name="back">Back</string>
+
+    <!-- Child home -->
+    <string name="child_greeting">Hi 👋</string>
+    <string name="hero_today_title">Your time today</string>
+    <string name="hero_all_free">All free</string>
+    <plurals name="hero_available_count">
+        <item quantity="one">%d with time available</item>
+        <item quantity="other">%d with time available</item>
+    </plurals>
+    <string name="bedtime_title">Bedtime</string>
+    <string name="bedtime_subtitle">Apps rest until tomorrow</string>
+    <string name="settings_content_desc">Parent mode</string>
+
+    <!-- Category status -->
+    <string name="status_available">Available</string>
+    <string name="status_free">Free</string>
+    <string name="status_blocked">Blocked</string>
+    <string name="label_remaining">remaining</string>
+    <string name="no_limit_today">No limit today</string>
+    <string name="reason_bedtime">It\'s bedtime</string>
+    <string name="reason_blocked_window">Not available at this time</string>
+    <string name="reason_budget_exhausted">Out of time for today</string>
+    <string name="reason_unclassified">Not set up yet</string>
+    <string name="request_more_time">Ask for more time</string>
+
+    <!-- Extra-time dialog -->
+    <string name="extra_title">Ask for time for %1$s</string>
+    <string name="extra_how_much">How much time?</string>
+    <string name="extra_minutes">%1$d min</string>
+    <string name="pin_adult_label">An adult\'s PIN</string>
+    <string name="pin_incorrect">Wrong PIN</string>
+
+    <!-- PIN gate -->
+    <string name="pin_title_enter">Enter the PIN</string>
+    <string name="pin_title_create">Create a PIN</string>
+    <string name="pin_subtitle_enter">Adults only</string>
+    <string name="pin_subtitle_create">Choose a PIN for parent mode</string>
+    <string name="pin_label">PIN</string>
+    <string name="pin_repeat_label">Repeat the PIN</string>
+    <string name="pin_too_short">Use at least 4 digits</string>
+    <string name="pin_mismatch">The PINs don\'t match</string>
+    <string name="action_enter">Enter</string>
+    <string name="action_create_pin">Create PIN</string>
+
+    <!-- Parent home -->
+    <string name="parent_mode">Parent mode</string>
+    <string name="protection_active">Protection active (Device Owner)</string>
+    <string name="protection_inactive">No Device Owner: blocking isn\'t guaranteed</string>
+    <string name="nav_apps_title">Apps and categories</string>
+    <string name="nav_apps_subtitle">Classify each app; new ones stay blocked until classified</string>
+    <string name="nav_limits_title">Limits and schedules</string>
+    <string name="nav_limits_subtitle">Daily budget per category and bedtime</string>
+    <string name="nav_child_title">Set up child\'s phone</string>
+    <string name="nav_child_subtitle">Show a QR to install the app on the child\'s device</string>
+
+    <!-- App assignment -->
+    <string name="search_app">Search app</string>
+    <string name="unclassified_blocked">Unclassified · blocked</string>
+    <string name="classify_into">Classify into…</string>
+    <string name="unclassified_block_action">Unclassified (block)</string>
+
+    <!-- Budgets & schedules -->
+    <string name="from">From</string>
+    <string name="to">To</string>
+    <string name="bedtime_start_title">Goes to sleep</string>
+    <string name="bedtime_end_title">Wakes up</string>
+    <string name="daily_budget_header">Daily budget per category</string>
+    <string name="no_limit">No limit</string>
+    <plurals name="days_with_limit">
+        <item quantity="one">%d day with a limit</item>
+        <item quantity="other">%d days with a limit</item>
+    </plurals>
+    <string name="daytype_school">School day</string>
+    <string name="daytype_weekend">Weekend</string>
+    <string name="daytype_holiday">Holiday</string>
+
+    <!-- Stepper -->
+    <string name="decrement">Less</string>
+    <string name="increment">More</string>
+
+    <!-- Categories -->
+    <string name="category_games">Games</string>
+    <string name="category_social">Social</string>
+    <string name="category_video">Video</string>
+    <string name="category_education">Education</string>
+    <string name="category_creative">Creativity</string>
+    <string name="category_other">Other</string>
+
+    <!-- Enforcement service -->
+    <string name="service_channel_name">Walcott protection</string>
+    <string name="service_channel_desc">Keeps usage rules active</string>
+    <string name="service_notif_title">Walcott is protecting this device</string>
+    <string name="service_notif_text">Usage rules are active</string>
+
+    <!-- Child setup / QR -->
+    <string name="qr_title">Set up child\'s phone</string>
+    <string name="qr_instructions">On the child\'s phone, open the camera and scan this code to download Walcott. Then open the file to install it.</string>
+    <string name="qr_url_caption">Download link</string>
+    <string name="qr_provision_note">Tip: for full protection, install on a freshly reset phone and set Walcott as Device Owner.</string>
 </resources>

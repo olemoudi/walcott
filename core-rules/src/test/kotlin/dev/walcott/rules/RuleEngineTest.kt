@@ -12,39 +12,55 @@ import java.time.LocalTime
 class SchoolCalendarTest {
 
     private val calendar = SchoolCalendar(
-        holidays = setOf(LocalDate.of(2026, 10, 12)),
-        vacations = listOf(LocalDate.of(2026, 6, 22)..LocalDate.of(2026, 9, 9)),
+        holidays = setOf(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 3, 7)), // second one is a Saturday
+        vacations = listOf(
+            LocalDate.of(2026, 6, 22)..LocalDate.of(2026, 9, 9),
+            LocalDate.of(2026, 12, 22)..LocalDate.of(2027, 1, 7),
+        ),
     )
 
     @Test
-    fun `laborable es dia lectivo`() {
-        assertEquals(DayType.SCHOOL, calendar.dayTypeOf(LocalDate.of(2026, 3, 2))) // lunes
+    fun `weekday is a school day`() {
+        assertEquals(DayType.SCHOOL, calendar.dayTypeOf(LocalDate.of(2026, 3, 2))) // Monday
     }
 
     @Test
-    fun `sabado y domingo son fin de semana`() {
-        assertEquals(DayType.WEEKEND, calendar.dayTypeOf(LocalDate.of(2026, 3, 7)))
-        assertEquals(DayType.WEEKEND, calendar.dayTypeOf(LocalDate.of(2026, 3, 8)))
+    fun `saturday and sunday are weekend`() {
+        assertEquals(DayType.WEEKEND, calendar.dayTypeOf(LocalDate.of(2026, 3, 14)))
+        assertEquals(DayType.WEEKEND, calendar.dayTypeOf(LocalDate.of(2026, 3, 15)))
     }
 
     @Test
-    fun `festivo puntual es holiday aunque caiga en lunes`() {
+    fun `one-off holiday is HOLIDAY even on a Monday`() {
         assertEquals(DayType.HOLIDAY, calendar.dayTypeOf(LocalDate.of(2026, 10, 12)))
     }
 
     @Test
-    fun `rango de vacaciones es holiday, incluidos los extremos`() {
+    fun `holiday takes precedence over weekend`() {
+        // 2026-03-07 is a Saturday that is also declared a holiday.
+        assertEquals(DayType.HOLIDAY, calendar.dayTypeOf(LocalDate.of(2026, 3, 7)))
+    }
+
+    @Test
+    fun `vacation range is HOLIDAY, endpoints included`() {
         assertEquals(DayType.HOLIDAY, calendar.dayTypeOf(LocalDate.of(2026, 6, 22)))
         assertEquals(DayType.HOLIDAY, calendar.dayTypeOf(LocalDate.of(2026, 7, 15)))
         assertEquals(DayType.HOLIDAY, calendar.dayTypeOf(LocalDate.of(2026, 9, 9)))
-        assertEquals(DayType.SCHOOL, calendar.dayTypeOf(LocalDate.of(2026, 9, 10))) // jueves
+        assertEquals(DayType.SCHOOL, calendar.dayTypeOf(LocalDate.of(2026, 9, 10))) // Thursday
+    }
+
+    @Test
+    fun `second vacation range crossing new year is HOLIDAY`() {
+        assertEquals(DayType.HOLIDAY, calendar.dayTypeOf(LocalDate.of(2026, 12, 31)))
+        assertEquals(DayType.HOLIDAY, calendar.dayTypeOf(LocalDate.of(2027, 1, 7)))
+        assertEquals(DayType.SCHOOL, calendar.dayTypeOf(LocalDate.of(2027, 1, 8)))
     }
 }
 
 class TimeWindowTest {
 
     @Test
-    fun `ventana normal - inicio inclusivo, fin exclusivo`() {
+    fun `normal window - start inclusive, end exclusive`() {
         val school = TimeWindow(LocalTime.of(8, 30), LocalTime.of(14, 30))
         assertTrue(LocalTime.of(8, 30) in school)
         assertTrue(LocalTime.of(12, 0) in school)
@@ -53,7 +69,7 @@ class TimeWindowTest {
     }
 
     @Test
-    fun `ventana que cruza medianoche`() {
+    fun `window crossing midnight`() {
         val bedtime = TimeWindow(LocalTime.of(21, 30), LocalTime.of(7, 30))
         assertTrue(LocalTime.of(23, 0) in bedtime)
         assertTrue(LocalTime.of(3, 0) in bedtime)
@@ -82,7 +98,7 @@ class RuleEngineTest {
                     DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(8, 30), LocalTime.of(14, 30))),
                 ),
             ),
-            // "edu" sin política: uso libre
+            // "edu" has no policy: unrestricted
             "social" to CategoryPolicy(
                 dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(45)),
             ),
@@ -93,19 +109,19 @@ class RuleEngineTest {
         essentialPackages = setOf("com.android.dialer", "dev.walcott"),
     )
 
-    // Lunes lectivo y sábado, fuera de ventanas conflictivas salvo que se indique.
+    // Monday (school) and Saturday, outside conflicting windows unless stated.
     private val schoolAfternoon = LocalDateTime.of(2026, 3, 2, 17, 0)
     private val schoolMorning = LocalDateTime.of(2026, 3, 2, 10, 0)
     private val schoolNight = LocalDateTime.of(2026, 3, 2, 22, 0)
     private val saturdayMorning = LocalDateTime.of(2026, 3, 7, 10, 0)
 
     @Test
-    fun `app esencial permitida siempre, incluso en bedtime`() {
+    fun `essential app is always allowed, even during bedtime`() {
         assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "com.android.dialer", schoolNight))
     }
 
     @Test
-    fun `bedtime bloquea lo no esencial, incluso apps de uso libre`() {
+    fun `bedtime blocks non-essential, even unrestricted apps`() {
         assertEquals(
             Verdict.Blocked(BlockReason.BEDTIME),
             RuleEngine.evaluate(config, "org.duolingo", schoolNight),
@@ -113,7 +129,16 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `app sin clasificar queda bloqueada por defecto`() {
+    fun `bedtime takes precedence over the unclassified rule`() {
+        // An unclassified app at night reports BEDTIME, not UNCLASSIFIED.
+        assertEquals(
+            Verdict.Blocked(BlockReason.BEDTIME),
+            RuleEngine.evaluate(config, "com.unknown.app", schoolNight),
+        )
+    }
+
+    @Test
+    fun `unclassified app is blocked by default`() {
         assertEquals(
             Verdict.Blocked(BlockReason.UNCLASSIFIED),
             RuleEngine.evaluate(config, "com.random.newapp", schoolAfternoon),
@@ -121,12 +146,12 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `categoria sin politica es de uso libre`() {
+    fun `category without a policy is unrestricted`() {
         assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "org.duolingo", schoolAfternoon))
     }
 
     @Test
-    fun `ventana bloqueada aplica en dia lectivo pero no en fin de semana`() {
+    fun `blocked window applies on a school day but not on the weekend`() {
         assertEquals(
             Verdict.Blocked(BlockReason.BLOCKED_WINDOW),
             RuleEngine.evaluate(config, "com.game.fortnite", schoolMorning),
@@ -138,7 +163,7 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `presupuesto descuenta el uso del dia`() {
+    fun `budget subtracts today's usage`() {
         val verdict = RuleEngine.evaluate(
             config, "com.game.fortnite", schoolAfternoon,
             usageToday = mapOf("games" to Duration.ofMinutes(10)),
@@ -147,7 +172,7 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `presupuesto agotado bloquea`() {
+    fun `exhausted budget blocks`() {
         val verdict = RuleEngine.evaluate(
             config, "com.game.fortnite", schoolAfternoon,
             usageToday = mapOf("games" to Duration.ofMinutes(30)),
@@ -156,7 +181,16 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `tiempo extra aprobado amplia el presupuesto`() {
+    fun `usage exactly at budget blocks (no negative remaining)`() {
+        val verdict = RuleEngine.evaluate(
+            config, "com.game.fortnite", schoolAfternoon,
+            usageToday = mapOf("games" to Duration.ofMinutes(45)),
+        )
+        assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), verdict)
+    }
+
+    @Test
+    fun `approved extra time widens the budget`() {
         val verdict = RuleEngine.evaluate(
             config, "com.game.fortnite", schoolAfternoon,
             usageToday = mapOf("games" to Duration.ofMinutes(30)),
@@ -166,13 +200,13 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `dia sin entrada de presupuesto es ilimitado para esa categoria`() {
-        // "social" solo define presupuesto para dias lectivos.
+    fun `a day without a budget entry is unlimited for that category`() {
+        // "social" only defines a budget for school days.
         assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "com.whatsapp", saturdayMorning))
     }
 
     @Test
-    fun `el uso de una categoria no afecta a otra`() {
+    fun `one category's usage does not affect another`() {
         val verdict = RuleEngine.evaluate(
             config, "com.whatsapp", schoolAfternoon,
             usageToday = mapOf("games" to Duration.ofHours(5)),

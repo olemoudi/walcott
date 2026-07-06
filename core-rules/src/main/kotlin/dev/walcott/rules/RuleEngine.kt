@@ -4,11 +4,11 @@ import java.time.Duration
 import java.time.LocalDateTime
 
 /**
- * Evaluador determinista y sin estado: no lee reloj ni almacenamiento — todo entra
- * por parámetros. El servicio de enforcement lo invoca con el estado real; los tests,
- * con el que quieran reproducir.
+ * Deterministic, stateless evaluator: it reads no clock or storage — everything comes in
+ * as parameters. The enforcement service calls it with real state; tests, with whatever
+ * state they want to reproduce.
  *
- * Precedencia: esencial > bedtime > sin clasificar > ventana bloqueada > presupuesto.
+ * Precedence: essential > bedtime > unclassified > blocked window > budget.
  */
 object RuleEngine {
 
@@ -16,9 +16,9 @@ object RuleEngine {
         config: FamilyConfig,
         packageName: String,
         now: LocalDateTime,
-        /** Uso acumulado hoy por categoría (categoryId -> duración). */
+        /** Time used today per category (categoryId -> duration). */
         usageToday: Map<String, Duration> = emptyMap(),
-        /** Tiempo extra concedido hoy por categoría (aprobaciones, ledger gastado…). */
+        /** Extra time granted today per category (approvals, spent ledger…). */
         extraTime: Map<String, Duration> = emptyMap(),
     ): Verdict {
         if (packageName in config.essentialPackages) return Verdict.Allowed

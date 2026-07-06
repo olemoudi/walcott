@@ -1,27 +1,40 @@
-# Walcott — control parental familiar para Android
+# Walcott — family parental control for Android
 
-App de control parental construida para la familia, con dos principios que la diferencian
-de las comerciales:
+A parental control app built for one family, with two things that set it apart from the
+commercial options:
 
-1. **Reglas inteligentes y dinámicas** — presupuestos por categoría y tipo de día
-   (lectivo/finde/vacaciones), hora de dormir, tiempo extra bajo petición con aprobación
-   del padre, y tiempo ganado por recompensas.
-2. **Coste recurrente cero y configuración mínima** — sin servidor, sin cuentas, sin
-   suscripciones: enforcement 100 % local vía Device Owner y sincronización por mensajes
-   cifrados E2E (ntfy.sh) con emparejamiento por QR.
+1. **Smart, dynamic rules** — per-category budgets by day type (school / weekend / holiday),
+   bedtime, extra time on request with parent approval, and earned time via rewards.
+2. **Zero recurring cost, minimal setup** — no server, no accounts, no subscriptions:
+   enforcement is 100% local via Device Owner, and (from Phase 2) devices sync over
+   end-to-end-encrypted messages with QR pairing.
 
-Plan de diseño completo: ver el plan aprobado del proyecto (arquitectura, fases, riesgos).
+## Language & localization
 
-## Módulos
+All code and comments are in English. All user-facing text is localized: English is the
+default (`app/src/main/res/values/strings.xml`) and Spanish ships in
+`app/src/main/res/values-es/strings.xml`. Keep both files in sync when adding strings.
 
-- `:core-rules` — motor de reglas: Kotlin puro, determinista, sin dependencias Android.
-  Toda la lógica de presupuestos/ventanas/bedtime vive aquí, con tests unitarios.
-- `:app` — app Android (Compose, minSdk 29). Actúa como DPC (Device Policy Controller):
-  en el móvil del niño se provisiona como Device Owner.
+## Modules
 
-## Entorno de desarrollo (WSL2)
+- `:core-rules` — the rule engine: pure Kotlin, deterministic, no Android dependencies.
+  All budget/window/bedtime logic lives here, fully unit-tested.
+- `:app` — the Android app (Compose, minSdk 29). Acts as a DPC (Device Policy Controller):
+  on the child's phone it is provisioned as Device Owner.
 
-Toolchain instalado en el home (sin sudo):
+## Install the alpha
+
+Download the latest signed APK and sideload it:
+
+**https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk**
+
+The parent app can also show this as a QR code (Parent mode → *Set up child's phone*) so the
+child just scans it with their camera. The alpha release is signed with the debug key on
+purpose — fine for personal sideloading, not for the Play Store.
+
+## Development (WSL2)
+
+Toolchain installed under `$HOME` (no sudo):
 
 ```bash
 export JAVA_HOME=$HOME/.jdks/jdk-17.0.19+10
@@ -29,44 +42,37 @@ export ANDROID_HOME=$HOME/Android/Sdk
 export PATH=$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
 ```
 
-Compilar y testear:
+Build and test:
 
 ```bash
-./gradlew :core-rules:test        # tests del motor de reglas
-./gradlew :app:assembleDebug      # APK en app/build/outputs/apk/debug/
+./gradlew test               # unit tests (core-rules + app)
+./gradlew :app:assembleDebug # APK in app/build/outputs/apk/debug/
 ```
 
-## Spike Fase 0 — validar Device Owner en emulador
+## Provisioning a child phone as Device Owner
 
-Requisito único: acceso a KVM (`sudo usermod -aG kvm $USER` y re-login, o
-`sudo chmod 666 /dev/kvm` hasta el próximo reinicio).
+On a new or factory-reset phone, either:
+
+- **QR / setup wizard**: tap the welcome screen 6 times to open the QR reader (standard MDM
+  enrollment), or
+- **ADB (development)**:
 
 ```bash
-# 1. Arrancar el emulador (AVD ya creado: walcott-spike, API 35 google_apis)
-emulator -avd walcott-spike -no-window -no-audio -gpu swiftshader_indirect &
-adb wait-for-device
-
-# 2. Instalar la app y provisionarla como Device Owner
 adb install app/build/outputs/apk/debug/app-debug.apk
 adb shell dpm set-device-owner dev.walcott/.WalcottAdminReceiver
-
-# 3. Conceder el permiso de UsageStats (en producción: asistente post-provisioning)
 adb shell appops set dev.walcott android:get_usage_stats allow
-
-# 4. Abrir la app y probar desde su pantalla:
-adb shell am start -n dev.walcott/.MainActivity
-#    - "Suspender" un paquete y comprobar que no abre:
-#      adb shell am start -n com.android.settings/.Settings  -> debe aparecer suspendido
-#    - "Leer UsageStats" -> debe listar apps usadas
-#    - "Aplicar restricciones" -> safe-boot/factory-reset/add-user bloqueados
 ```
 
-Para des-provisionar el emulador durante el desarrollo:
-`adb shell dpm remove-active-admin dev.walcott/.WalcottAdminReceiver` (solo funciona
-en builds de debug con testOnly; alternativamente, wipe del AVD con `-wipe-data`).
+If `set-device-owner` fails with "already some accounts on the device", wait a minute for a
+transient sign-in to clear and retry.
 
-## Provisionado de un móvil real (resumen)
+## Releases
 
-En un móvil nuevo o tras factory reset: tocar 6 veces la pantalla de bienvenida →
-escanear el QR de provisioning (apunta al APK release) → el sistema instala Walcott
-como Device Owner. Sin ADB ni ordenador. Guía detallada: pendiente (Fase 2).
+Push a tag matching `v*` and GitHub Actions builds `assembleRelease`, runs the tests, and
+publishes the APK as the release asset `walcott-alpha.apk` (the stable name the in-app QR
+points at):
+
+```bash
+git tag v0.1.0-alpha
+git push origin v0.1.0-alpha
+```

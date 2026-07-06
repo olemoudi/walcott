@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- app_name no se traduce -->
+
+    <!-- Acciones comunes -->
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_ok">Aceptar</string>
+    <string name="action_grant">Conceder</string>
+    <string name="back">Atrás</string>
+
+    <!-- Pantalla del niño -->
+    <string name="child_greeting">Hola 👋</string>
+    <string name="hero_today_title">Tu tiempo de hoy</string>
+    <string name="hero_all_free">Todo libre</string>
+    <plurals name="hero_available_count">
+        <item quantity="one">%d con tiempo disponible</item>
+        <item quantity="other">%d con tiempo disponible</item>
+    </plurals>
+    <string name="bedtime_title">Hora de dormir</string>
+    <string name="bedtime_subtitle">Las apps descansan hasta mañana</string>
+    <string name="settings_content_desc">Modo padre</string>
+
+    <!-- Estado de categoría -->
+    <string name="status_available">Disponible</string>
+    <string name="status_free">Libre</string>
+    <string name="status_blocked">Bloqueado</string>
+    <string name="label_remaining">restante</string>
+    <string name="no_limit_today">Sin límite hoy</string>
+    <string name="reason_bedtime">Es hora de dormir</string>
+    <string name="reason_blocked_window">No disponible en este horario</string>
+    <string name="reason_budget_exhausted">Se acabó el tiempo de hoy</string>
+    <string name="reason_unclassified">Pendiente de configurar</string>
+    <string name="request_more_time">Pedir más tiempo</string>
+
+    <!-- Diálogo de tiempo extra -->
+    <string name="extra_title">Pedir tiempo para %1$s</string>
+    <string name="extra_how_much">¿Cuánto tiempo?</string>
+    <string name="extra_minutes">%1$d min</string>
+    <string name="pin_adult_label">PIN de un adulto</string>
+    <string name="pin_incorrect">PIN incorrecto</string>
+
+    <!-- Puerta del PIN -->
+    <string name="pin_title_enter">Introduce el PIN</string>
+    <string name="pin_title_create">Crea un PIN</string>
+    <string name="pin_subtitle_enter">Solo para adultos</string>
+    <string name="pin_subtitle_create">Elige un PIN para el modo padre</string>
+    <string name="pin_label">PIN</string>
+    <string name="pin_repeat_label">Repite el PIN</string>
+    <string name="pin_too_short">Usa al menos 4 dígitos</string>
+    <string name="pin_mismatch">Los PIN no coinciden</string>
+    <string name="action_enter">Entrar</string>
+    <string name="action_create_pin">Crear PIN</string>
+
+    <!-- Home del padre -->
+    <string name="parent_mode">Modo padre</string>
+    <string name="protection_active">Protección activa (Device Owner)</string>
+    <string name="protection_inactive">Sin Device Owner: el bloqueo no está garantizado</string>
+    <string name="nav_apps_title">Apps y categorías</string>
+    <string name="nav_apps_subtitle">Clasifica cada app; las nuevas quedan bloqueadas hasta clasificarlas</string>
+    <string name="nav_limits_title">Límites y horarios</string>
+    <string name="nav_limits_subtitle">Presupuesto diario por categoría y hora de dormir</string>
+    <string name="nav_child_title">Configurar el móvil del hijo</string>
+    <string name="nav_child_subtitle">Muestra un QR para instalar la app en el dispositivo del hijo</string>
+
+    <!-- Asignación de apps -->
+    <string name="search_app">Buscar app</string>
+    <string name="unclassified_blocked">Sin clasificar · bloqueada</string>
+    <string name="classify_into">Clasificar en…</string>
+    <string name="unclassified_block_action">Sin clasificar (bloquear)</string>
+
+    <!-- Presupuestos y horarios -->
+    <string name="from">Desde</string>
+    <string name="to">Hasta</string>
+    <string name="bedtime_start_title">Empieza a dormir</string>
+    <string name="bedtime_end_title">Se levanta</string>
+    <string name="daily_budget_header">Presupuesto diario por categoría</string>
+    <string name="no_limit">Sin límite</string>
+    <plurals name="days_with_limit">
+        <item quantity="one">%d día con límite</item>
+        <item quantity="other">%d días con límite</item>
+    </plurals>
+    <string name="daytype_school">Lectivo</string>
+    <string name="daytype_weekend">Finde</string>
+    <string name="daytype_holiday">Vacaciones</string>
+
+    <!-- Stepper -->
+    <string name="decrement">Menos</string>
+    <string name="increment">Más</string>
+
+    <!-- Categorías -->
+    <string name="category_games">Juegos</string>
+    <string name="category_social">Redes</string>
+    <string name="category_video">Vídeo</string>
+    <string name="category_education">Educación</string>
+    <string name="category_creative">Creatividad</string>
+    <string name="category_other">Otras</string>
+
+    <!-- Servicio de enforcement -->
+    <string name="service_channel_name">Protección Walcott</string>
+    <string name="service_channel_desc">Mantiene activas las reglas de uso</string>
+    <string name="service_notif_title">Walcott protege este dispositivo</string>
+    <string name="service_notif_text">Las reglas de uso están activas</string>
+
+    <!-- Configuración del hijo / QR -->
+    <string name="qr_title">Configurar el móvil del hijo</string>
+    <string name="qr_instructions">En el móvil del hijo, abre la cámara y escanea este código para descargar Walcott. Luego abre el archivo para instalarlo.</string>
+    <string name="qr_url_caption">Enlace de descarga</string>
+    <string name="qr_provision_note">Consejo: para protección total, instala en un móvil recién reseteado y configura Walcott como Device Owner.</string>
+</resources>

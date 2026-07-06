@@ -7,7 +7,7 @@ import java.time.LocalTime
 
 enum class DayType { SCHOOL, WEEKEND, HOLIDAY }
 
-/** Festivos y vacaciones editables por el padre; decide el tipo de día. */
+/** Parent-editable holidays and vacations; decides the day type. */
 data class SchoolCalendar(
     val holidays: Set<LocalDate> = emptySet(),
     val vacations: List<ClosedRange<LocalDate>> = emptyList(),
@@ -19,7 +19,7 @@ data class SchoolCalendar(
     }
 }
 
-/** Ventana horaria [start, end); puede cruzar medianoche (p. ej. 21:30–07:30). */
+/** Time window [start, end); may cross midnight (e.g. 21:30–07:30). */
 data class TimeWindow(val start: LocalTime, val end: LocalTime) {
     operator fun contains(time: LocalTime): Boolean =
         if (start <= end) time >= start && time < end
@@ -27,31 +27,31 @@ data class TimeWindow(val start: LocalTime, val end: LocalTime) {
 }
 
 data class CategoryPolicy(
-    /** Presupuesto diario por tipo de día; sin entrada = sin límite de tiempo ese día. */
+    /** Daily budget per day type; no entry = no time limit that day. */
     val dailyBudget: Map<DayType, Duration> = emptyMap(),
-    /** Ventanas de bloqueo total por tipo de día (p. ej. horario escolar). */
+    /** Full-block windows per day type (e.g. school hours). */
     val blockedWindows: Map<DayType, List<TimeWindow>> = emptyMap(),
 )
 
 data class FamilyConfig(
-    /** Versión monótona del emisor; el sync usa last-write-wins sobre ella. */
+    /** Monotonic version of the writer; sync uses last-write-wins on it. */
     val version: Long,
-    /** package -> categoryId. Los paquetes no listados están sin clasificar (bloqueados). */
+    /** package -> categoryId. Packages not listed are unclassified (blocked). */
     val assignments: Map<String, String>,
-    /** categoryId -> política. Una categoría sin política es de uso libre. */
+    /** categoryId -> policy. A category without a policy is unrestricted. */
     val policies: Map<String, CategoryPolicy>,
-    /** Ventana de sueño por tipo de día: bloquea todo lo no esencial. */
+    /** Bedtime window per day type: blocks everything non-essential. */
     val bedtime: Map<DayType, TimeWindow> = emptyMap(),
-    /** Nunca se bloquean: teléfono, contactos, la propia app… */
+    /** Never blocked: phone, contacts, the app itself… */
     val essentialPackages: Set<String> = emptySet(),
     val calendar: SchoolCalendar = SchoolCalendar(),
 )
 
 sealed interface Verdict {
-    /** Permitida sin límite de tiempo aplicable en este momento. */
+    /** Allowed with no applicable time limit right now. */
     data object Allowed : Verdict
 
-    /** Permitida; a su categoría le queda este presupuesto hoy. */
+    /** Allowed; its category has this much budget left today. */
     data class AllowedWithBudget(val remaining: Duration) : Verdict
 
     data class Blocked(val reason: BlockReason) : Verdict

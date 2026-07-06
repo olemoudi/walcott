@@ -127,6 +127,27 @@ PLAN:
 - Consistent style with existing codebase
 - Meaningful variable names (no `temp`, `data`, `result` without context)
 
+**UI/UX -- beautiful and snappy (core principle for ALL GUI work):**
+Every screen must look polished and *feel* instant. This is not optional gloss; it is a
+product differentiator and a design constraint on par with correctness.
+
+- **Snappy = perceived latency near zero.** Taps give immediate feedback (ripple/state
+  change on the same frame). Never block the UI thread: all I/O, DB and policy work runs
+  off-main; the UI only ever reads reactive state (Flows/StateFlow) that is already in
+  memory. Optimistic updates first, reconcile after.
+- **Motion with purpose, fast.** Transitions are short (~120-250ms) and use Material
+  motion easing. Animate state changes (values, list add/remove, screen changes) so
+  nothing "pops"; but never animate so long that it feels slow. Prefer spring/tween in
+  this range. No gratuitous animation.
+- **Zero jank.** Target 60fps: no allocation or heavy work in composables, hoist state,
+  use keys in lists, remember expensive objects. Load app icons/bitmaps async with a
+  cache; never decode on the main thread.
+- **Polished by default.** Consistent spacing scale, a real color system with light/dark,
+  legible type scale, meaningful empty/loading states, and tactile components. A screen
+  is not "done" until it looks like something you'd ship.
+- Centralize design tokens (color, type, spacing, motion) in the theme; screens consume
+  tokens, never hardcode magic numbers.
+
 **Communication:**
 - Be direct about problems
 - Quantify when possible ("this adds ~200ms latency" not "this might be slower")
@@ -165,4 +186,26 @@ POTENTIAL CONCERNS:
 The human is monitoring you in an IDE. They can see everything. They will catch your mistakes. Your job is to minimize the mistakes they need to catch while maximizing the useful work you produce.
 
 You have unlimited stamina. The human does not. Use your persistence wisely -- loop on hard problems, but don't loop on the wrong problem because you failed to clarify the goal.
+
+## Project conventions (Walcott)
+
+These are standing rules for this repository. Follow them without being re-asked.
+
+### Language
+- **All code and comments are in English.** No Spanish (or any non-English) in identifiers, comments, log messages, or commit messages.
+- **All user-facing text is localized.** Never hardcode display strings in composables or services; put them in `app/src/main/res/values/strings.xml` (English, the default) and keep `app/src/main/res/values-es/strings.xml` (Spanish) in sync. Every new string must be added to **both** files. The app must be fully usable in English and Spanish.
+- Use `stringResource(...)` in Compose and `context.getString(...)` elsewhere. Format with placeholders/`plurals`, not string concatenation. Dates/times use the device locale.
+
+### Distribution & releases
+- GitHub remote: `https://github.com/olemoudi/walcott.git`.
+- This is a sideloaded, personal/family app (not Play Store). The **release** build is signed with the debug key on purpose (alpha only) so anyone can build and install it without secrets — see `app/build.gradle.kts`.
+- Releases are published by GitHub Actions on pushing a tag matching `v*`. The workflow builds `assembleRelease` and attaches the APK as a release asset named **`walcott-alpha.apk`** (stable name).
+- The stable download URL is therefore `https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk`. The in-app QR points here; keep the asset name stable so old QRs keep working.
+
+### Child onboarding via QR
+- The parent app (parent mode) shows a QR encoding the download URL above. The child opens their camera, scans it, downloads the APK, and sideloads it. Do not build a QR *scanner* into the child app — the system camera handles scanning.
+
+### Testing
+- Keep a robust unit-test suite. All rule logic lives in `:core-rules` (pure Kotlin) and must stay fully covered; pure mappers/helpers in `:app` (e.g. settings⇄domain mapping, PIN hashing) get JVM unit tests too. Avoid Android dependencies in testable logic (e.g. use `java.util.Base64`, not `android.util.Base64`).
+- Run `./gradlew test` (and build the APK) before cutting a release.
 

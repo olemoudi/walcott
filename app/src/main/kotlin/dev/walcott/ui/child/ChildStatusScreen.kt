@@ -1,0 +1,321 @@
+package dev.walcott.ui.child
+
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.walcott.R
+import dev.walcott.rules.BlockReason
+import dev.walcott.rules.CategoryState
+import dev.walcott.ui.CategoryStatusUi
+import dev.walcott.ui.ChildUiState
+import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.format.humanize
+import dev.walcott.ui.theme.NumberDisplay
+import dev.walcott.ui.theme.Tokens
+import java.time.Duration
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
+
+@Composable
+fun ChildStatusScreen(
+    viewModel: WalcottViewModel,
+    onOpenParent: () -> Unit,
+) {
+    val state by viewModel.childState.collectAsStateWithLifecycle()
+    val spacing = Tokens.spacing
+
+    var pending by remember { mutableStateOf<CategoryStatusUi?>(null) }
+
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(horizontal = spacing.screen),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            item { Header(onOpenParent) }
+            item { HeroCard(state) }
+            items(state.categories, key = { it.category.id }) { card ->
+                CategoryCard(card, onRequestExtra = { pending = card })
+            }
+            item { Spacer(Modifier.height(spacing.xl)) }
+        }
+    }
+
+    pending?.let { card ->
+        ExtraTimeDialog(
+            viewModel = viewModel,
+            card = card,
+            onDismiss = { pending = null },
+        )
+    }
+}
+
+@Composable
+private fun Header(onOpenParent: () -> Unit) {
+    val spacing = Tokens.spacing
+    val today = LocalDate.now()
+    val dateText = remember(today) {
+        today.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(Locale.getDefault()))
+            .replaceFirstChar { it.uppercase() }
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(top = spacing.xxl, bottom = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.child_greeting), style = MaterialTheme.typography.headlineMedium)
+            Text(
+                dateText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onOpenParent) {
+            Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.settings_content_desc))
+        }
+    }
+}
+
+@Composable
+private fun HeroCard(state: ChildUiState) {
+    val spacing = Tokens.spacing
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = if (state.bedtimeActive) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        AnimatedContent(
+            targetState = state.bedtimeActive,
+            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) },
+            label = "hero",
+        ) { bedtime ->
+            Row(
+                Modifier.padding(spacing.xl),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (bedtime) {
+                    Icon(
+                        Icons.Filled.Bedtime, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Spacer(Modifier.width(spacing.lg))
+                    Column {
+                        Text(
+                            stringResource(R.string.bedtime_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            stringResource(R.string.bedtime_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                } else {
+                    Column {
+                        Text(
+                            stringResource(R.string.hero_today_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(Modifier.height(spacing.xs))
+                        val budgeted = state.categories.count { it.status.state == CategoryState.BUDGETED }
+                        val summary = if (state.categories.isEmpty()) {
+                            stringResource(R.string.hero_all_free)
+                        } else {
+                            pluralStringResource(R.plurals.hero_available_count, budgeted, budgeted)
+                        }
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryCard(card: CategoryStatusUi, onRequestExtra: () -> Unit) {
+    val spacing = Tokens.spacing
+    val category = card.category
+    val status = card.status
+
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(spacing.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+                        .background(category.color.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(category.icon, contentDescription = null, tint = category.color)
+                }
+                Spacer(Modifier.width(spacing.md))
+                Text(
+                    stringResource(category.nameRes),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                StatusPill(status.state)
+            }
+
+            when (status.state) {
+                CategoryState.BUDGETED -> {
+                    Spacer(Modifier.height(spacing.md))
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            (status.remaining ?: Duration.ZERO).humanize(),
+                            style = NumberDisplay,
+                            color = category.color,
+                        )
+                        Spacer(Modifier.width(spacing.xs))
+                        Text(
+                            stringResource(R.string.label_remaining),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 10.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(spacing.sm))
+                    BudgetBar(fraction = fractionUsed(card), color = category.color)
+                }
+
+                CategoryState.ALLOWED -> {
+                    Spacer(Modifier.height(spacing.sm))
+                    Text(stringResource(R.string.no_limit_today), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                CategoryState.BLOCKED -> {
+                    Spacer(Modifier.height(spacing.sm))
+                    Text(blockedReasonText(status.blockReason), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (status.blockReason == BlockReason.BUDGET_EXHAUSTED) {
+                        Spacer(Modifier.height(spacing.md))
+                        RequestExtraButton(category.color, onRequestExtra)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(state: CategoryState) {
+    val (labelRes, color, icon) = when (state) {
+        CategoryState.BUDGETED -> Triple(R.string.status_available, MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle)
+        CategoryState.ALLOWED -> Triple(R.string.status_free, MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle)
+        CategoryState.BLOCKED -> Triple(R.string.status_blocked, MaterialTheme.colorScheme.error, Icons.Filled.Lock)
+    }
+    Surface(shape = RoundedCornerShape(50), color = color.copy(alpha = 0.14f)) {
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(stringResource(labelRes), style = MaterialTheme.typography.labelMedium, color = color, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun BudgetBar(fraction: Float, color: Color) {
+    val animated by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 260),
+        label = "budget",
+    )
+    Box(
+        Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Box(Modifier.fillMaxWidth(animated).height(10.dp).clip(RoundedCornerShape(50)).background(color))
+    }
+}
+
+@Composable
+private fun RequestExtraButton(color: Color, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = color.copy(alpha = 0.14f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            stringResource(R.string.request_more_time),
+            style = MaterialTheme.typography.labelLarge,
+            color = color,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private fun fractionUsed(card: CategoryStatusUi): Float {
+    val budget = card.status.budget?.seconds ?: return 0f
+    if (budget <= 0) return 0f
+    val used = card.status.used.seconds.toFloat()
+    return used / budget.toFloat()
+}
+
+@Composable
+private fun blockedReasonText(reason: BlockReason?): String = when (reason) {
+    BlockReason.BEDTIME -> stringResource(R.string.reason_bedtime)
+    BlockReason.BLOCKED_WINDOW -> stringResource(R.string.reason_blocked_window)
+    BlockReason.BUDGET_EXHAUSTED -> stringResource(R.string.reason_budget_exhausted)
+    BlockReason.UNCLASSIFIED -> stringResource(R.string.reason_unclassified)
+    null -> ""
+}
