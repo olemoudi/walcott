@@ -24,6 +24,19 @@ commercial options:
   </tr>
 </table>
 
+## Web filter (DNS)
+
+Walcott can block specific domains at the DNS level via a local `VpnService` (no root). As
+Device Owner it pins the VPN always-on so the child can't disable it; lockdown is off, so
+only DNS is intercepted and normal traffic is untouched. You can also set per-app rules
+("allow this domain only from this app" / "block this domain in this app").
+
+**Limitations, by design:** DNS blocking catches plain DNS lookups. Apps that use their own
+encrypted DNS (DoH/QUIC) or hard-coded IPs — notably the YouTube app and some browsers — can
+bypass it; robust blocking of those needs SNI/full-tunnel inspection (not implemented).
+Per-app attribution is best-effort (`getConnectionOwnerUid`); when a query can't be
+attributed, "allow-only-from-app" rules fail closed. IPv4 DNS only for now.
+
 ## Language & localization
 
 All code and comments are in English. All user-facing text is localized: English is the

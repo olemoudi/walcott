@@ -2,6 +2,7 @@ package dev.walcott.data
 
 import dev.walcott.rules.CategoryPolicy
 import dev.walcott.rules.DayType
+import dev.walcott.rules.DomainAppRule
 import dev.walcott.rules.EarnRule
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.rules.SchoolCalendar
@@ -36,6 +37,16 @@ data class EarnRuleDto(
 @Serializable
 data class VacationDto(val startEpochDay: Long, val endEpochDay: Long)
 
+/** Persistable per-app domain rule (see [DomainAppRule]). */
+@Serializable
+data class DomainAppRuleDto(
+    val domain: String,
+    val packageName: String,
+    val allowOnlyFromApp: Boolean,
+) {
+    fun toDomainAppRule() = DomainAppRule(domain, packageName, allowOnlyFromApp)
+}
+
 /**
  * Parent-editable configuration, serialized as JSON in DataStore. Holds everything that is
  * NOT app assignments (those live in Room because there are many and they are reactive).
@@ -56,10 +67,19 @@ data class PolicySettings(
     val vacations: List<VacationDto> = emptyList(),
     /** Earn-time rules ("X min of A unlocks Y min of B"). */
     val earnRules: List<EarnRuleDto> = emptyList(),
+    /** Domains blocked at DNS level (suffix match). */
+    val blockedDomains: Set<String> = emptySet(),
+    /** Advanced per-app domain rules. */
+    val domainAppRules: List<DomainAppRuleDto> = emptyList(),
     val pinHash: String? = null,
     val pinSalt: String? = null,
 ) {
     fun toEarnRules(): List<EarnRule> = earnRules.map { it.toEarnRule() }
+
+    fun toDomainAppRules(): List<DomainAppRule> = domainAppRules.map { it.toDomainAppRule() }
+
+    /** True when any DNS filtering is configured (drives whether the VPN runs). */
+    fun hasWebFilter(): Boolean = blockedDomains.isNotEmpty() || domainAppRules.isNotEmpty()
 
     /** Builds the engine's [FamilyConfig] by combining these rules with the assignments. */
     fun toFamilyConfig(assignments: Map<String, String>, essentials: Set<String>): FamilyConfig {

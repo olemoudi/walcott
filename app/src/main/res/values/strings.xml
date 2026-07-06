@@ -170,4 +170,19 @@
     <string name="report_no_data">No usage recorded yet this week.</string>
     <string name="give_bonus">Give bonus time</string>
     <string name="bonus_granted">Bonus added</string>
+
+    <!-- Phase 4: web filter -->
+    <string name="nav_webfilter_title">Web filter</string>
+    <string name="nav_webfilter_subtitle">Block domains at DNS level, per app if needed</string>
+    <string name="webfilter_blocked_domains">Blocked domains</string>
+    <string name="webfilter_domain_hint">e.g. youtube.com</string>
+    <string name="action_add">Add</string>
+    <string name="webfilter_empty_domains">No blocked domains yet.</string>
+    <string name="webfilter_advanced">Advanced per-app rules</string>
+    <string name="webfilter_choose_app">Choose app</string>
+    <string name="webfilter_mode_allow_only">Allow only from this app</string>
+    <string name="webfilter_mode_block_in">Block in this app</string>
+    <string name="webfilter_rule_allow_only">%1$s · only from %2$s</string>
+    <string name="webfilter_rule_block_in">%1$s · blocked in %2$s</string>
+    <string name="webfilter_dns_note">DNS-level blocking. Apps using their own encrypted DNS (some browsers, the YouTube app) may bypass it.</string>
 </resources>

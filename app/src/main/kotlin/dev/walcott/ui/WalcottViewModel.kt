@@ -91,6 +91,36 @@ class WalcottViewModel(
         repository.updateSettings { it.copy(vacations = it.vacations.filterIndexed { i, _ -> i != index }) }
     }
 
+    fun addBlockedDomain(raw: String) {
+        val domain = normalizeDomain(raw)
+        if (domain.isEmpty()) return
+        viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains + domain) } }
+    }
+
+    fun removeBlockedDomain(domain: String) =
+        viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains - domain) } }
+
+    fun addDomainAppRule(rawDomain: String, packageName: String, allowOnlyFromApp: Boolean) {
+        val domain = normalizeDomain(rawDomain)
+        if (domain.isEmpty() || packageName.isEmpty()) return
+        viewModelScope.launch {
+            repository.updateSettings {
+                it.copy(domainAppRules = it.domainAppRules + dev.walcott.data.DomainAppRuleDto(domain, packageName, allowOnlyFromApp))
+            }
+        }
+    }
+
+    fun removeDomainAppRule(index: Int) = viewModelScope.launch {
+        repository.updateSettings { it.copy(domainAppRules = it.domainAppRules.filterIndexed { i, _ -> i != index }) }
+    }
+
+    private fun normalizeDomain(raw: String): String =
+        raw.trim().lowercase()
+            .substringAfter("://")
+            .substringBefore("/")
+            .removePrefix("www.")
+            .trim()
+
 
     // Low-frequency clock so the UI reacts to time-based limits (bedtime, windows).
     private val clock = flow {

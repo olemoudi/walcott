@@ -27,10 +27,11 @@ import dev.walcott.ui.parent.ChildrenScreen
 import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.ParentHomeScreen
 import dev.walcott.ui.parent.PinGateScreen
+import dev.walcott.ui.parent.WebFilterScreen
 import dev.walcott.ui.parent.WeeklyReportScreen
 
 private enum class Screen {
-    CHILD, GATE, PARENT_HOME, APPS, BUDGETS, CHILD_SETUP, CHILDREN, EARN, CALENDAR, REPORT
+    CHILD, GATE, PARENT_HOME, APPS, BUDGETS, CHILD_SETUP, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER
 }
 
 @Composable
@@ -40,7 +41,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
     fun back() {
         screen = when (screen) {
             Screen.APPS, Screen.BUDGETS, Screen.CHILD_SETUP, Screen.CHILDREN,
-            Screen.EARN, Screen.CALENDAR, Screen.REPORT,
+            Screen.EARN, Screen.CALENDAR, Screen.REPORT, Screen.WEBFILTER,
             -> Screen.PARENT_HOME
             else -> Screen.CHILD
         }
@@ -76,6 +77,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                         onOpenEarn = { screen = Screen.EARN },
                         onOpenCalendar = { screen = Screen.CALENDAR },
                         onOpenReport = { screen = Screen.REPORT },
+                        onOpenWebFilter = { screen = Screen.WEBFILTER },
                         onBack = { screen = Screen.CHILD },
                     )
                     Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
@@ -85,6 +87,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                     Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                     Screen.CALENDAR -> CalendarScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                     Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
+                    Screen.WEBFILTER -> WebFilterScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                 }
             }
         }

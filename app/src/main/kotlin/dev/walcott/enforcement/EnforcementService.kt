@@ -15,10 +15,13 @@ import androidx.lifecycle.lifecycleScope
 import dev.walcott.MainActivity
 import dev.walcott.R
 import dev.walcott.WalcottApplication
+import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
 import dev.walcott.rules.Verdict
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
@@ -41,6 +44,18 @@ class EnforcementService : LifecycleService() {
         power = getSystemService(PowerManager::class.java)
         startForegroundCompat()
         lifecycleScope.launch { runLoop() }
+        observeWebFilter()
+    }
+
+    /** Starts/stops the DNS filter VPN as web-filter rules appear or disappear. */
+    private fun observeWebFilter() {
+        val repo = (application as WalcottApplication).repository
+        lifecycleScope.launch {
+            repo.settingsFlow
+                .map { it.hasWebFilter() }
+                .distinctUntilChanged()
+                .collect { enabled -> VpnController.apply(this@EnforcementService, enabled) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

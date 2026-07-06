@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InsertChart
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
@@ -48,6 +49,7 @@ fun ParentHomeScreen(
     onOpenEarn: () -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenReport: () -> Unit,
+    onOpenWebFilter: () -> Unit,
     onBack: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -62,6 +64,7 @@ fun ParentHomeScreen(
             Spacer(Modifier.height(spacing.xs))
             NavCard(Icons.Outlined.Apps, stringResource(R.string.nav_apps_title), stringResource(R.string.nav_apps_subtitle), onOpenApps)
             NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets)
+            NavCard(Icons.Outlined.Language, stringResource(R.string.nav_webfilter_title), stringResource(R.string.nav_webfilter_subtitle), onOpenWebFilter)
             NavCard(Icons.Outlined.EmojiEvents, stringResource(R.string.nav_earn_title), stringResource(R.string.nav_earn_subtitle), onOpenEarn)
             NavCard(Icons.Outlined.CalendarMonth, stringResource(R.string.nav_calendar_title), stringResource(R.string.nav_calendar_subtitle), onOpenCalendar)
             NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
