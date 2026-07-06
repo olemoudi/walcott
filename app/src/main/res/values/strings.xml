@@ -106,4 +106,40 @@
     <string name="qr_instructions">On the child\'s phone, open the camera and scan this code to download Walcott. Then open the file to install it.</string>
     <string name="qr_url_caption">Download link</string>
     <string name="qr_provision_note">Tip: for full protection, install on a freshly reset phone and set Walcott as Device Owner.</string>
+
+    <!-- Sync: request notification -->
+    <string name="sync_request_channel_name">Extra-time requests</string>
+    <string name="sync_request_title">New time request</string>
+    <string name="sync_request_text">%1$s is asking for %2$d min</string>
+
+    <!-- Sync: parent pairing -->
+    <string name="parent_default_name">Parent</string>
+    <string name="create_family_title">This is the parent phone</string>
+    <string name="create_family_desc">Create the family here, then link each child\'s phone.</string>
+    <string name="create_family_button">Create family</string>
+    <string name="pairing_qr_title">Link the child\'s phone</string>
+    <string name="pairing_qr_instructions">On the child\'s phone, open Walcott and tap \"Link to a parent\", then scan this code.</string>
+    <string name="pairing_step_download">1 · Install the app</string>
+    <string name="pairing_step_link">2 · Link the device</string>
+
+    <!-- Sync: child pairing -->
+    <string name="not_linked">Not linked to a parent</string>
+    <string name="link_to_parent">Link to a parent</string>
+    <string name="pairing_failed">Couldn\'t read that code</string>
+
+    <!-- Sync: parent dashboard / requests -->
+    <string name="nav_children_title">Children and requests</string>
+    <string name="nav_children_subtitle">See usage and approve time requests</string>
+    <string name="no_children">No linked devices yet</string>
+    <string name="pending_requests">Pending requests</string>
+    <string name="no_requests">No pending requests</string>
+    <string name="usage_today">Today\'s usage</string>
+    <string name="approve">Approve</string>
+    <string name="deny">Deny</string>
+    <string name="request_summary">%1$s · %2$d min</string>
+
+    <!-- Sync: remote extra-time -->
+    <string name="request_sent">Request sent — waiting for a parent to approve</string>
+    <string name="send_request">Send request</string>
+    <string name="reason_optional">Reason (optional)</string>
 </resources>

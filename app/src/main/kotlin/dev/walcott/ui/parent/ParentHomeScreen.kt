@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
@@ -38,6 +39,7 @@ fun ParentHomeScreen(
     onOpenApps: () -> Unit,
     onOpenBudgets: () -> Unit,
     onOpenChildSetup: () -> Unit,
+    onOpenChildren: () -> Unit,
     onBack: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -60,6 +62,12 @@ fun ParentHomeScreen(
                 title = stringResource(R.string.nav_limits_title),
                 subtitle = stringResource(R.string.nav_limits_subtitle),
                 onClick = onOpenBudgets,
+            )
+            NavCard(
+                icon = Icons.Outlined.Groups,
+                title = stringResource(R.string.nav_children_title),
+                subtitle = stringResource(R.string.nav_children_subtitle),
+                onClick = onOpenChildren,
             )
             NavCard(
                 icon = Icons.Outlined.PhoneAndroid,

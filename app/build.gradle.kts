@@ -47,6 +47,7 @@ android {
 
 dependencies {
     implementation(project(":core-rules"))
+    implementation(project(":core-sync"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
 
@@ -68,6 +69,8 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.zxing.core)
+    implementation(libs.zxing.embedded)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

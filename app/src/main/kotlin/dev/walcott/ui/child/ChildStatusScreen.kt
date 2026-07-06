@@ -1,5 +1,6 @@
 package dev.walcott.ui.child
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -7,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -35,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,15 +50,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import dev.walcott.R
 import dev.walcott.rules.BlockReason
 import dev.walcott.rules.CategoryState
+import dev.walcott.sync.Role
 import dev.walcott.ui.CategoryStatusUi
 import dev.walcott.ui.ChildUiState
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.NumberDisplay
 import dev.walcott.ui.theme.Tokens
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -67,9 +75,16 @@ fun ChildStatusScreen(
     onOpenParent: () -> Unit,
 ) {
     val state by viewModel.childState.collectAsStateWithLifecycle()
+    val identity by viewModel.identity.collectAsStateWithLifecycle()
     val spacing = Tokens.spacing
+    val scope = rememberCoroutineScope()
 
     var pending by remember { mutableStateOf<CategoryStatusUi?>(null) }
+    var pendingRemote by remember { mutableStateOf<CategoryStatusUi?>(null) }
+
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { text -> scope.launch { viewModel.pairAsChild(text, "") } }
+    }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         LazyColumn(
@@ -77,20 +92,55 @@ fun ChildStatusScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             item { Header(onOpenParent) }
+            if (identity.role == Role.UNPAIRED) {
+                item {
+                    PairingBanner(onLink = {
+                        scanLauncher.launch(ScanOptions().setBeepEnabled(false).setOrientationLocked(false))
+                    })
+                }
+            }
             item { HeroCard(state) }
             items(state.categories, key = { it.category.id }) { card ->
-                CategoryCard(card, onRequestExtra = { pending = card })
+                CategoryCard(card, onRequestExtra = {
+                    if (identity.role == Role.CHILD) pendingRemote = card else pending = card
+                })
             }
             item { Spacer(Modifier.height(spacing.xl)) }
         }
     }
 
     pending?.let { card ->
-        ExtraTimeDialog(
-            viewModel = viewModel,
+        ExtraTimeDialog(viewModel = viewModel, card = card, onDismiss = { pending = null })
+    }
+    pendingRemote?.let { card ->
+        RemoteRequestDialog(
             card = card,
-            onDismiss = { pending = null },
+            onDismiss = { pendingRemote = null },
+            onSend = { minutes, reason ->
+                viewModel.requestExtraTimeRemote(card.category.id, minutes, reason)
+                pendingRemote = null
+            },
         )
+    }
+}
+
+@Composable
+private fun PairingBanner(onLink: () -> Unit) {
+    val spacing = Tokens.spacing
+    Surface(
+        onClick = onLink,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.md), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Spacer(Modifier.width(spacing.sm))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.not_linked), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(stringResource(R.string.link_to_parent), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
     }
 }
 

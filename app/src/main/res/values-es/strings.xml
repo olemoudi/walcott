@@ -106,4 +106,40 @@
     <string name="qr_instructions">En el móvil del hijo, abre la cámara y escanea este código para descargar Walcott. Luego abre el archivo para instalarlo.</string>
     <string name="qr_url_caption">Enlace de descarga</string>
     <string name="qr_provision_note">Consejo: para protección total, instala en un móvil recién reseteado y configura Walcott como Device Owner.</string>
+
+    <!-- Sync: notificación de petición -->
+    <string name="sync_request_channel_name">Peticiones de tiempo</string>
+    <string name="sync_request_title">Nueva petición de tiempo</string>
+    <string name="sync_request_text">%1$s pide %2$d min</string>
+
+    <!-- Sync: emparejamiento (padre) -->
+    <string name="parent_default_name">Padre</string>
+    <string name="create_family_title">Este es el móvil del padre</string>
+    <string name="create_family_desc">Crea aquí la familia y luego vincula el móvil de cada hijo.</string>
+    <string name="create_family_button">Crear familia</string>
+    <string name="pairing_qr_title">Vincular el móvil del hijo</string>
+    <string name="pairing_qr_instructions">En el móvil del hijo, abre Walcott y toca \"Vincular con un adulto\", luego escanea este código.</string>
+    <string name="pairing_step_download">1 · Instala la app</string>
+    <string name="pairing_step_link">2 · Vincula el dispositivo</string>
+
+    <!-- Sync: emparejamiento (hijo) -->
+    <string name="not_linked">Sin vincular a un adulto</string>
+    <string name="link_to_parent">Vincular con un adulto</string>
+    <string name="pairing_failed">No se pudo leer ese código</string>
+
+    <!-- Sync: panel del padre / peticiones -->
+    <string name="nav_children_title">Hijos y peticiones</string>
+    <string name="nav_children_subtitle">Ver uso y aprobar peticiones de tiempo</string>
+    <string name="no_children">Aún no hay dispositivos vinculados</string>
+    <string name="pending_requests">Peticiones pendientes</string>
+    <string name="no_requests">Sin peticiones pendientes</string>
+    <string name="usage_today">Uso de hoy</string>
+    <string name="approve">Aprobar</string>
+    <string name="deny">Denegar</string>
+    <string name="request_summary">%1$s · %2$d min</string>
+
+    <!-- Sync: tiempo extra remoto -->
+    <string name="request_sent">Petición enviada — esperando que un adulto la apruebe</string>
+    <string name="send_request">Enviar petición</string>
+    <string name="reason_optional">Motivo (opcional)</string>
 </resources>

@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "walcott"
 include(":app")
 include(":core-rules")
+include(":core-sync")

@@ -11,6 +11,9 @@ import dev.walcott.rules.CategoryStatus
 import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
 import dev.walcott.rules.categoryStatus
+import dev.walcott.sync.ChildSnapshot
+import dev.walcott.sync.FamilyIdentity
+import dev.walcott.sync.SyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,7 +37,26 @@ data class ChildUiState(
 
 data class AppRow(val app: InstalledApp, val categoryId: String?)
 
-class WalcottViewModel(val repository: WalcottRepository) : ViewModel() {
+class WalcottViewModel(
+    val repository: WalcottRepository,
+    private val sync: SyncManager,
+) : ViewModel() {
+
+    val identity: StateFlow<FamilyIdentity> = sync.identity
+    val children: StateFlow<List<ChildSnapshot>> =
+        sync.state.map { it.children }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val pendingRequests: StateFlow<List<SyncManager.PendingRequest>> = sync.pendingRequests
+
+    suspend fun becomeParent(displayName: String): String = sync.becomeParent(displayName)
+    suspend fun pairAsChild(pairingText: String, displayName: String): Boolean =
+        sync.pairAsChild(pairingText, displayName)
+
+    fun requestExtraTimeRemote(categoryId: String, minutes: Int, reason: String) =
+        viewModelScope.launch { sync.requestExtraTime(categoryId, minutes, reason) }
+
+    fun resolveRequest(requestId: String, approved: Boolean, grantedMinutes: Int) =
+        viewModelScope.launch { sync.resolveRequest(requestId, approved, grantedMinutes) }
+
 
     // Low-frequency clock so the UI reacts to time-based limits (bedtime, windows).
     private val clock = flow {
@@ -125,9 +147,12 @@ class WalcottViewModel(val repository: WalcottRepository) : ViewModel() {
 
     private fun LocalTime.toMinute() = hour * 60 + minute
 
-    class Factory(private val repository: WalcottRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: WalcottRepository,
+        private val sync: SyncManager,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            WalcottViewModel(repository) as T
+            WalcottViewModel(repository, sync) as T
     }
 }

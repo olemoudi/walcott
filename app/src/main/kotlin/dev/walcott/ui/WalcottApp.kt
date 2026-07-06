@@ -22,10 +22,11 @@ import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.ui.parent.AppAssignScreen
 import dev.walcott.ui.parent.BudgetsScreen
 import dev.walcott.ui.parent.ChildSetupScreen
+import dev.walcott.ui.parent.ChildrenScreen
 import dev.walcott.ui.parent.ParentHomeScreen
 import dev.walcott.ui.parent.PinGateScreen
 
-private enum class Screen { CHILD, GATE, PARENT_HOME, APPS, BUDGETS, CHILD_SETUP }
+private enum class Screen { CHILD, GATE, PARENT_HOME, APPS, BUDGETS, CHILD_SETUP, CHILDREN }
 
 @Composable
 fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
@@ -33,7 +34,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
 
     fun back() {
         screen = when (screen) {
-            Screen.APPS, Screen.BUDGETS, Screen.CHILD_SETUP -> Screen.PARENT_HOME
+            Screen.APPS, Screen.BUDGETS, Screen.CHILD_SETUP, Screen.CHILDREN -> Screen.PARENT_HOME
             else -> Screen.CHILD
         }
     }
@@ -64,11 +65,13 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                         onOpenApps = { screen = Screen.APPS },
                         onOpenBudgets = { screen = Screen.BUDGETS },
                         onOpenChildSetup = { screen = Screen.CHILD_SETUP },
+                        onOpenChildren = { screen = Screen.CHILDREN },
                         onBack = { screen = Screen.CHILD },
                     )
                     Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                     Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.CHILD_SETUP -> ChildSetupScreen(onBack = { screen = Screen.PARENT_HOME })
+                    Screen.CHILD_SETUP -> ChildSetupScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
+                    Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                 }
             }
         }
