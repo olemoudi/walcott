@@ -9,6 +9,18 @@ commercial options:
    enforcement is 100% local via Device Owner, and (from Phase 2) devices sync over
    end-to-end-encrypted messages with QR pairing.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/child-status.png" width="170"><br><sub>Child — time left</sub></td>
+    <td align="center"><img src="docs/screenshots/child-bedtime.png" width="170"><br><sub>Child — bedtime</sub></td>
+    <td align="center"><img src="docs/screenshots/parent-mode.png" width="170"><br><sub>Parent mode</sub></td>
+    <td align="center"><img src="docs/screenshots/limits.png" width="170"><br><sub>Limits &amp; bedtime</sub></td>
+    <td align="center"><img src="docs/screenshots/pairing.png" width="170"><br><sub>Set up a child phone</sub></td>
+  </tr>
+</table>
+
 ## Language & localization
 
 All code and comments are in English. All user-facing text is localized: English is the
