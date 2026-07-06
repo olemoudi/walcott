@@ -1,5 +1,8 @@
 # Walcott — family parental control for Android
 
+[![CI](https://github.com/olemoudi/walcott/actions/workflows/ci.yml/badge.svg)](https://github.com/olemoudi/walcott/actions/workflows/ci.yml)
+[![coverage](.github/badges/coverage.svg)](https://github.com/olemoudi/walcott/actions/workflows/ci.yml)
+
 A parental control app built for one family, with two things that set it apart from the
 commercial options:
 
