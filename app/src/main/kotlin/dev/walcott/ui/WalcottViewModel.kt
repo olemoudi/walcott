@@ -24,10 +24,15 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-data class CategoryStatusUi(val category: AppCategory, val status: CategoryStatus)
+data class CategoryStatusUi(
+    val category: AppCategory,
+    val status: CategoryStatus,
+    val earned: Duration = Duration.ZERO,
+)
 
 data class ChildUiState(
     val loading: Boolean = true,
@@ -57,6 +62,35 @@ class WalcottViewModel(
     fun resolveRequest(requestId: String, approved: Boolean, grantedMinutes: Int) =
         viewModelScope.launch { sync.resolveRequest(requestId, approved, grantedMinutes) }
 
+    fun giveBonus(targetDeviceId: String, categoryId: String, minutes: Int) =
+        viewModelScope.launch { sync.giveBonus(targetDeviceId, categoryId, minutes) }
+
+    // Reloads the 7-day history whenever today's usage changes.
+    val weeklyUsage: StateFlow<Map<Long, Map<String, java.time.Duration>>> =
+        repository.usageTodayFlow.map { repository.weeklyUsage() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    fun addEarnRule(rule: dev.walcott.data.EarnRuleDto) =
+        viewModelScope.launch { repository.updateSettings { it.copy(earnRules = it.earnRules + rule) } }
+
+    fun removeEarnRule(index: Int) = viewModelScope.launch {
+        repository.updateSettings { it.copy(earnRules = it.earnRules.filterIndexed { i, _ -> i != index }) }
+    }
+
+    fun addHoliday(epochDay: Long) =
+        viewModelScope.launch { repository.updateSettings { it.copy(holidays = it.holidays + epochDay) } }
+
+    fun removeHoliday(epochDay: Long) =
+        viewModelScope.launch { repository.updateSettings { it.copy(holidays = it.holidays - epochDay) } }
+
+    fun addVacation(startEpochDay: Long, endEpochDay: Long) = viewModelScope.launch {
+        repository.updateSettings { it.copy(vacations = it.vacations + dev.walcott.data.VacationDto(startEpochDay, endEpochDay)) }
+    }
+
+    fun removeVacation(index: Int) = viewModelScope.launch {
+        repository.updateSettings { it.copy(vacations = it.vacations.filterIndexed { i, _ -> i != index }) }
+    }
+
 
     // Low-frequency clock so the UI reacts to time-based limits (bedtime, windows).
     private val clock = flow {
@@ -69,9 +103,10 @@ class WalcottViewModel(
     val childState: StateFlow<ChildUiState> = combine(
         repository.familyConfigFlow,
         repository.usageTodayFlow,
-        repository.extraTodayFlow,
+        repository.effectiveExtraTodayFlow,
+        repository.earnedTodayFlow,
         clock,
-    ) { config, usage, extra, now ->
+    ) { config, usage, effectiveExtra, earned, now ->
         val dayType = config.calendar.dayTypeOf(now.toLocalDate())
         val bedtimeActive = config.bedtime[dayType]?.let { now.toLocalTime() in it } ?: false
 
@@ -86,7 +121,11 @@ class WalcottViewModel(
             .mapNotNull { id -> AppCategory.byId(id)?.let { it to id } }
             .sortedBy { it.first.ordinal }
             .map { (category, id) ->
-                CategoryStatusUi(category, RuleEngine.categoryStatus(config, id, now, usage, extra))
+                CategoryStatusUi(
+                    category = category,
+                    status = RuleEngine.categoryStatus(config, id, now, usage, effectiveExtra),
+                    earned = earned[id] ?: Duration.ZERO,
+                )
             }
         ChildUiState(loading = false, bedtimeActive = bedtimeActive, categories = cards)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())

@@ -62,7 +62,7 @@ class EnforcementService : LifecycleService() {
 
             val config = repo.configNow()
             val usage = repo.usageNow()
-            val extra = repo.extraNow()
+            val extra = repo.effectiveExtraNow() // manually granted + earned by use
             val managed = repo.managedPackagesNow()
             val now = LocalDateTime.now()
 

@@ -282,6 +282,14 @@ private fun CategoryCard(card: CategoryStatusUi, onRequestExtra: () -> Unit) {
                     }
                     Spacer(Modifier.height(spacing.sm))
                     BudgetBar(fraction = fractionUsed(card), color = category.color)
+                    if (card.earned > Duration.ZERO) {
+                        Spacer(Modifier.height(spacing.sm))
+                        Text(
+                            stringResource(R.string.earned_bonus, card.earned.humanize()),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
                 }
 
                 CategoryState.ALLOWED -> {

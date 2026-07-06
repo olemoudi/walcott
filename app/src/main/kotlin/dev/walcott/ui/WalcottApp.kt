@@ -21,12 +21,17 @@ import androidx.compose.ui.Modifier
 import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.ui.parent.AppAssignScreen
 import dev.walcott.ui.parent.BudgetsScreen
+import dev.walcott.ui.parent.CalendarScreen
 import dev.walcott.ui.parent.ChildSetupScreen
 import dev.walcott.ui.parent.ChildrenScreen
+import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.ParentHomeScreen
 import dev.walcott.ui.parent.PinGateScreen
+import dev.walcott.ui.parent.WeeklyReportScreen
 
-private enum class Screen { CHILD, GATE, PARENT_HOME, APPS, BUDGETS, CHILD_SETUP, CHILDREN }
+private enum class Screen {
+    CHILD, GATE, PARENT_HOME, APPS, BUDGETS, CHILD_SETUP, CHILDREN, EARN, CALENDAR, REPORT
+}
 
 @Composable
 fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
@@ -34,7 +39,9 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
 
     fun back() {
         screen = when (screen) {
-            Screen.APPS, Screen.BUDGETS, Screen.CHILD_SETUP, Screen.CHILDREN -> Screen.PARENT_HOME
+            Screen.APPS, Screen.BUDGETS, Screen.CHILD_SETUP, Screen.CHILDREN,
+            Screen.EARN, Screen.CALENDAR, Screen.REPORT,
+            -> Screen.PARENT_HOME
             else -> Screen.CHILD
         }
     }
@@ -64,14 +71,20 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                         deviceOwner = deviceOwner,
                         onOpenApps = { screen = Screen.APPS },
                         onOpenBudgets = { screen = Screen.BUDGETS },
-                        onOpenChildSetup = { screen = Screen.CHILD_SETUP },
                         onOpenChildren = { screen = Screen.CHILDREN },
+                        onOpenChildSetup = { screen = Screen.CHILD_SETUP },
+                        onOpenEarn = { screen = Screen.EARN },
+                        onOpenCalendar = { screen = Screen.CALENDAR },
+                        onOpenReport = { screen = Screen.REPORT },
                         onBack = { screen = Screen.CHILD },
                     )
                     Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                     Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                     Screen.CHILD_SETUP -> ChildSetupScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
+                    Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
+                    Screen.CALENDAR -> CalendarScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
+                    Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
                 }
             }
         }

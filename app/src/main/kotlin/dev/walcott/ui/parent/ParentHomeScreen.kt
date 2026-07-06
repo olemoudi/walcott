@@ -10,13 +10,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.InsertChart
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
@@ -38,43 +43,30 @@ fun ParentHomeScreen(
     deviceOwner: Boolean,
     onOpenApps: () -> Unit,
     onOpenBudgets: () -> Unit,
-    onOpenChildSetup: () -> Unit,
     onOpenChildren: () -> Unit,
+    onOpenChildSetup: () -> Unit,
+    onOpenEarn: () -> Unit,
+    onOpenCalendar: () -> Unit,
+    onOpenReport: () -> Unit,
     onBack: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.parent_mode), onBack)
         Column(
-            Modifier.fillMaxSize().padding(horizontal = spacing.screen),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = spacing.screen)
+                .padding(bottom = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             ProtectionBanner(deviceOwner)
             Spacer(Modifier.height(spacing.xs))
-            NavCard(
-                icon = Icons.Outlined.Apps,
-                title = stringResource(R.string.nav_apps_title),
-                subtitle = stringResource(R.string.nav_apps_subtitle),
-                onClick = onOpenApps,
-            )
-            NavCard(
-                icon = Icons.Outlined.Schedule,
-                title = stringResource(R.string.nav_limits_title),
-                subtitle = stringResource(R.string.nav_limits_subtitle),
-                onClick = onOpenBudgets,
-            )
-            NavCard(
-                icon = Icons.Outlined.Groups,
-                title = stringResource(R.string.nav_children_title),
-                subtitle = stringResource(R.string.nav_children_subtitle),
-                onClick = onOpenChildren,
-            )
-            NavCard(
-                icon = Icons.Outlined.PhoneAndroid,
-                title = stringResource(R.string.nav_child_title),
-                subtitle = stringResource(R.string.nav_child_subtitle),
-                onClick = onOpenChildSetup,
-            )
+            NavCard(Icons.Outlined.Apps, stringResource(R.string.nav_apps_title), stringResource(R.string.nav_apps_subtitle), onOpenApps)
+            NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets)
+            NavCard(Icons.Outlined.EmojiEvents, stringResource(R.string.nav_earn_title), stringResource(R.string.nav_earn_subtitle), onOpenEarn)
+            NavCard(Icons.Outlined.CalendarMonth, stringResource(R.string.nav_calendar_title), stringResource(R.string.nav_calendar_subtitle), onOpenCalendar)
+            NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
+            NavCard(Icons.Outlined.InsertChart, stringResource(R.string.nav_report_title), stringResource(R.string.nav_report_subtitle), onOpenReport)
+            NavCard(Icons.Outlined.PhoneAndroid, stringResource(R.string.nav_child_title), stringResource(R.string.nav_child_subtitle), onOpenChildSetup)
         }
     }
 }

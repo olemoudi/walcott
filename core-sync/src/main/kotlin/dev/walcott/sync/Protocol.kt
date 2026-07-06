@@ -27,6 +27,20 @@ data class Resolution(
     val resolvedAtEpochMs: Long,
 )
 
+/** An unsolicited reward the parent grants to a specific child (chores, good behaviour…). */
+@Serializable
+data class Bonus(
+    val id: String,
+    val targetDeviceId: String,
+    val categoryId: String,
+    val minutes: Int,
+    val epochDay: Long,
+)
+
+/** One day of usage, for the weekly report. */
+@Serializable
+data class DayUsage(val epochDay: Long, val usage: List<UsageEntry> = emptyList())
+
 /** Published by each child device; the parent aggregates the latest per device. */
 @Serializable
 data class ChildSnapshot(
@@ -37,17 +51,19 @@ data class ChildSnapshot(
     val usage: List<UsageEntry> = emptyList(),
     val extra: List<UsageEntry> = emptyList(),
     val requests: List<ExtraTimeRequest> = emptyList(),
+    val history: List<DayUsage> = emptyList(),
 )
 
 /**
  * Published by the parent. Carries the rules as an opaque JSON blob (the app owns the
- * concrete type; the sync layer stays agnostic) plus the resolutions to child requests.
+ * concrete type; the sync layer stays agnostic) plus resolutions and bonuses.
  */
 @Serializable
 data class ParentSnapshot(
     val version: Long,
     val policyJson: String,
     val resolutions: List<Resolution> = emptyList(),
+    val bonuses: List<Bonus> = emptyList(),
 )
 
 // --- Envelope on the wire ---

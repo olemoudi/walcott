@@ -158,6 +158,23 @@ class SyncManager(
         publishSelf()
     }
 
+    /** Parent grants an unsolicited bonus (chores, good behaviour) to a child device. */
+    suspend fun giveBonus(targetDeviceId: String, categoryId: String, minutes: Int) {
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                bonuses = s.bonuses + Bonus(
+                    id = UUID.randomUUID().toString(),
+                    targetDeviceId = targetDeviceId,
+                    categoryId = categoryId,
+                    minutes = minutes,
+                    epochDay = LocalDate.now().toEpochDay(),
+                ),
+            )
+        }
+        publishSelf()
+    }
+
     private suspend fun publishConfigChanged() {
         syncStore.update { it.copy(parentVersion = it.parentVersion + 1) }
         publishSelf()
@@ -171,17 +188,22 @@ class SyncManager(
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         when (id.role) {
             Role.PARENT -> {
+                val state = syncStore.current()
                 val settings = settingsStore.current().copy(pinHash = null, pinSalt = null)
                 val snapshot = ParentSnapshot(
-                    version = syncStore.current().parentVersion,
+                    version = state.parentVersion,
                     policyJson = json.encodeToString(PolicySettings.serializer(), settings),
-                    resolutions = syncStore.current().resolutions,
+                    resolutions = state.resolutions,
+                    bonuses = state.bonuses,
                 )
                 transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, ParentKeystore.privateKey()))
             }
             Role.CHILD -> {
                 val s = syncStore.current()
                 val today = LocalDate.now().toEpochDay()
+                val history = repository.weeklyUsage().map { (day, usage) ->
+                    DayUsage(day, usage.map { UsageEntry(it.key, it.value.seconds) })
+                }
                 val snapshot = ChildSnapshot(
                     deviceId = id.deviceId,
                     displayName = id.displayName,
@@ -190,6 +212,7 @@ class SyncManager(
                     usage = repository.usageNow().map { UsageEntry(it.key, it.value.seconds) },
                     extra = repository.extraNow().map { UsageEntry(it.key, it.value.seconds) },
                     requests = s.pendingRequests,
+                    history = history,
                 )
                 transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
             }
@@ -214,22 +237,34 @@ class SyncManager(
         if (incoming != null) {
             settingsStore.update { local -> incoming.copy(pinHash = local.pinHash, pinSalt = local.pinSalt) }
         }
-        // Apply resolutions to our pending requests, idempotently.
+
+        val deviceId = identityStore.current().deviceId
         val s = syncStore.current()
+
+        // Apply resolutions to our pending requests, idempotently.
         val pendingIds = s.pendingRequests.map { it.requestId }.toSet()
-        val fresh = SyncEngine.newResolutions(snapshot, pendingIds, s.appliedResolutionIds)
-        if (fresh.isEmpty()) return
-        for (resolution in fresh) {
+        val freshResolutions = SyncEngine.newResolutions(snapshot, pendingIds, s.appliedResolutionIds)
+        for (resolution in freshResolutions) {
             if (resolution.approved && resolution.grantedMinutes > 0) {
                 val req = s.pendingRequests.firstOrNull { it.requestId == resolution.requestId } ?: continue
                 repository.grantExtraMinutes(req.categoryId, resolution.grantedMinutes.toLong())
             }
         }
-        val resolvedIds = fresh.map { it.requestId }.toSet()
+
+        // Apply bonuses addressed to this device, idempotently.
+        val freshBonuses = SyncEngine.newBonuses(snapshot, deviceId, s.appliedBonusIds)
+        for (bonus in freshBonuses) {
+            if (bonus.minutes > 0) repository.grantExtraMinutes(bonus.categoryId, bonus.minutes.toLong())
+        }
+
+        if (freshResolutions.isEmpty() && freshBonuses.isEmpty()) return
+        val resolvedIds = freshResolutions.map { it.requestId }.toSet()
+        val bonusIds = freshBonuses.map { it.id }.toSet()
         syncStore.update {
             it.copy(
                 pendingRequests = it.pendingRequests.filterNot { r -> r.requestId in resolvedIds },
                 appliedResolutionIds = it.appliedResolutionIds + resolvedIds,
+                appliedBonusIds = it.appliedBonusIds + bonusIds,
             )
         }
     }

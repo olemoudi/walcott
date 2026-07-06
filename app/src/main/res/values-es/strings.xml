@@ -142,4 +142,32 @@
     <string name="request_sent">Petición enviada — esperando que un adulto la apruebe</string>
     <string name="send_request">Enviar petición</string>
     <string name="reason_optional">Motivo (opcional)</string>
+
+    <!-- Fase 3: tiempo ganado, calendario, informe semanal -->
+    <string name="earned_bonus">🎁 +%1$s ganado</string>
+    <string name="nav_earn_title">Tiempo ganado</string>
+    <string name="nav_earn_subtitle">Convierte tiempo de estudio en tiempo de ocio</string>
+    <string name="nav_calendar_title">Calendario escolar</string>
+    <string name="nav_calendar_subtitle">Marca festivos y vacaciones</string>
+    <string name="nav_report_title">Informe semanal</string>
+    <string name="nav_report_subtitle">Uso de los últimos 7 días</string>
+    <string name="earn_add_rule">Añadir regla</string>
+    <string name="earn_empty">Aún no hay reglas. Añade una para premiar el estudio con tiempo de ocio.</string>
+    <string name="earn_rule_summary">%1$d min de %2$s → %3$d min de %4$s</string>
+    <string name="earn_cap">hasta %1$d min/día</string>
+    <string name="earn_source">Categoría de estudio</string>
+    <string name="earn_target">Categoría de recompensa</string>
+    <string name="earn_per">Cada (min)</string>
+    <string name="earn_reward">Gana (min)</string>
+    <string name="earn_daily_cap">Tope diario (min)</string>
+    <string name="action_save">Guardar</string>
+    <string name="action_delete">Eliminar</string>
+    <string name="calendar_holidays">Festivos</string>
+    <string name="calendar_vacations">Vacaciones</string>
+    <string name="calendar_add_holiday">Añadir festivo</string>
+    <string name="calendar_add_vacation">Añadir rango de vacaciones</string>
+    <string name="calendar_empty">Nada configurado. Los findes ya cuentan como días no lectivos.</string>
+    <string name="report_no_data">Aún no hay uso registrado esta semana.</string>
+    <string name="give_bonus">Dar tiempo extra</string>
+    <string name="bonus_granted">Extra añadido</string>
 </resources>

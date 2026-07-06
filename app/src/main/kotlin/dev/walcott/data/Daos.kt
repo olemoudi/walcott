@@ -29,6 +29,9 @@ interface UsageDao {
     @Query("SELECT * FROM usage_counter WHERE epochDay = :epochDay")
     suspend fun getDay(epochDay: Long): List<UsageCounterEntity>
 
+    @Query("SELECT * FROM usage_counter WHERE epochDay BETWEEN :start AND :end")
+    suspend fun getRange(start: Long, end: Long): List<UsageCounterEntity>
+
     /** Atomic add to the (category, day) counter. */
     @Query(
         """

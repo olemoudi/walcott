@@ -34,4 +34,12 @@ object SyncEngine {
         alreadyApplied: Set<String>,
     ): List<Resolution> =
         parent.resolutions.filter { it.requestId in pendingRequestIds && it.requestId !in alreadyApplied }
+
+    /** Bonuses for this device that haven't been applied yet. */
+    fun newBonuses(
+        parent: ParentSnapshot,
+        deviceId: String,
+        alreadyApplied: Set<String>,
+    ): List<Bonus> =
+        parent.bonuses.filter { it.targetDeviceId == deviceId && it.id !in alreadyApplied }
 }

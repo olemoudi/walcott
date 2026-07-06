@@ -2,6 +2,7 @@ package dev.walcott.data
 
 import dev.walcott.rules.CategoryPolicy
 import dev.walcott.rules.DayType
+import dev.walcott.rules.EarnRule
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.rules.SchoolCalendar
 import dev.walcott.rules.TimeWindow
@@ -19,6 +20,22 @@ data class WindowDto(val startMinute: Int, val endMinute: Int) {
     )
 }
 
+/** Persistable earn-time rule (see [EarnRule]). */
+@Serializable
+data class EarnRuleDto(
+    val sourceCategoryId: String,
+    val targetCategoryId: String,
+    val sourceMinutesPerReward: Int,
+    val rewardMinutes: Int,
+    val dailyCapMinutes: Int,
+) {
+    fun toEarnRule() = EarnRule(sourceCategoryId, targetCategoryId, sourceMinutesPerReward, rewardMinutes, dailyCapMinutes)
+}
+
+/** Persistable vacation range (inclusive), as epoch days. */
+@Serializable
+data class VacationDto(val startEpochDay: Long, val endEpochDay: Long)
+
 /**
  * Parent-editable configuration, serialized as JSON in DataStore. Holds everything that is
  * NOT app assignments (those live in Room because there are many and they are reactive).
@@ -35,9 +52,15 @@ data class PolicySettings(
     val bedtime: Map<String, WindowDto> = emptyMap(),
     /** One-off holidays (epochDay). */
     val holidays: Set<Long> = emptySet(),
+    /** Vacation ranges (inclusive). */
+    val vacations: List<VacationDto> = emptyList(),
+    /** Earn-time rules ("X min of A unlocks Y min of B"). */
+    val earnRules: List<EarnRuleDto> = emptyList(),
     val pinHash: String? = null,
     val pinSalt: String? = null,
 ) {
+    fun toEarnRules(): List<EarnRule> = earnRules.map { it.toEarnRule() }
+
     /** Builds the engine's [FamilyConfig] by combining these rules with the assignments. */
     fun toFamilyConfig(assignments: Map<String, String>, essentials: Set<String>): FamilyConfig {
         val categoryIds = budgets.keys + blockedWindows.keys + assignments.values
@@ -57,7 +80,10 @@ data class PolicySettings(
             policies = policies,
             bedtime = bedtime.mapKeys { DayType.valueOf(it.key) }.mapValues { it.value.toTimeWindow() },
             essentialPackages = essentials,
-            calendar = SchoolCalendar(holidays = holidays.map(LocalDate::ofEpochDay).toSet()),
+            calendar = SchoolCalendar(
+                holidays = holidays.map(LocalDate::ofEpochDay).toSet(),
+                vacations = vacations.map { LocalDate.ofEpochDay(it.startEpochDay)..LocalDate.ofEpochDay(it.endEpochDay) },
+            ),
         )
     }
 }

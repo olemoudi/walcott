@@ -142,4 +142,32 @@
     <string name="request_sent">Request sent — waiting for a parent to approve</string>
     <string name="send_request">Send request</string>
     <string name="reason_optional">Reason (optional)</string>
+
+    <!-- Phase 3: earned time, calendar, weekly report -->
+    <string name="earned_bonus">🎁 +%1$s earned</string>
+    <string name="nav_earn_title">Earned time</string>
+    <string name="nav_earn_subtitle">Turn learning time into extra playtime</string>
+    <string name="nav_calendar_title">School calendar</string>
+    <string name="nav_calendar_subtitle">Mark holidays and vacations</string>
+    <string name="nav_report_title">Weekly report</string>
+    <string name="nav_report_subtitle">Usage over the last 7 days</string>
+    <string name="earn_add_rule">Add rule</string>
+    <string name="earn_empty">No earn rules yet. Add one to reward learning with playtime.</string>
+    <string name="earn_rule_summary">%1$d min of %2$s → %3$d min of %4$s</string>
+    <string name="earn_cap">up to %1$d min/day</string>
+    <string name="earn_source">Learning category</string>
+    <string name="earn_target">Reward category</string>
+    <string name="earn_per">Every (min)</string>
+    <string name="earn_reward">Earns (min)</string>
+    <string name="earn_daily_cap">Daily cap (min)</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
+    <string name="calendar_holidays">Holidays</string>
+    <string name="calendar_vacations">Vacations</string>
+    <string name="calendar_add_holiday">Add holiday</string>
+    <string name="calendar_add_vacation">Add vacation range</string>
+    <string name="calendar_empty">Nothing set. Weekends already count as non-school days.</string>
+    <string name="report_no_data">No usage recorded yet this week.</string>
+    <string name="give_bonus">Give bonus time</string>
+    <string name="bonus_granted">Bonus added</string>
 </resources>

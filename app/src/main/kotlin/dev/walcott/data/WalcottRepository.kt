@@ -1,5 +1,6 @@
 package dev.walcott.data
 
+import dev.walcott.rules.EarnEngine
 import dev.walcott.rules.FamilyConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -37,6 +38,16 @@ class WalcottRepository(
     val extraTodayFlow: Flow<Map<String, Duration>> = db.usage().observeExtraDay(today())
         .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
 
+    /** Extra earned today from earn-rules (kept separate so the UI can show the bonus). */
+    val earnedTodayFlow: Flow<Map<String, Duration>> =
+        combine(settingsFlow, usageTodayFlow) { settings, usage ->
+            EarnEngine.computeEarned(settings.toEarnRules(), usage)
+        }
+
+    /** Total extra applied to budgets today: manually granted + earned by use. */
+    val effectiveExtraTodayFlow: Flow<Map<String, Duration>> =
+        combine(extraTodayFlow, earnedTodayFlow) { granted, earned -> sumDurations(granted, earned) }
+
     // --- Snapshots for the service (always recompute "today") ---
 
     suspend fun configNow(): FamilyConfig {
@@ -50,6 +61,26 @@ class WalcottRepository(
 
     suspend fun extraNow(): Map<String, Duration> =
         db.usage().getExtraDay(today()).associate { it.categoryId to Duration.ofSeconds(it.seconds) }
+
+    /** Granted + earned extra, as the enforcement service applies it. */
+    suspend fun effectiveExtraNow(): Map<String, Duration> {
+        val earned = EarnEngine.computeEarned(settingsStore.current().toEarnRules(), usageNow())
+        return sumDurations(extraNow(), earned)
+    }
+
+    /** Usage for the last 7 days: epochDay -> (categoryId -> duration). */
+    suspend fun weeklyUsage(): Map<Long, Map<String, Duration>> {
+        val end = today()
+        return db.usage().getRange(end - 6, end)
+            .groupBy { it.epochDay }
+            .mapValues { (_, rows) -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+    }
+
+    private fun sumDurations(a: Map<String, Duration>, b: Map<String, Duration>): Map<String, Duration> {
+        val out = a.toMutableMap()
+        b.forEach { (k, v) -> out[k] = (out[k] ?: Duration.ZERO) + v }
+        return out
+    }
 
     suspend fun managedPackagesNow(): Set<String> {
         val assignments = db.assignments().getAll().associate { it.packageName to it.categoryId }

@@ -3,20 +3,29 @@ package dev.walcott.ui.parent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -37,6 +46,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val spacing = Tokens.spacing
     val children by viewModel.children.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
+    var bonusTarget by remember { mutableStateOf<ChildSnapshot?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_children_title), onBack)
@@ -67,10 +77,49 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             if (children.isEmpty()) {
                 item { Text(stringResource(R.string.no_children), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
-                items(children, key = { it.deviceId }) { child -> ChildUsageCard(child) }
+                items(children, key = { it.deviceId }) { child ->
+                    ChildUsageCard(child, onGiveBonus = { bonusTarget = child })
+                }
             }
         }
     }
+
+    bonusTarget?.let { child ->
+        BonusDialog(
+            onDismiss = { bonusTarget = null },
+            onGrant = { categoryId, minutes ->
+                viewModel.giveBonus(child.deviceId, categoryId, minutes)
+                bonusTarget = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun BonusDialog(onDismiss: () -> Unit, onGrant: (String, Int) -> Unit) {
+    val spacing = Tokens.spacing
+    var category by remember { mutableStateOf(AppCategory.GAMES) }
+    var minutes by remember { mutableIntStateOf(15) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.give_bonus)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(AppCategory.GAMES, AppCategory.VIDEO, AppCategory.SOCIAL).forEach { c ->
+                        FilterChip(selected = category == c, onClick = { category = c }, label = { Text(stringResource(c.nameRes)) })
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(15, 30, 60).forEach { m ->
+                        FilterChip(selected = minutes == m, onClick = { minutes = m }, label = { Text(stringResource(R.string.extra_minutes, m)) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onGrant(category.id, minutes) }) { Text(stringResource(R.string.action_grant)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 @Composable
@@ -98,7 +147,7 @@ private fun RequestCard(pending: SyncManager.PendingRequest, onApprove: () -> Un
 }
 
 @Composable
-private fun ChildUsageCard(child: ChildSnapshot) {
+private fun ChildUsageCard(child: ChildSnapshot, onGiveBonus: () -> Unit) {
     val spacing = Tokens.spacing
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(spacing.lg)) {
@@ -118,6 +167,10 @@ private fun ChildUsageCard(child: ChildSnapshot) {
                         Text(Duration.ofSeconds(entry.seconds).humanize(), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
+            }
+            Spacer(Modifier.size(spacing.sm))
+            OutlinedButton(onClick = onGiveBonus, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.give_bonus))
             }
         }
     }

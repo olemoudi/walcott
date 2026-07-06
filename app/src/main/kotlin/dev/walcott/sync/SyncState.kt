@@ -19,9 +19,11 @@ data class SyncState(
     val childVersion: Long = 0,
     val pendingRequests: List<ExtraTimeRequest> = emptyList(),
     val appliedResolutionIds: Set<String> = emptySet(),
+    val appliedBonusIds: Set<String> = emptySet(),
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
+    val bonuses: List<Bonus> = emptyList(),
     val children: List<ChildSnapshot> = emptyList(),
 )
 
