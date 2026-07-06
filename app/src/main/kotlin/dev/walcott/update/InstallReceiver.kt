@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.util.Log
 import androidx.core.content.IntentCompat
 
 /**
@@ -14,16 +15,18 @@ import androidx.core.content.IntentCompat
 class InstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION) return
-        when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
-                confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (confirm != null) runCatching { context.startActivity(confirm) }
-            }
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)
+        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+        Log.i(TAG, "install status=$status message=$message")
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
+            confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (confirm != null) runCatching { context.startActivity(confirm) }
         }
     }
 
     companion object {
         const val ACTION = "dev.walcott.update.INSTALL_STATUS"
+        private const val TAG = "WalcottUpdater"
     }
 }

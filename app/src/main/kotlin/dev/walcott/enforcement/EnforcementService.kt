@@ -17,6 +17,7 @@ import dev.walcott.R
 import dev.walcott.WalcottApplication
 import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
+import dev.walcott.update.Updater
 import dev.walcott.rules.Verdict
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -45,6 +46,20 @@ class EnforcementService : LifecycleService() {
         startForegroundCompat()
         lifecycleScope.launch { runLoop() }
         observeWebFilter()
+        scheduleUpdateChecks()
+    }
+
+    /**
+     * Runs the update check from this always-on foreground service, so on the child device the
+     * process is guaranteed to be alive to download and (silently) install a new version.
+     */
+    private fun scheduleUpdateChecks() {
+        lifecycleScope.launch {
+            while (currentCoroutineContext().isActive) {
+                runCatching { Updater(applicationContext).checkAndUpdate() }
+                delay(UPDATE_CHECK_MILLIS)
+            }
+        }
     }
 
     /** Starts/stops the DNS filter VPN as web-filter rules appear or disappear. */
@@ -130,6 +145,7 @@ class EnforcementService : LifecycleService() {
         private const val NOTIF_ID = 1
         private const val TICK_MILLIS = 2000L
         private const val MAX_CREDIT_SECONDS = 15L
+        private const val UPDATE_CHECK_MILLIS = 6 * 60 * 60 * 1000L
 
         fun start(context: Context) {
             val intent = Intent(context, EnforcementService::class.java)

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.app.PendingIntent
 import android.content.pm.PackageInstaller
 import android.os.Build
+import android.util.Log
 import androidx.core.app.PendingIntentCompat
 import dev.walcott.Distribution
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Self-updates from GitHub Releases. On a Device Owner device the install is silent (no
@@ -19,13 +21,28 @@ import java.io.File
  */
 class Updater(private val context: Context) {
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .callTimeout(5, TimeUnit.MINUTES)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
 
     suspend fun checkAndUpdate(): Boolean = withContext(Dispatchers.IO) {
-        val info = fetchInfo() ?: return@withContext false
-        if (!info.isNewerThan(currentVersionCode())) return@withContext false
-        val apk = runCatching { download(info.apk) }.getOrNull() ?: return@withContext false
-        runCatching { install(apk) }.isSuccess
+        Log.i(TAG, "checking for update")
+        val info = runCatching { fetchInfo() }.onFailure { Log.w(TAG, "fetch failed", it) }.getOrNull()
+        if (info == null) {
+            Log.w(TAG, "no version info")
+            return@withContext false
+        }
+        val current = currentVersionCode()
+        Log.i(TAG, "installed=$current latest=${info.versionCode}")
+        if (!info.isNewerThan(current)) return@withContext false
+        val apk = runCatching { download(info.apk) }
+            .onFailure { Log.w(TAG, "download failed", it) }
+            .getOrNull() ?: return@withContext false
+        Log.i(TAG, "downloaded ${apk.length()} bytes, installing")
+        runCatching { install(apk) }
+            .onFailure { Log.w(TAG, "install failed", it) }
+            .isSuccess
     }
 
     private fun currentVersionCode(): Int {
@@ -65,6 +82,16 @@ class Updater(private val context: Context) {
                 context, sessionId, statusIntent, PendingIntent.FLAG_UPDATE_CURRENT, true,
             )!!
             session.commit(pending.intentSender)
+            Log.i(TAG, "session committed (deviceOwner=${isDeviceOwner()})")
         }
+    }
+
+    private fun isDeviceOwner(): Boolean = runCatching {
+        context.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+            .isDeviceOwnerApp(context.packageName)
+    }.getOrDefault(false)
+
+    companion object {
+        private const val TAG = "WalcottUpdater"
     }
 }
