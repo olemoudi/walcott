@@ -8,6 +8,7 @@ import dev.walcott.data.WalcottRepository
 import dev.walcott.sync.IdentityStore
 import dev.walcott.sync.SyncManager
 import dev.walcott.sync.SyncStore
+import dev.walcott.update.UpdateWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 
@@ -39,5 +40,9 @@ class WalcottApplication : Application() {
             scope = appScope,
         )
         syncManager.start()
+
+        // Keep the app up to date: a periodic check plus one now (covers app launch).
+        UpdateWorker.schedule(this)
+        UpdateWorker.runNow(this)
     }
 }

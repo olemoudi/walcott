@@ -198,9 +198,19 @@ These are standing rules for this repository. Follow them without being re-asked
 
 ### Distribution & releases
 - GitHub remote: `https://github.com/olemoudi/walcott.git`.
-- This is a sideloaded, personal/family app (not Play Store). The **release** build is signed with the debug key on purpose (alpha only) so anyone can build and install it without secrets — see `app/build.gradle.kts`.
-- Releases are published by GitHub Actions on pushing a tag matching `v*`. The workflow builds `assembleRelease` and attaches the APK as a release asset named **`walcott-alpha.apk`** (stable name).
-- The stable download URL is therefore `https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk`. The in-app QR points here; keep the asset name stable so old QRs keep working.
+- This is a sideloaded, personal/family app (not Play Store).
+- **Release signing uses a stable, committed keystore** (`walcott-release.jks`, password `walcott`) so in-place auto-updates chain across releases. This is deliberate for an alpha family app with no secrets; CI can override with `SIGNING_STORE_FILE`/`SIGNING_STORE_PASSWORD`/`SIGNING_KEY_ALIAS`/`SIGNING_KEY_PASSWORD` env if you'd rather keep the key in a secret. **Never re-sign with a different key** — it breaks the update chain and requires a reinstall.
+- Releases are published by GitHub Actions on pushing a tag matching `v*`. The workflow builds `assembleRelease` and attaches two assets with **stable names**: `walcott-alpha.apk` and `version.json`.
+- Stable URLs: APK at `…/releases/latest/download/walcott-alpha.apk` (in-app QR points here); `version.json` at `…/releases/latest/download/version.json`. Keep the names stable so old QRs and installed apps keep working.
+- **Bumping a version:** raise `versionCode` (and `versionName`) in `app/build.gradle.kts`, then push a `v*` tag. CI derives `version.json` from `versionCode`.
+
+### Auto-update
+- The app self-updates from GitHub Releases: `UpdateWorker` (periodic + on launch/boot) runs `Updater`, which reads `version.json`, compares `versionCode`, downloads the APK, and installs via `PackageInstaller`.
+- On the **child** (Device Owner) the install is **silent and non-skippable**. On the **parent** (not owner) the system shows the install confirmation. Don't gate the child update behind any UI.
+
+### Data & config migrations (must stay transparent)
+- **Config (DataStore/JSON)** is forward-compatible by construction: new fields get defaults and decoders use `ignoreUnknownKeys`, so additive changes need no migration. For a *non-additive* change (rename/repurpose a field), migrate old JSON in the store's `decode`/read path — never break existing installs.
+- **Room** uses `exportSchema = true` (schemas in `app/schemas`). For every `version` bump add a `Migration` to `WalcottDatabase.MIGRATIONS`; **do not** enable destructive migration (it would wipe the child's data on update).
 
 ### Child onboarding via QR
 - The parent app (parent mode) shows a QR encoding the download URL above. The child opens their camera, scans it, downloads the APK, and sideloads it. Do not build a QR *scanner* into the child app — the system camera handles scanning.

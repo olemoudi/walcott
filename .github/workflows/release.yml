@@ -31,9 +31,19 @@ jobs:
       - name: Rename APK to a stable asset name
         run: cp app/build/outputs/apk/release/app-release.apk walcott-alpha.apk
 
+      - name: Build version.json (drives in-app auto-update)
+        run: |
+          VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          printf '{"versionCode": %s, "versionName": "%s", "apk": "%s"}\n' \
+            "$VC" "$VN" "https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk" > version.json
+          cat version.json
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: walcott-alpha.apk
+          files: |
+            walcott-alpha.apk
+            version.json
           fail_on_unmatched_files: true
           generate_release_notes: true

@@ -18,12 +18,21 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        // Stable key so in-place auto-updates chain across releases. Committed on purpose
+        // (alpha family app, no secrets). CI can override via SIGNING_* env if a secret is set.
+        create("release") {
+            storeFile = file(System.getenv("SIGNING_STORE_FILE") ?: "../walcott-release.jks")
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: "walcott"
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "walcott"
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: "walcott"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Alpha only: sign the release with the debug key so anyone can build and
-            // sideload it without managing secrets. This is NOT for Play Store distribution.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -38,11 +47,16 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
         unitTests.all { it.useJUnitPlatform() }
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -71,6 +85,7 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.zxing.embedded)
     implementation(libs.okhttp)
+    implementation(libs.work.runtime)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
