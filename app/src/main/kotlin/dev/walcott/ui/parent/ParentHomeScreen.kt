@@ -87,6 +87,7 @@ fun ParentHomeScreen(
                 NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
             }
             NavCard(Icons.Outlined.InsertChart, stringResource(R.string.nav_report_title), stringResource(R.string.nav_report_subtitle), onOpenReport)
+            AppUpdateCard(deviceOwner)
             if (childDevice) {
                 NavCard(
                     Icons.Outlined.SwapHoriz,

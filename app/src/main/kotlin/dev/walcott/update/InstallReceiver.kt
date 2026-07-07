@@ -9,8 +9,11 @@ import androidx.core.content.IntentCompat
 
 /**
  * Receives PackageInstaller status callbacks. On a Device Owner device the install is silent
- * and lands as STATUS_SUCCESS. On a non-owner device (the parent) the system asks for
+ * and lands as STATUS_SUCCESS. On a non-owner device (the parent) the system may ask for
  * confirmation, which arrives here as STATUS_PENDING_USER_ACTION with an intent to launch.
+ * Launching directly only works while the app is foregrounded (background activity starts
+ * are blocked since Android 10), so we also post a tappable notification — that's what makes
+ * the parent flow reliable when the check ran in the background.
  */
 class InstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -18,10 +21,23 @@ class InstallReceiver : BroadcastReceiver() {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
         Log.i(TAG, "install status=$status message=$message")
-        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
-            confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (confirm != null) runCatching { context.startActivity(confirm) }
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
+                UpdateCenter.report(UpdateUiState.PendingConfirmation(target = null))
+                UpdateNotifications.notifyConfirmationNeeded(context, Intent(confirm))
+                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                runCatching { context.startActivity(confirm) }
+            }
+            PackageInstaller.STATUS_SUCCESS -> {
+                // Self-update: the process is normally restarted before this runs; tidy up if not.
+                UpdateNotifications.cancel(context)
+                UpdateCenter.report(UpdateUiState.Idle)
+            }
+            else -> {
+                UpdateNotifications.cancel(context)
+                UpdateCenter.report(UpdateUiState.Failed("install status $status"))
+            }
         }
     }
 
