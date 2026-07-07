@@ -59,6 +59,33 @@ class WalcottViewModel(
     fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }
     fun resetDeviceMode() = viewModelScope.launch { sync.resetDeviceMode() }
 
+    // --- Children registry (parent mode) ---
+
+    /** Registers a child and returns its id so the UI can navigate to the detail right away. */
+    fun addChild(name: String): String {
+        val childId = java.util.UUID.randomUUID().toString()
+        viewModelScope.launch {
+            repository.updateSettings { it.copy(children = it.children + dev.walcott.data.ChildEntry(childId, name)) }
+        }
+        return childId
+    }
+
+    fun renameChild(childId: String, name: String) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            s.copy(children = s.children.map { if (it.childId == childId) it.copy(name = name) else it })
+        }
+    }
+
+    fun removeChild(childId: String) = viewModelScope.launch {
+        repository.updateSettings { s -> s.copy(children = s.children.filterNot { it.childId == childId }) }
+    }
+
+    fun setChildOverrides(childId: String, overrides: dev.walcott.data.ChildOverrides) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            s.copy(children = s.children.map { if (it.childId == childId) it.copy(overrides = overrides) else it })
+        }
+    }
+
     fun requestExtraTimeRemote(categoryId: String, minutes: Int, reason: String) =
         viewModelScope.launch { sync.requestExtraTime(categoryId, minutes, reason) }
 

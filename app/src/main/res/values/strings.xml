@@ -185,4 +185,37 @@
     <string name="webfilter_rule_allow_only">%1$s · only from %2$s</string>
     <string name="webfilter_rule_block_in">%1$s · blocked in %2$s</string>
     <string name="webfilter_dns_note">DNS-level blocking. Apps using their own encrypted DNS (some browsers, the YouTube app) may bypass it.</string>
+
+    <!-- Device mode selection -->
+    <string name="mode_select_title">Who uses this phone?</string>
+    <string name="mode_select_subtitle">Choose how Walcott should work on this device.</string>
+    <string name="mode_parent_card_title">This is a parent\'s phone</string>
+    <string name="mode_parent_card_desc">Create the family, set the rules and follow usage</string>
+    <string name="mode_child_card_title">This is a child\'s phone</string>
+    <string name="mode_child_card_desc">Follows the family rules; joins by scanning a QR code</string>
+    <string name="family_name_label">Family name</string>
+    <string name="family_default_name">My family</string>
+    <string name="action_continue">Continue</string>
+    <string name="badge_parent_mode">Parent mode</string>
+    <string name="badge_child_mode">Child mode</string>
+
+    <!-- Families (parent home) -->
+    <string name="families_title">Families</string>
+    <plurals name="family_children_count">
+        <item quantity="one">%d child</item>
+        <item quantity="other">%d children</item>
+    </plurals>
+    <plurals name="family_pending_requests">
+        <item quantity="one">%d pending request</item>
+        <item quantity="other">%d pending requests</item>
+    </plurals>
+    <string name="children_section">Children</string>
+    <string name="children_empty">No children yet. Add one to generate their enrollment code.</string>
+    <string name="add_child">Add child</string>
+    <string name="child_name_label">Name</string>
+    <string name="device_not_linked">Not linked yet</string>
+    <string name="usage_today_summary">%1$s of screen time today</string>
+    <string name="legacy_devices_header">Other linked devices</string>
+    <string name="legacy_device_hint">Linked with an older app version — no per-child settings</string>
+    <string name="device_settings_title">Device settings</string>
 </resources>

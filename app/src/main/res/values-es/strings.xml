@@ -185,4 +185,37 @@
     <string name="webfilter_rule_allow_only">%1$s · solo desde %2$s</string>
     <string name="webfilter_rule_block_in">%1$s · bloqueado en %2$s</string>
     <string name="webfilter_dns_note">Bloqueo a nivel DNS. Apps con su propio DNS cifrado (algunos navegadores, la app de YouTube) pueden saltárselo.</string>
+
+    <!-- Selección de modo del dispositivo -->
+    <string name="mode_select_title">¿Quién usa este teléfono?</string>
+    <string name="mode_select_subtitle">Elige cómo debe funcionar Walcott en este dispositivo.</string>
+    <string name="mode_parent_card_title">Este es el teléfono de un padre</string>
+    <string name="mode_parent_card_desc">Crea la familia, define las reglas y sigue el uso</string>
+    <string name="mode_child_card_title">Este es el teléfono de un hijo</string>
+    <string name="mode_child_card_desc">Sigue las reglas de la familia; se une escaneando un código QR</string>
+    <string name="family_name_label">Nombre de la familia</string>
+    <string name="family_default_name">Mi familia</string>
+    <string name="action_continue">Continuar</string>
+    <string name="badge_parent_mode">Modo padre</string>
+    <string name="badge_child_mode">Modo hijo</string>
+
+    <!-- Familias (home del padre) -->
+    <string name="families_title">Familias</string>
+    <plurals name="family_children_count">
+        <item quantity="one">%d hijo</item>
+        <item quantity="other">%d hijos</item>
+    </plurals>
+    <plurals name="family_pending_requests">
+        <item quantity="one">%d petición pendiente</item>
+        <item quantity="other">%d peticiones pendientes</item>
+    </plurals>
+    <string name="children_section">Hijos</string>
+    <string name="children_empty">Aún no hay hijos. Añade uno para generar su código de enrolamiento.</string>
+    <string name="add_child">Añadir hijo</string>
+    <string name="child_name_label">Nombre</string>
+    <string name="device_not_linked">Aún sin vincular</string>
+    <string name="usage_today_summary">%1$s de pantalla hoy</string>
+    <string name="legacy_devices_header">Otros dispositivos vinculados</string>
+    <string name="legacy_device_hint">Vinculado con una versión antigua — sin ajustes por hijo</string>
+    <string name="device_settings_title">Ajustes del dispositivo</string>
 </resources>

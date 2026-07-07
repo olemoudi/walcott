@@ -18,36 +18,64 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.walcott.R
+import dev.walcott.sync.DeviceMode
 import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.ui.parent.AppAssignScreen
 import dev.walcott.ui.parent.BudgetsScreen
 import dev.walcott.ui.parent.CalendarScreen
-import dev.walcott.ui.parent.ChildSetupScreen
 import dev.walcott.ui.parent.ChildrenScreen
 import dev.walcott.ui.parent.EarnRulesScreen
+import dev.walcott.ui.parent.FamiliesScreen
 import dev.walcott.ui.parent.ParentHomeScreen
 import dev.walcott.ui.parent.PinGateScreen
 import dev.walcott.ui.parent.WebFilterScreen
 import dev.walcott.ui.parent.WeeklyReportScreen
 
 private enum class Screen {
-    CHILD, GATE, PARENT_HOME, APPS, BUDGETS, CHILD_SETUP, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER
+    MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY,
+    APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER,
 }
 
 @Composable
 fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
-    var screen by remember { mutableStateOf(Screen.CHILD) }
+    val bootMode by viewModel.bootMode.collectAsStateWithLifecycle()
+    val identity by viewModel.identity.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+
+    // Hold rendering until the persisted identity loads, so existing installs
+    // don't flash the mode selector.
+    val loadedMode = bootMode
+    if (loadedMode == null) {
+        Surface(Modifier.fillMaxSize()) {}
+        return
+    }
+
+    var screen by remember {
+        mutableStateOf(
+            when (loadedMode) {
+                DeviceMode.PARENT -> Screen.FAMILIES
+                DeviceMode.CHILD -> Screen.CHILD
+                DeviceMode.UNSET -> Screen.MODE_SELECT
+            },
+        )
+    }
+    val parentMode = identity.effectiveMode == DeviceMode.PARENT
 
     fun back() {
         screen = when (screen) {
-            Screen.APPS, Screen.BUDGETS, Screen.CHILD_SETUP, Screen.CHILDREN,
+            Screen.APPS, Screen.BUDGETS, Screen.CHILDREN,
             Screen.EARN, Screen.CALENDAR, Screen.REPORT, Screen.WEBFILTER,
-            -> Screen.PARENT_HOME
-            else -> Screen.CHILD
+            -> Screen.FAMILY
+            Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
+            else -> screen
         }
     }
 
-    BackHandler(enabled = screen != Screen.CHILD) { back() }
+    val isHome = screen == Screen.MODE_SELECT || screen == Screen.CHILD || screen == Screen.FAMILIES
+    BackHandler(enabled = !isHome) { back() }
 
     Surface(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().systemBarsPadding()) {
@@ -62,32 +90,46 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                 label = "nav",
             ) { current ->
                 when (current) {
+                    Screen.MODE_SELECT -> ModeSelectScreen(
+                        viewModel,
+                        onParentCreated = { screen = Screen.GATE },
+                        onChildSelected = { screen = Screen.CHILD },
+                    )
                     Screen.CHILD -> ChildStatusScreen(viewModel, onOpenParent = { screen = Screen.GATE })
                     Screen.GATE -> PinGateScreen(
                         viewModel,
-                        onUnlocked = { screen = Screen.PARENT_HOME },
-                        onBack = { screen = Screen.CHILD },
+                        onUnlocked = { screen = if (parentMode) Screen.FAMILIES else Screen.FAMILY },
+                        onBack = ::back,
                     )
-                    Screen.PARENT_HOME -> ParentHomeScreen(
+                    Screen.FAMILIES -> FamiliesScreen(
+                        viewModel,
+                        onOpenFamily = { screen = Screen.FAMILY },
+                        onOpenChild = { /* child detail arrives in the next step */ },
+                    )
+                    Screen.FAMILY -> ParentHomeScreen(
+                        title = if (parentMode) {
+                            settings.familyName.ifBlank { stringResource(R.string.family_default_name) }
+                        } else {
+                            stringResource(R.string.device_settings_title)
+                        },
                         deviceOwner = deviceOwner,
+                        childDevice = !parentMode,
                         onOpenApps = { screen = Screen.APPS },
                         onOpenBudgets = { screen = Screen.BUDGETS },
                         onOpenChildren = { screen = Screen.CHILDREN },
-                        onOpenChildSetup = { screen = Screen.CHILD_SETUP },
                         onOpenEarn = { screen = Screen.EARN },
                         onOpenCalendar = { screen = Screen.CALENDAR },
                         onOpenReport = { screen = Screen.REPORT },
                         onOpenWebFilter = { screen = Screen.WEBFILTER },
-                        onBack = { screen = Screen.CHILD },
+                        onBack = ::back,
                     )
-                    Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.CHILD_SETUP -> ChildSetupScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.CALENDAR -> CalendarScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
-                    Screen.WEBFILTER -> WebFilterScreen(viewModel, onBack = { screen = Screen.PARENT_HOME })
+                    Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.CALENDAR -> CalendarScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.WEBFILTER -> WebFilterScreen(viewModel, onBack = { screen = Screen.FAMILY })
                 }
             }
         }

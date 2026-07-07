@@ -23,7 +23,6 @@ import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InsertChart
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,13 +38,18 @@ import dev.walcott.R
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
 
+/**
+ * Rules hub. In parent mode it is the family's settings (title = family name); in child
+ * mode it sits behind the PIN gate as this device's local settings (fallback path).
+ */
 @Composable
 fun ParentHomeScreen(
+    title: String,
     deviceOwner: Boolean,
+    childDevice: Boolean,
     onOpenApps: () -> Unit,
     onOpenBudgets: () -> Unit,
     onOpenChildren: () -> Unit,
-    onOpenChildSetup: () -> Unit,
     onOpenEarn: () -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenReport: () -> Unit,
@@ -54,22 +58,26 @@ fun ParentHomeScreen(
 ) {
     val spacing = Tokens.spacing
     Column(Modifier.fillMaxSize()) {
-        WalcottTopBar(stringResource(R.string.parent_mode), onBack)
+        WalcottTopBar(title, onBack)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = spacing.screen)
                 .padding(bottom = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            ProtectionBanner(deviceOwner)
-            Spacer(Modifier.height(spacing.xs))
+            // Device-owner status describes THIS device's enforcement — child devices only.
+            if (childDevice) {
+                ProtectionBanner(deviceOwner)
+                Spacer(Modifier.height(spacing.xs))
+            }
             NavCard(Icons.Outlined.Apps, stringResource(R.string.nav_apps_title), stringResource(R.string.nav_apps_subtitle), onOpenApps)
             NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets)
             NavCard(Icons.Outlined.Language, stringResource(R.string.nav_webfilter_title), stringResource(R.string.nav_webfilter_subtitle), onOpenWebFilter)
             NavCard(Icons.Outlined.EmojiEvents, stringResource(R.string.nav_earn_title), stringResource(R.string.nav_earn_subtitle), onOpenEarn)
             NavCard(Icons.Outlined.CalendarMonth, stringResource(R.string.nav_calendar_title), stringResource(R.string.nav_calendar_subtitle), onOpenCalendar)
-            NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
+            if (!childDevice) {
+                NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
+            }
             NavCard(Icons.Outlined.InsertChart, stringResource(R.string.nav_report_title), stringResource(R.string.nav_report_subtitle), onOpenReport)
-            NavCard(Icons.Outlined.PhoneAndroid, stringResource(R.string.nav_child_title), stringResource(R.string.nav_child_subtitle), onOpenChildSetup)
         }
     }
 }
