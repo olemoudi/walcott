@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
+import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
@@ -55,6 +56,7 @@ import java.time.Duration
  */
 @Composable
 fun ParentHomeScreen(
+    viewModel: WalcottViewModel,
     title: String,
     deviceOwner: Boolean,
     childDevice: Boolean,
@@ -96,6 +98,9 @@ fun ParentHomeScreen(
                 NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
             }
             NavCard(Icons.Outlined.InsertChart, stringResource(R.string.nav_report_title), stringResource(R.string.nav_report_subtitle), onOpenReport)
+            if (!childDevice) {
+                AppLockCard(viewModel)
+            }
             AppUpdateCard(deviceOwner)
             if (childDevice && installsBlocked) {
                 val remainingMs = installExemptionUntil - System.currentTimeMillis()

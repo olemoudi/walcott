@@ -109,6 +109,15 @@ class SyncManager(
         identityStore.save(identityStore.current().copy(mode = mode))
     }
 
+    /** Toggle requiring the parent PIN/biometrics on app open (parent mode). */
+    suspend fun setAppLock(enabled: Boolean) {
+        identityStore.save(identityStore.current().copy(appLock = enabled))
+    }
+
+    suspend fun setAppLockBiometric(enabled: Boolean) {
+        identityStore.save(identityStore.current().copy(appLockBiometric = enabled))
+    }
+
     /** Unlink from the family and forget the mode choice; local policy and usage stay. */
     suspend fun resetDeviceMode() {
         transport?.close()

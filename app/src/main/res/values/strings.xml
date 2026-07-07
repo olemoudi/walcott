@@ -287,4 +287,15 @@
     <string name="ask_summary_app">Wants to install: %1$s</string>
     <string name="ask_summary_other">Asks for: %1$s</string>
     <string name="ask_approve_hint">Approving opens a 15-minute install window on their phone</string>
+
+    <!-- Parent app lock -->
+    <string name="app_lock_setting_title">Lock this app</string>
+    <string name="app_lock_setting_desc">Ask for your PIN every time the app opens, so a child can\'t change settings if you hand them your phone</string>
+    <string name="app_lock_biometric_toggle">Also allow biometric unlock</string>
+    <string name="app_lock_title">Walcott is locked</string>
+    <string name="app_lock_subtitle">Enter your PIN to continue</string>
+    <string name="app_lock_use_biometrics">Unlock with biometrics</string>
+    <string name="app_lock_biometric_title">Unlock Walcott</string>
+    <string name="app_lock_biometric_subtitle">Confirm it\'s you to open parent mode</string>
+    <string name="app_lock_use_pin">Use PIN</string>
 </resources>

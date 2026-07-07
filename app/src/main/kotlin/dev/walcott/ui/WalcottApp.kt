@@ -13,12 +13,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.enforcement.DeviceRestrictions
@@ -68,6 +73,31 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
     }
     var childDetailId by remember { mutableStateOf<String?>(null) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
+
+    // Parent app lock: gate the whole app behind the PIN/biometrics on open and re-lock
+    // when it leaves the foreground. Toggling the setting on mid-session must not lock
+    // the current session, so an unlocked state is assumed whenever the lock is off.
+    val appLockOn = parentMode && identity.appLock
+    var unlocked by remember { mutableStateOf(false) }
+    LaunchedEffect(appLockOn) { if (!appLockOn) unlocked = true }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // Re-key on appLockOn so the observer captures the current value, not the one from
+    // the composition where it was first registered.
+    DisposableEffect(lifecycleOwner, appLockOn) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && appLockOn) unlocked = false
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    if (appLockOn && !unlocked) {
+        Surface(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().systemBarsPadding()) {
+                AppLockScreen(viewModel, onUnlocked = { unlocked = true })
+            }
+        }
+        return
+    }
 
     fun back() {
         screen = when (screen) {
@@ -119,6 +149,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                         ChildDetailScreen(viewModel, childId, onBack = ::back)
                     }
                     Screen.FAMILY -> ParentHomeScreen(
+                        viewModel = viewModel,
                         title = if (parentMode) {
                             settings.familyName.ifBlank { stringResource(R.string.family_default_name) }
                         } else {

@@ -67,6 +67,8 @@ class WalcottViewModel(
     suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)
     fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }
     fun resetDeviceMode() = viewModelScope.launch { sync.resetDeviceMode() }
+    fun setAppLock(enabled: Boolean) = viewModelScope.launch { sync.setAppLock(enabled) }
+    fun setAppLockBiometric(enabled: Boolean) = viewModelScope.launch { sync.setAppLockBiometric(enabled) }
 
     // --- Children registry (parent mode) ---
 

@@ -23,6 +23,10 @@ data class FamilyIdentity(
     val familyKeyB64: String = "",
     val parentPublicKeyB64: String = "",
     val ntfyServer: String = "https://ntfy.sh",
+    /** Parent mode: require the PIN (or biometrics) on every app open / regain of focus. */
+    val appLock: Boolean = false,
+    /** Whether device biometrics may be used to satisfy [appLock]. */
+    val appLockBiometric: Boolean = false,
 ) {
     val isPaired: Boolean get() = role != Role.UNPAIRED
 

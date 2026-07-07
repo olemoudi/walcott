@@ -287,4 +287,15 @@
     <string name="ask_summary_app">Quiere instalar: %1$s</string>
     <string name="ask_summary_other">Pide: %1$s</string>
     <string name="ask_approve_hint">Al aprobar se abre una ventana de instalación de 15 minutos en su móvil</string>
+
+    <!-- Bloqueo de la app del padre -->
+    <string name="app_lock_setting_title">Bloquear esta app</string>
+    <string name="app_lock_setting_desc">Pide tu PIN cada vez que se abre la app, para que un hijo no pueda tocar ajustes si le dejas tu móvil</string>
+    <string name="app_lock_biometric_toggle">Permitir también desbloqueo biométrico</string>
+    <string name="app_lock_title">Walcott está bloqueado</string>
+    <string name="app_lock_subtitle">Introduce tu PIN para continuar</string>
+    <string name="app_lock_use_biometrics">Desbloquear con biometría</string>
+    <string name="app_lock_biometric_title">Desbloquear Walcott</string>
+    <string name="app_lock_biometric_subtitle">Confirma que eres tú para abrir el modo padre</string>
+    <string name="app_lock_use_pin">Usar PIN</string>
 </resources>
