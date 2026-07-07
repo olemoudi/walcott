@@ -83,7 +83,7 @@ fun ChildStatusScreen(
     var pendingRemote by remember { mutableStateOf<CategoryStatusUi?>(null) }
 
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { text -> scope.launch { viewModel.pairAsChild(text, "") } }
+        result.contents?.let { text -> scope.launch { viewModel.pairAsChild(text) } }
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {

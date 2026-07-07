@@ -36,6 +36,10 @@ class SyncManager(
     val identity: StateFlow<FamilyIdentity> =
         identityStore.identity.stateIn(scope, SharingStarted.Eagerly, FamilyIdentity())
 
+    /** Device mode for boot routing: null until the first real DataStore read lands. */
+    val bootMode: StateFlow<DeviceMode?> =
+        identityStore.identity.map { it.effectiveMode }.stateIn(scope, SharingStarted.Eagerly, null)
+
     val state: StateFlow<SyncState> =
         syncStore.state.stateIn(scope, SharingStarted.Eagerly, SyncState())
 
@@ -84,40 +88,60 @@ class SyncManager(
         }
     }
 
-    // --- Pairing ---
+    // --- Mode & pairing ---
 
-    /** Make this device the parent: generate identity + Keystore key. Returns the QR text. */
-    suspend fun becomeParent(displayName: String): String {
+    /** Persist the user-chosen device mode (mode select screen). */
+    suspend fun setMode(mode: DeviceMode) {
+        identityStore.save(identityStore.current().copy(mode = mode))
+    }
+
+    /** Unlink from the family and forget the mode choice; local policy and usage stay. */
+    suspend fun resetDeviceMode() {
+        transport?.close()
+        transport = null
+        identityStore.save(FamilyIdentity())
+    }
+
+    /** Make this device the parent of a new family: generate identity + Keystore key. */
+    suspend fun becomeParent(familyName: String) {
         ParentKeystore.ensureKeyPair()
         val familyKey = FamilyCrypto.generateFamilyKey()
         val topic = "walcott-" + FamilyCrypto.toB64(UUID.randomUUID().toString().toByteArray()).take(24)
         val identity = FamilyIdentity(
             role = Role.PARENT,
+            mode = DeviceMode.PARENT,
             deviceId = "parent",
-            displayName = displayName,
             topic = topic,
             familyKeyB64 = FamilyCrypto.toB64(familyKey.encoded),
             parentPublicKeyB64 = FamilyCrypto.toB64(ParentKeystore.publicKey().encoded),
         )
         identityStore.save(identity)
+        settingsStore.update { it.copy(familyName = familyName) }
         connect(identity)
         publishSelf()
-        return PairingPayload(topic, identity.familyKeyB64, identity.parentPublicKeyB64, identity.ntfyServer).encode()
     }
 
-    /** Pair this device as a child from the parent's scanned QR text. Returns success. */
-    suspend fun pairAsChild(pairingText: String, displayName: String): Boolean {
+    /** Pair this device as a child from a scanned per-child (or legacy) QR. Returns success. */
+    suspend fun pairAsChild(pairingText: String): Boolean {
         val payload = PairingPayload.decode(pairingText) ?: return false
+        val current = identityStore.current()
         val identity = FamilyIdentity(
             role = Role.CHILD,
-            deviceId = UUID.randomUUID().toString(),
-            displayName = displayName.ifBlank { Build.MODEL },
+            mode = DeviceMode.CHILD,
+            // Keep the deviceId across re-pairs so the parent doesn't see ghost duplicates.
+            deviceId = current.deviceId.ifBlank { UUID.randomUUID().toString() },
+            displayName = payload.childName.ifBlank { Build.MODEL },
+            childId = payload.childId,
             topic = payload.topic,
             familyKeyB64 = payload.familyKeyB64,
             parentPublicKeyB64 = payload.parentPublicKeyB64,
             ntfyServer = payload.ntfyServer,
         )
         identityStore.save(identity)
+        // Show the family name right away; the first parent snapshot confirms it.
+        if (payload.familyName.isNotBlank()) {
+            settingsStore.update { it.copy(familyName = payload.familyName) }
+        }
         connect(identity)
         publishSelf()
         return true
@@ -189,7 +213,9 @@ class SyncManager(
         when (id.role) {
             Role.PARENT -> {
                 val state = syncStore.current()
-                val settings = settingsStore.current().copy(pinHash = null, pinSalt = null)
+                // The PIN hash/salt travel with the policy so the parent's PIN also guards
+                // enrolled child devices (gate + leaving child mode).
+                val settings = settingsStore.current()
                 val snapshot = ParentSnapshot(
                     version = state.parentVersion,
                     policyJson = json.encodeToString(PolicySettings.serializer(), settings),
@@ -207,6 +233,7 @@ class SyncManager(
                 val snapshot = ChildSnapshot(
                     deviceId = id.deviceId,
                     displayName = id.displayName,
+                    childId = id.childId,
                     version = s.childVersion,
                     epochDay = today,
                     usage = repository.usageNow().map { UsageEntry(it.key, it.value.seconds) },
@@ -232,13 +259,21 @@ class SyncManager(
     }
 
     private suspend fun applyParentSnapshot(snapshot: ParentSnapshot) {
-        // Adopt the parent's rules (keep our own local PIN).
+        val id = identityStore.current()
+        // Adopt the parent's rules, flattened to this child's slice. Prefer the parent's
+        // PIN; keep the local one while none has synced yet (old parent, or first snapshot
+        // not arrived — until then a locally created PIN still guards the gate).
         val incoming = runCatching { json.decodeFromString(PolicySettings.serializer(), snapshot.policyJson) }.getOrNull()
         if (incoming != null) {
-            settingsStore.update { local -> incoming.copy(pinHash = local.pinHash, pinSalt = local.pinSalt) }
+            settingsStore.update { local ->
+                incoming.resolveForChild(id.childId).copy(
+                    pinHash = incoming.pinHash ?: local.pinHash,
+                    pinSalt = incoming.pinSalt ?: local.pinSalt,
+                )
+            }
         }
 
-        val deviceId = identityStore.current().deviceId
+        val deviceId = id.deviceId
         val s = syncStore.current()
 
         // Apply resolutions to our pending requests, idempotently.

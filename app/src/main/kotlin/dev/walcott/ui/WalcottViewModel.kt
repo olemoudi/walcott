@@ -12,6 +12,7 @@ import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
 import dev.walcott.rules.categoryStatus
 import dev.walcott.sync.ChildSnapshot
+import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
 import dev.walcott.sync.SyncManager
 import kotlinx.coroutines.Dispatchers
@@ -48,13 +49,15 @@ class WalcottViewModel(
 ) : ViewModel() {
 
     val identity: StateFlow<FamilyIdentity> = sync.identity
+    val bootMode: StateFlow<DeviceMode?> = sync.bootMode
     val children: StateFlow<List<ChildSnapshot>> =
         sync.state.map { it.children }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val pendingRequests: StateFlow<List<SyncManager.PendingRequest>> = sync.pendingRequests
 
-    suspend fun becomeParent(displayName: String): String = sync.becomeParent(displayName)
-    suspend fun pairAsChild(pairingText: String, displayName: String): Boolean =
-        sync.pairAsChild(pairingText, displayName)
+    suspend fun becomeParent(familyName: String) = sync.becomeParent(familyName)
+    suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)
+    fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }
+    fun resetDeviceMode() = viewModelScope.launch { sync.resetDeviceMode() }
 
     fun requestExtraTimeRemote(categoryId: String, minutes: Int, reason: String) =
         viewModelScope.launch { sync.requestExtraTime(categoryId, minutes, reason) }
