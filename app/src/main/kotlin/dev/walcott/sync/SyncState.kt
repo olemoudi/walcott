@@ -25,6 +25,10 @@ data class SyncState(
     val resolutions: List<Resolution> = emptyList(),
     val bonuses: List<Bonus> = emptyList(),
     val children: List<ChildSnapshot> = emptyList(),
+    /** deviceId -> wall-clock ms of the last message received from that child. */
+    val lastSeen: Map<String, Long> = emptyMap(),
+    /** deviceId -> the lastSeen value we already alerted about (one alert per outage). */
+    val staleNotifiedLastSeen: Map<String, Long> = emptyMap(),
 )
 
 private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_sync")

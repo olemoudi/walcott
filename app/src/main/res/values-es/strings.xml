@@ -247,4 +247,27 @@
     <string name="perm_install_fix">Permitir</string>
     <string name="perm_notifications_missing">Las notificaciones están desactivadas: no verás los avisos de actualización</string>
     <string name="perm_notifications_fix">Activar</string>
+
+    <!-- Protección del dispositivo (restricciones de usuario) -->
+    <string name="nav_protection_title">Protección del dispositivo</string>
+    <string name="nav_protection_subtitle">Impide que el hijo cambie ajustes críticos</string>
+    <string name="protection_note">Estos bloqueos se aplican en móviles de hijo con protección total (Device Owner). Mientras Walcott esté en alfa, los bloqueos que podrían dejar un dispositivo irrecuperable (restablecimiento de fábrica, modo seguro, APKs, depuración USB) no se ofrecen a propósito — el aviso de check-in cubre las manipulaciones.</string>
+    <string name="restriction_vpn_title">Proteger el filtro web</string>
+    <string name="restriction_vpn_desc">Los ajustes de VPN quedan bloqueados: el filtro DNS no se puede quitar</string>
+    <string name="restriction_location_title">Ubicación siempre activa</string>
+    <string name="restriction_location_desc">La ubicación queda encendida y sus ajustes bloqueados</string>
+    <string name="restriction_datetime_title">Bloquear fecha y hora</string>
+    <string name="restriction_datetime_desc">Reloj automático: no se pueden burlar los límites cambiando la hora</string>
+    <string name="restriction_biometrics_title">Desactivar desbloqueo biométrico</string>
+    <string name="restriction_biometrics_desc">Huella y cara dejan de desbloquear; solo funciona el PIN o patrón</string>
+    <string name="restriction_add_user_title">Bloquear usuarios nuevos</string>
+    <string name="restriction_add_user_desc">Un segundo perfil de usuario escaparía a las reglas</string>
+    <string name="restriction_apps_control_title">Bloquear manipulación de apps</string>
+    <string name="restriction_apps_control_desc">No se pueden forzar cierres ni borrar datos de apps desde Ajustes</string>
+
+    <!-- Check-in / falta de señal -->
+    <string name="child_stale_line">Sin señal desde hace %1$s — la protección podría estar inactiva</string>
+    <string name="stale_channel_name">Alertas de protección</string>
+    <string name="stale_alert_title">El móvil de %1$s podría estar sin protección</string>
+    <string name="stale_alert_text">Walcott no da señales desde hace %1$s</string>
 </resources>

@@ -247,4 +247,27 @@
     <string name="perm_install_fix">Allow</string>
     <string name="perm_notifications_missing">Notifications are off: you won\'t see update prompts</string>
     <string name="perm_notifications_fix">Turn on</string>
+
+    <!-- Device protection (user restrictions) -->
+    <string name="nav_protection_title">Device protection</string>
+    <string name="nav_protection_subtitle">Stop the child from changing critical settings</string>
+    <string name="protection_note">These locks apply on child phones with full protection (Device Owner). While Walcott is in alpha, locks that could make a device unrecoverable (factory reset, safe mode, sideloading, USB debugging) are deliberately not offered — the check-in alert below covers tampering instead.</string>
+    <string name="restriction_vpn_title">Protect the web filter</string>
+    <string name="restriction_vpn_desc">VPN settings are locked, so the DNS filter can\'t be removed</string>
+    <string name="restriction_location_title">Keep location on</string>
+    <string name="restriction_location_desc">Location stays enabled and its settings are locked</string>
+    <string name="restriction_datetime_title">Lock date and time</string>
+    <string name="restriction_datetime_desc">Automatic clock, so time limits can\'t be cheated by changing the hour</string>
+    <string name="restriction_biometrics_title">Disable biometric unlock</string>
+    <string name="restriction_biometrics_desc">Fingerprint and face unlock stop working; only the PIN or pattern unlocks</string>
+    <string name="restriction_add_user_title">Block new users</string>
+    <string name="restriction_add_user_desc">A second user profile would escape the rules</string>
+    <string name="restriction_apps_control_title">Block app tampering</string>
+    <string name="restriction_apps_control_desc">No force-stopping apps or clearing their data from Settings</string>
+
+    <!-- Check-in staleness -->
+    <string name="child_stale_line">No check-in for %1$s — protection may be off</string>
+    <string name="stale_channel_name">Protection alerts</string>
+    <string name="stale_alert_title">%1$s\'s phone may be unprotected</string>
+    <string name="stale_alert_text">Walcott hasn\'t checked in for %1$s</string>
 </resources>

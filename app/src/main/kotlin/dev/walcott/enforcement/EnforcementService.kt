@@ -69,6 +69,7 @@ class EnforcementService : LifecycleService() {
         startForegroundCompat()
         lifecycleScope.launch { runLoop() }
         observeWebFilter()
+        observeDeviceRestrictions()
         scheduleUpdateChecks()
     }
 
@@ -98,6 +99,17 @@ class EnforcementService : LifecycleService() {
                 .map { it.hasWebFilter() }
                 .distinctUntilChanged()
                 .collect { enabled -> VpnController.apply(this@EnforcementService, enabled) }
+        }
+    }
+
+    /** Keeps the Device Owner user restrictions in sync with the policy. */
+    private fun observeDeviceRestrictions() {
+        val repo = (application as WalcottApplication).repository
+        lifecycleScope.launch {
+            repo.settingsFlow
+                .map { it.deviceRestrictions }
+                .distinctUntilChanged()
+                .collect { keys -> DeviceRestrictions.apply(this@EnforcementService, keys) }
         }
     }
 

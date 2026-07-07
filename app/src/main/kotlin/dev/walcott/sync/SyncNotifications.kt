@@ -15,7 +15,31 @@ import dev.walcott.R
 object SyncNotifications {
 
     private const val CHANNEL = "walcott_requests"
+    private const val ALERT_CHANNEL = "walcott_alerts"
     private const val NOTIF_ID = 42
+
+    /** Alert when a child device has been silent for a long time (see [Staleness]). */
+    fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(ALERT_CHANNEL, context.getString(R.string.stale_channel_name), NotificationManager.IMPORTANCE_HIGH),
+            )
+        }
+        val tap = PendingIntent.getActivity(
+            context, 0, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(context.getString(R.string.stale_alert_title, childName))
+            .setContentText(context.getString(R.string.stale_alert_text, silence))
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(deviceId.hashCode(), notification) }
+    }
 
     fun notifyRequest(context: Context, childName: String, minutes: Int) {
         val nm = context.getSystemService(NotificationManager::class.java)

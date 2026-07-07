@@ -15,6 +15,7 @@ class ChildOverridesTest {
         bedtime = mapOf("SCHOOL" to WindowDto(21 * 60, 7 * 60)),
         earnRules = listOf(EarnRuleDto("education", "games", 30, 10, 60)),
         blockedDomains = setOf("youtube.com"),
+        deviceRestrictions = setOf("vpn", "datetime"),
         pinHash = "hash",
         pinSalt = "salt",
         familyName = "Moudis",
@@ -43,6 +44,16 @@ class ChildOverridesTest {
         assertEquals(family.bedtime, resolved.bedtime)
         assertEquals(family.earnRules, resolved.earnRules)
         assertEquals(family.blockedDomains, resolved.blockedDomains)
+        assertEquals(family.deviceRestrictions, resolved.deviceRestrictions)
+    }
+
+    @Test
+    fun `device restrictions can be overridden per child`() {
+        val loosened = family.copy(
+            children = listOf(ChildEntry("child-a", "Ana", ChildOverrides(deviceRestrictions = setOf("vpn")))),
+        )
+        assertEquals(setOf("vpn"), loosened.resolveForChild("child-a").deviceRestrictions)
+        assertEquals(setOf("vpn", "datetime"), loosened.resolveForChild("unknown").deviceRestrictions)
     }
 
     @Test

@@ -308,7 +308,12 @@ class SyncManager(
         val before = syncStore.current()
         val prevRequestIds = before.children.flatMap { it.requests }.map { it.requestId }.toSet()
         val merged = SyncEngine.mergeChild(before.children.associateBy { it.deviceId }, snapshot).values.toList()
-        syncStore.update { it.copy(children = merged) }
+        syncStore.update {
+            it.copy(
+                children = merged,
+                lastSeen = it.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
+            )
+        }
 
         val resolved = before.resolutions.map { it.requestId }.toSet()
         val newlyPending = snapshot.requests.map { it.requestId }.toSet() - prevRequestIds - resolved

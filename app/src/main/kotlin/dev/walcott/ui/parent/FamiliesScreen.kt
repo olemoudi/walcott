@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,10 +43,12 @@ import dev.walcott.R
 import dev.walcott.data.ChildEntry
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
+import dev.walcott.sync.Staleness
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.ModeBadge
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
+import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.LocalDate
 
@@ -63,8 +66,17 @@ fun FamiliesScreen(
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
+    val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
+
+    // Minute tick so the staleness line ages without new data arriving.
+    val nowMs by produceState(System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(60_000)
+        }
+    }
 
     val registryIds = settings.children.map { it.childId }.toSet()
     val legacyDevices = snapshots.filter { it.childId !in registryIds }
@@ -113,9 +125,12 @@ fun FamiliesScreen(
             }
         }
         items(settings.children, key = { it.childId }) { entry ->
+            val snapshot = snapshots.firstOrNull { it.childId == entry.childId }
             ChildRow(
                 entry = entry,
-                snapshot = snapshots.firstOrNull { it.childId == entry.childId },
+                snapshot = snapshot,
+                lastSeenMs = snapshot?.let { lastSeen[it.deviceId] },
+                nowMs = nowMs,
                 onClick = { onOpenChild(entry.childId) },
             )
         }
@@ -198,11 +213,18 @@ private fun FamilyCard(name: String, childrenCount: Int, pendingCount: Int, onCl
 }
 
 @Composable
-private fun ChildRow(entry: ChildEntry, snapshot: ChildSnapshot?, onClick: () -> Unit) {
+private fun ChildRow(
+    entry: ChildEntry,
+    snapshot: ChildSnapshot?,
+    lastSeenMs: Long?,
+    nowMs: Long,
+    onClick: () -> Unit,
+) {
     val spacing = Tokens.spacing
     val today = LocalDate.now().toEpochDay()
     val usageToday = snapshot?.takeIf { it.epochDay == today }
         ?.usage?.sumOf { it.seconds } ?: 0L
+    val stale = snapshot != null && Staleness.isWarn(lastSeenMs, nowMs)
 
     Surface(
         onClick = onClick,
@@ -215,7 +237,7 @@ private fun ChildRow(entry: ChildEntry, snapshot: ChildSnapshot?, onClick: () ->
             Icon(
                 Icons.Outlined.Face,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (stale) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp),
             )
             Spacer(Modifier.width(spacing.md))
@@ -230,6 +252,16 @@ private fun ChildRow(entry: ChildEntry, snapshot: ChildSnapshot?, onClick: () ->
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (stale) {
+                    Text(
+                        stringResource(
+                            R.string.child_stale_line,
+                            Duration.ofMillis(Staleness.silenceMs(lastSeenMs, nowMs) ?: 0).humanize(),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,

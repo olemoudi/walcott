@@ -8,6 +8,7 @@ import dev.walcott.data.WalcottRepository
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.net.VpnController
 import dev.walcott.sync.IdentityStore
+import dev.walcott.sync.StaleChildWorker
 import dev.walcott.sync.SyncManager
 import dev.walcott.sync.SyncStore
 import dev.walcott.update.UpdateWorker
@@ -54,6 +55,9 @@ class WalcottApplication : Application() {
         // Keep the app up to date: a periodic check plus one now (covers app launch).
         UpdateWorker.schedule(this)
         UpdateWorker.runNow(this)
+
+        // Parent-side watchdog for children that stop checking in (no-op on other modes).
+        StaleChildWorker.schedule(this)
     }
 
     /**

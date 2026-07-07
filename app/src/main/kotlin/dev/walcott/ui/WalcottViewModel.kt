@@ -54,6 +54,8 @@ class WalcottViewModel(
     val bootMode: StateFlow<DeviceMode?> = sync.bootMode
     val children: StateFlow<List<ChildSnapshot>> =
         sync.state.map { it.children }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val lastSeen: StateFlow<Map<String, Long>> =
+        sync.state.map { it.lastSeen }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
     val pendingRequests: StateFlow<List<SyncManager.PendingRequest>> = sync.pendingRequests
 
     suspend fun becomeParent(familyName: String) = sync.becomeParent(familyName)
@@ -131,6 +133,12 @@ class WalcottViewModel(
 
     fun removeBlockedDomain(domain: String) =
         viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains - domain) } }
+
+    fun setDeviceRestriction(key: String, enabled: Boolean) = viewModelScope.launch {
+        repository.updateSettings {
+            it.copy(deviceRestrictions = if (enabled) it.deviceRestrictions + key else it.deviceRestrictions - key)
+        }
+    }
 
     fun addDomainAppRule(rawDomain: String, packageName: String, allowOnlyFromApp: Boolean) {
         val domain = normalizeDomain(rawDomain)
