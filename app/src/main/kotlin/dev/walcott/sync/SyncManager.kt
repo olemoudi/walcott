@@ -5,6 +5,7 @@ import android.os.Build
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottRepository
+import dev.walcott.enforcement.DeviceRestrictions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -51,6 +52,19 @@ class SyncManager(
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     data class PendingRequest(val childName: String, val request: ExtraTimeRequest)
+
+    /** Generic asks (apps, anything) from all children that the parent hasn't resolved yet. */
+    val pendingAsks: StateFlow<List<PendingAsk>> = syncStore.state.map { s ->
+        val resolved = s.resolutions.map { it.requestId }.toSet()
+        s.children.flatMap { child -> child.asks.map { PendingAsk(child.displayName, it) } }
+            .filter { it.ask.requestId !in resolved }
+    }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    data class PendingAsk(val childName: String, val ask: ChildRequest)
+
+    /** Until when app installs are temporarily allowed on this device. */
+    val installExemption: StateFlow<Long> =
+        syncStore.state.map { it.installExemptionUntilMs }.stateIn(scope, SharingStarted.Eagerly, 0L)
 
     // --- Lifecycle ---
 
@@ -149,6 +163,29 @@ class SyncManager(
 
     // --- Child actions ---
 
+    /** Ask the parents for something (an app, anything). Lands in their pending list. */
+    suspend fun askFor(kind: String, text: String) {
+        syncStore.update { s ->
+            s.copy(
+                childVersion = s.childVersion + 1,
+                pendingAsks = s.pendingAsks + ChildRequest(
+                    requestId = UUID.randomUUID().toString(),
+                    kind = kind,
+                    text = text,
+                    createdAtEpochMs = System.currentTimeMillis(),
+                ),
+            )
+        }
+        publishSelf()
+    }
+
+    /** PIN-gated manual exemption: allow installs on this device for a while. */
+    suspend fun allowInstallsTemporarily() {
+        syncStore.update {
+            it.copy(installExemptionUntilMs = System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS)
+        }
+    }
+
     suspend fun requestExtraTime(categoryId: String, minutes: Int, reason: String) {
         syncStore.update { s ->
             s.copy(
@@ -240,6 +277,7 @@ class SyncManager(
                     extra = repository.extraNow().map { UsageEntry(it.key, it.value.seconds) },
                     requests = s.pendingRequests,
                     history = history,
+                    asks = s.pendingAsks,
                 )
                 transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
             }
@@ -276,14 +314,19 @@ class SyncManager(
         val deviceId = id.deviceId
         val s = syncStore.current()
 
-        // Apply resolutions to our pending requests, idempotently.
-        val pendingIds = s.pendingRequests.map { it.requestId }.toSet()
+        // Apply resolutions to our pending requests and asks, idempotently.
+        val asksById = s.pendingAsks.associateBy { it.requestId }
+        val pendingIds = s.pendingRequests.map { it.requestId }.toSet() + asksById.keys
         val freshResolutions = SyncEngine.newResolutions(snapshot, pendingIds, s.appliedResolutionIds)
+        var approvedAppAsk = false
         for (resolution in freshResolutions) {
-            if (resolution.approved && resolution.grantedMinutes > 0) {
-                val req = s.pendingRequests.firstOrNull { it.requestId == resolution.requestId } ?: continue
-                repository.grantExtraMinutes(req.categoryId, resolution.grantedMinutes.toLong())
+            if (!resolution.approved) continue
+            if (resolution.grantedMinutes > 0) {
+                val req = s.pendingRequests.firstOrNull { it.requestId == resolution.requestId }
+                if (req != null) repository.grantExtraMinutes(req.categoryId, resolution.grantedMinutes.toLong())
             }
+            // An approved app ask opens the timed install window on this device.
+            if (asksById[resolution.requestId]?.kind == ChildRequest.KIND_APP) approvedAppAsk = true
         }
 
         // Apply bonuses addressed to this device, idempotently.
@@ -298,8 +341,14 @@ class SyncManager(
         syncStore.update {
             it.copy(
                 pendingRequests = it.pendingRequests.filterNot { r -> r.requestId in resolvedIds },
+                pendingAsks = it.pendingAsks.filterNot { a -> a.requestId in resolvedIds },
                 appliedResolutionIds = it.appliedResolutionIds + resolvedIds,
                 appliedBonusIds = it.appliedBonusIds + bonusIds,
+                installExemptionUntilMs = if (approvedAppAsk) {
+                    System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS
+                } else {
+                    it.installExemptionUntilMs
+                },
             )
         }
     }

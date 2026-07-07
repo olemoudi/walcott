@@ -18,8 +18,11 @@ data class SyncState(
     // Child side
     val childVersion: Long = 0,
     val pendingRequests: List<ExtraTimeRequest> = emptyList(),
+    val pendingAsks: List<ChildRequest> = emptyList(),
     val appliedResolutionIds: Set<String> = emptySet(),
     val appliedBonusIds: Set<String> = emptySet(),
+    /** Until when app installs are temporarily allowed on this device (PIN gate or approval). */
+    val installExemptionUntilMs: Long = 0,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),

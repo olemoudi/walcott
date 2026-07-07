@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
+import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.SyncManager
 import dev.walcott.ui.WalcottViewModel
@@ -42,6 +43,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val spacing = Tokens.spacing
     val children by viewModel.children.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
+    val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
     var bonusTarget by remember { mutableStateOf<ChildSnapshot?>(null) }
 
     Column(Modifier.fillMaxSize()) {
@@ -51,7 +53,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             item { Text(stringResource(R.string.pending_requests), style = MaterialTheme.typography.titleMedium) }
-            if (requests.isEmpty()) {
+            if (requests.isEmpty() && asks.isEmpty()) {
                 item { Text(stringResource(R.string.no_requests), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
                 items(requests, key = { it.request.requestId }) { pending ->
@@ -59,6 +61,13 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                         pending = pending,
                         onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
                         onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
+                    )
+                }
+                items(asks, key = { it.ask.requestId }) { pending ->
+                    AskRequestCard(
+                        pending = pending,
+                        onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
+                        onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
                     )
                 }
             }
@@ -106,6 +115,33 @@ private fun RequestCard(pending: SyncManager.PendingRequest, onApprove: () -> Un
             )
             if (pending.request.reason.isNotBlank()) {
                 Text("“${pending.request.reason}”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Button(onClick = onApprove, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.approve)) }
+                OutlinedButton(onClick = onDeny, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.deny)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AskRequestCard(pending: SyncManager.PendingAsk, onApprove: () -> Unit, onDeny: () -> Unit) {
+    val spacing = Tokens.spacing
+    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Text(pending.childName, style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(
+                    if (pending.ask.kind == ChildRequest.KIND_APP) R.string.ask_summary_app else R.string.ask_summary_other,
+                    pending.ask.text,
+                ),
+            )
+            if (pending.ask.kind == ChildRequest.KIND_APP) {
+                Text(
+                    stringResource(R.string.ask_approve_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 Button(onClick = onApprove, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.approve)) }

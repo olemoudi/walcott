@@ -260,6 +260,8 @@
     <string name="restriction_datetime_desc">Automatic clock, so time limits can\'t be cheated by changing the hour</string>
     <string name="restriction_biometrics_title">Disable biometric unlock</string>
     <string name="restriction_biometrics_desc">Fingerprint and face unlock stop working; only the PIN or pattern unlocks</string>
+    <string name="restriction_installs_title">Block installing apps</string>
+    <string name="restriction_installs_desc">The child can\'t install apps; approve their request or use your PIN on their phone to allow it for a while</string>
     <string name="restriction_add_user_title">Block new users</string>
     <string name="restriction_add_user_desc">A second user profile would escape the rules</string>
     <string name="restriction_apps_control_title">Block app tampering</string>
@@ -270,4 +272,19 @@
     <string name="stale_channel_name">Protection alerts</string>
     <string name="stale_alert_title">%1$s\'s phone may be unprotected</string>
     <string name="stale_alert_text">Walcott hasn\'t checked in for %1$s</string>
+
+    <!-- Install exemption + child asks -->
+    <string name="allow_installs_title">Allow app installs</string>
+    <string name="allow_installs_desc">Lift the install block on this device for 15 minutes</string>
+    <string name="allow_installs_active">Installs allowed — %1$s left. Tap to restart the window</string>
+    <string name="ask_card_title">Ask your parents for something</string>
+    <string name="ask_card_desc">An app or anything else — they\'ll see it in Walcott</string>
+    <string name="ask_dialog_title">Ask for something</string>
+    <string name="ask_kind_app">An app</string>
+    <string name="ask_kind_other">Something else</string>
+    <string name="ask_text_label_app">Which app?</string>
+    <string name="ask_text_label_other">What do you need?</string>
+    <string name="ask_summary_app">Wants to install: %1$s</string>
+    <string name="ask_summary_other">Asks for: %1$s</string>
+    <string name="ask_approve_hint">Approving opens a 15-minute install window on their phone</string>
 </resources>

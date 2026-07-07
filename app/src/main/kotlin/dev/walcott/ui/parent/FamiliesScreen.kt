@@ -68,6 +68,7 @@ fun FamiliesScreen(
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
     val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
+    val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
 
     // Minute tick so the staleness line ages without new data arriving.
@@ -103,7 +104,7 @@ fun FamiliesScreen(
             FamilyCard(
                 name = settings.familyName.ifBlank { stringResource(R.string.family_default_name) },
                 childrenCount = settings.children.size,
-                pendingCount = requests.size,
+                pendingCount = requests.size + asks.size,
                 onClick = onOpenFamily,
             )
         }

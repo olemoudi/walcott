@@ -49,6 +49,21 @@ class ProtocolTest {
             """{"deviceId":"d","displayName":"phone","version":1,"epochDay":1}""",
         )
         assertEquals("", decoded.childId)
+        assertEquals(emptyList<ChildRequest>(), decoded.asks)
+    }
+
+    @Test
+    fun `child asks round-trip through an envelope`() {
+        val snapshot = ChildSnapshot(
+            deviceId = "dev-1",
+            displayName = "Ana",
+            version = 3,
+            epochDay = 20_000,
+            asks = listOf(ChildRequest("a1", ChildRequest.KIND_APP, "Brawl Stars", 1000)),
+        )
+        val wire = SyncProtocol.encodeChild(snapshot, familyKey)
+        val decoded = SyncProtocol.decode(wire, familyKey, parent.public) as IncomingMessage.FromChild
+        assertEquals(snapshot.asks, decoded.snapshot.asks)
     }
 
     @Test

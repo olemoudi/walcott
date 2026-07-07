@@ -29,12 +29,17 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +63,7 @@ import dev.walcott.R
 import dev.walcott.rules.BlockReason
 import dev.walcott.rules.CategoryState
 import dev.walcott.rules.TimeWindow
+import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
 import dev.walcott.sync.Role
@@ -88,6 +94,7 @@ fun ChildStatusScreen(
 
     var pending by remember { mutableStateOf<CategoryStatusUi?>(null) }
     var pendingRemote by remember { mutableStateOf<CategoryStatusUi?>(null) }
+    var showAsk by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
@@ -126,6 +133,9 @@ fun ChildStatusScreen(
                     if (identity.role == Role.CHILD) pendingRemote = card else pending = card
                 })
             }
+            if (identity.role == Role.CHILD) {
+                item { AskCard(onClick = { showAsk = true }) }
+            }
             item { Spacer(Modifier.height(spacing.xl)) }
         }
     }
@@ -143,6 +153,94 @@ fun ChildStatusScreen(
             },
         )
     }
+    if (showAsk) {
+        AskDialog(
+            onDismiss = { showAsk = false },
+            onSend = { kind, text ->
+                viewModel.askFor(kind, text)
+                showAsk = false
+                Toast.makeText(context, R.string.request_sent, Toast.LENGTH_SHORT).show()
+            },
+        )
+    }
+}
+
+/** Entry point for the child to ask the parents for something (an app, anything). */
+@Composable
+private fun AskCard(onClick: () -> Unit) {
+    val spacing = Tokens.spacing
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.WavingHand,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column {
+                Text(stringResource(R.string.ask_card_title), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.ask_card_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AskDialog(onDismiss: () -> Unit, onSend: (String, String) -> Unit) {
+    val spacing = Tokens.spacing
+    var kind by remember { mutableStateOf(ChildRequest.KIND_APP) }
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.ask_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    FilterChip(
+                        selected = kind == ChildRequest.KIND_APP,
+                        onClick = { kind = ChildRequest.KIND_APP },
+                        label = { Text(stringResource(R.string.ask_kind_app)) },
+                    )
+                    FilterChip(
+                        selected = kind == ChildRequest.KIND_OTHER,
+                        onClick = { kind = ChildRequest.KIND_OTHER },
+                        label = { Text(stringResource(R.string.ask_kind_other)) },
+                    )
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = {
+                        Text(
+                            stringResource(
+                                if (kind == ChildRequest.KIND_APP) R.string.ask_text_label_app
+                                else R.string.ask_text_label_other,
+                            ),
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = text.isNotBlank(), onClick = { onSend(kind, text.trim()) }) {
+                Text(stringResource(R.string.send_request))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 /** Primary enrollment call-to-action for a child device not yet linked to a family. */

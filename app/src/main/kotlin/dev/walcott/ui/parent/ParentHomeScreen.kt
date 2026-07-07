@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InsertChart
+import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
@@ -44,7 +45,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
+import java.time.Duration
 
 /**
  * Rules hub. In parent mode it is the family's settings (title = family name); in child
@@ -64,6 +67,9 @@ fun ParentHomeScreen(
     onOpenWebFilter: () -> Unit,
     onOpenProtection: () -> Unit,
     onChangeMode: () -> Unit,
+    installsBlocked: Boolean,
+    installExemptionUntil: Long,
+    onAllowInstalls: () -> Unit,
     onBack: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -91,6 +97,19 @@ fun ParentHomeScreen(
             }
             NavCard(Icons.Outlined.InsertChart, stringResource(R.string.nav_report_title), stringResource(R.string.nav_report_subtitle), onOpenReport)
             AppUpdateCard(deviceOwner)
+            if (childDevice && installsBlocked) {
+                val remainingMs = installExemptionUntil - System.currentTimeMillis()
+                NavCard(
+                    Icons.Outlined.InstallMobile,
+                    stringResource(R.string.allow_installs_title),
+                    if (remainingMs > 0) {
+                        stringResource(R.string.allow_installs_active, Duration.ofMillis(remainingMs).humanize())
+                    } else {
+                        stringResource(R.string.allow_installs_desc)
+                    },
+                    onClick = onAllowInstalls,
+                )
+            }
             if (childDevice) {
                 NavCard(
                     Icons.Outlined.SwapHoriz,

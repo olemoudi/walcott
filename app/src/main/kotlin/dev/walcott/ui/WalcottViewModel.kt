@@ -57,6 +57,11 @@ class WalcottViewModel(
     val lastSeen: StateFlow<Map<String, Long>> =
         sync.state.map { it.lastSeen }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
     val pendingRequests: StateFlow<List<SyncManager.PendingRequest>> = sync.pendingRequests
+    val pendingAsks: StateFlow<List<SyncManager.PendingAsk>> = sync.pendingAsks
+    val installExemption: StateFlow<Long> = sync.installExemption
+
+    fun askFor(kind: String, text: String) = viewModelScope.launch { sync.askFor(kind, text) }
+    fun allowInstallsTemporarily() = viewModelScope.launch { sync.allowInstallsTemporarily() }
 
     suspend fun becomeParent(familyName: String) = sync.becomeParent(familyName)
     suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)

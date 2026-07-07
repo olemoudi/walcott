@@ -27,6 +27,24 @@ data class Resolution(
     val resolvedAtEpochMs: Long,
 )
 
+/**
+ * A child asking for something. [kind] is an open set: "app" (approval opens a timed
+ * install window on the child's device) or "other" (free-form; resolving it is just an
+ * acknowledgement — the actual conversation happens off-app).
+ */
+@Serializable
+data class ChildRequest(
+    val requestId: String,
+    val kind: String,
+    val text: String,
+    val createdAtEpochMs: Long,
+) {
+    companion object {
+        const val KIND_APP = "app"
+        const val KIND_OTHER = "other"
+    }
+}
+
 /** An unsolicited reward the parent grants to a specific child (chores, good behaviour…). */
 @Serializable
 data class Bonus(
@@ -54,6 +72,8 @@ data class ChildSnapshot(
     val history: List<DayUsage> = emptyList(),
     /** Registry id from the per-child enrollment QR; "" for legacy/anonymous children. */
     val childId: String = "",
+    /** Pending generic asks (resolved through the same [Resolution] channel). */
+    val asks: List<ChildRequest> = emptyList(),
 )
 
 /**

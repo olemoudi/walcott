@@ -27,8 +27,12 @@ object DeviceRestrictions {
     const val KEY_LOCATION = "location"
     const val KEY_DATETIME = "datetime"
     const val KEY_BIOMETRICS = "biometrics"
+    const val KEY_INSTALLS = "installs"
     const val KEY_ADD_USER = "add_user"
     const val KEY_APPS_CONTROL = "apps_control"
+
+    /** How long the PIN-gated "allow installs" exemption lasts on the child device. */
+    const val INSTALL_EXEMPTION_MS = 15 * 60 * 1000L
 
     data class Feature(val key: String, val restrictions: List<String>)
 
@@ -37,18 +41,24 @@ object DeviceRestrictions {
         Feature(KEY_LOCATION, listOf(UserManager.DISALLOW_CONFIG_LOCATION)),
         Feature(KEY_DATETIME, listOf(UserManager.DISALLOW_CONFIG_DATE_TIME)),
         Feature(KEY_BIOMETRICS, emptyList()), // keyguard feature, not a user restriction
+        Feature(KEY_INSTALLS, listOf(UserManager.DISALLOW_INSTALL_APPS)),
         Feature(KEY_ADD_USER, listOf(UserManager.DISALLOW_ADD_USER)),
         Feature(KEY_APPS_CONTROL, listOf(UserManager.DISALLOW_APPS_CONTROL)),
     )
 
+    /** [enabledKeys] minus the install block while a PIN-gated exemption window is open. */
+    fun effectiveKeys(enabledKeys: Set<String>, installExemptUntilMs: Long, nowMs: Long): Set<String> =
+        if (nowMs < installExemptUntilMs) enabledKeys - KEY_INSTALLS else enabledKeys
+
     /** Applies exactly the [enabledKeys] feature set (clears the rest). Device Owner only. */
-    fun apply(context: Context, enabledKeys: Set<String>) {
+    fun apply(context: Context, enabledKeys: Set<String>, installExemptUntilMs: Long = 0) {
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
         val admin = WalcottAdminReceiver.componentName(context)
+        val effective = effectiveKeys(enabledKeys, installExemptUntilMs, System.currentTimeMillis())
 
         for (feature in FEATURES) {
-            val enabled = feature.key in enabledKeys
+            val enabled = feature.key in effective
             for (restriction in feature.restrictions) {
                 runCatching {
                     if (enabled) dpm.addUserRestriction(admin, restriction)

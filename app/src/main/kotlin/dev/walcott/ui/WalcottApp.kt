@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.sync.DeviceMode
 import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.ui.parent.AppAssignScreen
@@ -46,6 +47,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
     val bootMode by viewModel.bootMode.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val installExemption by viewModel.installExemption.collectAsStateWithLifecycle()
 
     // Hold rendering until the persisted identity loads, so existing installs
     // don't flash the mode selector.
@@ -136,6 +138,9 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                             viewModel.resetDeviceMode()
                             screen = Screen.MODE_SELECT
                         },
+                        installsBlocked = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions,
+                        installExemptionUntil = installExemption,
+                        onAllowInstalls = { viewModel.allowInstallsTemporarily() },
                         onBack = ::back,
                     )
                     Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.FAMILY })

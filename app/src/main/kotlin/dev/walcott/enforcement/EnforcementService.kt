@@ -24,6 +24,8 @@ import dev.walcott.rules.Verdict
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -104,12 +106,22 @@ class EnforcementService : LifecycleService() {
 
     /** Keeps the Device Owner user restrictions in sync with the policy. */
     private fun observeDeviceRestrictions() {
-        val repo = (application as WalcottApplication).repository
+        val app = application as WalcottApplication
         lifecycleScope.launch {
-            repo.settingsFlow
-                .map { it.deviceRestrictions }
+            combine(
+                app.repository.settingsFlow.map { it.deviceRestrictions },
+                app.syncManager.installExemption,
+            ) { keys, exemptUntil -> keys to exemptUntil }
                 .distinctUntilChanged()
-                .collect { keys -> DeviceRestrictions.apply(this@EnforcementService, keys) }
+                .collectLatest { (keys, exemptUntil) ->
+                    DeviceRestrictions.apply(this@EnforcementService, keys, exemptUntil)
+                    // Re-arm the install block when the exemption window closes.
+                    val untilExpiry = exemptUntil - System.currentTimeMillis()
+                    if (untilExpiry > 0 && DeviceRestrictions.KEY_INSTALLS in keys) {
+                        delay(untilExpiry + 1_000)
+                        DeviceRestrictions.apply(this@EnforcementService, keys, exemptUntil)
+                    }
+                }
         }
     }
 

@@ -260,6 +260,8 @@
     <string name="restriction_datetime_desc">Reloj automático: no se pueden burlar los límites cambiando la hora</string>
     <string name="restriction_biometrics_title">Desactivar desbloqueo biométrico</string>
     <string name="restriction_biometrics_desc">Huella y cara dejan de desbloquear; solo funciona el PIN o patrón</string>
+    <string name="restriction_installs_title">Bloquear instalación de apps</string>
+    <string name="restriction_installs_desc">El hijo no puede instalar apps; aprueba su petición o usa tu PIN en su móvil para permitirlo un rato</string>
     <string name="restriction_add_user_title">Bloquear usuarios nuevos</string>
     <string name="restriction_add_user_desc">Un segundo perfil de usuario escaparía a las reglas</string>
     <string name="restriction_apps_control_title">Bloquear manipulación de apps</string>
@@ -270,4 +272,19 @@
     <string name="stale_channel_name">Alertas de protección</string>
     <string name="stale_alert_title">El móvil de %1$s podría estar sin protección</string>
     <string name="stale_alert_text">Walcott no da señales desde hace %1$s</string>
+
+    <!-- Excepción de instalación + peticiones del hijo -->
+    <string name="allow_installs_title">Permitir instalar apps</string>
+    <string name="allow_installs_desc">Levanta el bloqueo de instalación en este dispositivo durante 15 minutos</string>
+    <string name="allow_installs_active">Instalación permitida — quedan %1$s. Toca para reiniciar la ventana</string>
+    <string name="ask_card_title">Pide algo a tus padres</string>
+    <string name="ask_card_desc">Una app o cualquier otra cosa — lo verán en Walcott</string>
+    <string name="ask_dialog_title">Pedir algo</string>
+    <string name="ask_kind_app">Una app</string>
+    <string name="ask_kind_other">Otra cosa</string>
+    <string name="ask_text_label_app">¿Qué app?</string>
+    <string name="ask_text_label_other">¿Qué necesitas?</string>
+    <string name="ask_summary_app">Quiere instalar: %1$s</string>
+    <string name="ask_summary_other">Pide: %1$s</string>
+    <string name="ask_approve_hint">Al aprobar se abre una ventana de instalación de 15 minutos en su móvil</string>
 </resources>
