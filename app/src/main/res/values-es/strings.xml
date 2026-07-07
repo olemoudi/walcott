@@ -59,9 +59,6 @@
     <string name="nav_apps_subtitle">Clasifica cada app; las nuevas quedan bloqueadas hasta clasificarlas</string>
     <string name="nav_limits_title">Límites y horarios</string>
     <string name="nav_limits_subtitle">Presupuesto diario por categoría y hora de dormir</string>
-    <string name="nav_child_title">Configurar el móvil del hijo</string>
-    <string name="nav_child_subtitle">Muestra un QR para instalar la app en el dispositivo del hijo</string>
-
     <!-- Asignación de apps -->
     <string name="search_app">Buscar app</string>
     <string name="unclassified_blocked">Sin clasificar · bloqueada</string>
@@ -102,9 +99,7 @@
     <string name="service_notif_text">Las reglas de uso están activas</string>
 
     <!-- Configuración del hijo / QR -->
-    <string name="qr_title">Configurar el móvil del hijo</string>
     <string name="qr_instructions">En el móvil del hijo, abre la cámara y escanea este código para descargar Walcott. Luego abre el archivo para instalarlo.</string>
-    <string name="qr_url_caption">Enlace de descarga</string>
     <string name="qr_provision_note">Consejo: para protección total, instala en un móvil recién reseteado y configura Walcott como Device Owner.</string>
 
     <!-- Sync: notificación de petición -->
@@ -112,19 +107,9 @@
     <string name="sync_request_title">Nueva petición de tiempo</string>
     <string name="sync_request_text">%1$s pide %2$d min</string>
 
-    <!-- Sync: emparejamiento (padre) -->
-    <string name="parent_default_name">Padre</string>
-    <string name="create_family_title">Este es el móvil del padre</string>
-    <string name="create_family_desc">Crea aquí la familia y luego vincula el móvil de cada hijo.</string>
-    <string name="create_family_button">Crear familia</string>
-    <string name="pairing_qr_title">Vincular el móvil del hijo</string>
-    <string name="pairing_qr_instructions">En el móvil del hijo, abre Walcott y toca \"Vincular con un adulto\", luego escanea este código.</string>
+    <!-- Sync: emparejamiento -->
     <string name="pairing_step_download">1 · Instala la app</string>
     <string name="pairing_step_link">2 · Vincula el dispositivo</string>
-
-    <!-- Sync: emparejamiento (hijo) -->
-    <string name="not_linked">Sin vincular a un adulto</string>
-    <string name="link_to_parent">Vincular con un adulto</string>
     <string name="pairing_failed">No se pudo leer ese código</string>
 
     <!-- Sync: panel del padre / peticiones -->
@@ -238,4 +223,10 @@
     <string name="join_family_desc">Pide tu código a un padre y escanéalo aquí</string>
     <string name="bedtime_tonight">Esta noche se duerme</string>
     <string name="bedtime_range">%1$s – %2$s</string>
+
+    <!-- Cambiar modo del dispositivo (área con PIN del hijo) -->
+    <string name="change_device_mode">Cambiar modo del dispositivo</string>
+    <string name="change_device_mode_subtitle">Desvincula este dispositivo y vuelve a elegir padre o hijo</string>
+    <string name="change_mode_confirm">¿Desvincular este dispositivo? Las reglas y el uso locales se conservan, pero dejará de seguir a la familia hasta que se vuelva a enrolar.</string>
+    <string name="change_mode_confirm_button">Desvincular</string>
 </resources>

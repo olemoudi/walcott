@@ -130,6 +130,10 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                         onOpenCalendar = { screen = Screen.CALENDAR },
                         onOpenReport = { screen = Screen.REPORT },
                         onOpenWebFilter = { screen = Screen.WEBFILTER },
+                        onChangeMode = {
+                            viewModel.resetDeviceMode()
+                            screen = Screen.MODE_SELECT
+                        },
                         onBack = ::back,
                     )
                     Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.FAMILY })

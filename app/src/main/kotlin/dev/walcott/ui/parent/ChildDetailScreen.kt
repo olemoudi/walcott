@@ -259,6 +259,11 @@ private fun EnrollmentSection(entry: ChildEntry, pairingText: String?) {
         Text(stringResource(R.string.pairing_step_download), style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.qr_instructions), style = MaterialTheme.typography.bodyMedium)
         QrCard(rememberQrBitmap(Distribution.CHILD_APK_URL, size = 200.dp))
+        Text(
+            stringResource(R.string.qr_provision_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         Text(stringResource(R.string.pairing_step_link), style = MaterialTheme.typography.titleMedium)
         Text(

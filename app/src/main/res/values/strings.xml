@@ -59,9 +59,6 @@
     <string name="nav_apps_subtitle">Classify each app; new ones stay blocked until classified</string>
     <string name="nav_limits_title">Limits and schedules</string>
     <string name="nav_limits_subtitle">Daily budget per category and bedtime</string>
-    <string name="nav_child_title">Set up child\'s phone</string>
-    <string name="nav_child_subtitle">Show a QR to install the app on the child\'s device</string>
-
     <!-- App assignment -->
     <string name="search_app">Search app</string>
     <string name="unclassified_blocked">Unclassified · blocked</string>
@@ -102,9 +99,7 @@
     <string name="service_notif_text">Usage rules are active</string>
 
     <!-- Child setup / QR -->
-    <string name="qr_title">Set up child\'s phone</string>
     <string name="qr_instructions">On the child\'s phone, open the camera and scan this code to download Walcott. Then open the file to install it.</string>
-    <string name="qr_url_caption">Download link</string>
     <string name="qr_provision_note">Tip: for full protection, install on a freshly reset phone and set Walcott as Device Owner.</string>
 
     <!-- Sync: request notification -->
@@ -112,19 +107,9 @@
     <string name="sync_request_title">New time request</string>
     <string name="sync_request_text">%1$s is asking for %2$d min</string>
 
-    <!-- Sync: parent pairing -->
-    <string name="parent_default_name">Parent</string>
-    <string name="create_family_title">This is the parent phone</string>
-    <string name="create_family_desc">Create the family here, then link each child\'s phone.</string>
-    <string name="create_family_button">Create family</string>
-    <string name="pairing_qr_title">Link the child\'s phone</string>
-    <string name="pairing_qr_instructions">On the child\'s phone, open Walcott and tap \"Link to a parent\", then scan this code.</string>
+    <!-- Sync: pairing -->
     <string name="pairing_step_download">1 · Install the app</string>
     <string name="pairing_step_link">2 · Link the device</string>
-
-    <!-- Sync: child pairing -->
-    <string name="not_linked">Not linked to a parent</string>
-    <string name="link_to_parent">Link to a parent</string>
     <string name="pairing_failed">Couldn\'t read that code</string>
 
     <!-- Sync: parent dashboard / requests -->
@@ -238,4 +223,10 @@
     <string name="join_family_desc">Ask a parent for your code and scan it here</string>
     <string name="bedtime_tonight">Bedtime tonight</string>
     <string name="bedtime_range">%1$s – %2$s</string>
+
+    <!-- Change device mode (child gated area) -->
+    <string name="change_device_mode">Change device mode</string>
+    <string name="change_device_mode_subtitle">Unlink this device and choose parent or child again</string>
+    <string name="change_mode_confirm">Unlink this device? Local rules and usage stay, but it will stop following the family until it enrolls again.</string>
+    <string name="change_mode_confirm_button">Unlink</string>
 </resources>

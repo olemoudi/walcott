@@ -1,5 +1,6 @@
 package dev.walcott.ui.child
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -87,8 +89,15 @@ fun ChildStatusScreen(
     var pending by remember { mutableStateOf<CategoryStatusUi?>(null) }
     var pendingRemote by remember { mutableStateOf<CategoryStatusUi?>(null) }
 
+    val context = LocalContext.current
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { text -> scope.launch { viewModel.pairAsChild(text) } }
+        result.contents?.let { text ->
+            scope.launch {
+                if (!viewModel.pairAsChild(text)) {
+                    Toast.makeText(context, R.string.pairing_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     val settings by viewModel.settings.collectAsStateWithLifecycle()
