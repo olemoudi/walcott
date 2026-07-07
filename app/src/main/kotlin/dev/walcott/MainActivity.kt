@@ -17,6 +17,7 @@ import dev.walcott.enforcement.Enforcer
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.ui.WalcottApp
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.update.UpdateWorker
 import dev.walcott.ui.theme.WalcottTheme
 
 class MainActivity : ComponentActivity() {
@@ -49,6 +50,12 @@ class MainActivity : ComponentActivity() {
                 WalcottApp(vm, deviceOwner)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Catch up on updates whenever the app regains focus; throttled internally.
+        UpdateWorker.runIfStale(this)
     }
 
     private fun requestNotificationPermissionIfNeeded() {
