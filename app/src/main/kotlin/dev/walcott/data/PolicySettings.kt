@@ -48,6 +48,31 @@ data class DomainAppRuleDto(
 }
 
 /**
+ * Per-child policy overrides. A null field inherits the family value; a non-null field
+ * replaces it wholesale (no deep merge, so "no limit for this child" is expressible).
+ */
+@Serializable
+data class ChildOverrides(
+    val budgets: Map<String, Map<String, Int>>? = null,
+    val blockedWindows: Map<String, Map<String, List<WindowDto>>>? = null,
+    val bedtime: Map<String, WindowDto>? = null,
+    val earnRules: List<EarnRuleDto>? = null,
+    val blockedDomains: Set<String>? = null,
+) {
+    val isEmpty: Boolean
+        get() = budgets == null && blockedWindows == null && bedtime == null &&
+            earnRules == null && blockedDomains == null
+}
+
+/** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */
+@Serializable
+data class ChildEntry(
+    val childId: String,
+    val name: String,
+    val overrides: ChildOverrides = ChildOverrides(),
+)
+
+/**
  * Parent-editable configuration, serialized as JSON in DataStore. Holds everything that is
  * NOT app assignments (those live in Room because there are many and they are reactive).
  * Day-type keys are [DayType] names; budgets are minutes.
@@ -73,7 +98,26 @@ data class PolicySettings(
     val domainAppRules: List<DomainAppRuleDto> = emptyList(),
     val pinHash: String? = null,
     val pinSalt: String? = null,
+    /** Family display name, shown on parent and enrolled child devices. */
+    val familyName: String = "",
+    /** Children registered by the parent, each with optional per-child overrides. */
+    val children: List<ChildEntry> = emptyList(),
 ) {
+    /**
+     * Family policy with [childId]'s overrides applied (null override field = inherit).
+     * Blank/unknown ids return the family policy unchanged, so legacy children degrade cleanly.
+     */
+    fun resolveForChild(childId: String?): PolicySettings {
+        val overrides = children.firstOrNull { it.childId == childId }?.overrides ?: return this
+        return copy(
+            budgets = overrides.budgets ?: budgets,
+            blockedWindows = overrides.blockedWindows ?: blockedWindows,
+            bedtime = overrides.bedtime ?: bedtime,
+            earnRules = overrides.earnRules ?: earnRules,
+            blockedDomains = overrides.blockedDomains ?: blockedDomains,
+        )
+    }
+
     fun toEarnRules(): List<EarnRule> = earnRules.map { it.toEarnRule() }
 
     fun toDomainAppRules(): List<DomainAppRule> = domainAppRules.map { it.toDomainAppRule() }

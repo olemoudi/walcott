@@ -81,4 +81,31 @@ class PolicySettingsTest {
         )
         assertEquals(5, decoded.version)
     }
+
+    @Test
+    fun `round-trips family name and children with overrides`() {
+        val json = Json { encodeDefaults = true }
+        val withChildren = settings.copy(
+            familyName = "Moudis",
+            children = listOf(
+                ChildEntry("c1", "Ana", ChildOverrides(budgets = mapOf("games" to mapOf("SCHOOL" to 60)))),
+            ),
+        )
+        val decoded = json.decodeFromString(
+            PolicySettings.serializer(),
+            json.encodeToString(PolicySettings.serializer(), withChildren),
+        )
+        assertEquals(withChildren, decoded)
+    }
+
+    @Test
+    fun `legacy JSON without family fields decodes to defaults`() {
+        val json = Json { ignoreUnknownKeys = true }
+        val decoded = json.decodeFromString(
+            PolicySettings.serializer(),
+            """{"version":5,"budgets":{"games":{"SCHOOL":30}}}""",
+        )
+        assertEquals("", decoded.familyName)
+        assertTrue(decoded.children.isEmpty())
+    }
 }
