@@ -34,4 +34,10 @@ data class FamilyIdentity(
             role == Role.CHILD -> DeviceMode.CHILD
             else -> DeviceMode.UNSET
         }
+
+    /**
+     * Whether this device runs the enforcement service. Parent phones don't enforce
+     * anything on themselves; UNSET keeps enforcing so local-fallback installs stay safe.
+     */
+    val enforcesLocally: Boolean get() = effectiveMode != DeviceMode.PARENT
 }

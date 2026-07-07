@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * ntfy transport: publishing is an HTTP POST of the message body to the topic; subscribing
@@ -26,6 +27,7 @@ class NtfyTransport(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val closed = AtomicBoolean(false)
+    private val reconnectAttempts = AtomicInteger(0)
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var onMessage: ((String) -> Unit)? = null
 
@@ -49,6 +51,10 @@ class NtfyTransport(
         if (closed.get()) return
         val request = Request.Builder().url(wsUrl).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                reconnectAttempts.set(0)
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
                 // ntfy events look like {"event":"message","message":"<body>",...}; we only
                 // care about actual messages, not the "open"/"keepalive" events.
@@ -70,8 +76,12 @@ class NtfyTransport(
 
     private fun reconnectSoon() {
         if (closed.get()) return
+        // Exponential backoff (3s, 6s, 12s… capped at 5 min) so an offline or dozing
+        // device doesn't hammer the radio; a successful connection resets it.
+        val attempt = reconnectAttempts.getAndIncrement().coerceAtMost(10)
+        val delayMillis = (3_000L shl attempt).coerceAtMost(5 * 60 * 1000L)
         Thread {
-            Thread.sleep(3_000)
+            Thread.sleep(delayMillis)
             if (!closed.get()) openSocket()
         }.apply { isDaemon = true }.start()
     }

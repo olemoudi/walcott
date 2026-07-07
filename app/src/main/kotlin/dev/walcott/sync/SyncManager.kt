@@ -319,6 +319,9 @@ class SyncManager(
     }
 
     companion object {
-        private const val RE_EMIT_MILLIS = 5 * 60 * 1000L
+        // Re-emits only heal lost messages: real changes (settings edits, requests,
+        // resolutions) publish immediately, so a long interval costs little freshness
+        // and saves a lot of radio/battery.
+        private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
     }
 }

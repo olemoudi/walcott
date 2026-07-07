@@ -10,7 +10,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import dev.walcott.enforcement.Enforcer
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.ui.WalcottApp
@@ -28,7 +30,15 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermissionIfNeeded()
 
         val app = application as WalcottApplication
-        EnforcementService.start(this)
+        // Enforcement only runs on devices that enforce rules; a parent phone that was
+        // already running the service (pre-mode versions) gets it stopped here.
+        lifecycleScope.launch {
+            if (app.identityStore.current().enforcesLocally) {
+                EnforcementService.start(this@MainActivity)
+            } else {
+                EnforcementService.stop(this@MainActivity)
+            }
+        }
 
         setContent {
             WalcottTheme {

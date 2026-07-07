@@ -32,6 +32,14 @@ class FamilyIdentityTest {
     }
 
     @Test
+    fun `only parent mode disables local enforcement`() {
+        assertEquals(false, FamilyIdentity(mode = DeviceMode.PARENT).enforcesLocally)
+        assertEquals(false, FamilyIdentity(role = Role.PARENT).enforcesLocally)
+        assertEquals(true, FamilyIdentity(mode = DeviceMode.CHILD).enforcesLocally)
+        assertEquals(true, FamilyIdentity().enforcesLocally)
+    }
+
+    @Test
     fun `serialization round-trips with new fields`() {
         val json = Json { encodeDefaults = true }
         val identity = FamilyIdentity(

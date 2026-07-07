@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.PowerManager
@@ -21,7 +23,9 @@ import dev.walcott.update.Updater
 import dev.walcott.rules.Verdict
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -38,15 +42,39 @@ class EnforcementService : LifecycleService() {
     private lateinit var sampler: UsageSampler
     private lateinit var power: PowerManager
 
+    /** Tracks the screen so the loop can sleep with zero wakeups while it's off. */
+    private val screenOn = MutableStateFlow(true)
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> screenOn.value = true
+                Intent.ACTION_SCREEN_OFF -> screenOn.value = false
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         enforcer = Enforcer(this)
         sampler = UsageSampler(this)
         power = getSystemService(PowerManager::class.java)
+        screenOn.value = power.isInteractive
+        registerReceiver(
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+        )
         startForegroundCompat()
         lifecycleScope.launch { runLoop() }
         observeWebFilter()
         scheduleUpdateChecks()
+    }
+
+    override fun onDestroy() {
+        runCatching { unregisterReceiver(screenReceiver) }
+        super.onDestroy()
     }
 
     /**
@@ -81,14 +109,23 @@ class EnforcementService : LifecycleService() {
     private suspend fun runLoop() {
         val repo = (application as WalcottApplication).repository
         var lastTick = SystemClock.elapsedRealtime()
+        var lastForeground: String? = null
 
         while (currentCoroutineContext().isActive) {
+            // Screen off: nothing accrues and blocked apps stay suspended, so park with
+            // zero wakeups until it comes back on, then re-evaluate right away (a bedtime
+            // or blocked window may have started meanwhile).
+            if (!screenOn.value) {
+                lastForeground = null
+                screenOn.first { it }
+                lastTick = SystemClock.elapsedRealtime()
+            }
+
             val nowClock = SystemClock.elapsedRealtime()
             val deltaSeconds = (nowClock - lastTick) / 1000
             lastTick = nowClock
 
-            val interactive = power.isInteractive
-            val foreground = if (interactive) sampler.currentForeground() else null
+            val foreground = sampler.currentForeground()
 
             val config = repo.configNow()
             val usage = repo.usageNow()
@@ -96,19 +133,25 @@ class EnforcementService : LifecycleService() {
             val managed = repo.managedPackagesNow()
             val now = LocalDateTime.now()
 
-            // Credit time to the foreground app's category (ignoring large jumps after doze).
-            if (foreground != null && foreground in managed && deltaSeconds in 1..MAX_CREDIT_SECONDS) {
+            // Credit time only on consecutive sightings of the same managed app, so the
+            // slow idle tick can't attribute time actually spent elsewhere.
+            if (foreground != null && foreground == lastForeground && foreground in managed &&
+                deltaSeconds in 1..MAX_CREDIT_SECONDS
+            ) {
                 config.assignments[foreground]?.let { categoryId ->
                     repo.addUsageSeconds(categoryId, deltaSeconds)
                 }
             }
+            lastForeground = foreground
 
             val blocked = managed.filterTo(mutableSetOf()) { pkg ->
                 RuleEngine.evaluate(config, pkg, now, usage, extra) is Verdict.Blocked
             }
             enforcer.apply(managed, blocked)
 
-            delay(TICK_MILLIS)
+            // Tight cadence only while a managed app is actually in use (budget countdown
+            // needs it); blocked apps are already suspended, so idling can tick slowly.
+            delay(if (foreground != null && foreground in managed) TICK_ACTIVE_MILLIS else TICK_IDLE_MILLIS)
         }
     }
 
@@ -143,7 +186,8 @@ class EnforcementService : LifecycleService() {
 
     companion object {
         private const val NOTIF_ID = 1
-        private const val TICK_MILLIS = 2000L
+        private const val TICK_ACTIVE_MILLIS = 2000L
+        private const val TICK_IDLE_MILLIS = 15_000L
         private const val MAX_CREDIT_SECONDS = 15L
         private const val UPDATE_CHECK_MILLIS = 6 * 60 * 60 * 1000L
 
@@ -154,6 +198,10 @@ class EnforcementService : LifecycleService() {
             } else {
                 context.startService(intent)
             }
+        }
+
+        fun stop(context: Context) {
+            context.stopService(Intent(context, EnforcementService::class.java))
         }
     }
 }
