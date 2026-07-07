@@ -48,6 +48,23 @@ data class DomainAppRuleDto(
 }
 
 /**
+ * Budgets map with [categoryId]/[dayTypeName] set to [minutes]. Null minutes clears the
+ * entry; categories whose per-day map empties out are dropped. Shared by the family
+ * editor and the per-child override editor.
+ */
+fun Map<String, Map<String, Int>>.withBudget(
+    categoryId: String,
+    dayTypeName: String,
+    minutes: Int?,
+): Map<String, Map<String, Int>> {
+    val perDay = this[categoryId].orEmpty().toMutableMap()
+    if (minutes == null) perDay.remove(dayTypeName) else perDay[dayTypeName] = minutes
+    val budgets = toMutableMap()
+    if (perDay.isEmpty()) budgets.remove(categoryId) else budgets[categoryId] = perDay
+    return budgets
+}
+
+/**
  * Per-child policy overrides. A null field inherits the family value; a non-null field
  * replaces it wholesale (no deep merge, so "no limit for this child" is expressible).
  */

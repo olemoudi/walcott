@@ -99,6 +99,17 @@ class PolicySettingsTest {
     }
 
     @Test
+    fun `withBudget sets, clears and drops empty categories`() {
+        val budgets = mapOf("games" to mapOf("SCHOOL" to 30))
+        assertEquals(
+            mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 60)),
+            budgets.withBudget("games", "WEEKEND", 60),
+        )
+        assertEquals(emptyMap<String, Map<String, Int>>(), budgets.withBudget("games", "SCHOOL", null))
+        assertEquals(budgets, budgets.withBudget("video", "SCHOOL", null))
+    }
+
+    @Test
     fun `legacy JSON without family fields decodes to defaults`() {
         val json = Json { ignoreUnknownKeys = true }
         val decoded = json.decodeFromString(

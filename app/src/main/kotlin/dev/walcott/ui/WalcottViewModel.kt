@@ -7,6 +7,7 @@ import dev.walcott.AppCategory
 import dev.walcott.data.InstalledApp
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.WalcottRepository
+import dev.walcott.data.withBudget
 import dev.walcott.rules.CategoryStatus
 import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
@@ -27,7 +28,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
-import java.time.LocalTime
 
 data class CategoryStatusUi(
     val category: AppCategory,
@@ -216,25 +216,11 @@ class WalcottViewModel(
         viewModelScope.launch { repository.unassign(packageName) }
 
     fun setBudget(categoryId: String, dayType: DayType, minutes: Int?) = viewModelScope.launch {
-        repository.updateSettings { current ->
-            val perDay = current.budgets[categoryId].orEmpty().toMutableMap()
-            if (minutes == null) perDay.remove(dayType.name) else perDay[dayType.name] = minutes
-            val budgets = current.budgets.toMutableMap()
-            if (perDay.isEmpty()) budgets.remove(categoryId) else budgets[categoryId] = perDay
-            current.copy(budgets = budgets)
-        }
+        repository.updateSettings { it.copy(budgets = it.budgets.withBudget(categoryId, dayType.name, minutes)) }
     }
 
-    fun setBedtime(dayType: DayType, start: LocalTime?, end: LocalTime?) = viewModelScope.launch {
-        repository.updateSettings { current ->
-            val bedtime = current.bedtime.toMutableMap()
-            if (start == null || end == null) {
-                bedtime.remove(dayType.name)
-            } else {
-                bedtime[dayType.name] = dev.walcott.data.WindowDto(start.toMinute(), end.toMinute())
-            }
-            current.copy(bedtime = bedtime)
-        }
+    fun setBedtime(bedtime: Map<String, dev.walcott.data.WindowDto>) = viewModelScope.launch {
+        repository.updateSettings { it.copy(bedtime = bedtime) }
     }
 
     fun grantExtra(categoryId: String, minutes: Long) =
@@ -243,8 +229,6 @@ class WalcottViewModel(
     fun createPin(pin: String) = viewModelScope.launch { repository.setPin(pin) }
 
     suspend fun checkPin(pin: String): Boolean = repository.verifyPin(pin)
-
-    private fun LocalTime.toMinute() = hour * 60 + minute
 
     class Factory(
         private val repository: WalcottRepository,

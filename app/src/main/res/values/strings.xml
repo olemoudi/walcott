@@ -218,4 +218,17 @@
     <string name="legacy_devices_header">Other linked devices</string>
     <string name="legacy_device_hint">Linked with an older app version — no per-child settings</string>
     <string name="device_settings_title">Device settings</string>
+
+    <!-- Child detail (parent mode) -->
+    <string name="child_detail_linked">Linked · %1$s</string>
+    <string name="child_detail_show_code">Show code</string>
+    <string name="child_enroll_qr_instructions">On %1$s\'s phone, open Walcott, choose \"This is a child\'s phone\" and scan this code.</string>
+    <string name="rename_child">Rename</string>
+    <string name="remove_child">Remove child</string>
+    <string name="remove_child_confirm">Remove %1$s? Their device keeps the family rules until it enrolls again.</string>
+    <string name="override_section_title">This child\'s rules</string>
+    <string name="override_inherited_hint">Inherited from the family unless you customize them here.</string>
+    <string name="override_bedtime_title">Custom bedtime</string>
+    <string name="override_budgets_title">Custom budgets</string>
+    <string name="last_7_days">Last 7 days</string>
 </resources>

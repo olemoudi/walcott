@@ -11,18 +11,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -93,33 +89,6 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             },
         )
     }
-}
-
-@Composable
-private fun BonusDialog(onDismiss: () -> Unit, onGrant: (String, Int) -> Unit) {
-    val spacing = Tokens.spacing
-    var category by remember { mutableStateOf(AppCategory.GAMES) }
-    var minutes by remember { mutableIntStateOf(15) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.give_bonus)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(AppCategory.GAMES, AppCategory.VIDEO, AppCategory.SOCIAL).forEach { c ->
-                        FilterChip(selected = category == c, onClick = { category = c }, label = { Text(stringResource(c.nameRes)) })
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(15, 30, 60).forEach { m ->
-                        FilterChip(selected = minutes == m, onClick = { minutes = m }, label = { Text(stringResource(R.string.extra_minutes, m)) })
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { onGrant(category.id, minutes) }) { Text(stringResource(R.string.action_grant)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
-    )
 }
 
 @Composable

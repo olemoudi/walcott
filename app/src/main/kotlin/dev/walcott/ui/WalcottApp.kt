@@ -26,6 +26,7 @@ import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.ui.parent.AppAssignScreen
 import dev.walcott.ui.parent.BudgetsScreen
 import dev.walcott.ui.parent.CalendarScreen
+import dev.walcott.ui.parent.ChildDetailScreen
 import dev.walcott.ui.parent.ChildrenScreen
 import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.FamiliesScreen
@@ -35,7 +36,7 @@ import dev.walcott.ui.parent.WebFilterScreen
 import dev.walcott.ui.parent.WeeklyReportScreen
 
 private enum class Screen {
-    MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY,
+    MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY, CHILD_DETAIL,
     APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER,
 }
 
@@ -62,6 +63,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
             },
         )
     }
+    var childDetailId by remember { mutableStateOf<String?>(null) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
 
     fun back() {
@@ -69,6 +71,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
             Screen.APPS, Screen.BUDGETS, Screen.CHILDREN,
             Screen.EARN, Screen.CALENDAR, Screen.REPORT, Screen.WEBFILTER,
             -> Screen.FAMILY
+            Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
             else -> screen
         }
@@ -104,8 +107,14 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                     Screen.FAMILIES -> FamiliesScreen(
                         viewModel,
                         onOpenFamily = { screen = Screen.FAMILY },
-                        onOpenChild = { /* child detail arrives in the next step */ },
+                        onOpenChild = { childId ->
+                            childDetailId = childId
+                            screen = Screen.CHILD_DETAIL
+                        },
                     )
+                    Screen.CHILD_DETAIL -> childDetailId?.let { childId ->
+                        ChildDetailScreen(viewModel, childId, onBack = ::back)
+                    }
                     Screen.FAMILY -> ParentHomeScreen(
                         title = if (parentMode) {
                             settings.familyName.ifBlank { stringResource(R.string.family_default_name) }

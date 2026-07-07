@@ -218,4 +218,17 @@
     <string name="legacy_devices_header">Otros dispositivos vinculados</string>
     <string name="legacy_device_hint">Vinculado con una versión antigua — sin ajustes por hijo</string>
     <string name="device_settings_title">Ajustes del dispositivo</string>
+
+    <!-- Detalle del hijo (modo padre) -->
+    <string name="child_detail_linked">Vinculado · %1$s</string>
+    <string name="child_detail_show_code">Ver código</string>
+    <string name="child_enroll_qr_instructions">En el teléfono de %1$s, abre Walcott, elige \"Este es el teléfono de un hijo\" y escanea este código.</string>
+    <string name="rename_child">Renombrar</string>
+    <string name="remove_child">Quitar hijo</string>
+    <string name="remove_child_confirm">¿Quitar a %1$s? Su dispositivo mantiene las reglas de la familia hasta que se vuelva a enrolar.</string>
+    <string name="override_section_title">Reglas de este hijo</string>
+    <string name="override_inherited_hint">Se heredan de la familia salvo que las personalices aquí.</string>
+    <string name="override_bedtime_title">Hora de dormir personalizada</string>
+    <string name="override_budgets_title">Límites personalizados</string>
+    <string name="last_7_days">Últimos 7 días</string>
 </resources>
