@@ -113,6 +113,41 @@ class SyncLoopTest {
     }
 
     @Test
+    fun `a per-child QR carries identity and the childId flows back to the parent`() {
+        val wire = Wire()
+
+        // 1. Parent generates a QR for the registered child "Ana".
+        val qr = PairingPayload(
+            "topic",
+            FamilyCrypto.toB64(familyKey.encoded),
+            FamilyCrypto.toB64(parentKeys.public.encoded),
+            childId = "child-ana",
+            childName = "Ana",
+            familyName = "Moudis",
+        ).encode()
+
+        // 2. Child scans it and reconstructs keys AND identity.
+        val paired = PairingPayload.decode(qr)!!
+        assertEquals("child-ana", paired.childId)
+        assertEquals("Ana", paired.childName)
+        assertEquals("Moudis", paired.familyName)
+        childFamilyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(paired.familyKeyB64))
+        childParentPublic = FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(paired.parentPublicKeyB64))
+
+        // 3. The child's snapshot carries the childId through the wire to the parent's map.
+        val snap = ChildSnapshot("dev-1", paired.childName, 1, 20_000, childId = paired.childId)
+        wire.toParent.addLast(SyncProtocol.encodeChild(snap, childFamilyKey))
+        parentApplyInbox(wire)
+        assertEquals("child-ana", parentSeesChildren.getValue("dev-1").childId)
+
+        // 4. Re-publishing with the same deviceId replaces the entry — no duplicates.
+        wire.toParent.addLast(SyncProtocol.encodeChild(snap.copy(version = 2), childFamilyKey))
+        parentApplyInbox(wire)
+        assertEquals(1, parentSeesChildren.size)
+        assertEquals(2, parentSeesChildren.getValue("dev-1").version)
+    }
+
+    @Test
     fun `child ignores a stale out-of-order parent snapshot`() {
         val wire = Wire()
         childFamilyKey = familyKey

@@ -52,6 +52,8 @@ data class ChildSnapshot(
     val extra: List<UsageEntry> = emptyList(),
     val requests: List<ExtraTimeRequest> = emptyList(),
     val history: List<DayUsage> = emptyList(),
+    /** Registry id from the per-child enrollment QR; "" for legacy/anonymous children. */
+    val childId: String = "",
 )
 
 /**

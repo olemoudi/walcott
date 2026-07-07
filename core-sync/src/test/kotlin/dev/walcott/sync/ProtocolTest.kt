@@ -29,6 +29,7 @@ class ProtocolTest {
         val snapshot = ChildSnapshot(
             deviceId = "dev-1",
             displayName = "Ana's phone",
+            childId = "c1",
             version = 2,
             epochDay = 20_000,
             usage = listOf(UsageEntry("games", 600)),
@@ -38,6 +39,16 @@ class ProtocolTest {
         val decoded = SyncProtocol.decode(wire, familyKey, parent.public)
         assertInstanceOf(IncomingMessage.FromChild::class.java, decoded)
         assertEquals(snapshot, (decoded as IncomingMessage.FromChild).snapshot)
+    }
+
+    @Test
+    fun `a legacy child snapshot without childId decodes with a blank default`() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val decoded = json.decodeFromString(
+            ChildSnapshot.serializer(),
+            """{"deviceId":"d","displayName":"phone","version":1,"epochDay":1}""",
+        )
+        assertEquals("", decoded.childId)
     }
 
     @Test

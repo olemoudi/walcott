@@ -31,6 +31,31 @@ class PairingTest {
     }
 
     @Test
+    fun `per-child fields round-trip`() {
+        val payload = PairingPayload("t", "k", "p", childId = "c1", childName = "Ana", familyName = "Moudis")
+        assertEquals(payload, PairingPayload.decode(payload.encode()))
+    }
+
+    @Test
+    fun `a legacy QR without per-child fields decodes with blank defaults`() {
+        // Encoded exactly as the old app did: only the four original fields.
+        val legacyJson = """{"topic":"t","familyKeyB64":"k","parentPublicKeyB64":"p","ntfyServer":"https://ntfy.sh"}"""
+        val legacyQr = "walcott1:" + FamilyCrypto.toB64(legacyJson.toByteArray())
+        val decoded = PairingPayload.decode(legacyQr)!!
+        assertEquals("", decoded.childId)
+        assertEquals("", decoded.childName)
+        assertEquals("", decoded.familyName)
+        assertEquals("t", decoded.topic)
+    }
+
+    @Test
+    fun `decoding tolerates unknown future fields`() {
+        val futureJson = """{"topic":"t","familyKeyB64":"k","parentPublicKeyB64":"p","futureField":42}"""
+        val futureQr = "walcott1:" + FamilyCrypto.toB64(futureJson.toByteArray())
+        assertEquals("t", PairingPayload.decode(futureQr)?.topic)
+    }
+
+    @Test
     fun `end-to-end - a child paired from the QR can read parent messages`() {
         // Parent creates identity.
         val familyKey = FamilyCrypto.generateFamilyKey()
