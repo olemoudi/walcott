@@ -38,6 +38,8 @@ data class CategoryStatusUi(
 data class ChildUiState(
     val loading: Boolean = true,
     val bedtimeActive: Boolean = false,
+    /** Today's configured bedtime window, if any (for the "bedtime tonight" row). */
+    val bedtimeTonight: dev.walcott.rules.TimeWindow? = null,
     val categories: List<CategoryStatusUi> = emptyList(),
 )
 
@@ -168,7 +170,8 @@ class WalcottViewModel(
         clock,
     ) { config, usage, effectiveExtra, earned, now ->
         val dayType = config.calendar.dayTypeOf(now.toLocalDate())
-        val bedtimeActive = config.bedtime[dayType]?.let { now.toLocalTime() in it } ?: false
+        val bedtimeTonight = config.bedtime[dayType]
+        val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
 
         // Show categories that have a defined budget/window or have apps assigned.
         val relevantIds = buildSet {
@@ -187,7 +190,12 @@ class WalcottViewModel(
                     earned = earned[id] ?: Duration.ZERO,
                 )
             }
-        ChildUiState(loading = false, bedtimeActive = bedtimeActive, categories = cards)
+        ChildUiState(
+            loading = false,
+            bedtimeActive = bedtimeActive,
+            bedtimeTonight = bedtimeTonight,
+            categories = cards,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 
     val settings: StateFlow<PolicySettings> =

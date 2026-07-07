@@ -231,4 +231,11 @@
     <string name="override_bedtime_title">Custom bedtime</string>
     <string name="override_budgets_title">Custom budgets</string>
     <string name="last_7_days">Last 7 days</string>
+
+    <!-- Child home: identity + enrollment + bedtime preview -->
+    <string name="child_greeting_named">Hi %1$s 👋</string>
+    <string name="join_family_title">Join your family</string>
+    <string name="join_family_desc">Ask a parent for your code and scan it here</string>
+    <string name="bedtime_tonight">Bedtime tonight</string>
+    <string name="bedtime_range">%1$s – %2$s</string>
 </resources>

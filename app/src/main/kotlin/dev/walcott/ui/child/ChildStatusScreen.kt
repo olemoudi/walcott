@@ -26,8 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,10 +55,15 @@ import com.journeyapps.barcodescanner.ScanOptions
 import dev.walcott.R
 import dev.walcott.rules.BlockReason
 import dev.walcott.rules.CategoryState
+import dev.walcott.rules.TimeWindow
+import dev.walcott.sync.DeviceMode
+import dev.walcott.sync.FamilyIdentity
 import dev.walcott.sync.Role
 import dev.walcott.ui.CategoryStatusUi
 import dev.walcott.ui.ChildUiState
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.ModeBadge
+import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.NumberDisplay
 import dev.walcott.ui.theme.Tokens
@@ -86,20 +91,27 @@ fun ChildStatusScreen(
         result.contents?.let { text -> scope.launch { viewModel.pairAsChild(text) } }
     }
 
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            item { Header(onOpenParent) }
+            item { Header(identity, settings.familyName, onOpenParent) }
             if (identity.role == Role.UNPAIRED) {
                 item {
-                    PairingBanner(onLink = {
+                    JoinFamilyCard(onLink = {
                         scanLauncher.launch(ScanOptions().setBeepEnabled(false).setOrientationLocked(false))
                     })
                 }
             }
             item { HeroCard(state) }
+            state.bedtimeTonight?.let { window ->
+                if (!state.bedtimeActive) {
+                    item { BedtimeTonightRow(window) }
+                }
+            }
             items(state.categories, key = { it.category.id }) { card ->
                 CategoryCard(card, onRequestExtra = {
                     if (identity.role == Role.CHILD) pendingRemote = card else pending = card
@@ -124,48 +136,101 @@ fun ChildStatusScreen(
     }
 }
 
+/** Primary enrollment call-to-action for a child device not yet linked to a family. */
 @Composable
-private fun PairingBanner(onLink: () -> Unit) {
+private fun JoinFamilyCard(onLink: () -> Unit) {
     val spacing = Tokens.spacing
     Surface(
         onClick = onLink,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(Modifier.padding(spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-            Spacer(Modifier.width(spacing.sm))
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.QrCodeScanner,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(36.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.not_linked), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text(stringResource(R.string.link_to_parent), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(
+                    stringResource(R.string.join_family_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    stringResource(R.string.join_family_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Header(onOpenParent: () -> Unit) {
+private fun Header(identity: FamilyIdentity, familyName: String, onOpenParent: () -> Unit) {
     val spacing = Tokens.spacing
     val today = LocalDate.now()
     val dateText = remember(today) {
         today.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(Locale.getDefault()))
             .replaceFirstChar { it.uppercase() }
     }
+    val enrolled = identity.role == Role.CHILD
     Row(
         Modifier.fillMaxWidth().padding(top = spacing.xxl, bottom = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(stringResource(R.string.child_greeting), style = MaterialTheme.typography.headlineMedium)
             Text(
-                dateText,
+                if (enrolled && identity.displayName.isNotBlank()) {
+                    stringResource(R.string.child_greeting_named, identity.displayName)
+                } else {
+                    stringResource(R.string.child_greeting)
+                },
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Text(
+                if (enrolled && familyName.isNotBlank()) familyName else dateText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        ModeBadge(DeviceMode.CHILD)
         IconButton(onClick = onOpenParent) {
             Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.settings_content_desc))
+        }
+    }
+}
+
+/** Small heads-up with tonight's bedtime window, hidden while bedtime is active. */
+@Composable
+private fun BedtimeTonightRow(window: TimeWindow) {
+    val spacing = Tokens.spacing
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.md), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Bedtime,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(spacing.sm))
+            Text(
+                stringResource(R.string.bedtime_tonight),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                stringResource(R.string.bedtime_range, window.start.hhmm(), window.end.hhmm()),
+                style = MaterialTheme.typography.titleSmall,
+            )
         }
     }
 }

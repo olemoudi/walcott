@@ -231,4 +231,11 @@
     <string name="override_bedtime_title">Hora de dormir personalizada</string>
     <string name="override_budgets_title">Límites personalizados</string>
     <string name="last_7_days">Últimos 7 días</string>
+
+    <!-- Home del hijo: identidad + enrolamiento + avance de hora de dormir -->
+    <string name="child_greeting_named">Hola %1$s 👋</string>
+    <string name="join_family_title">Únete a tu familia</string>
+    <string name="join_family_desc">Pide tu código a un padre y escanéalo aquí</string>
+    <string name="bedtime_tonight">Esta noche se duerme</string>
+    <string name="bedtime_range">%1$s – %2$s</string>
 </resources>
