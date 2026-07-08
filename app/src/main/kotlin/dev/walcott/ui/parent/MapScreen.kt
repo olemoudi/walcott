@@ -52,6 +52,15 @@ fun MapScreen(viewModel: WalcottViewModel, childId: String, onBack: () -> Unit) 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.map_title), onBack)
 
+        if (points.any { it.mock }) {
+            Text(
+                stringResource(R.string.location_mock_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.screen, vertical = spacing.sm),
+            )
+        }
+
         if (points.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(spacing.screen), contentAlignment = Alignment.Center) {
                 Text(

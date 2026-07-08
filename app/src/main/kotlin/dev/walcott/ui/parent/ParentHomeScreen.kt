@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,14 +40,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.provider.Settings
 import dev.walcott.R
+import dev.walcott.data.PinResult
+import dev.walcott.enforcement.AppBlockerService
 import dev.walcott.ui.WalcottViewModel
+import kotlinx.coroutines.launch
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
@@ -127,14 +140,43 @@ fun ParentHomeScreen(
     }
 
     if (confirmChangeMode) {
+        // Re-verify the PIN before leaving child mode (which would drop enforcement).
+        val scope = rememberCoroutineScope()
+        var pin by remember { mutableStateOf("") }
+        var pinError by remember { mutableStateOf<String?>(null) }
+        val wrongPin = stringResource(R.string.pin_incorrect)
+        val lockedFmt = stringResource(R.string.pin_locked)
         AlertDialog(
             onDismissRequest = { confirmChangeMode = false },
             title = { Text(stringResource(R.string.change_device_mode)) },
-            text = { Text(stringResource(R.string.change_mode_confirm)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.change_mode_confirm))
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(8); pinError = null },
+                        label = { Text(stringResource(R.string.pin_label)) },
+                        singleLine = true,
+                        isError = pinError != null,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
+                    )
+                    pinError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmChangeMode = false
-                    onChangeMode()
+                TextButton(enabled = pin.isNotEmpty(), onClick = {
+                    scope.launch {
+                        when (val result = viewModel.verifyPin(pin)) {
+                            is PinResult.Ok -> { confirmChangeMode = false; onChangeMode() }
+                            is PinResult.Wrong -> pinError = wrongPin
+                            is PinResult.Locked ->
+                                pinError = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                        }
+                    }
                 }) { Text(stringResource(R.string.change_mode_confirm_button)) }
             },
             dismissButton = {
@@ -147,20 +189,35 @@ fun ParentHomeScreen(
 @Composable
 private fun ProtectionBanner(deviceOwner: Boolean) {
     val spacing = Tokens.spacing
-    val (color, icon, text) = if (deviceOwner) {
-        Triple(MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle, stringResource(R.string.protection_active))
-    } else {
-        Triple(MaterialTheme.colorScheme.error, Icons.Filled.Warning, stringResource(R.string.protection_inactive))
+    val context = LocalContext.current
+    // Cheap re-read on each composition; returning from Accessibility settings recomposes this.
+    val accessibilityOn = !deviceOwner && AppBlockerService.isEnabled(context)
+    val amber = Color(0xFFB26A00)
+    val (color, icon, textRes) = when {
+        deviceOwner -> Triple(MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle, R.string.protection_active)
+        accessibilityOn -> Triple(amber, Icons.Filled.CheckCircle, R.string.protection_accessibility)
+        else -> Triple(MaterialTheme.colorScheme.error, Icons.Filled.Warning, R.string.protection_inactive)
     }
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
-    ) {
+    val base = Modifier.fillMaxWidth().padding(top = spacing.md)
+    val modifier = if (deviceOwner) {
+        base
+    } else {
+        base.clickable {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
+    }
+    Surface(shape = RoundedCornerShape(18.dp), color = color.copy(alpha = 0.12f), modifier = modifier) {
         Row(Modifier.padding(spacing.md), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(spacing.sm))
-            Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+            Text(stringResource(textRes), style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
+            if (!deviceOwner) {
+                Text(stringResource(R.string.protection_enable_action), style = MaterialTheme.typography.labelLarge, color = color)
+            }
         }
     }
 }

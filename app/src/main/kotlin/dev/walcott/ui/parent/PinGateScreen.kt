@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.PinResult
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
@@ -46,10 +47,16 @@ fun PinGateScreen(
     viewModel: WalcottViewModel,
     onUnlocked: () -> Unit,
     onBack: () -> Unit,
+    // Creating a PIN is only allowed in the parent's initial setup; a child device must never
+    // be able to set its own PIN to walk into parent settings (gate fail-open fix).
+    allowCreate: Boolean,
 ) {
     val hasPin by viewModel.hasPin.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val spacing = Tokens.spacing
+
+    val creating = !hasPin && allowCreate
+    val blocked = !hasPin && !allowCreate
 
     var pin by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
@@ -58,17 +65,27 @@ fun PinGateScreen(
     val tooShort = stringResource(R.string.pin_too_short)
     val mismatch = stringResource(R.string.pin_mismatch)
     val wrongPin = stringResource(R.string.pin_incorrect)
+    val lockedFmt = stringResource(R.string.pin_locked)
 
     val pinFocus = remember { FocusRequester() }
     val confirmFocus = remember { FocusRequester() }
 
     // Open the keyboard on the PIN field straight away so there's no extra tap.
-    LaunchedEffect(Unit) { pinFocus.requestFocus() }
+    LaunchedEffect(blocked) { if (!blocked) pinFocus.requestFocus() }
 
     fun submit() {
         if (hasPin) {
-            scope.launch { if (viewModel.checkPin(pin)) onUnlocked() else error = wrongPin }
-        } else {
+            scope.launch {
+                when (val result = viewModel.verifyPin(pin)) {
+                    is PinResult.Ok -> onUnlocked()
+                    is PinResult.Wrong -> error = wrongPin
+                    is PinResult.Locked -> {
+                        val mins = ((result.remainingMs + 59_999) / 60_000).toInt()
+                        error = lockedFmt.format(mins)
+                    }
+                }
+            }
+        } else if (creating) {
             when {
                 pin.length < 4 -> error = tooShort
                 pin != confirm -> error = mismatch
@@ -82,7 +99,7 @@ fun PinGateScreen(
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(
-            stringResource(if (hasPin) R.string.pin_title_enter else R.string.pin_title_create),
+            stringResource(if (creating) R.string.pin_title_create else R.string.pin_title_enter),
             onBack,
         )
         // imePadding lifts the whole block above the keyboard when it appears.
@@ -96,8 +113,18 @@ fun PinGateScreen(
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.primary,
             )
+            if (blocked) {
+                // Child device with no synced parent PIN yet: never let them in or set one.
+                Text(
+                    stringResource(R.string.pin_ask_parent),
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = spacing.md),
+                )
+                return@Column
+            }
             Text(
-                stringResource(if (hasPin) R.string.pin_subtitle_enter else R.string.pin_subtitle_create),
+                stringResource(if (creating) R.string.pin_subtitle_create else R.string.pin_subtitle_enter),
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(vertical = spacing.md),
@@ -112,7 +139,7 @@ fun PinGateScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.NumberPassword,
-                    imeAction = if (hasPin) ImeAction.Done else ImeAction.Next,
+                    imeAction = if (creating) ImeAction.Next else ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(
                     onDone = { submit() },
@@ -120,7 +147,7 @@ fun PinGateScreen(
                 ),
                 modifier = Modifier.fillMaxWidth().focusRequester(pinFocus),
             )
-            if (!hasPin) {
+            if (creating) {
                 OutlinedTextField(
                     value = confirm,
                     onValueChange = { confirm = it.filter(Char::isDigit).take(8); error = null },
@@ -148,7 +175,7 @@ fun PinGateScreen(
                 onClick = ::submit,
                 enabled = pin.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().padding(top = spacing.lg),
-            ) { Text(stringResource(if (hasPin) R.string.action_enter else R.string.action_create_pin)) }
+            ) { Text(stringResource(if (creating) R.string.action_create_pin else R.string.action_enter)) }
         }
     }
 }

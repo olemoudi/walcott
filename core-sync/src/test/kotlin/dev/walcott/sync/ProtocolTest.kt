@@ -96,6 +96,30 @@ class ProtocolTest {
     }
 
     @Test
+    fun `enforcement status and mock flag round-trip`() {
+        val snapshot = ChildSnapshot(
+            deviceId = "d", displayName = "phone", version = 1, epochDay = 1,
+            enforcement = EnforcementStatus.ACCESSIBILITY,
+            locations = listOf(LocationPoint(lat = 1.0, lng = 2.0, epochMs = 100L, mock = true)),
+        )
+        val decoded = SyncProtocol.decode(SyncProtocol.encodeChild(snapshot, familyKey), familyKey, parent.public)
+            as IncomingMessage.FromChild
+        assertEquals(EnforcementStatus.ACCESSIBILITY, decoded.snapshot.enforcement)
+        assertTrue(decoded.snapshot.locations.single().mock)
+    }
+
+    @Test
+    fun `legacy snapshot defaults enforcement unknown and mock false`() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val decoded = json.decodeFromString(
+            ChildSnapshot.serializer(),
+            """{"deviceId":"d","displayName":"p","version":1,"epochDay":1,"locations":[{"lat":1.0,"lng":2.0,"epochMs":1}]}""",
+        )
+        assertEquals(EnforcementStatus.UNKNOWN, decoded.enforcement)
+        assertTrue(!decoded.locations.single().mock)
+    }
+
+    @Test
     fun `legacy snapshots without location fields default to empty`() {
         val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
         val child = json.decodeFromString(

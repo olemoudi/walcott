@@ -1,0 +1,47 @@
+package dev.walcott.enforcement
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import dev.walcott.WalcottApplication
+import dev.walcott.sync.IdentityStore
+import kotlinx.coroutines.flow.first
+import java.util.concurrent.TimeUnit
+
+/**
+ * Belt-and-suspenders on enforcing devices: periodically make sure the enforcement service is
+ * running and re-assert the Device Owner restrictions. Recovers from system/low-memory kills;
+ * a manual force-stop still can't be recovered from a worker (the package is left "stopped"),
+ * which is why [DeviceRestrictions.KEY_APPS_CONTROL] is on by default to grey out force-stop.
+ */
+class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        val app = applicationContext as WalcottApplication
+        if (IdentityStore(applicationContext).current().enforcesLocally) {
+            runCatching { EnforcementService.start(applicationContext) }
+            runCatching {
+                val settings = app.repository.settingsFlow.first()
+                DeviceRestrictions.apply(
+                    applicationContext,
+                    settings.deviceRestrictions,
+                    app.syncManager.installExemption.value,
+                )
+            }
+        }
+        return Result.success()
+    }
+
+    companion object {
+        private const val NAME = "walcott_watchdog"
+
+        fun schedule(context: Context) {
+            val request = PeriodicWorkRequestBuilder<WatchdogWorker>(15, TimeUnit.MINUTES).build()
+            WorkManager.getInstance(context)
+                .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+        }
+    }
+}

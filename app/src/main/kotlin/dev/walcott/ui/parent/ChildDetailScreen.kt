@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
@@ -45,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,7 +55,9 @@ import dev.walcott.Distribution
 import dev.walcott.R
 import dev.walcott.data.ChildEntry
 import dev.walcott.data.withBudget
+import dev.walcott.provisioning.DeviceOwnerProvisioning
 import dev.walcott.sync.ChildSnapshot
+import dev.walcott.sync.EnforcementStatus
 import dev.walcott.sync.PairingPayload
 import dev.walcott.sync.Role
 import dev.walcott.ui.WalcottViewModel
@@ -125,6 +129,13 @@ fun ChildDetailScreen(
                 item {
                     LinkedCard(snapshot, onShowCode = { showCode = true })
                 }
+            }
+
+            // --- Enforcement status (warn if blocking isn't fully active on the child) ---
+            if (snapshot != null && snapshot.enforcement != EnforcementStatus.DEVICE_OWNER &&
+                snapshot.enforcement != EnforcementStatus.UNKNOWN
+            ) {
+                item { EnforcementWarningCard(snapshot.enforcement) }
             }
 
             // --- Stats ---
@@ -268,18 +279,44 @@ private fun DetailTopBar(title: String, onBack: () -> Unit, onRename: () -> Unit
     }
 }
 
+private enum class EnrollMode { DEVICE_OWNER, FALLBACK }
+
 @Composable
 private fun EnrollmentSection(entry: ChildEntry, pairingText: String?) {
     val spacing = Tokens.spacing
+    val context = LocalContext.current
+    // Device Owner is the strong path (full blocking); the fallback works without a factory reset.
+    var mode by remember { mutableStateOf(EnrollMode.DEVICE_OWNER) }
+
     Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-        Text(stringResource(R.string.pairing_step_download), style = MaterialTheme.typography.titleMedium)
-        Text(stringResource(R.string.qr_instructions), style = MaterialTheme.typography.bodyMedium)
-        QrCard(rememberQrBitmap(Distribution.CHILD_APK_URL, size = 200.dp))
-        Text(
-            stringResource(R.string.qr_provision_note),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            FilterChip(
+                selected = mode == EnrollMode.DEVICE_OWNER,
+                onClick = { mode = EnrollMode.DEVICE_OWNER },
+                label = { Text(stringResource(R.string.enroll_mode_do)) },
+            )
+            FilterChip(
+                selected = mode == EnrollMode.FALLBACK,
+                onClick = { mode = EnrollMode.FALLBACK },
+                label = { Text(stringResource(R.string.enroll_mode_fallback)) },
+            )
+        }
+
+        if (mode == EnrollMode.DEVICE_OWNER) {
+            Text(stringResource(R.string.enroll_do_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.enroll_do_instructions), style = MaterialTheme.typography.bodyMedium)
+            val payload = remember(context) { DeviceOwnerProvisioning.qrPayload(context) }
+            QrCard(rememberQrBitmap(payload, size = 200.dp))
+        } else {
+            Text(stringResource(R.string.pairing_step_download), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.qr_instructions), style = MaterialTheme.typography.bodyMedium)
+            QrCard(rememberQrBitmap(Distribution.CHILD_APK_URL, size = 200.dp))
+            Text(
+                stringResource(R.string.qr_provision_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         Text(stringResource(R.string.pairing_step_link), style = MaterialTheme.typography.titleMedium)
         Text(
@@ -368,6 +405,27 @@ private fun HistoryCard(snapshot: ChildSnapshot) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EnforcementWarningCard(status: String) {
+    val spacing = Tokens.spacing
+    val accessibility = status == EnforcementStatus.ACCESSIBILITY
+    val color = if (accessibility) Color(0xFFB26A00) else MaterialTheme.colorScheme.error
+    val text = stringResource(
+        if (accessibility) R.string.enforcement_accessibility_child else R.string.enforcement_none_child,
+    )
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(spacing.md))
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
         }
     }
 }

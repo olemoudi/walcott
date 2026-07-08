@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.PinResult
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.launch
 
@@ -58,6 +59,7 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val wrongPin = stringResource(R.string.pin_incorrect)
+    val lockedFmt = stringResource(R.string.pin_locked)
     val pinFocus = remember { FocusRequester() }
 
     val biometricEnabled = identity.appLockBiometric && activity != null &&
@@ -80,7 +82,13 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
     }
 
     fun submit() {
-        scope.launch { if (viewModel.checkPin(pin)) onUnlocked() else error = wrongPin }
+        scope.launch {
+            when (val result = viewModel.verifyPin(pin)) {
+                is PinResult.Ok -> onUnlocked()
+                is PinResult.Wrong -> error = wrongPin
+                is PinResult.Locked -> error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+            }
+        }
     }
 
     // Auto-prompt biometrics on open; otherwise focus the PIN field.

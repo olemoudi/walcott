@@ -1,5 +1,6 @@
 package dev.walcott.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -37,4 +38,5 @@ data class LocationPointEntity(
     val lat: Double,
     val lng: Double,
     val accuracyM: Float,
+    @ColumnInfo(defaultValue = "0") val mock: Boolean = false,
 )

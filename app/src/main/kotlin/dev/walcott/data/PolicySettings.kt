@@ -132,7 +132,16 @@ data class PolicySettings(
     val assignments: Map<String, String> = emptyMap(),
     /** Family-default periodic location-tracking interval in minutes (0 = off). */
     val trackingIntervalMinutes: Int = 0,
+    /** True once recommended anti-tamper defaults were seeded (so we only seed once). */
+    val hardeningSeeded: Boolean = false,
 ) {
+    /**
+     * One-time seeding of recommended anti-tamper [defaults] into [deviceRestrictions]. Idempotent
+     * and respects a parent later removing any of them (only runs while [hardeningSeeded] is false).
+     */
+    fun seedRestrictions(defaults: Set<String>): PolicySettings =
+        if (hardeningSeeded) this
+        else copy(deviceRestrictions = deviceRestrictions + defaults, hardeningSeeded = true)
     /**
      * Family policy with [childId]'s overrides applied (null override field = inherit).
      * Blank/unknown ids return the family policy unchanged, so legacy children degrade cleanly.

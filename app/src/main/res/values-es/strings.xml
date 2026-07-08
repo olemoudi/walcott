@@ -109,6 +109,10 @@
     <string name="sync_request_text">%1$s pide %2$d min</string>
 
     <!-- Sync: emparejamiento -->
+    <string name="enroll_mode_do">Device Owner</string>
+    <string name="enroll_mode_fallback">Instalar APK</string>
+    <string name="enroll_do_title">1 · Aprovisionar como Device Owner</string>
+    <string name="enroll_do_instructions">En un móvil del hijo recién restablecido de fábrica, toca 6 veces la pantalla de bienvenida para abrir el lector de QR y escanea este. Instala Walcott y lo configura como Device Owner (protección completa y resistente a manipulación).</string>
     <string name="pairing_step_download">1 · Instala la app</string>
     <string name="pairing_step_link">2 · Vincula el dispositivo</string>
     <string name="pairing_failed">No se pudo leer ese código</string>
@@ -278,6 +282,23 @@
     <string name="restriction_add_user_desc">Un segundo perfil de usuario escaparía a las reglas</string>
     <string name="restriction_apps_control_title">Bloquear manipulación de apps</string>
     <string name="restriction_apps_control_desc">No se pueden forzar cierres ni borrar datos de apps desde Ajustes</string>
+    <string name="restriction_unknown_sources_title">Bloquear sideload</string>
+    <string name="restriction_unknown_sources_desc">No se pueden instalar apps de orígenes desconocidos</string>
+
+    <!-- Anti-manipulación: estado de enforcement, fallback de accesibilidad, lockout de PIN, bloqueo -->
+    <string name="protection_accessibility">Protección básica (Accesibilidad)</string>
+    <string name="protection_enable_action">Activar</string>
+    <string name="accessibility_desc">Permite a Walcott bloquear apps en este dispositivo cuando no es Device Owner.</string>
+    <string name="enforcement_none_child">El bloqueo NO está activo en este dispositivo. Abre Walcott aquí y activa la protección.</string>
+    <string name="enforcement_accessibility_child">Protección básica por Accesibilidad. Para protección completa, configura Walcott como Device Owner.</string>
+    <string name="enforcement_off_title">%1$s sin protección</string>
+    <string name="enforcement_off_text">El bloqueo no está activo en ese dispositivo.</string>
+    <string name="block_channel_name">Bloqueo de apps</string>
+    <string name="block_notif_title">App bloqueada</string>
+    <string name="block_notif_text">Esta app está bloqueada ahora mismo.</string>
+    <string name="pin_locked">Demasiados intentos. Reintenta en %1$d min.</string>
+    <string name="pin_ask_parent">Pide el PIN a tu madre o padre.</string>
+    <string name="location_mock_warning">Aviso: algunas ubicaciones recientes podrían ser falsas (GPS simulado).</string>
 
     <!-- Check-in / falta de señal -->
     <string name="child_stale_line">Sin señal desde hace %1$s — la protección podría estar inactiva</string>

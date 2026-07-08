@@ -6,8 +6,10 @@ import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottDatabase
 import dev.walcott.data.WalcottRepository
 import dev.walcott.enforcement.EnforcementService
+import dev.walcott.enforcement.WatchdogWorker
 import dev.walcott.net.VpnController
 import dev.walcott.sync.IdentityStore
+import dev.walcott.sync.Role
 import dev.walcott.sync.StaleChildWorker
 import dev.walcott.sync.SyncManager
 import dev.walcott.sync.SyncStore
@@ -52,8 +54,11 @@ class WalcottApplication : Application() {
         syncManager.start()
         observeModeTransitions()
 
-        // One-time: fold legacy Room app assignments into the synced policy (no-op afterwards).
-        appScope.launch { repository.migrateLocalAssignmentsToSettings() }
+        // One-time migrations/seeding on the parent (children receive these via sync).
+        appScope.launch {
+            repository.migrateLocalAssignmentsToSettings()
+            if (identityStore.current().role == Role.PARENT) repository.seedHardeningIfNeeded()
+        }
 
         // Keep the app up to date: a periodic check plus one now (covers app launch).
         UpdateWorker.schedule(this)
@@ -61,6 +66,9 @@ class WalcottApplication : Application() {
 
         // Parent-side watchdog for children that stop checking in (no-op on other modes).
         StaleChildWorker.schedule(this)
+
+        // Child-side watchdog: keep enforcement alive and re-assert Device Owner policies.
+        WatchdogWorker.schedule(this)
     }
 
     /**

@@ -73,6 +73,8 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
         )
     }
     var childDetailId by remember { mutableStateOf<String?>(null) }
+    // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
+    var gateAllowCreate by remember { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
 
     // Parent app lock: gate the whole app behind the PIN/biometrics on open and re-lock
@@ -130,14 +132,18 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                 when (current) {
                     Screen.MODE_SELECT -> ModeSelectScreen(
                         viewModel,
-                        onParentCreated = { screen = Screen.GATE },
+                        onParentCreated = { gateAllowCreate = true; screen = Screen.GATE },
                         onChildSelected = { screen = Screen.CHILD },
                     )
-                    Screen.CHILD -> ChildStatusScreen(viewModel, onOpenParent = { screen = Screen.GATE })
+                    Screen.CHILD -> ChildStatusScreen(
+                        viewModel,
+                        onOpenParent = { gateAllowCreate = false; screen = Screen.GATE },
+                    )
                     Screen.GATE -> PinGateScreen(
                         viewModel,
                         onUnlocked = { screen = if (parentMode) Screen.FAMILIES else Screen.FAMILY },
                         onBack = ::back,
+                        allowCreate = gateAllowCreate,
                     )
                     Screen.FAMILIES -> FamiliesScreen(
                         viewModel,

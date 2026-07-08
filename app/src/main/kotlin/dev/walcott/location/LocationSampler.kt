@@ -86,7 +86,12 @@ class LocationSampler(private val context: Context) {
         lng = longitude,
         epochMs = time.takeIf { it > 0 } ?: System.currentTimeMillis(),
         accuracyM = if (hasAccuracy()) accuracy else 0f,
+        mock = isMockFix(),
     )
+
+    @Suppress("DEPRECATION")
+    private fun Location.isMockFix(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) isMock else isFromMockProvider
 
     companion object {
         private const val FIX_TIMEOUT_MS = 20_000L

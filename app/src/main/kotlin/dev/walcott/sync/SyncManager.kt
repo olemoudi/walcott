@@ -2,10 +2,13 @@ package dev.walcott.sync
 
 import android.content.Context
 import android.os.Build
+import dev.walcott.data.PinLockout
+import dev.walcott.data.PinResult
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottRepository
 import dev.walcott.enforcement.DeviceRestrictions
+import dev.walcott.enforcement.EnforcementBackends
 import dev.walcott.location.LocationSampler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -143,6 +146,7 @@ class SyncManager(
         )
         identityStore.save(identity)
         settingsStore.update { it.copy(familyName = familyName) }
+        repository.seedHardeningIfNeeded()
         connect(identity)
         publishSelf()
     }
@@ -269,6 +273,31 @@ class SyncManager(
     /** Publish this child's snapshot now (used by the periodic location sampler). */
     suspend fun publishLocationUpdate() = publishSelf()
 
+    /** PIN check with escalating brute-force lockout (device-local state). */
+    suspend fun verifyPinGuarded(pin: String): PinResult {
+        val s = syncStore.current()
+        val now = System.currentTimeMillis()
+        val remaining = PinLockout.remainingMs(s.pinLockedUntilMs, now)
+        if (remaining > 0) return PinResult.Locked(remaining)
+
+        if (repository.verifyPin(pin)) {
+            if (s.pinFailedAttempts != 0 || s.pinLockedUntilMs != 0L) {
+                syncStore.update { it.copy(pinFailedAttempts = 0, pinLockedUntilMs = 0) }
+            }
+            return PinResult.Ok
+        }
+
+        val attempts = s.pinFailedAttempts + 1
+        val lockMs = PinLockout.lockoutMs(attempts)
+        syncStore.update {
+            it.copy(
+                pinFailedAttempts = attempts,
+                pinLockedUntilMs = if (lockMs > 0) now + lockMs else it.pinLockedUntilMs,
+            )
+        }
+        return if (lockMs > 0) PinResult.Locked(lockMs) else PinResult.Wrong
+    }
+
     // --- Publish / receive ---
 
     private suspend fun publishSelf() {
@@ -315,6 +344,7 @@ class SyncManager(
                     asks = s.pendingAsks,
                     apps = apps,
                     locations = repository.recentLocations(),
+                    enforcement = EnforcementBackends.status(context),
                 )
                 transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
             }
@@ -407,6 +437,18 @@ class SyncManager(
                 children = merged,
                 lastSeen = it.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
             )
+        }
+
+        // Alert once when a child reports enforcement is inactive (not Device Owner and no
+        // accessibility blocker); clear the flag when it recovers so a later lapse re-alerts.
+        val nowInactive = snapshot.enforcement == EnforcementStatus.NONE
+        if (nowInactive && snapshot.deviceId !in before.enforcementNotified) {
+            SyncNotifications.notifyEnforcementInactive(context, snapshot.displayName, snapshot.deviceId)
+            syncStore.update { it.copy(enforcementNotified = it.enforcementNotified + snapshot.deviceId) }
+        } else if (!nowInactive && snapshot.enforcement != EnforcementStatus.UNKNOWN &&
+            snapshot.deviceId in before.enforcementNotified
+        ) {
+            syncStore.update { it.copy(enforcementNotified = it.enforcementNotified - snapshot.deviceId) }
         }
 
         val resolved = before.resolutions.map { it.requestId }.toSet()

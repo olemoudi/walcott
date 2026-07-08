@@ -25,6 +25,9 @@ data class SyncState(
     val installExemptionUntilMs: Long = 0,
     /** requestedAtMs of the newest location request this child has already answered. */
     val appliedLocationRequestMs: Long = 0,
+    /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */
+    val pinFailedAttempts: Int = 0,
+    val pinLockedUntilMs: Long = 0,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
@@ -36,6 +39,8 @@ data class SyncState(
     val lastSeen: Map<String, Long> = emptyMap(),
     /** deviceId -> the lastSeen value we already alerted about (one alert per outage). */
     val staleNotifiedLastSeen: Map<String, Long> = emptyMap(),
+    /** deviceIds already alerted for having enforcement inactive (cleared when it recovers). */
+    val enforcementNotified: Set<String> = emptySet(),
 )
 
 private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_sync")

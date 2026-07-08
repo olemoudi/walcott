@@ -268,7 +268,8 @@ class WalcottViewModel(
 
     fun createPin(pin: String) = viewModelScope.launch { repository.setPin(pin) }
 
-    suspend fun checkPin(pin: String): Boolean = repository.verifyPin(pin)
+    /** PIN check with brute-force lockout. */
+    suspend fun verifyPin(pin: String): dev.walcott.data.PinResult = sync.verifyPinGuarded(pin)
 
     class Factory(
         private val repository: WalcottRepository,

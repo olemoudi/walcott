@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ExtraTimeEntity::class,
         LocationPointEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class WalcottDatabase : RoomDatabase() {
@@ -39,6 +39,12 @@ abstract class WalcottDatabase : RoomDatabase() {
                             "`lng` REAL NOT NULL, " +
                             "`accuracyM` REAL NOT NULL)",
                     )
+                }
+            },
+            // v3: mock-provider flag for spoof detection.
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE `location_point` ADD COLUMN `mock` INTEGER NOT NULL DEFAULT 0")
                 }
             },
         )

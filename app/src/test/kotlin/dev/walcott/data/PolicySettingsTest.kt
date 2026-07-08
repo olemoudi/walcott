@@ -144,6 +144,17 @@ class PolicySettingsTest {
     }
 
     @Test
+    fun `seedRestrictions adds defaults once and respects later removal`() {
+        val defaults = setOf("datetime", "vpn", "apps_control")
+        val seeded = PolicySettings().seedRestrictions(defaults)
+        assertEquals(defaults, seeded.deviceRestrictions)
+        assertTrue(seeded.hardeningSeeded)
+        // Once seeded, a parent removing one of them is not undone by a later seed call.
+        val afterRemoval = seeded.copy(deviceRestrictions = setOf("vpn"))
+        assertEquals(setOf("vpn"), afterRemoval.seedRestrictions(defaults).deviceRestrictions)
+    }
+
+    @Test
     fun `withLegacyAssignments adopts only when none set yet`() {
         val legacy = mapOf("com.game" to "games")
         assertEquals(legacy, PolicySettings().withLegacyAssignments(legacy).assignments)

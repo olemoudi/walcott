@@ -30,9 +30,13 @@ object DeviceRestrictions {
     const val KEY_INSTALLS = "installs"
     const val KEY_ADD_USER = "add_user"
     const val KEY_APPS_CONTROL = "apps_control"
+    const val KEY_UNKNOWN_SOURCES = "unknown_sources"
 
     /** How long the PIN-gated "allow installs" exemption lasts on the child device. */
     const val INSTALL_EXEMPTION_MS = 15 * 60 * 1000L
+
+    /** Anti-tamper features seeded on by default for new families (see PolicySettings.seedRestrictions). */
+    val RECOMMENDED_DEFAULTS = setOf(KEY_DATETIME, KEY_VPN, KEY_APPS_CONTROL, KEY_UNKNOWN_SOURCES)
 
     data class Feature(val key: String, val restrictions: List<String>)
 
@@ -44,6 +48,7 @@ object DeviceRestrictions {
         Feature(KEY_INSTALLS, listOf(UserManager.DISALLOW_INSTALL_APPS)),
         Feature(KEY_ADD_USER, listOf(UserManager.DISALLOW_ADD_USER)),
         Feature(KEY_APPS_CONTROL, listOf(UserManager.DISALLOW_APPS_CONTROL)),
+        Feature(KEY_UNKNOWN_SOURCES, listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)),
     )
 
     /** [enabledKeys] minus the install block while a PIN-gated exemption window is open. */
@@ -56,6 +61,9 @@ object DeviceRestrictions {
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
         val admin = WalcottAdminReceiver.componentName(context)
         val effective = effectiveKeys(enabledKeys, installExemptUntilMs, System.currentTimeMillis())
+
+        // Self-protection: as Device Owner, Walcott can't be uninstalled (always on).
+        runCatching { dpm.setUninstallBlocked(admin, context.packageName, true) }
 
         for (feature in FEATURES) {
             val enabled = feature.key in effective
@@ -70,7 +78,10 @@ object DeviceRestrictions {
         // Side effects: locking the setting is only useful if the setting is in the safe state.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (KEY_LOCATION in enabledKeys) runCatching { dpm.setLocationEnabled(admin, true) }
-            if (KEY_DATETIME in enabledKeys) runCatching { dpm.setAutoTimeEnabled(admin, true) }
+            if (KEY_DATETIME in enabledKeys) {
+                runCatching { dpm.setAutoTimeEnabled(admin, true) }
+                runCatching { dpm.setAutoTimeZoneEnabled(admin, true) }
+            }
         }
         runCatching {
             dpm.setKeyguardDisabledFeatures(

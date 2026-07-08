@@ -92,7 +92,9 @@ class WalcottRepository(
     /** Stores a fix and prunes anything older than the retention window. */
     suspend fun recordLocation(point: LocationPoint) {
         db.locations().insert(
-            LocationPointEntity(epochMs = point.epochMs, lat = point.lat, lng = point.lng, accuracyM = point.accuracyM),
+            LocationPointEntity(
+                epochMs = point.epochMs, lat = point.lat, lng = point.lng, accuracyM = point.accuracyM, mock = point.mock,
+            ),
         )
         db.locations().deleteOlderThan(System.currentTimeMillis() - LOCATION_RETENTION_MS)
     }
@@ -100,7 +102,7 @@ class WalcottRepository(
     /** The last [LOCATION_RETENTION_MS] of fixes, oldest first, for the parent's map. */
     suspend fun recentLocations(): List<LocationPoint> =
         db.locations().getSince(System.currentTimeMillis() - LOCATION_RETENTION_MS)
-            .map { LocationPoint(lat = it.lat, lng = it.lng, epochMs = it.epochMs, accuracyM = it.accuracyM) }
+            .map { LocationPoint(lat = it.lat, lng = it.lng, epochMs = it.epochMs, accuracyM = it.accuracyM, mock = it.mock) }
 
     // --- Assignments (in the synced policy; changes republish to children) ---
 
@@ -119,6 +121,12 @@ class WalcottRepository(
         val legacy = db.assignments().getAll().associate { it.packageName to it.categoryId }
         if (legacy.isEmpty()) return
         updateSettings { it.withLegacyAssignments(legacy) }
+    }
+
+    /** One-time: turn the recommended anti-tamper restrictions on by default (parent edits sync down). */
+    suspend fun seedHardeningIfNeeded() {
+        if (settingsStore.current().hardeningSeeded) return
+        updateSettings { it.seedRestrictions(dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_DEFAULTS) }
     }
 
     // --- Parent PIN ---

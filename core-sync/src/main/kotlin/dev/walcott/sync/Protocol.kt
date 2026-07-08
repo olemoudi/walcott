@@ -70,6 +70,8 @@ data class LocationPoint(
     val lng: Double,
     val epochMs: Long,
     val accuracyM: Float = 0f,
+    /** True if the fix came from a mock provider (possible spoofing). */
+    val mock: Boolean = false,
 )
 
 /** Parent asks a specific device to report its current location on its next check-in. */
@@ -95,7 +97,17 @@ data class ChildSnapshot(
     val apps: List<InstalledAppInfo> = emptyList(),
     /** Recent GPS fixes (last 12h) for the parent's map, newest last. */
     val locations: List<LocationPoint> = emptyList(),
+    /** Active enforcement backend on this device: "device_owner" | "accessibility" | "none". */
+    val enforcement: String = EnforcementStatus.UNKNOWN,
 )
+
+/** Enforcement backend a child reports so the parent knows if blocking is actually active. */
+object EnforcementStatus {
+    const val DEVICE_OWNER = "device_owner"
+    const val ACCESSIBILITY = "accessibility"
+    const val NONE = "none"
+    const val UNKNOWN = "unknown"
+}
 
 /**
  * Published by the parent. Carries the rules as an opaque JSON blob (the app owns the

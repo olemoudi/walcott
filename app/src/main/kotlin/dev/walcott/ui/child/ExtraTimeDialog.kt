@@ -81,7 +81,7 @@ fun ExtraTimeDialog(
                 onClick = {
                     checking = true
                     scope.launch {
-                        val ok = viewModel.checkPin(pin)
+                        val ok = viewModel.verifyPin(pin) is dev.walcott.data.PinResult.Ok
                         checking = false
                         if (ok) {
                             viewModel.grantExtra(card.category.id, minutes.toLong())
