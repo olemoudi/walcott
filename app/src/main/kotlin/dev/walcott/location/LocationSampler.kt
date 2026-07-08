@@ -28,8 +28,12 @@ class LocationSampler(private val context: Context) {
     suspend fun currentFix(timeoutMs: Long = FIX_TIMEOUT_MS): LocationPoint? {
         val lm = lm ?: return null
         if (!hasPermission()) return null
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+        // Prefer the platform fused provider (API 31+, better/faster with less battery), then GPS.
+        val providers = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(LocationManager.FUSED_PROVIDER)
+            add(LocationManager.GPS_PROVIDER)
+            add(LocationManager.NETWORK_PROVIDER)
+        }.filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
 
         for (provider in providers) {
             val loc = withTimeoutOrNull(timeoutMs) { requestSingle(lm, provider) }

@@ -32,6 +32,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -61,8 +62,13 @@ fun MapScreen(viewModel: WalcottViewModel, childId: String, onBack: () -> Unit) 
             }
         } else {
             val mapView = remember {
-                // osmdroid requires a user agent before any tile fetch.
-                Configuration.getInstance().userAgentValue = context.packageName
+                // osmdroid needs a user agent, and its default cache path targets external
+                // storage (fails under scoped storage); keep everything in app-private cache.
+                Configuration.getInstance().apply {
+                    userAgentValue = context.packageName
+                    osmdroidBasePath = File(context.cacheDir, "osmdroid")
+                    osmdroidTileCache = File(osmdroidBasePath, "tiles")
+                }
                 MapView(context).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)

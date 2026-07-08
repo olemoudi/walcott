@@ -129,6 +129,21 @@ class PolicySettingsTest {
     }
 
     @Test
+    fun `tracking interval defaults to off and survives round-trip`() {
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        // Legacy JSON without the field decodes to the off default.
+        val legacy = json.decodeFromString(PolicySettings.serializer(), """{"version":5}""")
+        assertEquals(0, legacy.trackingIntervalMinutes)
+        // A set value round-trips.
+        val withTracking = settings.copy(trackingIntervalMinutes = 15)
+        val decoded = json.decodeFromString(
+            PolicySettings.serializer(),
+            json.encodeToString(PolicySettings.serializer(), withTracking),
+        )
+        assertEquals(15, decoded.trackingIntervalMinutes)
+    }
+
+    @Test
     fun `withLegacyAssignments adopts only when none set yet`() {
         val legacy = mapOf("com.game" to "games")
         assertEquals(legacy, PolicySettings().withLegacyAssignments(legacy).assignments)

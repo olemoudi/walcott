@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import dev.walcott.MainActivity
@@ -63,12 +64,15 @@ class EnforcementService : LifecycleService() {
         sampler = UsageSampler(this)
         power = getSystemService(PowerManager::class.java)
         screenOn.value = power.isInteractive
-        registerReceiver(
+        // Explicit NOT_EXPORTED keeps registration valid under the Android 14 receiver-flag rule.
+        ContextCompat.registerReceiver(
+            this,
             screenReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
             },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         // Grant location before startForeground so the service can claim the location FGS type.
         LocationPolicy.ensureEnforced(this)
@@ -231,12 +235,15 @@ class EnforcementService : LifecycleService() {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Add the location type only when the permission is held, or startForeground throws.
-            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            if (LocationPolicy.hasFineLocation(this)) {
-                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            // Claim the location type only when the permission is held. Degrade to special-use
+            // if the richer type is refused, so enforcement never dies at startup.
+            val special = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            val withLocation =
+                if (LocationPolicy.hasFineLocation(this)) special or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                else special
+            if (runCatching { startForeground(NOTIF_ID, notification, withLocation) }.isFailure && withLocation != special) {
+                startForeground(NOTIF_ID, notification, special)
             }
-            startForeground(NOTIF_ID, notification, type)
         } else {
             startForeground(NOTIF_ID, notification)
         }
