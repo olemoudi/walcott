@@ -41,6 +41,23 @@
             </intent-filter>
         </activity>
 
+        <!-- Modern (API 29+) Device Owner provisioning handshake driven by the setup wizard after
+             it installs Walcott from the QR. BIND_DEVICE_ADMIN restricts launch to the system. -->
+        <activity
+            android:name=".provisioning.ProvisioningActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@style/Theme.Walcott">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".enforcement.EnforcementService"
             android:exported="false"

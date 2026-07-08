@@ -115,6 +115,7 @@
     <string name="enroll_do_instructions">En un móvil del hijo recién restablecido de fábrica, toca 6 veces la pantalla de bienvenida para abrir el lector de QR y escanea este. Instala Walcott y lo configura como Device Owner (protección completa y resistente a manipulación).</string>
     <string name="pairing_step_download">1 · Instala la app</string>
     <string name="pairing_step_link">2 · Vincula el dispositivo</string>
+    <string name="enroll_next">Siguiente</string>
     <string name="pairing_failed">No se pudo leer ese código</string>
 
     <!-- Sync: panel del padre / peticiones -->

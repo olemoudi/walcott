@@ -115,6 +115,7 @@
     <string name="enroll_do_instructions">On a factory-reset child phone, tap the welcome screen 6 times to open the QR reader, then scan this. It installs Walcott and sets it as Device Owner (full, tamper-resistant protection).</string>
     <string name="pairing_step_download">1 · Install the app</string>
     <string name="pairing_step_link">2 · Link the device</string>
+    <string name="enroll_next">Next</string>
     <string name="pairing_failed">Couldn\'t read that code</string>
 
     <!-- Sync: parent dashboard / requests -->

@@ -1,5 +1,12 @@
 package dev.walcott.ui.parent
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
@@ -290,48 +298,90 @@ private enum class EnrollMode { DEVICE_OWNER, FALLBACK }
 @Composable
 private fun EnrollmentSection(entry: ChildEntry, pairingText: String?) {
     val spacing = Tokens.spacing
-    val context = LocalContext.current
     // Device Owner is the strong path (full blocking); the fallback works without a factory reset.
     var mode by remember { mutableStateOf(EnrollMode.DEVICE_OWNER) }
+    // Two-step wizard: only one QR is ever on screen at a time, so the child's camera can't
+    // lock onto the wrong code when two are shown together.
+    var step by rememberSaveable { mutableStateOf(0) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-            FilterChip(
-                selected = mode == EnrollMode.DEVICE_OWNER,
-                onClick = { mode = EnrollMode.DEVICE_OWNER },
-                label = { Text(stringResource(R.string.enroll_mode_do)) },
-            )
-            FilterChip(
-                selected = mode == EnrollMode.FALLBACK,
-                onClick = { mode = EnrollMode.FALLBACK },
-                label = { Text(stringResource(R.string.enroll_mode_fallback)) },
-            )
+    // Without a pairing code (non-parent device) there's only the install QR — no second step.
+    if (pairingText == null) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+            EnrollModeChips(mode, onSelect = { mode = it })
+            EnrollInstallStep(mode)
         }
+        return
+    }
 
-        if (mode == EnrollMode.DEVICE_OWNER) {
-            Text(stringResource(R.string.enroll_do_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.enroll_do_instructions), style = MaterialTheme.typography.bodyMedium)
-            val payload = remember(context) { DeviceOwnerProvisioning.qrPayload(context) }
-            QrCard(rememberQrBitmap(payload, size = 200.dp))
-        } else {
-            Text(stringResource(R.string.pairing_step_download), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.qr_instructions), style = MaterialTheme.typography.bodyMedium)
-            QrCard(rememberQrBitmap(Distribution.CHILD_APK_URL, size = 200.dp))
-            Text(
-                stringResource(R.string.qr_provision_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    AnimatedContent(
+        targetState = step,
+        transitionSpec = {
+            val dir = if (targetState > initialState) 1 else -1
+            (slideInHorizontally(tween(220)) { w -> dir * w } + fadeIn(tween(220))) togetherWith
+                (slideOutHorizontally(tween(220)) { w -> -dir * w } + fadeOut(tween(220)))
+        },
+        label = "enrollStep",
+    ) { currentStep ->
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+            if (currentStep == 0) {
+                EnrollModeChips(mode, onSelect = { mode = it })
+                EnrollInstallStep(mode)
+                Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.enroll_next))
+                    Spacer(Modifier.width(spacing.xs))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                }
+            } else {
+                Text(stringResource(R.string.pairing_step_link), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.child_enroll_qr_instructions, entry.name),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                QrCard(rememberQrBitmap(pairingText, size = 200.dp))
+                TextButton(onClick = { step = 0 }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                    Spacer(Modifier.width(spacing.xs))
+                    Text(stringResource(R.string.back))
+                }
+            }
         }
+    }
+}
 
-        Text(stringResource(R.string.pairing_step_link), style = MaterialTheme.typography.titleMedium)
-        Text(
-            stringResource(R.string.child_enroll_qr_instructions, entry.name),
-            style = MaterialTheme.typography.bodyMedium,
+@Composable
+private fun EnrollModeChips(mode: EnrollMode, onSelect: (EnrollMode) -> Unit) {
+    val spacing = Tokens.spacing
+    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        FilterChip(
+            selected = mode == EnrollMode.DEVICE_OWNER,
+            onClick = { onSelect(EnrollMode.DEVICE_OWNER) },
+            label = { Text(stringResource(R.string.enroll_mode_do)) },
         )
-        if (pairingText != null) {
-            QrCard(rememberQrBitmap(pairingText, size = 200.dp))
-        }
+        FilterChip(
+            selected = mode == EnrollMode.FALLBACK,
+            onClick = { onSelect(EnrollMode.FALLBACK) },
+            label = { Text(stringResource(R.string.enroll_mode_fallback)) },
+        )
+    }
+}
+
+@Composable
+private fun EnrollInstallStep(mode: EnrollMode) {
+    val context = LocalContext.current
+    if (mode == EnrollMode.DEVICE_OWNER) {
+        Text(stringResource(R.string.enroll_do_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.enroll_do_instructions), style = MaterialTheme.typography.bodyMedium)
+        val payload = remember(context) { DeviceOwnerProvisioning.qrPayload(context) }
+        QrCard(rememberQrBitmap(payload, size = 200.dp))
+    } else {
+        Text(stringResource(R.string.pairing_step_download), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.qr_instructions), style = MaterialTheme.typography.bodyMedium)
+        QrCard(rememberQrBitmap(Distribution.CHILD_APK_URL, size = 200.dp))
+        Text(
+            stringResource(R.string.qr_provision_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
