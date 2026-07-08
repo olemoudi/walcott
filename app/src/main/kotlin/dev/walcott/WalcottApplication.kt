@@ -52,6 +52,9 @@ class WalcottApplication : Application() {
         syncManager.start()
         observeModeTransitions()
 
+        // One-time: fold legacy Room app assignments into the synced policy (no-op afterwards).
+        appScope.launch { repository.migrateLocalAssignmentsToSettings() }
+
         // Keep the app up to date: a periodic check plus one now (covers app launch).
         UpdateWorker.schedule(this)
         UpdateWorker.runNow(this)

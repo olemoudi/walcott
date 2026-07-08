@@ -23,13 +23,11 @@ class WalcottRepository(
 
     val settingsFlow: Flow<PolicySettings> = settingsStore.settings
 
-    val assignmentsFlow: Flow<Map<String, String>> = db.assignments().observeAll()
-        .map { rows -> rows.associate { it.packageName to it.categoryId } }
+    /** App -> categoryId assignments, now sourced from the synced policy. */
+    val assignmentsFlow: Flow<Map<String, String>> = settingsFlow.map { it.assignments }
 
     val familyConfigFlow: Flow<FamilyConfig> =
-        combine(settingsFlow, assignmentsFlow) { settings, assignments ->
-            settings.toFamilyConfig(assignments, essentials)
-        }
+        settingsFlow.map { it.toFamilyConfig(essentials) }
 
     /** Today's usage per category, reactive (pinned to the subscription day). */
     val usageTodayFlow: Flow<Map<String, Duration>> = db.usage().observeDay(today())
@@ -50,11 +48,8 @@ class WalcottRepository(
 
     // --- Snapshots for the service (always recompute "today") ---
 
-    suspend fun configNow(): FamilyConfig {
-        val settings = settingsStore.current()
-        val assignments = db.assignments().getAll().associate { it.packageName to it.categoryId }
-        return settings.toFamilyConfig(assignments, essentials)
-    }
+    suspend fun configNow(): FamilyConfig =
+        settingsStore.current().toFamilyConfig(essentials)
 
     suspend fun usageNow(): Map<String, Duration> =
         db.usage().getDay(today()).associate { it.categoryId to Duration.ofSeconds(it.seconds) }
@@ -82,10 +77,8 @@ class WalcottRepository(
         return out
     }
 
-    suspend fun managedPackagesNow(): Set<String> {
-        val assignments = db.assignments().getAll().associate { it.packageName to it.categoryId }
-        return inventory.managedPackages(assignments)
-    }
+    suspend fun managedPackagesNow(): Set<String> =
+        inventory.managedPackages(settingsStore.current().assignments)
 
     suspend fun addUsageSeconds(categoryId: String, seconds: Long) =
         db.usage().addSeconds(categoryId, today(), seconds)
@@ -93,12 +86,24 @@ class WalcottRepository(
     suspend fun grantExtraMinutes(categoryId: String, minutes: Long) =
         db.usage().addExtraSeconds(categoryId, today(), minutes * 60)
 
-    // --- Assignments ---
+    // --- Assignments (in the synced policy; changes republish to children) ---
 
     suspend fun assign(packageName: String, categoryId: String) =
-        db.assignments().upsert(AppAssignmentEntity(packageName, categoryId))
+        updateSettings { it.copy(assignments = it.assignments + (packageName to categoryId)) }
 
-    suspend fun unassign(packageName: String) = db.assignments().delete(packageName)
+    suspend fun unassign(packageName: String) =
+        updateSettings { it.copy(assignments = it.assignments - packageName) }
+
+    /**
+     * One-time migration of legacy Room assignments into the policy. Idempotent and a no-op
+     * on children (their table is empty) and once assignments already live in the policy.
+     */
+    suspend fun migrateLocalAssignmentsToSettings() {
+        if (settingsStore.current().assignments.isNotEmpty()) return
+        val legacy = db.assignments().getAll().associate { it.packageName to it.categoryId }
+        if (legacy.isEmpty()) return
+        updateSettings { it.withLegacyAssignments(legacy) }
+    }
 
     // --- Parent PIN ---
 

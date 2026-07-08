@@ -59,6 +59,10 @@ data class Bonus(
 @Serializable
 data class DayUsage(val epochDay: Long, val usage: List<UsageEntry> = emptyList())
 
+/** A user app installed on a child device, reported so the parent can classify it. */
+@Serializable
+data class InstalledAppInfo(val packageName: String, val label: String)
+
 /** Published by each child device; the parent aggregates the latest per device. */
 @Serializable
 data class ChildSnapshot(
@@ -74,6 +78,8 @@ data class ChildSnapshot(
     val childId: String = "",
     /** Pending generic asks (resolved through the same [Resolution] channel). */
     val asks: List<ChildRequest> = emptyList(),
+    /** User apps installed on this device, so the parent classifies the real list. */
+    val apps: List<InstalledAppInfo> = emptyList(),
 )
 
 /**

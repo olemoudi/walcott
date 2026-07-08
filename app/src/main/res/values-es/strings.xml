@@ -60,6 +60,7 @@
     <string name="nav_limits_title">Límites y horarios</string>
     <string name="nav_limits_subtitle">Presupuesto diario por categoría y hora de dormir</string>
     <!-- Asignación de apps -->
+    <string name="apps_no_remote">Aún no hay apps reportadas. Aparecerán aquí cuando los dispositivos de los hijos se sincronicen.</string>
     <string name="search_app">Buscar app</string>
     <string name="unclassified_blocked">Sin clasificar · bloqueada</string>
     <string name="classify_into">Clasificar en…</string>

@@ -16,13 +16,11 @@ import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
 import dev.walcott.sync.SyncManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -220,14 +218,14 @@ class WalcottViewModel(
         repository.settingsFlow.map { it.pinHash != null }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    private val installedApps: StateFlow<List<InstalledApp>> =
-        flow { emit(repository.inventory.launchableApps()) }
-            .flowOn(Dispatchers.IO)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
+    // Parent classifies the apps its children actually have installed (reported over sync),
+    // deduplicated across children, not the parent device's own apps.
     val appRows: StateFlow<List<AppRow>> =
-        combine(installedApps, repository.assignmentsFlow) { apps, assignments ->
-            apps.map { AppRow(it, assignments[it.packageName]) }
+        combine(children, repository.assignmentsFlow) { snapshots, assignments ->
+            snapshots.flatMap { it.apps }
+                .distinctBy { it.packageName }
+                .sortedBy { it.label.lowercase() }
+                .map { AppRow(InstalledApp(it.packageName, it.label, isSystem = false), assignments[it.packageName]) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // --- Actions ---

@@ -60,6 +60,7 @@
     <string name="nav_limits_title">Limits and schedules</string>
     <string name="nav_limits_subtitle">Daily budget per category and bedtime</string>
     <!-- App assignment -->
+    <string name="apps_no_remote">No apps reported yet. They\'ll appear here once your children\'s devices sync.</string>
     <string name="search_app">Search app</string>
     <string name="unclassified_blocked">Unclassified · blocked</string>
     <string name="classify_into">Classify into…</string>

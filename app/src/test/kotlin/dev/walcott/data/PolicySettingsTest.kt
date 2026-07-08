@@ -25,7 +25,7 @@ class PolicySettingsTest {
 
     @Test
     fun `toFamilyConfig maps budgets from minutes to Duration per day type`() {
-        val config = settings.toFamilyConfig(assignments = emptyMap(), essentials = emptySet())
+        val config = settings.toFamilyConfig(essentials = emptySet())
         val games = config.policies.getValue("games")
         assertEquals(Duration.ofMinutes(30), games.dailyBudget[DayType.SCHOOL])
         assertEquals(Duration.ofHours(2), games.dailyBudget[DayType.WEEKEND])
@@ -34,7 +34,7 @@ class PolicySettingsTest {
 
     @Test
     fun `toFamilyConfig maps blocked windows and bedtime`() {
-        val config = settings.toFamilyConfig(emptyMap(), emptySet())
+        val config = settings.toFamilyConfig(emptySet())
         val window = config.policies.getValue("games").blockedWindows.getValue(DayType.SCHOOL).single()
         assertTrue(window.contains(java.time.LocalTime.of(10, 0)))
         val bedtime = config.bedtime.getValue(DayType.SCHOOL)
@@ -43,10 +43,8 @@ class PolicySettingsTest {
 
     @Test
     fun `toFamilyConfig maps holidays and carries assignments and essentials`() {
-        val config = settings.toFamilyConfig(
-            assignments = mapOf("com.game" to "games"),
-            essentials = setOf("dev.walcott"),
-        )
+        val config = settings.copy(assignments = mapOf("com.game" to "games"))
+            .toFamilyConfig(essentials = setOf("dev.walcott"))
         assertEquals(DayType.HOLIDAY, config.calendar.dayTypeOf(LocalDate.of(2026, 10, 12)))
         assertEquals("games", config.assignments["com.game"])
         assertTrue("dev.walcott" in config.essentialPackages)
@@ -55,10 +53,8 @@ class PolicySettingsTest {
 
     @Test
     fun `an assigned category with no rules still gets a (permissive) policy entry`() {
-        val config = PolicySettings().toFamilyConfig(
-            assignments = mapOf("com.game" to "games"),
-            essentials = emptySet(),
-        )
+        val config = PolicySettings(assignments = mapOf("com.game" to "games"))
+            .toFamilyConfig(essentials = emptySet())
         val games = config.policies.getValue("games")
         assertTrue(games.dailyBudget.isEmpty())
         assertTrue(games.blockedWindows.isEmpty())
@@ -118,5 +114,29 @@ class PolicySettingsTest {
         )
         assertEquals("", decoded.familyName)
         assertTrue(decoded.children.isEmpty())
+        assertTrue(decoded.assignments.isEmpty())
+    }
+
+    @Test
+    fun `assignments round-trip through serialization`() {
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val withApps = settings.copy(assignments = mapOf("com.game" to "games", "com.chat" to "social"))
+        val decoded = json.decodeFromString(
+            PolicySettings.serializer(),
+            json.encodeToString(PolicySettings.serializer(), withApps),
+        )
+        assertEquals(withApps.assignments, decoded.assignments)
+    }
+
+    @Test
+    fun `withLegacyAssignments adopts only when none set yet`() {
+        val legacy = mapOf("com.game" to "games")
+        assertEquals(legacy, PolicySettings().withLegacyAssignments(legacy).assignments)
+        // Already-populated policy is left untouched.
+        val populated = PolicySettings(assignments = mapOf("com.chat" to "social"))
+        assertEquals(populated, populated.withLegacyAssignments(legacy))
+        // Nothing to migrate.
+        val empty = PolicySettings()
+        assertEquals(empty, empty.withLegacyAssignments(emptyMap()))
     }
 }

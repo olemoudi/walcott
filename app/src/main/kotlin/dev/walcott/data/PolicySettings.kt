@@ -122,6 +122,11 @@ data class PolicySettings(
     val familyName: String = "",
     /** Children registered by the parent, each with optional per-child overrides. */
     val children: List<ChildEntry> = emptyList(),
+    /**
+     * App -> categoryId assignments, family-wide. Part of the policy so they sync to children
+     * (an app with no entry is blocked as "unclassified"). Was previously in Room.
+     */
+    val assignments: Map<String, String> = emptyMap(),
 ) {
     /**
      * Family policy with [childId]'s overrides applied (null override field = inherit).
@@ -139,6 +144,10 @@ data class PolicySettings(
         )
     }
 
+    /** One-time migration: adopt [legacy] Room assignments only if none are set yet. */
+    fun withLegacyAssignments(legacy: Map<String, String>): PolicySettings =
+        if (assignments.isEmpty() && legacy.isNotEmpty()) copy(assignments = legacy) else this
+
     fun toEarnRules(): List<EarnRule> = earnRules.map { it.toEarnRule() }
 
     fun toDomainAppRules(): List<DomainAppRule> = domainAppRules.map { it.toDomainAppRule() }
@@ -146,8 +155,8 @@ data class PolicySettings(
     /** True when any DNS filtering is configured (drives whether the VPN runs). */
     fun hasWebFilter(): Boolean = blockedDomains.isNotEmpty() || domainAppRules.isNotEmpty()
 
-    /** Builds the engine's [FamilyConfig] by combining these rules with the assignments. */
-    fun toFamilyConfig(assignments: Map<String, String>, essentials: Set<String>): FamilyConfig {
+    /** Builds the engine's [FamilyConfig] from these rules and assignments. */
+    fun toFamilyConfig(essentials: Set<String>): FamilyConfig {
         val categoryIds = budgets.keys + blockedWindows.keys + assignments.values
         val policies = categoryIds.associateWith { categoryId ->
             CategoryPolicy(

@@ -7,6 +7,7 @@ import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottRepository
 import dev.walcott.enforcement.DeviceRestrictions
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.util.UUID
@@ -276,6 +278,12 @@ class SyncManager(
                 val history = repository.weeklyUsage().map { (day, usage) ->
                     DayUsage(day, usage.map { UsageEntry(it.key, it.value.seconds) })
                 }
+                // PackageManager enumeration is blocking; keep it off the caller's thread.
+                val apps = withContext(Dispatchers.IO) {
+                    repository.inventory.launchableApps()
+                        .filterNot { it.isSystem }
+                        .map { InstalledAppInfo(it.packageName, it.label) }
+                }
                 val snapshot = ChildSnapshot(
                     deviceId = id.deviceId,
                     displayName = id.displayName,
@@ -287,6 +295,7 @@ class SyncManager(
                     requests = s.pendingRequests,
                     history = history,
                     asks = s.pendingAsks,
+                    apps = apps,
                 )
                 transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
             }

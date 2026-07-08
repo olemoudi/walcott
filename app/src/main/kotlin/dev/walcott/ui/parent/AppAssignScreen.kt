@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
@@ -62,21 +63,35 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_apps_title), onBack)
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-            placeholder = { Text(stringResource(R.string.search_app)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.screen),
-        )
-        Spacer(Modifier.width(spacing.sm))
-        LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = spacing.sm),
-            contentPadding = PaddingValues(vertical = spacing.sm),
-        ) {
-            items(filtered, key = { it.app.packageName }) { row ->
-                AppAssignRow(viewModel, row, onClick = { picking = row })
+        if (rows.isEmpty()) {
+            Box(
+                Modifier.fillMaxSize().padding(spacing.screen),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(R.string.apps_no_remote),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        } else {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                placeholder = { Text(stringResource(R.string.search_app)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.screen),
+            )
+            Spacer(Modifier.width(spacing.sm))
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = spacing.sm),
+                contentPadding = PaddingValues(vertical = spacing.sm),
+            ) {
+                items(filtered, key = { it.app.packageName }) { row ->
+                    AppAssignRow(viewModel, row, onClick = { picking = row })
+                }
             }
         }
     }

@@ -73,11 +73,12 @@ class ChildOverridesTest {
 
     @Test
     fun `resolved settings flow through toFamilyConfig`() {
-        val config = family.resolveForChild("child-a").toFamilyConfig(
-            assignments = mapOf("com.game" to "games"),
-            essentials = emptySet(),
-        )
+        val config = family.copy(assignments = mapOf("com.game" to "games"))
+            .resolveForChild("child-a")
+            .toFamilyConfig(essentials = emptySet())
         assertEquals(Duration.ofMinutes(60), config.policies.getValue("games").dailyBudget[DayType.SCHOOL])
+        // Assignments are family-wide: they survive the per-child resolve.
+        assertEquals("games", config.assignments["com.game"])
     }
 
     @Test
