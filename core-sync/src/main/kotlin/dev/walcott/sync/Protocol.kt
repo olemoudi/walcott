@@ -99,6 +99,9 @@ data class ChildSnapshot(
     val locations: List<LocationPoint> = emptyList(),
     /** Active enforcement backend on this device: "device_owner" | "accessibility" | "none". */
     val enforcement: String = EnforcementStatus.UNKNOWN,
+    /** Cumulative wrong parent-PIN attempts on this device, and the last one's wall-clock time. */
+    val pinWrongTotal: Int = 0,
+    val lastWrongPinMs: Long = 0,
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */

@@ -64,6 +64,29 @@ object SyncNotifications {
         runCatching { NotificationManagerCompat.from(context).notify("enf".hashCode() + deviceId.hashCode(), notification) }
     }
 
+    /** Alert when a child device reports wrong parent-PIN attempts (someone guessing the PIN). */
+    fun notifyWrongPin(context: Context, childName: String, total: Int, deviceId: String) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(ALERT_CHANNEL, context.getString(R.string.stale_channel_name), NotificationManager.IMPORTANCE_HIGH),
+            )
+        }
+        val tap = PendingIntent.getActivity(
+            context, 0, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(context.getString(R.string.wrong_pin_title, childName))
+            .setContentText(context.resources.getQuantityString(R.plurals.wrong_pin_text, total, total))
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify("pin".hashCode() + deviceId.hashCode(), notification) }
+    }
+
     fun notifyRequest(context: Context, childName: String, minutes: Int) {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

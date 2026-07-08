@@ -293,6 +293,17 @@
     <string name="enforcement_accessibility_child">Basic protection via Accessibility. For full protection, set Walcott as Device Owner.</string>
     <string name="enforcement_off_title">%1$s is unprotected</string>
     <string name="enforcement_off_text">Blocking is not active on this device.</string>
+    <string name="location_permission_title">Turn on location</string>
+    <string name="location_permission_desc">Location is off, so this device can\'t be found on the map. Tap to allow it.</string>
+    <string name="wrong_pin_title">Wrong PIN on %1$s</string>
+    <plurals name="wrong_pin_text">
+        <item quantity="one">%1$d failed unlock attempt so far.</item>
+        <item quantity="other">%1$d failed unlock attempts so far.</item>
+    </plurals>
+    <plurals name="wrong_pin_child">
+        <item quantity="one">%1$d failed PIN attempt has been made on this device.</item>
+        <item quantity="other">%1$d failed PIN attempts have been made on this device.</item>
+    </plurals>
     <string name="block_channel_name">App blocking</string>
     <string name="block_notif_title">App blocked</string>
     <string name="block_notif_text">This app is blocked right now.</string>

@@ -28,6 +28,9 @@ data class SyncState(
     /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */
     val pinFailedAttempts: Int = 0,
     val pinLockedUntilMs: Long = 0,
+    /** Monotonic tally of wrong PINs (never reset), reported to the parent, and the last one's time. */
+    val pinWrongTotal: Int = 0,
+    val lastWrongPinMs: Long = 0,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
@@ -41,6 +44,8 @@ data class SyncState(
     val staleNotifiedLastSeen: Map<String, Long> = emptyMap(),
     /** deviceIds already alerted for having enforcement inactive (cleared when it recovers). */
     val enforcementNotified: Set<String> = emptySet(),
+    /** deviceId -> the child's pinWrongTotal we already alerted about (one alert per new failure). */
+    val pinAlertedTotal: Map<String, Int> = emptyMap(),
 )
 
 private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_sync")

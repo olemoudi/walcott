@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
@@ -41,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,15 +53,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.walcott.R
+import dev.walcott.location.LocationPolicy
 import dev.walcott.rules.BlockReason
 import dev.walcott.rules.CategoryState
 import dev.walcott.rules.TimeWindow
@@ -85,6 +91,7 @@ import java.util.Locale
 @Composable
 fun ChildStatusScreen(
     viewModel: WalcottViewModel,
+    deviceOwner: Boolean,
     onOpenParent: () -> Unit,
 ) {
     val state by viewModel.childState.collectAsStateWithLifecycle()
@@ -97,6 +104,20 @@ fun ChildStatusScreen(
     var showAsk by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+
+    // Without Device Owner nobody force-grants location, so if the child denied (or never got) the
+    // runtime prompt, location check-ins silently stop. Nudge to fix it; re-check on resume so the
+    // card disappears once granted from settings.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var locationGranted by remember { mutableStateOf(LocationPolicy.hasFineLocation(context)) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) locationGranted = LocationPolicy.hasFineLocation(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val showLocationNudge = identity.role == Role.CHILD && !deviceOwner && !locationGranted
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { text ->
             scope.launch {
@@ -123,6 +144,9 @@ fun ChildStatusScreen(
                 }
             }
             item { HeroCard(state) }
+            if (showLocationNudge) {
+                item { LocationPermissionCard(onFix = { openAppDetails(context) }) }
+            }
             state.bedtimeTonight?.let { window ->
                 if (!state.bedtimeActive) {
                     item { BedtimeTonightRow(window) }
@@ -162,6 +186,46 @@ fun ChildStatusScreen(
                 Toast.makeText(context, R.string.request_sent, Toast.LENGTH_SHORT).show()
             },
         )
+    }
+}
+
+/** Opens this app's system settings page so location can be granted after a runtime denial. */
+private fun openAppDetails(context: android.content.Context) {
+    val intent = android.content.Intent(
+        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        android.net.Uri.fromParts("package", context.packageName, null),
+    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
+}
+
+/** Heads-up on the child when location permission is missing (non-Device-Owner): check-ins won't run. */
+@Composable
+private fun LocationPermissionCard(onFix: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        onClick = onFix,
+        shape = RoundedCornerShape(22.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.LocationOn,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.location_permission_title), style = MaterialTheme.typography.titleMedium, color = color)
+                Text(
+                    stringResource(R.string.location_permission_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = color,
+                )
+            }
+        }
     }
 }
 

@@ -137,6 +137,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                     )
                     Screen.CHILD -> ChildStatusScreen(
                         viewModel,
+                        deviceOwner = deviceOwner,
                         onOpenParent = { gateAllowCreate = false; screen = Screen.GATE },
                     )
                     Screen.GATE -> PinGateScreen(

@@ -293,6 +293,17 @@
     <string name="enforcement_accessibility_child">Protección básica por Accesibilidad. Para protección completa, configura Walcott como Device Owner.</string>
     <string name="enforcement_off_title">%1$s sin protección</string>
     <string name="enforcement_off_text">El bloqueo no está activo en ese dispositivo.</string>
+    <string name="location_permission_title">Activa la ubicación</string>
+    <string name="location_permission_desc">La ubicación está desactivada, así que este dispositivo no aparece en el mapa. Toca para permitirla.</string>
+    <string name="wrong_pin_title">PIN incorrecto en %1$s</string>
+    <plurals name="wrong_pin_text">
+        <item quantity="one">%1$d intento de desbloqueo fallido hasta ahora.</item>
+        <item quantity="other">%1$d intentos de desbloqueo fallidos hasta ahora.</item>
+    </plurals>
+    <plurals name="wrong_pin_child">
+        <item quantity="one">Se ha hecho %1$d intento de PIN fallido en este dispositivo.</item>
+        <item quantity="other">Se han hecho %1$d intentos de PIN fallidos en este dispositivo.</item>
+    </plurals>
     <string name="block_channel_name">Bloqueo de apps</string>
     <string name="block_notif_title">App bloqueada</string>
     <string name="block_notif_text">Esta app está bloqueada ahora mismo.</string>

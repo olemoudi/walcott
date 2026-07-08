@@ -101,11 +101,14 @@ class ProtocolTest {
             deviceId = "d", displayName = "phone", version = 1, epochDay = 1,
             enforcement = EnforcementStatus.ACCESSIBILITY,
             locations = listOf(LocationPoint(lat = 1.0, lng = 2.0, epochMs = 100L, mock = true)),
+            pinWrongTotal = 7, lastWrongPinMs = 1_700_000_000_000,
         )
         val decoded = SyncProtocol.decode(SyncProtocol.encodeChild(snapshot, familyKey), familyKey, parent.public)
             as IncomingMessage.FromChild
         assertEquals(EnforcementStatus.ACCESSIBILITY, decoded.snapshot.enforcement)
         assertTrue(decoded.snapshot.locations.single().mock)
+        assertEquals(7, decoded.snapshot.pinWrongTotal)
+        assertEquals(1_700_000_000_000, decoded.snapshot.lastWrongPinMs)
     }
 
     @Test
@@ -117,6 +120,7 @@ class ProtocolTest {
         )
         assertEquals(EnforcementStatus.UNKNOWN, decoded.enforcement)
         assertTrue(!decoded.locations.single().mock)
+        assertEquals(0, decoded.pinWrongTotal)
     }
 
     @Test

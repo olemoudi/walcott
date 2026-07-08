@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -136,6 +137,11 @@ fun ChildDetailScreen(
                 snapshot.enforcement != EnforcementStatus.UNKNOWN
             ) {
                 item { EnforcementWarningCard(snapshot.enforcement) }
+            }
+
+            // --- Wrong-PIN attempts (someone is trying to guess the parent PIN on the child) ---
+            if (snapshot != null && snapshot.pinWrongTotal > 0) {
+                item { WrongPinCard(snapshot.pinWrongTotal) }
             }
 
             // --- Stats ---
@@ -426,6 +432,27 @@ private fun EnforcementWarningCard(status: String) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
             Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+        }
+    }
+}
+
+@Composable
+private fun WrongPinCard(total: Int) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                pluralStringResource(R.plurals.wrong_pin_child, total, total),
+                style = MaterialTheme.typography.bodyMedium,
+                color = color,
+            )
         }
     }
 }

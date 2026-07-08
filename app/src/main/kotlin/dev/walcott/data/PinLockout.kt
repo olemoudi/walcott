@@ -12,21 +12,25 @@ sealed interface PinResult {
 
 /**
  * Escalating lockout after repeated wrong PINs, to make a 4-digit PIN infeasible to brute-force.
- * Pure and deterministic so it can be unit-tested without Android.
+ * The lockout steps up by [STEP_MS] for every [TRANCHE] consecutive wrong attempts, capped at
+ * [MAX_MS]. Pure and deterministic so it can be unit-tested without Android.
  */
 object PinLockout {
 
-    /** Wrong tries allowed before any lockout kicks in. */
-    const val FREE_ATTEMPTS = 4
+    /** Wrong attempts per escalation tranche. */
+    const val TRANCHE = 3
 
-    /** Lockout imposed on the 5th, 6th, 7th, 8th+ consecutive failure. */
-    private val STEPS_MS = longArrayOf(30_000L, 60_000L, 5 * 60_000L, 30 * 60_000L)
+    /** Extra lockout earned per completed tranche of wrong attempts. */
+    private const val STEP_MS = 5 * 60_000L
+
+    /** Hard ceiling on the imposed lockout. */
+    private const val MAX_MS = 30 * 60_000L
 
     /** Lockout to impose after [failedAttempts] consecutive failures (0 = none yet). */
     fun lockoutMs(failedAttempts: Int): Long {
-        if (failedAttempts <= FREE_ATTEMPTS) return 0
-        val idx = (failedAttempts - FREE_ATTEMPTS - 1).coerceIn(0, STEPS_MS.lastIndex)
-        return STEPS_MS[idx]
+        if (failedAttempts <= 0) return 0
+        val tranches = failedAttempts / TRANCHE
+        return (tranches * STEP_MS).coerceAtMost(MAX_MS)
     }
 
     /** Remaining lockout given the stored deadline and the current time. */

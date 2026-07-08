@@ -293,8 +293,13 @@ class SyncManager(
             it.copy(
                 pinFailedAttempts = attempts,
                 pinLockedUntilMs = if (lockMs > 0) now + lockMs else it.pinLockedUntilMs,
+                // Monotonic tally reported to the parent so a brute-force attempt is visible remotely.
+                pinWrongTotal = it.pinWrongTotal + 1,
+                lastWrongPinMs = now,
             )
         }
+        // Surface the failed attempt to the parent promptly; the escalating lockout rate-limits this.
+        runCatching { publishSelf() }
         return if (lockMs > 0) PinResult.Locked(lockMs) else PinResult.Wrong
     }
 
@@ -345,6 +350,8 @@ class SyncManager(
                     apps = apps,
                     locations = repository.recentLocations(),
                     enforcement = EnforcementBackends.status(context),
+                    pinWrongTotal = s.pinWrongTotal,
+                    lastWrongPinMs = s.lastWrongPinMs,
                 )
                 transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
             }
@@ -449,6 +456,15 @@ class SyncManager(
             snapshot.deviceId in before.enforcementNotified
         ) {
             syncStore.update { it.copy(enforcementNotified = it.enforcementNotified - snapshot.deviceId) }
+        }
+
+        // Alert whenever the child's cumulative wrong-PIN count grows (someone is guessing the PIN).
+        val prevPinTotal = before.pinAlertedTotal[snapshot.deviceId] ?: 0
+        if (snapshot.pinWrongTotal > prevPinTotal) {
+            SyncNotifications.notifyWrongPin(context, snapshot.displayName, snapshot.pinWrongTotal, snapshot.deviceId)
+            syncStore.update {
+                it.copy(pinAlertedTotal = it.pinAlertedTotal + (snapshot.deviceId to snapshot.pinWrongTotal))
+            }
         }
 
         val resolved = before.resolutions.map { it.requestId }.toSet()

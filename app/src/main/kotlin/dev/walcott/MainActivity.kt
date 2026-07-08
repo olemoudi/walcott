@@ -25,6 +25,9 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
 
+    private val locationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -36,6 +39,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             if (app.identityStore.current().enforcesLocally) {
                 EnforcementService.start(this@MainActivity)
+                requestLocationPermissionIfNeeded()
             } else {
                 EnforcementService.stop(this@MainActivity)
             }
@@ -63,5 +67,18 @@ class MainActivity : ComponentActivity() {
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /**
+     * On the child, Device Owner force-grants location ([dev.walcott.location.LocationPolicy]); the
+     * non-owner fallback can't, so we must ask at runtime or the periodic location check-in silently
+     * never starts. Re-asks each launch until granted; recovery after a hard denial is the in-app
+     * nudge on the child screen.
+     */
+    private fun requestLocationPermissionIfNeeded() {
+        if (Enforcer(this).isDeviceOwner()) return
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 }
