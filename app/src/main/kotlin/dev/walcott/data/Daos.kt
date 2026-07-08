@@ -59,3 +59,15 @@ interface UsageDao {
     )
     suspend fun addExtraSeconds(categoryId: String, epochDay: Long, seconds: Long)
 }
+
+@Dao
+interface LocationDao {
+    @Insert
+    suspend fun insert(point: LocationPointEntity)
+
+    @Query("SELECT * FROM location_point WHERE epochMs >= :sinceMs ORDER BY epochMs")
+    suspend fun getSince(sinceMs: Long): List<LocationPointEntity>
+
+    @Query("DELETE FROM location_point WHERE epochMs < :cutoffMs")
+    suspend fun deleteOlderThan(cutoffMs: Long)
+}

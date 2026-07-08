@@ -63,6 +63,19 @@ data class DayUsage(val epochDay: Long, val usage: List<UsageEntry> = emptyList(
 @Serializable
 data class InstalledAppInfo(val packageName: String, val label: String)
 
+/** A GPS fix reported by a child device (WGS84). */
+@Serializable
+data class LocationPoint(
+    val lat: Double,
+    val lng: Double,
+    val epochMs: Long,
+    val accuracyM: Float = 0f,
+)
+
+/** Parent asks a specific device to report its current location on its next check-in. */
+@Serializable
+data class LocationRequest(val deviceId: String, val requestedAtMs: Long)
+
 /** Published by each child device; the parent aggregates the latest per device. */
 @Serializable
 data class ChildSnapshot(
@@ -80,6 +93,8 @@ data class ChildSnapshot(
     val asks: List<ChildRequest> = emptyList(),
     /** User apps installed on this device, so the parent classifies the real list. */
     val apps: List<InstalledAppInfo> = emptyList(),
+    /** Recent GPS fixes (last 12h) for the parent's map, newest last. */
+    val locations: List<LocationPoint> = emptyList(),
 )
 
 /**
@@ -92,6 +107,8 @@ data class ParentSnapshot(
     val policyJson: String,
     val resolutions: List<Resolution> = emptyList(),
     val bonuses: List<Bonus> = emptyList(),
+    /** Pending "locate now" asks, at most one per target device. */
+    val locationRequests: List<LocationRequest> = emptyList(),
 )
 
 // --- Envelope on the wire ---

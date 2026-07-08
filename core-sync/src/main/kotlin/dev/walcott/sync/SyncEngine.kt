@@ -42,4 +42,20 @@ object SyncEngine {
         alreadyApplied: Set<String>,
     ): List<Bonus> =
         parent.bonuses.filter { it.targetDeviceId == deviceId && it.id !in alreadyApplied }
+
+    /** A "locate now" for this device newer than the last one it answered, else null. */
+    fun freshLocationRequest(
+        parent: ParentSnapshot,
+        deviceId: String,
+        appliedAtMs: Long,
+    ): LocationRequest? =
+        parent.locationRequests.firstOrNull { it.deviceId == deviceId && it.requestedAtMs > appliedAtMs }
+
+    /** Upserts a request for [deviceId] (one per device) so the pending list stays bounded. */
+    fun withLocationRequest(
+        current: List<LocationRequest>,
+        deviceId: String,
+        requestedAtMs: Long,
+    ): List<LocationRequest> =
+        current.filterNot { it.deviceId == deviceId } + LocationRequest(deviceId, requestedAtMs)
 }

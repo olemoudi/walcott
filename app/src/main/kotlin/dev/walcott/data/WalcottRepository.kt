@@ -2,6 +2,7 @@ package dev.walcott.data
 
 import dev.walcott.rules.EarnEngine
 import dev.walcott.rules.FamilyConfig
+import dev.walcott.sync.LocationPoint
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -86,6 +87,21 @@ class WalcottRepository(
     suspend fun grantExtraMinutes(categoryId: String, minutes: Long) =
         db.usage().addExtraSeconds(categoryId, today(), minutes * 60)
 
+    // --- Location history (child device only) ---
+
+    /** Stores a fix and prunes anything older than the retention window. */
+    suspend fun recordLocation(point: LocationPoint) {
+        db.locations().insert(
+            LocationPointEntity(epochMs = point.epochMs, lat = point.lat, lng = point.lng, accuracyM = point.accuracyM),
+        )
+        db.locations().deleteOlderThan(System.currentTimeMillis() - LOCATION_RETENTION_MS)
+    }
+
+    /** The last [LOCATION_RETENTION_MS] of fixes, oldest first, for the parent's map. */
+    suspend fun recentLocations(): List<LocationPoint> =
+        db.locations().getSince(System.currentTimeMillis() - LOCATION_RETENTION_MS)
+            .map { LocationPoint(lat = it.lat, lng = it.lng, epochMs = it.epochMs, accuracyM = it.accuracyM) }
+
     // --- Assignments (in the synced policy; changes republish to children) ---
 
     suspend fun assign(packageName: String, categoryId: String) =
@@ -128,5 +144,10 @@ class WalcottRepository(
         settingsStore.update { current ->
             transform(current).copy(version = current.version + 1)
         }
+    }
+
+    companion object {
+        /** Location history retention shown on the parent map. */
+        const val LOCATION_RETENTION_MS = 12 * 60 * 60 * 1000L
     }
 }

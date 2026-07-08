@@ -85,5 +85,19 @@ class ChildOverridesTest {
     fun `empty overrides report isEmpty`() {
         assertTrue(ChildOverrides().isEmpty)
         assertTrue(!ChildOverrides(bedtime = emptyMap()).isEmpty)
+        assertTrue(!ChildOverrides(trackingIntervalMinutes = 0).isEmpty)
+    }
+
+    @Test
+    fun `tracking interval resolves per-child override over the family default`() {
+        val fam = family.copy(
+            trackingIntervalMinutes = 15,
+            children = listOf(
+                ChildEntry("t1", "Ana", ChildOverrides(trackingIntervalMinutes = 5)),
+                ChildEntry("t2", "Bea"),
+            ),
+        )
+        assertEquals(5, fam.resolveForChild("t1").trackingIntervalMinutes) // per-child override
+        assertEquals(15, fam.resolveForChild("t2").trackingIntervalMinutes) // inherits family default
     }
 }

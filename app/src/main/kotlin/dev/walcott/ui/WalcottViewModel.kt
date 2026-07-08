@@ -104,6 +104,25 @@ class WalcottViewModel(
     fun giveBonus(targetDeviceId: String, categoryId: String, minutes: Int) =
         viewModelScope.launch { sync.giveBonus(targetDeviceId, categoryId, minutes) }
 
+    /** Ask a child device to report its current location on its next check-in. */
+    fun requestLocation(targetDeviceId: String) =
+        viewModelScope.launch { sync.requestLocation(targetDeviceId) }
+
+    /** Set this child's periodic location-tracking interval (0 = off). */
+    fun setTrackingInterval(childId: String, minutes: Int) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            s.copy(
+                children = s.children.map {
+                    if (it.childId == childId) {
+                        it.copy(overrides = it.overrides.copy(trackingIntervalMinutes = minutes))
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+    }
+
     // Reloads the 7-day history whenever today's usage changes.
     val weeklyUsage: StateFlow<Map<Long, Map<String, java.time.Duration>>> =
         repository.usageTodayFlow.map { repository.weeklyUsage() }

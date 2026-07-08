@@ -17,6 +17,8 @@ import androidx.lifecycle.lifecycleScope
 import dev.walcott.MainActivity
 import dev.walcott.R
 import dev.walcott.WalcottApplication
+import dev.walcott.location.LocationPolicy
+import dev.walcott.location.LocationSampler
 import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
 import dev.walcott.update.Updater
@@ -68,11 +70,14 @@ class EnforcementService : LifecycleService() {
                 addAction(Intent.ACTION_SCREEN_OFF)
             },
         )
+        // Grant location before startForeground so the service can claim the location FGS type.
+        LocationPolicy.ensureEnforced(this)
         startForegroundCompat()
         lifecycleScope.launch { runLoop() }
         observeWebFilter()
         observeDeviceRestrictions()
         scheduleUpdateChecks()
+        scheduleLocationSampling()
     }
 
     override fun onDestroy() {
@@ -90,6 +95,30 @@ class EnforcementService : LifecycleService() {
                 runCatching { Updater(applicationContext).checkAndUpdate() }
                 delay(UPDATE_CHECK_MILLIS)
             }
+        }
+    }
+
+    /**
+     * Periodic GPS sampling driven by the child's resolved tracking interval (0 = off). A new
+     * interval restarts the loop; the Doze-exempt FGS gives near-exact cadence at any interval.
+     */
+    private fun scheduleLocationSampling() {
+        val app = application as WalcottApplication
+        lifecycleScope.launch {
+            app.repository.settingsFlow
+                .map { it.trackingIntervalMinutes }
+                .distinctUntilChanged()
+                .collectLatest { minutes ->
+                    if (minutes <= 0) return@collectLatest
+                    val sampler = LocationSampler(this@EnforcementService)
+                    while (currentCoroutineContext().isActive) {
+                        runCatching {
+                            sampler.currentFix()?.let { app.repository.recordLocation(it) }
+                            app.syncManager.publishLocationUpdate()
+                        }
+                        delay(minutes * 60_000L)
+                    }
+                }
         }
     }
 
@@ -202,7 +231,12 @@ class EnforcementService : LifecycleService() {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            // Add the location type only when the permission is held, or startForeground throws.
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            if (LocationPolicy.hasFineLocation(this)) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
+            startForeground(NOTIF_ID, notification, type)
         } else {
             startForeground(NOTIF_ID, notification)
         }

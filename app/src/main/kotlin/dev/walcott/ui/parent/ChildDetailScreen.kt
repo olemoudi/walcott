@@ -1,6 +1,8 @@
 package dev.walcott.ui.parent
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +23,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -70,6 +74,7 @@ fun ChildDetailScreen(
     viewModel: WalcottViewModel,
     childId: String,
     onBack: () -> Unit,
+    onOpenMap: (String) -> Unit,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -128,6 +133,17 @@ fun ChildDetailScreen(
                 if (snapshot.history.isNotEmpty()) {
                     item { HistoryCard(snapshot) }
                 }
+            }
+
+            // --- Location ---
+            item {
+                LocationCard(
+                    intervalMinutes = entry.overrides.trackingIntervalMinutes ?: 0,
+                    onSetInterval = { viewModel.setTrackingInterval(childId, it) },
+                    hasDevice = snapshot != null,
+                    onLocateNow = { snapshot?.let { viewModel.requestLocation(it.deviceId) } },
+                    onOpenMap = { onOpenMap(childId) },
+                )
             }
 
             // --- Per-child overrides ---
@@ -350,6 +366,64 @@ private fun HistoryCard(snapshot: ChildSnapshot) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+        }
+    }
+}
+
+private val TRACKING_INTERVALS = listOf(0, 5, 15, 30, 60)
+
+@Composable
+private fun LocationCard(
+    intervalMinutes: Int,
+    onSetInterval: (Int) -> Unit,
+    hasDevice: Boolean,
+    onLocateNow: () -> Unit,
+    onOpenMap: () -> Unit,
+) {
+    val spacing = Tokens.spacing
+    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(stringResource(R.string.location_section_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.tracking_periodic_title),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = spacing.sm),
+            )
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(vertical = spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                TRACKING_INTERVALS.forEach { m ->
+                    FilterChip(
+                        selected = m == intervalMinutes,
+                        onClick = { onSetInterval(m) },
+                        label = {
+                            Text(
+                                if (m == 0) stringResource(R.string.tracking_off)
+                                else stringResource(R.string.tracking_minutes_fmt, m),
+                            )
+                        },
+                    )
+                }
+            }
+            Text(
+                stringResource(R.string.tracking_battery_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (hasDevice) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    OutlinedButton(onClick = onLocateNow, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.locate_now))
+                    }
+                    Button(onClick = onOpenMap, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.view_on_map))
+                    }
                 }
             }
         }

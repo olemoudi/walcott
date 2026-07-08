@@ -28,3 +28,13 @@ data class ExtraTimeEntity(
     val epochDay: Long,
     val seconds: Long,
 )
+
+/** A GPS fix captured on the child device (only ever populated on the child). */
+@Entity(tableName = "location_point")
+data class LocationPointEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val epochMs: Long,
+    val lat: Double,
+    val lng: Double,
+    val accuracyM: Float,
+)

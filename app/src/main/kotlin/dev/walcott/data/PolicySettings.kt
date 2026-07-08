@@ -76,10 +76,13 @@ data class ChildOverrides(
     val earnRules: List<EarnRuleDto>? = null,
     val blockedDomains: Set<String>? = null,
     val deviceRestrictions: Set<String>? = null,
+    /** Periodic location-tracking interval in minutes (0 = off). Null inherits the family value. */
+    val trackingIntervalMinutes: Int? = null,
 ) {
     val isEmpty: Boolean
         get() = budgets == null && blockedWindows == null && bedtime == null &&
-            earnRules == null && blockedDomains == null && deviceRestrictions == null
+            earnRules == null && blockedDomains == null && deviceRestrictions == null &&
+            trackingIntervalMinutes == null
 }
 
 /** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */
@@ -127,6 +130,8 @@ data class PolicySettings(
      * (an app with no entry is blocked as "unclassified"). Was previously in Room.
      */
     val assignments: Map<String, String> = emptyMap(),
+    /** Family-default periodic location-tracking interval in minutes (0 = off). */
+    val trackingIntervalMinutes: Int = 0,
 ) {
     /**
      * Family policy with [childId]'s overrides applied (null override field = inherit).
@@ -141,6 +146,7 @@ data class PolicySettings(
             earnRules = overrides.earnRules ?: earnRules,
             blockedDomains = overrides.blockedDomains ?: blockedDomains,
             deviceRestrictions = overrides.deviceRestrictions ?: deviceRestrictions,
+            trackingIntervalMinutes = overrides.trackingIntervalMinutes ?: trackingIntervalMinutes,
         )
     }
 

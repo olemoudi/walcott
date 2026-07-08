@@ -67,6 +67,47 @@ class ProtocolTest {
     }
 
     @Test
+    fun `child locations round-trip through an envelope`() {
+        val snapshot = ChildSnapshot(
+            deviceId = "dev-1",
+            displayName = "Ana",
+            version = 4,
+            epochDay = 20_000,
+            locations = listOf(
+                LocationPoint(lat = 40.4168, lng = -3.7038, epochMs = 1_700_000_000_000, accuracyM = 12.5f),
+                LocationPoint(lat = 40.4170, lng = -3.7040, epochMs = 1_700_000_300_000),
+            ),
+        )
+        val wire = SyncProtocol.encodeChild(snapshot, familyKey)
+        val decoded = SyncProtocol.decode(wire, familyKey, parent.public) as IncomingMessage.FromChild
+        assertEquals(snapshot.locations, decoded.snapshot.locations)
+    }
+
+    @Test
+    fun `parent location requests round-trip through an envelope`() {
+        val snapshot = ParentSnapshot(
+            version = 5,
+            policyJson = "{}",
+            locationRequests = listOf(LocationRequest("dev-1", 1_700_000_000_000)),
+        )
+        val wire = SyncProtocol.encodeParent(snapshot, familyKey, parent.private)
+        val decoded = SyncProtocol.decode(wire, familyKey, parent.public) as IncomingMessage.FromParent
+        assertEquals(snapshot.locationRequests, decoded.snapshot.locationRequests)
+    }
+
+    @Test
+    fun `legacy snapshots without location fields default to empty`() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val child = json.decodeFromString(
+            ChildSnapshot.serializer(),
+            """{"deviceId":"d","displayName":"phone","version":1,"epochDay":1}""",
+        )
+        assertEquals(emptyList<LocationPoint>(), child.locations)
+        val parentSnap = json.decodeFromString(ParentSnapshot.serializer(), """{"version":1,"policyJson":"{}"}""")
+        assertEquals(emptyList<LocationRequest>(), parentSnap.locationRequests)
+    }
+
+    @Test
     fun `a parent message signed by an impostor is rejected`() {
         val impostor = FamilyCrypto.generateSigningKeyPair()
         val snapshot = ParentSnapshot(version = 1, policyJson = "{}")

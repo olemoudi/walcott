@@ -6,6 +6,7 @@ import dev.walcott.data.PolicySettings
 import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottRepository
 import dev.walcott.enforcement.DeviceRestrictions
+import dev.walcott.location.LocationSampler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -230,6 +231,19 @@ class SyncManager(
         publishSelf()
     }
 
+    /** Parent asks a child device to report its current location on its next check-in. */
+    suspend fun requestLocation(targetDeviceId: String) {
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                locationRequests = SyncEngine.withLocationRequest(
+                    s.locationRequests, targetDeviceId, System.currentTimeMillis(),
+                ),
+            )
+        }
+        publishSelf()
+    }
+
     /** Parent grants an unsolicited bonus (chores, good behaviour) to a child device. */
     suspend fun giveBonus(targetDeviceId: String, categoryId: String, minutes: Int) {
         syncStore.update { s ->
@@ -252,6 +266,9 @@ class SyncManager(
         publishSelf()
     }
 
+    /** Publish this child's snapshot now (used by the periodic location sampler). */
+    suspend fun publishLocationUpdate() = publishSelf()
+
     // --- Publish / receive ---
 
     private suspend fun publishSelf() {
@@ -269,6 +286,7 @@ class SyncManager(
                     policyJson = json.encodeToString(PolicySettings.serializer(), settings),
                     resolutions = state.resolutions,
                     bonuses = state.bonuses,
+                    locationRequests = state.locationRequests,
                 )
                 transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, ParentKeystore.privateKey()))
             }
@@ -296,6 +314,7 @@ class SyncManager(
                     history = history,
                     asks = s.pendingAsks,
                     apps = apps,
+                    locations = repository.recentLocations(),
                 )
                 transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
             }
@@ -331,6 +350,14 @@ class SyncManager(
 
         val deviceId = id.deviceId
         val s = syncStore.current()
+
+        // On-demand: answer a fresh "locate now" addressed to this device (one attempt each).
+        val locReq = SyncEngine.freshLocationRequest(snapshot, deviceId, s.appliedLocationRequestMs)
+        if (locReq != null) {
+            LocationSampler(context).currentFix()?.let { repository.recordLocation(it) }
+            syncStore.update { it.copy(appliedLocationRequestMs = locReq.requestedAtMs) }
+            publishSelf()
+        }
 
         // Apply resolutions to our pending requests and asks, idempotently.
         val asksById = s.pendingAsks.associateBy { it.requestId }

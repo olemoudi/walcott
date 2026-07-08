@@ -218,6 +218,17 @@
     <string name="override_budgets_title">Límites personalizados</string>
     <string name="last_7_days">Últimos 7 días</string>
 
+    <!-- Tracking de localización -->
+    <string name="location_section_title">Localización</string>
+    <string name="tracking_periodic_title">Tracking periódico</string>
+    <string name="tracking_off">Desactivado</string>
+    <string name="tracking_minutes_fmt">%1$d min</string>
+    <string name="tracking_battery_warning">El reporte GPS frecuente aumenta el consumo de batería del dispositivo del hijo.</string>
+    <string name="locate_now">Localizar ahora</string>
+    <string name="view_on_map">Ver en mapa</string>
+    <string name="map_title">Localización</string>
+    <string name="map_no_locations">Aún no hay ubicación reportada. Aparecerá cuando el dispositivo del hijo haga check-in.</string>
+
     <!-- Home del hijo: identidad + enrolamiento + avance de hora de dormir -->
     <string name="child_greeting_named">Hola %1$s 👋</string>
     <string name="join_family_title">Únete a tu familia</string>

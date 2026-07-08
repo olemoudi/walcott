@@ -23,10 +23,14 @@ data class SyncState(
     val appliedBonusIds: Set<String> = emptySet(),
     /** Until when app installs are temporarily allowed on this device (PIN gate or approval). */
     val installExemptionUntilMs: Long = 0,
+    /** requestedAtMs of the newest location request this child has already answered. */
+    val appliedLocationRequestMs: Long = 0,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
     val bonuses: List<Bonus> = emptyList(),
+    /** Pending "locate now" asks, at most one per target device. */
+    val locationRequests: List<LocationRequest> = emptyList(),
     val children: List<ChildSnapshot> = emptyList(),
     /** deviceId -> wall-clock ms of the last message received from that child. */
     val lastSeen: Map<String, Long> = emptyMap(),

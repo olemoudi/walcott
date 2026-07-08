@@ -86,6 +86,7 @@ dependencies {
     implementation(libs.zxing.embedded)
     implementation(libs.okhttp)
     implementation(libs.work.runtime)
+    implementation(libs.osmdroid.android)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

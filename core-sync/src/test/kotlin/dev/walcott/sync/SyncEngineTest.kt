@@ -56,6 +56,28 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `freshLocationRequest returns a newer request for this device only`() {
+        val parent = ParentSnapshot(
+            version = 1,
+            policyJson = "{}",
+            locationRequests = listOf(LocationRequest("a", 2000), LocationRequest("b", 5000)),
+        )
+        assertEquals(2000L, SyncEngine.freshLocationRequest(parent, "a", appliedAtMs = 1000)?.requestedAtMs)
+        assertNull(SyncEngine.freshLocationRequest(parent, "a", appliedAtMs = 2000)) // already answered
+        assertNull(SyncEngine.freshLocationRequest(parent, "c", appliedAtMs = 0)) // not addressed to us
+    }
+
+    @Test
+    fun `withLocationRequest keeps at most one entry per device`() {
+        val first = SyncEngine.withLocationRequest(emptyList(), "a", 1000)
+        val second = SyncEngine.withLocationRequest(first, "a", 2000)
+        assertEquals(1, second.size)
+        assertEquals(2000L, second.single().requestedAtMs)
+        val twoDevices = SyncEngine.withLocationRequest(second, "b", 3000)
+        assertEquals(setOf("a", "b"), twoDevices.map { it.deviceId }.toSet())
+    }
+
+    @Test
     fun `an empty parent map merge from null then a snapshot works`() {
         assertNull(null as ParentSnapshot?)
         assertTrue(SyncEngine.mergeParent(null, ParentSnapshot(1, "{}")).version == 1L)

@@ -37,13 +37,14 @@ import dev.walcott.ui.parent.ChildrenScreen
 import dev.walcott.ui.parent.DeviceProtectionScreen
 import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.FamiliesScreen
+import dev.walcott.ui.parent.MapScreen
 import dev.walcott.ui.parent.ParentHomeScreen
 import dev.walcott.ui.parent.PinGateScreen
 import dev.walcott.ui.parent.WebFilterScreen
 import dev.walcott.ui.parent.WeeklyReportScreen
 
 private enum class Screen {
-    MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY, CHILD_DETAIL,
+    MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY, CHILD_DETAIL, CHILD_MAP,
     APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION,
 }
 
@@ -105,6 +106,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
             Screen.EARN, Screen.CALENDAR, Screen.REPORT, Screen.WEBFILTER, Screen.PROTECTION,
             -> Screen.FAMILY
             Screen.CHILD_DETAIL -> Screen.FAMILIES
+            Screen.CHILD_MAP -> Screen.CHILD_DETAIL
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
             else -> screen
         }
@@ -146,7 +148,18 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                         },
                     )
                     Screen.CHILD_DETAIL -> childDetailId?.let { childId ->
-                        ChildDetailScreen(viewModel, childId, onBack = ::back)
+                        ChildDetailScreen(
+                            viewModel,
+                            childId,
+                            onBack = ::back,
+                            onOpenMap = {
+                                childDetailId = it
+                                screen = Screen.CHILD_MAP
+                            },
+                        )
+                    }
+                    Screen.CHILD_MAP -> childDetailId?.let { childId ->
+                        MapScreen(viewModel, childId, onBack = ::back)
                     }
                     Screen.FAMILY -> ParentHomeScreen(
                         viewModel = viewModel,
