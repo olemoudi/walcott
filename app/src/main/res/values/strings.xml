@@ -304,6 +304,7 @@
         <item quantity="one">%1$d failed PIN attempt has been made on this device.</item>
         <item quantity="other">%1$d failed PIN attempts have been made on this device.</item>
     </plurals>
+    <string name="wrong_pin_last_attempt">Last attempt: %1$s</string>
     <string name="block_channel_name">App blocking</string>
     <string name="block_notif_title">App blocked</string>
     <string name="block_notif_text">This app is blocked right now.</string>

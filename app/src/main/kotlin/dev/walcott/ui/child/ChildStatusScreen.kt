@@ -1,7 +1,9 @@
 package dev.walcott.ui.child
 
+import android.Manifest
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -59,6 +61,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -118,6 +121,19 @@ fun ChildStatusScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val showLocationNudge = identity.role == Role.CHILD && !deviceOwner && !locationGranted
+    val locationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            locationGranted = true
+        } else {
+            // Only send to settings once the system won't prompt again (denied for good).
+            val activity = context.findActivity()
+            if (activity != null &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.ACCESS_FINE_LOCATION)
+            ) {
+                openAppDetails(context)
+            }
+        }
+    }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { text ->
             scope.launch {
@@ -145,7 +161,11 @@ fun ChildStatusScreen(
             }
             item { HeroCard(state) }
             if (showLocationNudge) {
-                item { LocationPermissionCard(onFix = { openAppDetails(context) }) }
+                item {
+                    LocationPermissionCard(
+                        onFix = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+                    )
+                }
             }
             state.bedtimeTonight?.let { window ->
                 if (!state.bedtimeActive) {
@@ -187,6 +207,16 @@ fun ChildStatusScreen(
             },
         )
     }
+}
+
+/** Unwraps the Activity behind a Compose context, for permission-rationale checks. */
+private fun android.content.Context.findActivity(): android.app.Activity? {
+    var ctx: android.content.Context? = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is android.app.Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
 }
 
 /** Opens this app's system settings page so location can be granted after a runtime denial. */

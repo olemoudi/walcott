@@ -141,7 +141,7 @@ fun ChildDetailScreen(
 
             // --- Wrong-PIN attempts (someone is trying to guess the parent PIN on the child) ---
             if (snapshot != null && snapshot.pinWrongTotal > 0) {
-                item { WrongPinCard(snapshot.pinWrongTotal) }
+                item { WrongPinCard(snapshot.pinWrongTotal, snapshot.lastWrongPinMs) }
             }
 
             // --- Stats ---
@@ -437,7 +437,7 @@ private fun EnforcementWarningCard(status: String) {
 }
 
 @Composable
-private fun WrongPinCard(total: Int) {
+private fun WrongPinCard(total: Int, lastAttemptMs: Long) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
     Surface(
@@ -448,11 +448,25 @@ private fun WrongPinCard(total: Int) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
-            Text(
-                pluralStringResource(R.plurals.wrong_pin_child, total, total),
-                style = MaterialTheme.typography.bodyMedium,
-                color = color,
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    pluralStringResource(R.plurals.wrong_pin_child, total, total),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = color,
+                )
+                if (lastAttemptMs > 0) {
+                    val stamp = remember(lastAttemptMs) {
+                        java.text.DateFormat
+                            .getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, Locale.getDefault())
+                            .format(java.util.Date(lastAttemptMs))
+                    }
+                    Text(
+                        stringResource(R.string.wrong_pin_last_attempt, stamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = color,
+                    )
+                }
+            }
         }
     }
 }
