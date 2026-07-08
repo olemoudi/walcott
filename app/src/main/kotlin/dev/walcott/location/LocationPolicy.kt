@@ -20,9 +20,15 @@ object LocationPolicy {
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
         val admin = WalcottAdminReceiver.componentName(context)
         val pkg = context.packageName
-        // Background location can't be auto-granted even as Device Owner; fixes are captured
-        // from the location-typed foreground service, so foreground fine/coarse is enough.
-        for (perm in listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) {
+        // Force-grant location so the child can't revoke it. Order matters: background ("all the
+        // time") only sticks once the foreground grant is in place, and both must be declared in
+        // the manifest. As Device Owner all three are granted silently (API 30+ honors background).
+        val perms = listOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+        )
+        for (perm in perms) {
             runCatching {
                 dpm.setPermissionGrantState(admin, pkg, perm, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
             }
