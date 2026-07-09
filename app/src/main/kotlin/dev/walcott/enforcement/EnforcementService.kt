@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import dev.walcott.MainActivity
 import dev.walcott.R
 import dev.walcott.WalcottApplication
+import dev.walcott.debug.DebugLog
 import dev.walcott.location.LocationPolicy
 import dev.walcott.location.LocationSampler
 import dev.walcott.net.VpnController
@@ -113,13 +114,20 @@ class EnforcementService : LifecycleService() {
                 .map { it.trackingIntervalMinutes }
                 .distinctUntilChanged()
                 .collectLatest { minutes ->
+                    DebugLog.i(LOC_TAG, "tracking interval resolved: $minutes min")
                     if (minutes <= 0) return@collectLatest
                     val sampler = LocationSampler(this@EnforcementService)
                     while (currentCoroutineContext().isActive) {
                         runCatching {
-                            sampler.currentFix()?.let { app.repository.recordLocation(it) }
+                            val fix = sampler.currentFix()
+                            if (fix != null) {
+                                app.repository.recordLocation(fix)
+                                DebugLog.i(LOC_TAG, "recorded fix acc=${fix.accuracyM}m mock=${fix.mock}")
+                            } else {
+                                DebugLog.w(LOC_TAG, "no location fix this cycle")
+                            }
                             app.syncManager.publishLocationUpdate()
-                        }
+                        }.onFailure { DebugLog.e(LOC_TAG, "location sampling cycle failed", it) }
                         delay(minutes * 60_000L)
                     }
                 }
@@ -255,6 +263,7 @@ class EnforcementService : LifecycleService() {
         private const val TICK_IDLE_MILLIS = 15_000L
         private const val MAX_CREDIT_SECONDS = 15L
         private const val UPDATE_CHECK_MILLIS = 6 * 60 * 60 * 1000L
+        private const val LOC_TAG = "WalcottLocation"
 
         fun start(context: Context) {
             val intent = Intent(context, EnforcementService::class.java)

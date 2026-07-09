@@ -5,10 +5,13 @@ import android.content.Intent
 import android.app.PendingIntent
 import android.content.pm.PackageInstaller
 import android.os.Build
-import android.util.Log
 import androidx.core.app.PendingIntentCompat
 import dev.walcott.Distribution
+import dev.walcott.WalcottApplication
+import dev.walcott.debug.DebugLog
+import dev.walcott.enforcement.DeviceRestrictions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,38 +43,60 @@ class Updater(private val context: Context) {
         .build()
 
     suspend fun checkAndUpdate(): UpdateCheckOutcome = withContext(Dispatchers.IO) {
-        Log.i(TAG, "checking for update")
+        DebugLog.i(TAG, "checking for update")
         UpdateCenter.report(UpdateUiState.Checking)
-        val info = runCatching { fetchInfo() }.onFailure { Log.w(TAG, "fetch failed", it) }.getOrNull()
+        val info = runCatching { fetchInfo() }.onFailure { DebugLog.w(TAG, "fetch failed", it) }.getOrNull()
         if (info == null) {
-            Log.w(TAG, "no version info")
+            DebugLog.w(TAG, "no version info")
             UpdateCenter.report(UpdateUiState.Failed("fetch"))
             return@withContext UpdateCheckOutcome.TRANSIENT_FAILURE
         }
         val current = currentVersionCode()
-        Log.i(TAG, "installed=$current latest=${info.versionCode}")
+        DebugLog.i(TAG, "installed=$current latest=${info.versionCode}")
         if (!info.isNewerThan(current)) {
             UpdateCenter.report(UpdateUiState.UpToDate(current))
             return@withContext UpdateCheckOutcome.UP_TO_DATE
         }
         UpdateCenter.report(UpdateUiState.Downloading(info))
         val apk = runCatching { download(info.apk) }
-            .onFailure { Log.w(TAG, "download failed", it) }
+            .onFailure { DebugLog.w(TAG, "download failed", it) }
             .getOrNull()
         if (apk == null) {
             UpdateCenter.report(UpdateUiState.Failed("download"))
             return@withContext UpdateCheckOutcome.TRANSIENT_FAILURE
         }
-        Log.i(TAG, "downloaded ${apk.length()} bytes, installing")
-        val committed = runCatching { install(apk) }
-            .onFailure { Log.w(TAG, "install failed", it) }
-            .isSuccess
-        if (!committed) {
-            UpdateCenter.report(UpdateUiState.Failed("install"))
+        DebugLog.i(TAG, "downloaded ${apk.length()} bytes, installing")
+        // As a Device Owner child, Walcott blocks app installs on itself (DISALLOW_INSTALL_APPS);
+        // lift that around our own install, or commit() throws SecurityException synchronously.
+        liftInstallBlockIfNeeded()
+        val installError = runCatching { install(apk) }
+            .onFailure { DebugLog.e(TAG, "install failed", it) }
+            .exceptionOrNull()
+        if (installError != null) {
+            UpdateCenter.report(UpdateUiState.Failed("install: ${installError.javaClass.simpleName}"))
             return@withContext UpdateCheckOutcome.INSTALL_FAILURE
         }
         // The final status (success / pending confirmation / failure) lands in InstallReceiver.
         UpdateCheckOutcome.INSTALL_STARTED
+    }
+
+    /**
+     * If we're a Device Owner enforcing DISALLOW_INSTALL_APPS, open the same PIN-gated install
+     * exemption the manual "Allow installs" button uses and apply it right now, so our own
+     * install session can commit. [dev.walcott.enforcement.EnforcementService] re-arms the block
+     * automatically when the exemption window closes.
+     */
+    private suspend fun liftInstallBlockIfNeeded() {
+        if (!isDeviceOwner()) return
+        val app = context.applicationContext as? WalcottApplication ?: return
+        val keys = runCatching { app.repository.settingsFlow.first().deviceRestrictions }.getOrNull() ?: return
+        if (DeviceRestrictions.KEY_INSTALLS !in keys) return
+        DebugLog.w(TAG, "install blocked by DISALLOW_INSTALL_APPS; opening temporary exemption")
+        runCatching {
+            app.syncManager.allowInstallsTemporarily()
+            val exemptUntil = System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS
+            DeviceRestrictions.apply(context, keys, exemptUntil)
+        }.onFailure { DebugLog.e(TAG, "failed to lift install block", it) }
     }
 
     private fun currentVersionCode(): Int {
@@ -98,6 +123,9 @@ class Updater(private val context: Context) {
 
     private fun install(apk: File) {
         val installer = context.packageManager.packageInstaller
+        // Abandon sessions leaked by earlier failed attempts (e.g. a commit blocked by policy),
+        // so createSession can't eventually hit "Too many active sessions".
+        runCatching { installer.mySessions.forEach { installer.abandonSession(it.sessionId) } }
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(context.packageName)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -107,17 +135,25 @@ class Updater(private val context: Context) {
             params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
         val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            session.openWrite("walcott", 0, apk.length()).use { out ->
-                apk.inputStream().use { it.copyTo(out) }
-                session.fsync(out)
+        DebugLog.i(TAG, "session $sessionId created")
+        try {
+            installer.openSession(sessionId).use { session ->
+                session.openWrite("walcott", 0, apk.length()).use { out ->
+                    apk.inputStream().use { it.copyTo(out) }
+                    session.fsync(out)
+                }
+                DebugLog.i(TAG, "wrote ${apk.length()} bytes; committing")
+                val statusIntent = Intent(context, InstallReceiver::class.java).setAction(InstallReceiver.ACTION)
+                val pending = PendingIntentCompat.getBroadcast(
+                    context, sessionId, statusIntent, PendingIntent.FLAG_UPDATE_CURRENT, true,
+                )!!
+                session.commit(pending.intentSender)
+                DebugLog.i(TAG, "session committed (deviceOwner=${isDeviceOwner()})")
             }
-            val statusIntent = Intent(context, InstallReceiver::class.java).setAction(InstallReceiver.ACTION)
-            val pending = PendingIntentCompat.getBroadcast(
-                context, sessionId, statusIntent, PendingIntent.FLAG_UPDATE_CURRENT, true,
-            )!!
-            session.commit(pending.intentSender)
-            Log.i(TAG, "session committed (deviceOwner=${isDeviceOwner()})")
+        } catch (t: Throwable) {
+            // Don't leave the half-written session behind for the next attempt to trip over.
+            runCatching { installer.abandonSession(sessionId) }
+            throw t
         }
     }
 

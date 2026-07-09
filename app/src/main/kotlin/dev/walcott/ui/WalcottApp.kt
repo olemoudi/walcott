@@ -34,6 +34,7 @@ import dev.walcott.ui.parent.BudgetsScreen
 import dev.walcott.ui.parent.CalendarScreen
 import dev.walcott.ui.parent.ChildDetailScreen
 import dev.walcott.ui.parent.ChildrenScreen
+import dev.walcott.ui.parent.DebugLogScreen
 import dev.walcott.ui.parent.DeviceProtectionScreen
 import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.FamiliesScreen
@@ -45,7 +46,7 @@ import dev.walcott.ui.parent.WeeklyReportScreen
 
 private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY, CHILD_DETAIL, CHILD_MAP,
-    APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION,
+    APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, DEBUG_LOGS,
 }
 
 @Composable
@@ -106,6 +107,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
         screen = when (screen) {
             Screen.APPS, Screen.BUDGETS, Screen.CHILDREN,
             Screen.EARN, Screen.CALENDAR, Screen.REPORT, Screen.WEBFILTER, Screen.PROTECTION,
+            Screen.DEBUG_LOGS,
             -> Screen.FAMILY
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
@@ -185,6 +187,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                         onOpenReport = { screen = Screen.REPORT },
                         onOpenWebFilter = { screen = Screen.WEBFILTER },
                         onOpenProtection = { screen = Screen.PROTECTION },
+                        onOpenDebugLogs = { screen = Screen.DEBUG_LOGS },
                         onChangeMode = {
                             viewModel.resetDeviceMode()
                             screen = Screen.MODE_SELECT
@@ -202,6 +205,7 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
                     Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.WEBFILTER -> WebFilterScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.PROTECTION -> DeviceProtectionScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.DEBUG_LOGS -> DebugLogScreen(onBack = { screen = Screen.FAMILY })
                 }
             }
         }

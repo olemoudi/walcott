@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
@@ -81,6 +82,7 @@ fun ParentHomeScreen(
     onOpenReport: () -> Unit,
     onOpenWebFilter: () -> Unit,
     onOpenProtection: () -> Unit,
+    onOpenDebugLogs: () -> Unit,
     onChangeMode: () -> Unit,
     installsBlocked: Boolean,
     installExemptionUntil: Long,
@@ -115,6 +117,12 @@ fun ParentHomeScreen(
                 AppLockCard(viewModel)
             }
             AppUpdateCard(deviceOwner)
+            NavCard(
+                Icons.Outlined.BugReport,
+                stringResource(R.string.nav_debug_title),
+                stringResource(R.string.nav_debug_subtitle),
+                onClick = onOpenDebugLogs,
+            )
             if (childDevice && installsBlocked) {
                 val remainingMs = installExemptionUntil - System.currentTimeMillis()
                 NavCard(

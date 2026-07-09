@@ -5,6 +5,7 @@ import dev.walcott.data.AppInventory
 import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottDatabase
 import dev.walcott.data.WalcottRepository
+import dev.walcott.debug.DebugLog
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.enforcement.WatchdogWorker
 import dev.walcott.net.VpnController
@@ -35,6 +36,7 @@ class WalcottApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        DebugLog.init(this)
         val settingsStore = SettingsStore(this)
         identityStore = IdentityStore(this)
         repository = WalcottRepository(

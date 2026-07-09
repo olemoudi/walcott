@@ -20,18 +20,27 @@ object LocationPolicy {
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
         val admin = WalcottAdminReceiver.componentName(context)
         val pkg = context.packageName
-        // Force-grant location so the child can't revoke it. Order matters: background ("all the
-        // time") only sticks once the foreground grant is in place, and both must be declared in
-        // the manifest. As Device Owner all three are granted silently (API 30+ honors background).
-        val perms = listOf(
+        // Force-grant foreground location so the child can't revoke it.
+        val foreground = listOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
         )
-        for (perm in perms) {
+        for (perm in foreground) {
             runCatching {
                 dpm.setPermissionGrantState(admin, pkg, perm, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
             }
+        }
+        // Deliberately do NOT admin-grant ACCESS_BACKGROUND_LOCATION: an admin-forced background
+        // grant triggers a persistent, non-dismissible "your IT admin is allowing … to access your
+        // location" system notification. Sampling runs inside the location-typed foreground service
+        // (EnforcementService), which grants while-in-use access without the background permission,
+        // and on Android 14+ the FGS type is required regardless. Reset any prior force-grant back
+        // to DEFAULT so that notification clears on devices provisioned by an earlier build.
+        runCatching {
+            dpm.setPermissionGrantState(
+                admin, pkg, Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT,
+            )
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             runCatching { dpm.setLocationEnabled(admin, true) }

@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.CancellationSignal
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import dev.walcott.debug.DebugLog
 import dev.walcott.sync.LocationPoint
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -26,24 +27,30 @@ class LocationSampler(private val context: Context) {
 
     /** Best current fix, or the freshest cached one, or null if unavailable. */
     suspend fun currentFix(timeoutMs: Long = FIX_TIMEOUT_MS): LocationPoint? {
-        val lm = lm ?: return null
-        if (!hasPermission()) return null
+        val lm = lm ?: run { DebugLog.w(TAG, "no LocationManager service"); return null }
+        if (!hasPermission()) { DebugLog.w(TAG, "location permission not granted"); return null }
         // Prefer the platform fused provider (API 31+, better/faster with less battery), then GPS.
         val providers = buildList {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(LocationManager.FUSED_PROVIDER)
             add(LocationManager.GPS_PROVIDER)
             add(LocationManager.NETWORK_PROVIDER)
         }.filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+        DebugLog.i(TAG, "requesting fix; enabled providers=$providers")
 
         for (provider in providers) {
             val loc = withTimeoutOrNull(timeoutMs) { requestSingle(lm, provider) }
-            if (loc != null) return loc.toPoint()
+            if (loc != null) {
+                DebugLog.i(TAG, "live fix from $provider acc=${if (loc.hasAccuracy()) loc.accuracy else -1f}m")
+                return loc.toPoint()
+            }
         }
         // Fall back to the most recent cached fix from any provider.
-        return (providers + LocationManager.PASSIVE_PROVIDER)
+        val cached = (providers + LocationManager.PASSIVE_PROVIDER)
             .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
             .maxByOrNull { it.time }
-            ?.toPoint()
+        if (cached == null) DebugLog.w(TAG, "no live fix and no cached location available")
+        else DebugLog.i(TAG, "no live fix; using cached location")
+        return cached?.toPoint()
     }
 
     private suspend fun requestSingle(lm: LocationManager, provider: String): Location? =
@@ -95,5 +102,6 @@ class LocationSampler(private val context: Context) {
 
     companion object {
         private const val FIX_TIMEOUT_MS = 20_000L
+        private const val TAG = "WalcottLocation"
     }
 }

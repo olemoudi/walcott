@@ -4,8 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
-import android.util.Log
 import androidx.core.content.IntentCompat
+import dev.walcott.debug.DebugLog
 
 /**
  * Receives PackageInstaller status callbacks. On a Device Owner device the install is silent
@@ -20,7 +20,7 @@ class InstallReceiver : BroadcastReceiver() {
         if (intent.action != ACTION) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-        Log.i(TAG, "install status=$status message=$message")
+        DebugLog.i(TAG, "install status=$status message=$message")
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
@@ -36,7 +36,8 @@ class InstallReceiver : BroadcastReceiver() {
             }
             else -> {
                 UpdateNotifications.cancel(context)
-                UpdateCenter.report(UpdateUiState.Failed("install status $status"))
+                val detail = message?.let { ": $it" } ?: ""
+                UpdateCenter.report(UpdateUiState.Failed("install status $status$detail"))
             }
         }
     }
