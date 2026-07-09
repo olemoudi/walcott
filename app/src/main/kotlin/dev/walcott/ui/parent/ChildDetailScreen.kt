@@ -60,6 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
+import dev.walcott.BuildConfig
 import dev.walcott.Distribution
 import dev.walcott.R
 import dev.walcott.data.ChildEntry
@@ -145,6 +146,11 @@ fun ChildDetailScreen(
                 snapshot.enforcement != EnforcementStatus.UNKNOWN
             ) {
                 item { EnforcementWarningCard(snapshot.enforcement) }
+            }
+
+            // --- Usage access (screen-time counting silently stops without it) ---
+            if (snapshot != null && !snapshot.usageAccessOn) {
+                item { UsageAccessWarningCard() }
             }
 
             // --- Wrong-PIN attempts (someone is trying to guess the parent PIN on the child) ---
@@ -397,11 +403,32 @@ private fun LinkedCard(snapshot: ChildSnapshot, onShowCode: () -> Unit) {
                 modifier = Modifier.size(24.dp),
             )
             Spacer(Modifier.width(spacing.sm))
-            Text(
-                stringResource(R.string.child_detail_linked, snapshot.displayName),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.child_detail_linked, snapshot.displayName),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                // The fleet is sideloaded + self-updating; a child stuck behind our own build
+                // (0 = legacy child that doesn't report it yet) is worth a red flag.
+                if (snapshot.appVersionCode > 0) {
+                    val outdated = snapshot.appVersionCode < BuildConfig.VERSION_CODE
+                    Text(
+                        if (outdated) {
+                            stringResource(
+                                R.string.child_version_outdated, snapshot.appVersionName, snapshot.appVersionCode,
+                            )
+                        } else {
+                            stringResource(R.string.child_version, snapshot.appVersionName, snapshot.appVersionCode)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (outdated) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
             TextButton(onClick = onShowCode) { Text(stringResource(R.string.child_detail_show_code)) }
         }
     }
@@ -482,6 +509,23 @@ private fun EnforcementWarningCard(status: String) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
             Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+        }
+    }
+}
+
+@Composable
+private fun UsageAccessWarningCard() {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(spacing.md))
+            Text(stringResource(R.string.usage_access_off_child), style = MaterialTheme.typography.bodyMedium, color = color)
         }
     }
 }

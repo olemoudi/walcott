@@ -7,6 +7,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.walcott.WalcottApplication
+import dev.walcott.debug.DebugLog
 import dev.walcott.sync.IdentityStore
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
@@ -22,7 +23,9 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
     override suspend fun doWork(): Result {
         val app = applicationContext as WalcottApplication
         if (IdentityStore(applicationContext).current().enforcesLocally) {
+            // Failures here mean enforcement may be down while looking healthy — keep them visible.
             runCatching { EnforcementService.start(applicationContext) }
+                .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
             runCatching {
                 val settings = app.repository.settingsFlow.first()
                 DeviceRestrictions.apply(
@@ -30,13 +33,14 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     settings.deviceRestrictions,
                     app.syncManager.installExemption.value,
                 )
-            }
+            }.onFailure { DebugLog.e(TAG, "restriction reassert failed", it) }
         }
         return Result.success()
     }
 
     companion object {
         private const val NAME = "walcott_watchdog"
+        private const val TAG = "WalcottWatchdog"
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<WatchdogWorker>(15, TimeUnit.MINUTES).build()

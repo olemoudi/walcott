@@ -7,8 +7,10 @@ import dev.walcott.data.PinResult
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottRepository
+import dev.walcott.BuildConfig
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.enforcement.EnforcementBackends
+import dev.walcott.enforcement.UsageAccess
 import dev.walcott.location.LocationSampler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -381,6 +383,9 @@ class SyncManager(
                     // Cap the trail so the (gzipped) snapshot stays well under ntfy's message cap.
                     locations = repository.recentLocations().takeLast(MAX_LOCATION_POINTS),
                     networkLocationOn = LocationSampler(context).networkProviderEnabled(),
+                    usageAccessOn = UsageAccess.granted(context),
+                    appVersionCode = BuildConfig.VERSION_CODE,
+                    appVersionName = BuildConfig.VERSION_NAME,
                     enforcement = EnforcementBackends.status(context),
                     pinWrongTotal = s.pinWrongTotal,
                     lastWrongPinMs = s.lastWrongPinMs,
@@ -489,6 +494,56 @@ class SyncManager(
             snapshot.deviceId in before.enforcementNotified
         ) {
             syncStore.update { it.copy(enforcementNotified = it.enforcementNotified - snapshot.deviceId) }
+        }
+
+        // Alert when a child loses full Device Owner protection but a weaker backend remains
+        // (the NONE alert above misses that downgrade). The version guard mirrors mergeChild's
+        // accept rule so a replayed older snapshot can't fake a transition.
+        val prevChild = before.children.firstOrNull { it.deviceId == snapshot.deviceId }
+        if (prevChild?.enforcement == EnforcementStatus.DEVICE_OWNER &&
+            snapshot.enforcement != EnforcementStatus.DEVICE_OWNER &&
+            snapshot.enforcement != EnforcementStatus.UNKNOWN &&
+            snapshot.version >= prevChild.version
+        ) {
+            SyncNotifications.notifyEnforcementDegraded(context, snapshot.displayName, snapshot.deviceId)
+        }
+
+        // Alert once when usage access is off (budgets silently stop counting); re-alert on relapse.
+        val usageOff = !snapshot.usageAccessOn
+        if (usageOff && snapshot.deviceId !in before.usageAccessNotified) {
+            SyncNotifications.notifyUsageAccessLost(context, snapshot.displayName, snapshot.deviceId)
+            syncStore.update { it.copy(usageAccessNotified = it.usageAccessNotified + snapshot.deviceId) }
+        } else if (!usageOff && snapshot.deviceId in before.usageAccessNotified) {
+            syncStore.update { it.copy(usageAccessNotified = it.usageAccessNotified - snapshot.deviceId) }
+        }
+
+        // Alert once when mock (spoofed) fixes appear in the trail; clear when it's clean again.
+        val hasMock = snapshot.locations.any { it.mock }
+        if (hasMock && snapshot.deviceId !in before.mockLocationNotified) {
+            SyncNotifications.notifyMockLocation(context, snapshot.displayName, snapshot.deviceId)
+            syncStore.update { it.copy(mockLocationNotified = it.mockLocationNotified + snapshot.deviceId) }
+        } else if (!hasMock && snapshot.deviceId in before.mockLocationNotified) {
+            syncStore.update { it.copy(mockLocationNotified = it.mockLocationNotified - snapshot.deviceId) }
+        }
+
+        // Notify about newly installed (still unclassified => blocked) apps. The first pass only
+        // seeds the seen-set from existing data so updating the app doesn't flood the parent.
+        val assignedPackages = settingsStore.current().assignments.keys
+        if (!before.seenAppsSeeded) {
+            val known = merged.flatMap { it.apps }.map { it.packageName }.toSet() + assignedPackages
+            syncStore.update { it.copy(seenAppPackages = it.seenAppPackages + known, seenAppsSeeded = true) }
+        } else {
+            val newApps = snapshot.apps.filter {
+                it.packageName !in before.seenAppPackages && it.packageName !in assignedPackages
+            }
+            if (newApps.isNotEmpty()) {
+                SyncNotifications.notifyNewApp(
+                    context, snapshot.displayName, newApps.first().label, newApps.size - 1, snapshot.deviceId,
+                )
+                syncStore.update {
+                    it.copy(seenAppPackages = it.seenAppPackages + newApps.map { a -> a.packageName })
+                }
+            }
         }
 
         // Alert whenever the child's cumulative wrong-PIN count grows (someone is guessing the PIN).

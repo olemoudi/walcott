@@ -275,6 +275,18 @@
     <string name="perm_notifications_fix">Activar</string>
     <string name="perm_parent_notifications_missing">Las notificaciones están desactivadas: no recibirás alertas ni peticiones de los dispositivos de tus hijos</string>
     <string name="sync_ask_title">%1$s pide algo</string>
+    <string name="enforcement_degraded_title">%1$s perdió la protección completa</string>
+    <string name="enforcement_degraded_text">El dispositivo ya no está totalmente gestionado — el bloqueo depende ahora de un respaldo más débil</string>
+    <string name="usage_access_off_title">El recuento de tiempo está apagado en %1$s</string>
+    <string name="usage_access_off_text">Se revocó el acceso de uso — los límites de tiempo no están descontando</string>
+    <string name="usage_access_off_child">El acceso de uso está apagado en este dispositivo: los límites de tiempo no descuentan</string>
+    <string name="mock_location_title">%1$s podría estar falseando su ubicación</string>
+    <string name="mock_location_text">Las ubicaciones recientes vienen de una app de GPS simulado</string>
+    <string name="new_app_title">App nueva en el dispositivo de %1$s</string>
+    <string name="new_app_text">Se instaló "%1$s" — seguirá bloqueada hasta que la clasifiques</string>
+    <string name="new_app_text_more">Se instalaron "%1$s" y %2$d más — seguirán bloqueadas hasta que las clasifiques</string>
+    <string name="child_version">Versión de la app %1$s (%2$d)</string>
+    <string name="child_version_outdated">Versión de la app %1$s (%2$d) — desactualizada</string>
 
     <!-- Protección del dispositivo (restricciones de usuario) -->
     <string name="nav_protection_title">Protección del dispositivo</string>

@@ -104,6 +104,15 @@ data class ChildSnapshot(
      * that don't report it don't raise a false alarm.
      */
     val networkLocationOn: Boolean = true,
+    /**
+     * Whether usage access (screen-time counting) is granted on this device. When false,
+     * budget-based limits silently stop counting, so the parent must be told. Defaults true
+     * so legacy children raise no false alarm.
+     */
+    val usageAccessOn: Boolean = true,
+    /** The child app's build (BuildConfig versionCode/Name); 0/"" = unknown/legacy. */
+    val appVersionCode: Int = 0,
+    val appVersionName: String = "",
     /** Active enforcement backend on this device: "device_owner" | "accessibility" | "none". */
     val enforcement: String = EnforcementStatus.UNKNOWN,
     /** Cumulative wrong parent-PIN attempts on this device, and the last one's wall-clock time. */

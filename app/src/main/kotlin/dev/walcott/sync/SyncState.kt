@@ -46,6 +46,14 @@ data class SyncState(
     val enforcementNotified: Set<String> = emptySet(),
     /** deviceId -> the child's pinWrongTotal we already alerted about (one alert per new failure). */
     val pinAlertedTotal: Map<String, Int> = emptyMap(),
+    /** deviceIds already alerted for missing usage access (cleared when it recovers). */
+    val usageAccessNotified: Set<String> = emptySet(),
+    /** deviceIds already alerted for mock-GPS fixes (cleared when the trail is clean again). */
+    val mockLocationNotified: Set<String> = emptySet(),
+    /** Every app package ever seen across children, to notify only on genuinely new installs. */
+    val seenAppPackages: Set<String> = emptySet(),
+    /** True once [seenAppPackages] was seeded from existing data (prevents a first-run flood). */
+    val seenAppsSeeded: Boolean = false,
     // Both sides
     /**
      * ntfy `time` (unix seconds) of the newest message this device has processed. Used as the

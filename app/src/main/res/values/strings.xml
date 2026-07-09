@@ -275,6 +275,18 @@
     <string name="perm_notifications_fix">Turn on</string>
     <string name="perm_parent_notifications_missing">Notifications are off: you won\'t get alerts or requests from your children\'s devices</string>
     <string name="sync_ask_title">%1$s asks for something</string>
+    <string name="enforcement_degraded_title">%1$s lost full protection</string>
+    <string name="enforcement_degraded_text">The device is no longer fully managed — blocking now relies on a weaker backup</string>
+    <string name="usage_access_off_title">Screen-time counting is off on %1$s</string>
+    <string name="usage_access_off_text">Usage access was revoked — time limits are not counting down</string>
+    <string name="usage_access_off_child">Usage access is off on this device: time limits are not counting down</string>
+    <string name="mock_location_title">%1$s may be faking their location</string>
+    <string name="mock_location_text">Recent locations came from a mock-GPS app</string>
+    <string name="new_app_title">New app on %1$s\'s device</string>
+    <string name="new_app_text">"%1$s" was installed — it stays blocked until you classify it</string>
+    <string name="new_app_text_more">"%1$s" and %2$d more were installed — they stay blocked until you classify them</string>
+    <string name="child_version">App version %1$s (%2$d)</string>
+    <string name="child_version_outdated">App version %1$s (%2$d) — outdated</string>
 
     <!-- Device protection (user restrictions) -->
     <string name="nav_protection_title">Device protection</string>

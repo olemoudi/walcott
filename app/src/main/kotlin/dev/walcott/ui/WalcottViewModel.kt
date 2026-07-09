@@ -74,7 +74,19 @@ class WalcottViewModel(
     fun addChild(name: String): String {
         val childId = java.util.UUID.randomUUID().toString()
         viewModelScope.launch {
-            repository.updateSettings { it.copy(children = it.children + dev.walcott.data.ChildEntry(childId, name)) }
+            repository.updateSettings {
+                it.copy(
+                    children = it.children + dev.walcott.data.ChildEntry(
+                        childId,
+                        name,
+                        // Location tracking on by default — it's what a parent expects from
+                        // enrollment; the LocationCard can still turn it off per child.
+                        overrides = dev.walcott.data.ChildOverrides(
+                            trackingIntervalMinutes = DEFAULT_TRACKING_MINUTES,
+                        ),
+                    ),
+                )
+            }
         }
         return childId
     }
@@ -278,5 +290,10 @@ class WalcottViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             WalcottViewModel(repository, sync) as T
+    }
+
+    companion object {
+        /** Default per-child location-tracking interval seeded at registration. */
+        private const val DEFAULT_TRACKING_MINUTES = 15
     }
 }

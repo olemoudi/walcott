@@ -167,6 +167,27 @@ class ProtocolTest {
     }
 
     @Test
+    fun `device health fields round-trip and default legacy-safe`() {
+        val snapshot = ChildSnapshot(
+            deviceId = "d", displayName = "phone", version = 1, epochDay = 1,
+            usageAccessOn = false, appVersionCode = 18, appVersionName = "0.2.15",
+        )
+        val decoded = SyncProtocol.decode(SyncProtocol.encodeChild(snapshot, familyKey), familyKey, parent.public)
+            as IncomingMessage.FromChild
+        assertEquals(false, decoded.snapshot.usageAccessOn)
+        assertEquals(18, decoded.snapshot.appVersionCode)
+        assertEquals("0.2.15", decoded.snapshot.appVersionName)
+
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val legacy = json.decodeFromString(
+            ChildSnapshot.serializer(),
+            """{"deviceId":"d","displayName":"p","version":1,"epochDay":1}""",
+        )
+        assertTrue(legacy.usageAccessOn) // no false alarm from children that don't report it
+        assertEquals(0, legacy.appVersionCode)
+    }
+
+    @Test
     fun `a legacy envelope with an uncompressed payload still decodes`() {
         // Old builds encrypted raw JSON (no gzip). Build such an envelope by hand.
         val snapshot = ChildSnapshot("d", "phone", 1, 1)
