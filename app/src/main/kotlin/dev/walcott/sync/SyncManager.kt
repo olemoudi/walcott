@@ -349,6 +349,7 @@ class SyncManager(
                     asks = s.pendingAsks,
                     apps = apps,
                     locations = repository.recentLocations(),
+                    networkLocationOn = LocationSampler(context).networkProviderEnabled(),
                     enforcement = EnforcementBackends.status(context),
                     pinWrongTotal = s.pinWrongTotal,
                     lastWrongPinMs = s.lastWrongPinMs,

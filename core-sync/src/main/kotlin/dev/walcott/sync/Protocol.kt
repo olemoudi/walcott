@@ -97,6 +97,13 @@ data class ChildSnapshot(
     val apps: List<InstalledAppInfo> = emptyList(),
     /** Recent GPS fixes (last 12h) for the parent's map, newest last. */
     val locations: List<LocationPoint> = emptyList(),
+    /**
+     * Whether the network location provider (Wi-Fi/cell) is enabled on this device. A Device
+     * Owner can't force it on (it's the GMS "Google Location Accuracy" setting), so when it's
+     * off the parent is warned that indoor tracking won't work. Defaults true so legacy children
+     * that don't report it don't raise a false alarm.
+     */
+    val networkLocationOn: Boolean = true,
     /** Active enforcement backend on this device: "device_owner" | "accessibility" | "none". */
     val enforcement: String = EnforcementStatus.UNKNOWN,
     /** Cumulative wrong parent-PIN attempts on this device, and the last one's wall-clock time. */

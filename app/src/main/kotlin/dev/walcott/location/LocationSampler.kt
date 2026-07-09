@@ -35,7 +35,8 @@ class LocationSampler(private val context: Context) {
             add(LocationManager.GPS_PROVIDER)
             add(LocationManager.NETWORK_PROVIDER)
         }.filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
-        DebugLog.i(TAG, "requesting fix; enabled providers=$providers")
+        val locationOn = runCatching { lm.isLocationEnabled }.getOrDefault(false)
+        DebugLog.i(TAG, "requesting fix; locationEnabled=$locationOn enabled providers=$providers")
 
         for (provider in providers) {
             val loc = withTimeoutOrNull(timeoutMs) { requestSingle(lm, provider) }
@@ -81,6 +82,13 @@ class LocationSampler(private val context: Context) {
                 }.onFailure { if (cont.isActive) cont.resume(null) }
             }
         }
+
+    /**
+     * Whether the network (Wi-Fi/cell) location provider is enabled. It's the only provider that
+     * yields indoor fixes; a Device Owner can't force it on, so the parent is warned when it's off.
+     */
+    fun networkProviderEnabled(): Boolean =
+        runCatching { lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ?: false }.getOrDefault(false)
 
     private fun hasPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==

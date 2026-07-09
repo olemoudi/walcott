@@ -321,6 +321,7 @@
     <string name="pin_locked">Too many attempts. Try again in %1$d min.</string>
     <string name="pin_ask_parent">Ask your parent for the PIN.</string>
     <string name="location_mock_warning">Warning: some recent locations may be spoofed (mock GPS).</string>
+    <string name="location_network_off_warning">Indoor tracking is off on this device: turn on "Google Location Accuracy" (Settings › Location) so Wi-Fi/cell fixes work indoors.</string>
 
     <!-- Check-in staleness -->
     <string name="child_stale_line">No check-in for %1$s — protection may be off</string>

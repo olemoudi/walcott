@@ -321,6 +321,7 @@
     <string name="pin_locked">Demasiados intentos. Reintenta en %1$d min.</string>
     <string name="pin_ask_parent">Pide el PIN a tu madre o padre.</string>
     <string name="location_mock_warning">Aviso: algunas ubicaciones recientes podrían ser falsas (GPS simulado).</string>
+    <string name="location_network_off_warning">El seguimiento en interior está desactivado en este dispositivo: activa "Precisión de la ubicación de Google" (Ajustes › Ubicación) para que funcionen los fixes por Wi-Fi/celda en interior.</string>
 
     <!-- Check-in / falta de señal -->
     <string name="child_stale_line">Sin señal desde hace %1$s — la protección podría estar inactiva</string>
