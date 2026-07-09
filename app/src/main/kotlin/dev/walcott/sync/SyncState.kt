@@ -46,6 +46,13 @@ data class SyncState(
     val enforcementNotified: Set<String> = emptySet(),
     /** deviceId -> the child's pinWrongTotal we already alerted about (one alert per new failure). */
     val pinAlertedTotal: Map<String, Int> = emptyMap(),
+    // Both sides
+    /**
+     * ntfy `time` (unix seconds) of the newest message this device has processed. Used as the
+     * `since=` cursor so WebSocket reconnects and background polls replay missed messages
+     * instead of losing them.
+     */
+    val ntfySinceSec: Long = 0,
 )
 
 private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_sync")

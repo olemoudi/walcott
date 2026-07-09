@@ -273,6 +273,8 @@
     <string name="perm_install_fix">Permitir</string>
     <string name="perm_notifications_missing">Las notificaciones están desactivadas: no verás los avisos de actualización</string>
     <string name="perm_notifications_fix">Activar</string>
+    <string name="perm_parent_notifications_missing">Las notificaciones están desactivadas: no recibirás alertas ni peticiones de los dispositivos de tus hijos</string>
+    <string name="sync_ask_title">%1$s pide algo</string>
 
     <!-- Protección del dispositivo (restricciones de usuario) -->
     <string name="nav_protection_title">Protección del dispositivo</string>

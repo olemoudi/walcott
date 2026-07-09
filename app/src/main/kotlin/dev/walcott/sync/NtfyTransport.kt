@@ -6,6 +6,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import dev.walcott.debug.DebugLog
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -20,6 +21,11 @@ class NtfyTransport(
     server: String,
     private val topic: String,
     private val client: OkHttpClient = OkHttpClient(),
+    /**
+     * Unix-seconds cursor appended as `since=` when (re)connecting, so messages published
+     * while the socket was down are replayed instead of lost. 0 = no replay (legacy behavior).
+     */
+    private val sinceProvider: () -> Long = { 0L },
 ) : SyncTransport {
 
     private val httpBase = server.trimEnd('/')
@@ -29,7 +35,7 @@ class NtfyTransport(
     private val closed = AtomicBoolean(false)
     private val reconnectAttempts = AtomicInteger(0)
     @Volatile private var webSocket: WebSocket? = null
-    @Volatile private var onMessage: ((String) -> Unit)? = null
+    @Volatile private var onMessage: ((String, Long) -> Unit)? = null
 
     override fun publish(message: String) {
         val request = Request.Builder()
@@ -37,31 +43,44 @@ class NtfyTransport(
             .post(message.toByteArray().toRequestBody())
             .build()
         client.newCall(request).enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) { /* best-effort; next re-emit heals */ }
-            override fun onResponse(call: okhttp3.Call, response: Response) { response.close() }
+            // Still best-effort (no retry loop; the periodic re-emit heals transients), but
+            // failures must be visible: a swallowed HTTP 413 (oversized message) once hid a
+            // permanent, deterministic publish failure.
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                DebugLog.w(TAG, "publish failed (${message.length} bytes)", e)
+            }
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                if (!response.isSuccessful) {
+                    DebugLog.w(TAG, "publish rejected: HTTP ${response.code} (${message.length} bytes)")
+                }
+                response.close()
+            }
         })
     }
 
-    override fun connect(onMessage: (String) -> Unit) {
+    override fun connect(onMessage: (String, Long) -> Unit) {
         this.onMessage = onMessage
         openSocket()
     }
 
     private fun openSocket() {
         if (closed.get()) return
-        val request = Request.Builder().url(wsUrl).build()
+        val since = sinceProvider()
+        val url = if (since > 0) "$wsUrl?since=$since" else wsUrl
+        val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 reconnectAttempts.set(0)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // ntfy events look like {"event":"message","message":"<body>",...}; we only
-                // care about actual messages, not the "open"/"keepalive" events.
+                // ntfy events look like {"event":"message","time":<unix s>,"message":"<body>",...};
+                // we only care about actual messages, not the "open"/"keepalive" events.
                 val event = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
                 if (event["event"]?.jsonPrimitive?.content != "message") return
                 val body = event["message"]?.jsonPrimitive?.content ?: return
-                this@NtfyTransport.onMessage?.invoke(body)
+                val timeSec = event["time"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                this@NtfyTransport.onMessage?.invoke(body, timeSec)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -90,5 +109,9 @@ class NtfyTransport(
         closed.set(true)
         webSocket?.cancel()
         webSocket = null
+    }
+
+    companion object {
+        private const val TAG = "WalcottSync"
     }
 }

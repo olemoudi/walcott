@@ -87,6 +87,30 @@ object SyncNotifications {
         runCatching { NotificationManagerCompat.from(context).notify("pin".hashCode() + deviceId.hashCode(), notification) }
     }
 
+    /** A child asked for something (an app install, anything free-form). */
+    fun notifyAsk(context: Context, childName: String, text: String, requestId: String) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL, context.getString(R.string.sync_request_channel_name), NotificationManager.IMPORTANCE_HIGH),
+            )
+        }
+        val tap = PendingIntent.getActivity(
+            context, 0, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(context.getString(R.string.sync_ask_title, childName))
+            .setContentText(text)
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        // Per-ask id so several pending asks don't clobber each other (or the requests notification).
+        runCatching { NotificationManagerCompat.from(context).notify(("ask$requestId").hashCode(), notification) }
+    }
+
     fun notifyRequest(context: Context, childName: String, minutes: Int) {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

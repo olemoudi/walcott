@@ -167,6 +167,38 @@ class ProtocolTest {
     }
 
     @Test
+    fun `a legacy envelope with an uncompressed payload still decodes`() {
+        // Old builds encrypted raw JSON (no gzip). Build such an envelope by hand.
+        val snapshot = ChildSnapshot("d", "phone", 1, 1)
+        val json = kotlinx.serialization.json.Json { encodeDefaults = true }
+        val rawPayload = json.encodeToString(ChildSnapshot.serializer(), snapshot).toByteArray()
+        val ciphertext = FamilyCrypto.encrypt(familyKey, rawPayload)
+        val wire = """{"kind":"child","senderId":"d","version":1,"ciphertext":"${FamilyCrypto.toB64(ciphertext)}","signature":null}"""
+        val decoded = SyncProtocol.decode(wire, familyKey, parent.public)
+        assertInstanceOf(IncomingMessage.FromChild::class.java, decoded)
+        assertEquals(snapshot, (decoded as IncomingMessage.FromChild).snapshot)
+    }
+
+    @Test
+    fun `a large child snapshot compresses under the ntfy message cap`() {
+        // Regression for the silent HTTP 413: a realistic worst-case snapshot (many apps,
+        // 12h of fixes, a week of history) must fit in ntfy's default 4096-byte body limit.
+        val snapshot = ChildSnapshot(
+            deviceId = "dev-1", displayName = "Ana's phone", childId = "c1", version = 9, epochDay = 20_000,
+            usage = (1..6).map { UsageEntry("category-$it", it * 600L) },
+            history = (1..7).map { day -> DayUsage(20_000L - day, (1..6).map { UsageEntry("category-$it", it * 500L) }) },
+            apps = (1..60).map { InstalledAppInfo("com.example.app$it.some.long.package", "Application Number $it") },
+            locations = (1..48).map {
+                LocationPoint(lat = 40.0 + it * 0.001, lng = -3.7 - it * 0.001, epochMs = 1_700_000_000_000 + it * 900_000L, accuracyM = 15f)
+            },
+        )
+        val wire = SyncProtocol.encodeChild(snapshot, familyKey)
+        assertTrue(wire.toByteArray().size < 4096, "wire size ${wire.toByteArray().size} >= 4096")
+        val decoded = SyncProtocol.decode(wire, familyKey, parent.public) as IncomingMessage.FromChild
+        assertEquals(snapshot, decoded.snapshot)
+    }
+
+    @Test
     fun `decode tolerates unknown fields for forward compatibility`() {
         val snapshot = ChildSnapshot("d", "phone", 1, 1)
         val wire = SyncProtocol.encodeChild(snapshot, familyKey)

@@ -10,6 +10,7 @@ import dev.walcott.enforcement.EnforcementService
 import dev.walcott.enforcement.WatchdogWorker
 import dev.walcott.net.VpnController
 import dev.walcott.sync.IdentityStore
+import dev.walcott.sync.ParentPollWorker
 import dev.walcott.sync.Role
 import dev.walcott.sync.StaleChildWorker
 import dev.walcott.sync.SyncManager
@@ -68,6 +69,9 @@ class WalcottApplication : Application() {
 
         // Parent-side watchdog for children that stop checking in (no-op on other modes).
         StaleChildWorker.schedule(this)
+
+        // Parent-side catch-up poll so requests/alerts arrive while the app is closed.
+        ParentPollWorker.schedule(this)
 
         // Child-side watchdog: keep enforcement alive and re-assert Device Owner policies.
         WatchdogWorker.schedule(this)

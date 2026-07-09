@@ -12,6 +12,7 @@ import dev.walcott.enforcement.EnforcementBackends
 import dev.walcott.location.LocationSampler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,9 @@ class SyncManager(
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var transport: SyncTransport? = null
+    private var reEmitJob: Job? = null
+    /** In-memory mirror of [SyncState.ntfySinceSec] so the transport's sinceProvider never blocks. */
+    @Volatile private var sinceCache: Long = 0
 
     val identity: StateFlow<FamilyIdentity> =
         identityStore.identity.stateIn(scope, SharingStarted.Eagerly, FamilyIdentity())
@@ -78,18 +82,21 @@ class SyncManager(
         scope.launch {
             val id = identityStore.current()
             connect(id)
-            if (id.isPaired) {
-                publishSelf()
-                periodicReEmit()
-            }
+            if (id.isPaired) publishSelf()
         }
     }
 
-    private fun connect(id: FamilyIdentity) {
+    private suspend fun connect(id: FamilyIdentity) {
         transport?.close()
         if (!id.isPaired) return
-        transport = NtfyTransport(id.ntfyServer, id.topic).also { t ->
-            t.connect { raw -> scope.launch { handleIncoming(raw, id) } }
+        sinceCache = maxOf(sinceCache, syncStore.current().ntfySinceSec)
+        transport = NtfyTransport(id.ntfyServer, id.topic, sinceProvider = { sinceCache }).also { t ->
+            t.connect { raw, timeSec ->
+                scope.launch {
+                    handleIncoming(raw, id)
+                    advanceCursor(timeSec)
+                }
+            }
         }
         // Parent republishes whenever the rules change.
         if (id.role == Role.PARENT) {
@@ -97,15 +104,36 @@ class SyncManager(
                 settingsStore.settings.drop(1).collect { publishConfigChanged() }
             }
         }
+        // Re-emit heals lost messages from the moment a device is paired — including devices
+        // paired during this process's lifetime (pairing used to publish exactly once).
+        periodicReEmit()
     }
 
     private fun periodicReEmit() {
-        scope.launch {
+        if (reEmitJob?.isActive == true) return
+        reEmitJob = scope.launch {
             while (true) {
                 delay(RE_EMIT_MILLIS)
                 publishSelf()
             }
         }
+    }
+
+    /** Applies one raw transport message and advances the replay cursor. Poll-worker entry point. */
+    suspend fun applyIncoming(raw: String, timeSec: Long = 0) {
+        val id = identityStore.current()
+        if (id.isPaired) handleIncoming(raw, id)
+        advanceCursor(timeSec)
+    }
+
+    /**
+     * Moves the `since=` cursor forward. Advances on EVERY message — including our own echoes
+     * and undecodable ones — or reconnects would replay them forever.
+     */
+    private suspend fun advanceCursor(timeSec: Long) {
+        if (timeSec <= sinceCache) return
+        sinceCache = timeSec
+        syncStore.update { if (timeSec > it.ntfySinceSec) it.copy(ntfySinceSec = timeSec) else it }
     }
 
     // --- Mode & pairing ---
@@ -128,6 +156,8 @@ class SyncManager(
     suspend fun resetDeviceMode() {
         transport?.close()
         transport = null
+        reEmitJob?.cancel()
+        reEmitJob = null
         identityStore.save(FamilyIdentity())
     }
 
@@ -348,7 +378,8 @@ class SyncManager(
                     history = history,
                     asks = s.pendingAsks,
                     apps = apps,
-                    locations = repository.recentLocations(),
+                    // Cap the trail so the (gzipped) snapshot stays well under ntfy's message cap.
+                    locations = repository.recentLocations().takeLast(MAX_LOCATION_POINTS),
                     networkLocationOn = LocationSampler(context).networkProviderEnabled(),
                     enforcement = EnforcementBackends.status(context),
                     pinWrongTotal = s.pinWrongTotal,
@@ -439,6 +470,7 @@ class SyncManager(
     private suspend fun applyChildSnapshot(snapshot: ChildSnapshot) {
         val before = syncStore.current()
         val prevRequestIds = before.children.flatMap { it.requests }.map { it.requestId }.toSet()
+        val prevAskIds = before.children.flatMap { it.asks }.map { it.requestId }.toSet()
         val merged = SyncEngine.mergeChild(before.children.associateBy { it.deviceId }, snapshot).values.toList()
         syncStore.update {
             it.copy(
@@ -474,6 +506,12 @@ class SyncManager(
             val req = snapshot.requests.first { it.requestId in newlyPending }
             SyncNotifications.notifyRequest(context, snapshot.displayName, req.minutes)
         }
+
+        // Generic asks (app installs, free-form) notify too — they used to be UI-only.
+        val newlyAsked = snapshot.asks.map { it.requestId }.toSet() - prevAskIds - resolved
+        for (ask in snapshot.asks.filter { it.requestId in newlyAsked }) {
+            SyncNotifications.notifyAsk(context, snapshot.displayName, ask.text, ask.requestId)
+        }
     }
 
     companion object {
@@ -481,5 +519,7 @@ class SyncManager(
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.
         private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
+        /** 12h of fixes at the seeded 15-min tracking interval. */
+        private const val MAX_LOCATION_POINTS = 48
     }
 }

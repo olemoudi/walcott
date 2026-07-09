@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -35,10 +36,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.Intent
+import android.provider.Settings
 import dev.walcott.R
 import dev.walcott.data.ChildEntry
 import dev.walcott.sync.ChildSnapshot
@@ -46,6 +54,7 @@ import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.Staleness
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.ModeBadge
+import dev.walcott.ui.components.PermissionFixRow
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
@@ -64,12 +73,26 @@ fun FamiliesScreen(
     onOpenChild: (String) -> Unit,
 ) {
     val spacing = Tokens.spacing
+    val context = LocalContext.current
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
     val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
+
+    // Re-check when the user comes back from the notification settings we deep-link into.
+    var notificationsEnabled by remember { mutableStateOf(true) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Minute tick so the staleness line ages without new data arriving.
     val nowMs by produceState(System.currentTimeMillis()) {
@@ -97,6 +120,23 @@ fun FamiliesScreen(
                     modifier = Modifier.weight(1f),
                 )
                 ModeBadge(DeviceMode.PARENT)
+            }
+        }
+
+        // Every child alert (requests, tamper, stale) arrives as a notification; if the parent
+        // turned them off, the whole alerting channel is silently dead — surface that here.
+        if (!notificationsEnabled) {
+            item {
+                PermissionFixRow(
+                    text = stringResource(R.string.perm_parent_notifications_missing),
+                    action = stringResource(R.string.perm_notifications_fix),
+                    onFix = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                        )
+                    },
+                )
             }
         }
 

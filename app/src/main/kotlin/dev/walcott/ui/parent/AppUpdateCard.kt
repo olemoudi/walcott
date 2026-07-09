@@ -12,14 +12,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +39,7 @@ import dev.walcott.R
 import dev.walcott.update.UpdateCenter
 import dev.walcott.update.UpdateUiState
 import dev.walcott.update.UpdateWorker
+import dev.walcott.ui.components.PermissionFixRow
 import dev.walcott.ui.theme.Tokens
 
 /**
@@ -140,26 +139,3 @@ private fun updateStatusText(state: UpdateUiState, deviceOwner: Boolean): String
     is UpdateUiState.Failed -> stringResource(R.string.update_state_failed, state.step)
 }
 
-@Composable
-private fun PermissionFixRow(text: String, action: String, onFix: () -> Unit) {
-    val spacing = Tokens.spacing
-    Row(
-        Modifier.fillMaxWidth().padding(top = spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            Icons.Filled.Warning,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(spacing.sm))
-        Text(
-            text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onFix) { Text(action) }
-    }
-}

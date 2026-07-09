@@ -14,8 +14,8 @@ android {
         applicationId = "dev.walcott"
         minSdk = 29
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.2.14"
+        versionCode = 18
+        versionName = "0.2.15"
     }
 
     signingConfigs {

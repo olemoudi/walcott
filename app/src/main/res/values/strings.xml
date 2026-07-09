@@ -273,6 +273,8 @@
     <string name="perm_install_fix">Allow</string>
     <string name="perm_notifications_missing">Notifications are off: you won\'t see update prompts</string>
     <string name="perm_notifications_fix">Turn on</string>
+    <string name="perm_parent_notifications_missing">Notifications are off: you won\'t get alerts or requests from your children\'s devices</string>
+    <string name="sync_ask_title">%1$s asks for something</string>
 
     <!-- Device protection (user restrictions) -->
     <string name="nav_protection_title">Device protection</string>

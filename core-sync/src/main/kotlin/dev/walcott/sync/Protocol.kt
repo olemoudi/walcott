@@ -151,14 +151,16 @@ sealed interface IncomingMessage {
 
 /**
  * Encodes/decodes envelopes. Parent messages are signed so a child (who holds the family
- * key) can read them but cannot forge them.
+ * key) can read them but cannot forge them. Payloads are gzipped before encryption so a
+ * full child snapshot (app list + locations + history) stays under ntfy's message size cap;
+ * decode transparently accepts both gzipped and legacy uncompressed payloads.
  */
 object SyncProtocol {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     fun encodeParent(snapshot: ParentSnapshot, familyKey: javax.crypto.SecretKey, parentPrivateKey: PrivateKey): String {
-        val payload = json.encodeToString(ParentSnapshot.serializer(), snapshot).toByteArray()
+        val payload = gzip(json.encodeToString(ParentSnapshot.serializer(), snapshot).toByteArray())
         val ciphertext = FamilyCrypto.encrypt(familyKey, payload)
         val signature = FamilyCrypto.sign(parentPrivateKey, ciphertext)
         return json.encodeToString(
@@ -168,7 +170,7 @@ object SyncProtocol {
     }
 
     fun encodeChild(snapshot: ChildSnapshot, familyKey: javax.crypto.SecretKey): String {
-        val payload = json.encodeToString(ChildSnapshot.serializer(), snapshot).toByteArray()
+        val payload = gzip(json.encodeToString(ChildSnapshot.serializer(), snapshot).toByteArray())
         val ciphertext = FamilyCrypto.encrypt(familyKey, payload)
         return json.encodeToString(
             Envelope.serializer(),
@@ -185,7 +187,8 @@ object SyncProtocol {
             val sig = envelope.signature?.let { FamilyCrypto.fromB64(it) } ?: return null
             if (!FamilyCrypto.verify(parentPublicKey, ciphertext, sig)) return null
         }
-        val plaintext = runCatching { FamilyCrypto.decrypt(familyKey, ciphertext) }.getOrNull() ?: return null
+        val decrypted = runCatching { FamilyCrypto.decrypt(familyKey, ciphertext) }.getOrNull() ?: return null
+        val plaintext = runCatching { gunzipIfNeeded(decrypted) }.getOrNull() ?: return null
         val text = String(plaintext)
 
         return when (envelope.kind) {
@@ -197,5 +200,21 @@ object SyncProtocol {
             }.getOrNull()
             else -> null
         }
+    }
+
+    private fun gzip(bytes: ByteArray): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.GZIPOutputStream(out).use { it.write(bytes) }
+        return out.toByteArray()
+    }
+
+    /**
+     * Gunzips if the payload carries the gzip magic (0x1f 0x8b); passes legacy uncompressed
+     * JSON through untouched (JSON starts with '{' = 0x7b, so there is no ambiguity).
+     */
+    private fun gunzipIfNeeded(bytes: ByteArray): ByteArray {
+        val gzipped = bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
+        if (!gzipped) return bytes
+        return java.util.zip.GZIPInputStream(bytes.inputStream()).use { it.readBytes() }
     }
 }
