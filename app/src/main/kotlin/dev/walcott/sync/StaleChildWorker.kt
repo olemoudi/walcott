@@ -25,10 +25,9 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val syncStore = SyncStore(context)
         val state = syncStore.current()
         val now = System.currentTimeMillis()
-        val toAlert = Staleness.devicesToAlert(state.lastSeen, state.staleNotifiedLastSeen, now)
-        if (toAlert.isEmpty()) return Result.success()
-
         val registry = SettingsStore(context).current().children
+
+        val toAlert = Staleness.devicesToAlert(state.lastSeen, state.staleNotifiedLastSeen, now)
         for ((deviceId, seenMs) in toAlert) {
             val snapshot = state.children.firstOrNull { it.deviceId == deviceId }
             val name = registry.firstOrNull { it.childId == snapshot?.childId && it.childId.isNotBlank() }?.name
@@ -36,7 +35,27 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 ?: deviceId
             SyncNotifications.notifyStaleChild(context, name, Duration.ofMillis(now - seenMs).humanize(), deviceId)
         }
-        syncStore.update { it.copy(staleNotifiedLastSeen = it.staleNotifiedLastSeen + toAlert) }
+
+        // A registered child that never checked in at all (botched enrollment) used to be invisible.
+        val reportedChildIds = state.children.map { it.childId }.toSet()
+        val neverReported = Staleness.childrenNeverReported(
+            registeredSince = registry.associate { it.childId to it.addedAtMs },
+            reportedChildIds = reportedChildIds,
+            alreadyNotified = state.staleNotifiedLastSeen,
+            nowMs = now,
+        )
+        for (childId in neverReported) {
+            val name = registry.firstOrNull { it.childId == childId }?.name ?: childId
+            SyncNotifications.notifyNeverReported(context, name, childId)
+        }
+
+        if (toAlert.isEmpty() && neverReported.isEmpty()) return Result.success()
+        syncStore.update {
+            it.copy(
+                staleNotifiedLastSeen = it.staleNotifiedLastSeen + toAlert +
+                    neverReported.associateWith { Staleness.NEVER },
+            )
+        }
         return Result.success()
     }
 

@@ -18,6 +18,10 @@ object SyncNotifications {
     private const val ALERT_CHANNEL = "walcott_alerts"
     private const val NOTIF_ID = 42
 
+    /** Intent extra + values used to deep-link a notification tap to a screen. */
+    const val EXTRA_DEST = "walcott_dest"
+    const val DEST_APPS = "apps"
+
     /** Alert when a child device has been silent for a long time (see [Staleness]). */
     fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String) = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
@@ -32,6 +36,14 @@ object SyncNotifications {
         title = context.getString(R.string.enforcement_off_title, childName),
         text = context.getString(R.string.enforcement_off_text),
         notifId = "enf".hashCode() + deviceId.hashCode(),
+    )
+
+    /** Alert when a registered child device has never checked in (enrollment likely didn't finish). */
+    fun notifyNeverReported(context: Context, childName: String, childId: String) = post(
+        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        title = context.getString(R.string.never_reported_title, childName),
+        text = context.getString(R.string.never_reported_text),
+        notifId = "never".hashCode() + childId.hashCode(),
     )
 
     /** Alert when a child loses full (Device Owner) protection but a weaker backend remains. */
@@ -76,6 +88,7 @@ object SyncNotifications {
             context.getString(R.string.new_app_text, label)
         },
         notifId = "newapp".hashCode() + deviceId.hashCode(),
+        dest = DEST_APPS,
     )
 
     /** A child asked for something (an app install, anything free-form). */
@@ -94,16 +107,28 @@ object SyncNotifications {
         notifId = NOTIF_ID,
     )
 
-    private fun post(context: Context, channel: String, channelNameRes: Int, title: String, text: String, notifId: Int) {
+    private fun post(
+        context: Context,
+        channel: String,
+        channelNameRes: Int,
+        title: String,
+        text: String,
+        notifId: Int,
+        dest: String? = null,
+    ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
                 NotificationChannel(channel, context.getString(channelNameRes), NotificationManager.IMPORTANCE_HIGH),
             )
         }
+        val openIntent = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .apply { if (dest != null) putExtra(EXTRA_DEST, dest) }
         val tap = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE,
+            // Unique request code per destination so distinct extras aren't collapsed into one PendingIntent.
+            context, notifId, openIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_shield)

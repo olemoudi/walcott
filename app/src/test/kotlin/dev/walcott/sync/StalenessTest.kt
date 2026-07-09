@@ -44,4 +44,23 @@ class StalenessTest {
         val muchLater = now + Staleness.ALERT_AFTER_MS + 1
         assertEquals(mapOf("dev-1" to now), Staleness.devicesToAlert(cameBack, first, muchLater))
     }
+
+    @Test
+    fun `a child registered long ago that never reported is alerted once`() {
+        val addedLongAgo = now - Staleness.ALERT_AFTER_MS - 1
+        val registered = mapOf("child-a" to addedLongAgo, "child-b" to now - 60_000)
+
+        // child-a: registered long ago, never reported -> alert. child-b: too recent -> no alert.
+        val first = Staleness.childrenNeverReported(registered, reportedChildIds = emptySet(), emptyMap(), now)
+        assertEquals(setOf("child-a"), first)
+
+        // Once recorded (childId -> NEVER), it doesn't re-alert.
+        val notified = mapOf("child-a" to Staleness.NEVER)
+        assertTrue(Staleness.childrenNeverReported(registered, emptySet(), notified, now).isEmpty())
+
+        // A child that has since reported is excluded.
+        assertTrue(
+            Staleness.childrenNeverReported(registered, reportedChildIds = setOf("child-a"), emptyMap(), now).isEmpty(),
+        )
+    }
 }

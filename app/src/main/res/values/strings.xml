@@ -287,6 +287,22 @@
     <string name="new_app_text_more">"%1$s" and %2$d more were installed — they stay blocked until you classify them</string>
     <string name="child_version">App version %1$s (%2$d)</string>
     <string name="child_version_outdated">App version %1$s (%2$d) — outdated</string>
+    <string name="chip_protected">Protected</string>
+    <string name="chip_partial">Partial</string>
+    <string name="chip_unprotected">Unprotected</string>
+    <string name="chip_usage_off">Time not counting</string>
+    <string name="chip_indoor_off">No indoor location</string>
+    <string name="chip_outdated">Outdated</string>
+    <string name="budget_apply_all">Apply to all days:</string>
+    <string name="override_customized_hint">Customized — won\'t follow family changes</string>
+    <string name="never_reported_title">%1$s hasn\'t connected</string>
+    <string name="never_reported_text">This child device never checked in — the enrollment may not have finished</string>
+    <string name="hero_pending_setup">Waiting for setup — apps stay blocked until a parent classifies them</string>
+    <string name="setup_title">Finish setting up</string>
+    <string name="setup_step_child">Enroll a child device</string>
+    <string name="setup_step_apps">Classify the apps into categories</string>
+    <string name="setup_step_limits">Set daily time limits</string>
+    <string name="setup_step_bedtime">Set a bedtime</string>
 
     <!-- Device protection (user restrictions) -->
     <string name="nav_protection_title">Device protection</string>

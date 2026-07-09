@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
+import dev.walcott.sync.DeviceMode
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.components.WalcottTopBar
@@ -41,7 +42,11 @@ import androidx.compose.ui.res.stringResource
 @Composable
 fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val spacing = Tokens.spacing
-    val weekly by viewModel.weeklyUsage.collectAsStateWithLifecycle()
+    val identity by viewModel.identity.collectAsStateWithLifecycle()
+    val localWeekly by viewModel.weeklyUsage.collectAsStateWithLifecycle()
+    val childrenWeekly by viewModel.childrenWeeklyUsage.collectAsStateWithLifecycle()
+    // On a parent phone the local usage is empty; show the children's aggregate instead.
+    val weekly = if (identity.effectiveMode == DeviceMode.PARENT) childrenWeekly else localWeekly
 
     val today = LocalDate.now().toEpochDay()
     val days = (0..6).map { today - 6 + it }

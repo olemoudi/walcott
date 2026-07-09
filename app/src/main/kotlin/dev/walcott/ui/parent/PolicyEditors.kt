@@ -117,6 +117,22 @@ private fun TimeButton(label: String, value: String, onClick: () -> Unit) {
 }
 
 @Composable
+private fun BudgetPreset(label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
+@Composable
 internal fun CategoryBudgetCard(
     category: AppCategory,
     perDay: Map<String, Int>,
@@ -143,6 +159,24 @@ internal fun CategoryBudgetCard(
             if (expanded) {
                 Spacer(Modifier.size(spacing.md))
                 HorizontalDivider()
+                // Quick presets applied to every day type at once — the common case, far fewer
+                // taps than stepping each of the three rows up from "no limit".
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.budget_apply_all),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    BudgetPreset(stringResource(R.string.no_limit)) { DAY_TYPES.forEach { onSetBudget(it, null) } }
+                    BudgetPreset("30m") { DAY_TYPES.forEach { onSetBudget(it, 30) } }
+                    BudgetPreset("1h") { DAY_TYPES.forEach { onSetBudget(it, 60) } }
+                    BudgetPreset("2h") { DAY_TYPES.forEach { onSetBudget(it, 120) } }
+                }
                 DAY_TYPES.forEach { dayType ->
                     val minutes = perDay[dayType.name]
                     Row(

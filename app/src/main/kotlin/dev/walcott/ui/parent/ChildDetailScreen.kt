@@ -628,7 +628,18 @@ private fun OverrideSwitchRow(title: String, checked: Boolean, onToggle: (Boolea
     val spacing = Tokens.spacing
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                // Make the "snapshot" nature of overrides explicit: once on, it stops tracking
+                // later family edits (resolveForChild replaces the whole field).
+                if (checked) {
+                    Text(
+                        stringResource(R.string.override_customized_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Switch(checked = checked, onCheckedChange = onToggle)
         }
     }

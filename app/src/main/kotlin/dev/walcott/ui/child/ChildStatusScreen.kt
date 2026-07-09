@@ -482,8 +482,10 @@ private fun HeroCard(state: ChildUiState) {
                         )
                         Spacer(Modifier.height(spacing.xs))
                         val budgeted = state.categories.count { it.status.state == CategoryState.BUDGETED }
+                        // No categories means nothing is classified yet, and the rule engine
+                        // blocks unclassified apps — so "all free" was misleading. Say so plainly.
                         val summary = if (state.categories.isEmpty()) {
-                            stringResource(R.string.hero_all_free)
+                            stringResource(R.string.hero_pending_setup)
                         } else {
                             pluralStringResource(R.plurals.hero_available_count, budgeted, budgeted)
                         }

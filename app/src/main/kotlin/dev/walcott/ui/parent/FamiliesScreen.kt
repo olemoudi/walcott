@@ -16,6 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PhoneAndroid
@@ -36,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.pluralStringResource
@@ -51,6 +56,7 @@ import dev.walcott.R
 import dev.walcott.data.ChildEntry
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
+import dev.walcott.sync.EnforcementStatus
 import dev.walcott.sync.Staleness
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.ModeBadge
@@ -147,6 +153,16 @@ fun FamiliesScreen(
                 pendingCount = requests.size + asks.size,
                 onClick = onOpenFamily,
             )
+        }
+
+        // Onboarding coach: a brand-new family enforces nothing until apps are classified and
+        // limits set. Show the remaining steps until they're done, then it disappears.
+        val childDone = settings.children.isNotEmpty()
+        val appsDone = settings.assignments.isNotEmpty()
+        val limitsDone = settings.budgets.isNotEmpty() || settings.bedtime.isNotEmpty()
+        val bedtimeDone = settings.bedtime.isNotEmpty()
+        if (!(childDone && appsDone && limitsDone && bedtimeDone)) {
+            item { SetupChecklistCard(childDone, appsDone, limitsDone, bedtimeDone) }
         }
 
         item {
@@ -303,12 +319,103 @@ private fun ChildRow(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+                if (snapshot != null) StatusChips(snapshot)
             }
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun SetupChecklistCard(childDone: Boolean, appsDone: Boolean, limitsDone: Boolean, bedtimeDone: Boolean) {
+    val spacing = Tokens.spacing
+    val steps = listOf(
+        stringResource(R.string.setup_step_child) to childDone,
+        stringResource(R.string.setup_step_apps) to appsDone,
+        stringResource(R.string.setup_step_limits) to limitsDone,
+        stringResource(R.string.setup_step_bedtime) to bedtimeDone,
+    )
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(
+                stringResource(R.string.setup_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Spacer(Modifier.height(spacing.sm))
+            steps.forEach { (label, done) ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                        contentDescription = null,
+                        tint = if (done) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
+                        },
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(spacing.sm))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** At-a-glance health of a linked child: a green shield when all good, warning chips otherwise. */
+@Composable
+private fun StatusChips(snapshot: ChildSnapshot) {
+    val spacing = Tokens.spacing
+    val warn = Color(0xFFB26A00)
+    val error = MaterialTheme.colorScheme.error
+    val chips = buildList {
+        when (snapshot.enforcement) {
+            EnforcementStatus.DEVICE_OWNER ->
+                add(Triple(Icons.Filled.Shield, stringResource(R.string.chip_protected), MaterialTheme.colorScheme.secondary))
+            EnforcementStatus.ACCESSIBILITY ->
+                add(Triple(Icons.Filled.Shield, stringResource(R.string.chip_partial), warn))
+            EnforcementStatus.NONE ->
+                add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_unprotected), error))
+        }
+        if (!snapshot.usageAccessOn) add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_usage_off), error))
+        if (!snapshot.networkLocationOn) add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_indoor_off), warn))
+        if (snapshot.appVersionCode in 1 until dev.walcott.BuildConfig.VERSION_CODE) {
+            add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_outdated), warn))
+        }
+    }
+    if (chips.isEmpty()) return
+    Row(
+        Modifier.padding(top = spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        chips.forEach { (icon, label, color) ->
+            Surface(shape = RoundedCornerShape(50), color = color.copy(alpha = 0.14f)) {
+                Row(
+                    Modifier.padding(horizontal = spacing.sm, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text(label, style = MaterialTheme.typography.labelSmall, color = color)
+                }
+            }
         }
     }
 }

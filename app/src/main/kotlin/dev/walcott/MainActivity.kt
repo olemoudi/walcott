@@ -8,13 +8,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import dev.walcott.enforcement.Enforcer
 import dev.walcott.enforcement.EnforcementService
+import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.WalcottApp
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.update.UpdateWorker
@@ -51,9 +56,21 @@ class MainActivity : ComponentActivity() {
                     factory = WalcottViewModel.Factory(app.repository, app.syncManager),
                 )
                 val deviceOwner = remember { Enforcer(this).isDeviceOwner() }
-                WalcottApp(vm, deviceOwner)
+                // Deep-link target from a notification tap (e.g. "new app" -> Apps screen).
+                var dest by remember { mutableStateOf(intent?.getStringExtra(SyncNotifications.EXTRA_DEST)) }
+                LaunchedEffect(newIntentDest) { newIntentDest?.let { dest = it } }
+                WalcottApp(vm, deviceOwner, startDest = dest, onDestConsumed = { dest = null })
             }
         }
+    }
+
+    // Notification taps while the activity is alive arrive here (SINGLE_TOP), not via a new onCreate.
+    private var newIntentDest by mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        newIntentDest = intent.getStringExtra(SyncNotifications.EXTRA_DEST)
     }
 
     override fun onResume() {

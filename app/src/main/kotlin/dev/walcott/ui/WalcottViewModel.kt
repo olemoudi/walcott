@@ -84,6 +84,7 @@ class WalcottViewModel(
                         overrides = dev.walcott.data.ChildOverrides(
                             trackingIntervalMinutes = DEFAULT_TRACKING_MINUTES,
                         ),
+                        addedAtMs = System.currentTimeMillis(),
                     ),
                 )
             }
@@ -139,6 +140,24 @@ class WalcottViewModel(
     val weeklyUsage: StateFlow<Map<Long, Map<String, java.time.Duration>>> =
         repository.usageTodayFlow.map { repository.weeklyUsage() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * Weekly usage aggregated across all children, for the parent's report (the local
+     * [weeklyUsage] is empty on a parent phone). Built from each child's reported history.
+     */
+    val childrenWeeklyUsage: StateFlow<Map<Long, Map<String, Duration>>> =
+        children.map { list ->
+            val byDay = mutableMapOf<Long, MutableMap<String, Duration>>()
+            list.forEach { child ->
+                child.history.forEach { day ->
+                    val byCat = byDay.getOrPut(day.epochDay) { mutableMapOf() }
+                    day.usage.forEach { e ->
+                        byCat[e.categoryId] = (byCat[e.categoryId] ?: Duration.ZERO) + Duration.ofSeconds(e.seconds)
+                    }
+                }
+            }
+            byDay
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun addEarnRule(rule: dev.walcott.data.EarnRuleDto) =
         viewModelScope.launch { repository.updateSettings { it.copy(earnRules = it.earnRules + rule) } }

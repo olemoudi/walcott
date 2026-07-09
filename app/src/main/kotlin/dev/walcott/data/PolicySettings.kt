@@ -91,6 +91,8 @@ data class ChildEntry(
     val childId: String,
     val name: String,
     val overrides: ChildOverrides = ChildOverrides(),
+    /** When this child was registered (epoch ms); 0 for legacy entries. Used to alert on a child that never checked in. */
+    val addedAtMs: Long = 0,
 )
 
 /**

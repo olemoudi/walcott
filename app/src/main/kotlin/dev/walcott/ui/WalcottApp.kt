@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.sync.DeviceMode
+import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.ui.parent.AppAssignScreen
 import dev.walcott.ui.parent.BudgetsScreen
@@ -50,7 +51,12 @@ private enum class Screen {
 }
 
 @Composable
-fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
+fun WalcottApp(
+    viewModel: WalcottViewModel,
+    deviceOwner: Boolean,
+    startDest: String? = null,
+    onDestConsumed: () -> Unit = {},
+) {
     val bootMode by viewModel.bootMode.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -77,6 +83,15 @@ fun WalcottApp(viewModel: WalcottViewModel, deviceOwner: Boolean) {
     // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
     var gateAllowCreate by remember { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
+
+    // A notification deep-link (e.g. "new app installed" -> Apps). Honored in parent mode only;
+    // the child's settings live behind the PIN gate, so we never jump a child straight in.
+    LaunchedEffect(startDest, parentMode) {
+        if (startDest == SyncNotifications.DEST_APPS && parentMode) {
+            screen = Screen.APPS
+            onDestConsumed()
+        }
+    }
 
     // Parent app lock: gate the whole app behind the PIN/biometrics on open and re-lock
     // when it leaves the foreground. Toggling the setting on mid-session must not lock
