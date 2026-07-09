@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -67,6 +68,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import dev.walcott.BuildConfig
 import dev.walcott.R
 import dev.walcott.location.LocationPolicy
 import dev.walcott.rules.BlockReason
@@ -180,7 +182,17 @@ fun ChildStatusScreen(
             if (identity.role == Role.CHILD) {
                 item { AskCard(onClick = { showAsk = true }) }
             }
-            item { Spacer(Modifier.height(spacing.xl)) }
+            // Version visible on the child home without unlocking settings (self-updates are
+            // silent, so this is the only easy way to confirm a device is on the latest build).
+            item {
+                Text(
+                    stringResource(R.string.app_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = spacing.xl),
+                )
+            }
         }
     }
 
