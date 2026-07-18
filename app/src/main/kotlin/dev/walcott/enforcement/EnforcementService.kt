@@ -289,6 +289,11 @@ class EnforcementService : LifecycleService() {
                 config.assignments[foreground]?.let { categoryId ->
                     repo.addUsageSeconds(categoryId, deltaSeconds)
                 }
+                // Per-app budget: also count under the package key (has a dot, never collides
+                // with a category id) so RuleEngine can enforce the app's own sub-cap.
+                if (foreground in config.perAppPolicies) {
+                    repo.addUsageSeconds(foreground, deltaSeconds)
+                }
             }
             lastForeground = foreground
 

@@ -118,6 +118,35 @@ class PolicySettingsTest {
     }
 
     @Test
+    fun `per-app policies map into FamilyConfig and only for classified apps`() {
+        val s = PolicySettings(
+            assignments = mapOf("com.chat" to "social", "com.stale" to "games"),
+            appPolicies = mapOf(
+                "com.chat" to AppPolicyDto(budgets = mapOf("SCHOOL" to 20)),
+                // A rule for an app that is no longer classified must be ignored.
+                "com.gone" to AppPolicyDto(budgets = mapOf("SCHOOL" to 5)),
+            ),
+        )
+        val config = s.toFamilyConfig(essentials = emptySet())
+        assertEquals(
+            java.time.Duration.ofMinutes(20),
+            config.perAppPolicies.getValue("com.chat").dailyBudget[dev.walcott.rules.DayType.SCHOOL],
+        )
+        assertTrue("com.gone" !in config.perAppPolicies)
+    }
+
+    @Test
+    fun `config written before per-app policies still decodes`() {
+        val json = Json { ignoreUnknownKeys = true }
+        val decoded = json.decodeFromString(
+            PolicySettings.serializer(),
+            """{"version":5,"assignments":{"com.chat":"social"}}""",
+        )
+        assertTrue(decoded.appPolicies.isEmpty())
+        assertEquals(false, decoded.updateWifiOnly)
+    }
+
+    @Test
     fun `config written before location history existed still decodes`() {
         // The additive-change contract: an existing install must upgrade without a migration,
         // and must not silently start collecting a location trail it never opted into.

@@ -471,4 +471,12 @@
     <string name="remote_result_no_package">no app specified</string>
     <string name="update_wifi_only_title">Update on Wi-Fi only</string>
     <string name="update_wifi_only_desc">Child devices download updates only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
+    <!-- Per-app settings (Apps & categories) -->
+    <string name="app_has_override">custom rules</string>
+    <string name="app_own_limit">This app\'s own daily limit</string>
+    <string name="app_own_limit_hint">On top of its category. The app is blocked when either limit runs out.</string>
+    <string name="app_own_window">Block this app during hours</string>
+    <string name="app_window_toggle">Block during set hours</string>
+    <string name="app_web_filter">Web filter</string>
+    <string name="app_web_filter_link">Open web filter rules</string>
 </resources>

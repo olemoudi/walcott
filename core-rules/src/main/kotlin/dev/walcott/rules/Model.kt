@@ -40,6 +40,12 @@ data class FamilyConfig(
     val assignments: Map<String, String>,
     /** categoryId -> policy. A category without a policy is unrestricted. */
     val policies: Map<String, CategoryPolicy>,
+    /**
+     * package -> per-app policy that ADDS restrictions on top of the app's category. A per-app
+     * daily budget is a sub-cap (the app is blocked when it OR its category runs out); per-app
+     * blocked windows are unioned with the category's. So per-app rules only ever tighten.
+     */
+    val perAppPolicies: Map<String, CategoryPolicy> = emptyMap(),
     /** Bedtime window per day type: blocks everything non-essential. */
     val bedtime: Map<DayType, TimeWindow> = emptyMap(),
     /** Never blocked: phone, contacts, the app itself… */

@@ -491,7 +491,7 @@ class SyncManager(
                     childId = id.childId,
                     version = s.childVersion,
                     epochDay = today,
-                    usage = repository.usageNow().map { UsageEntry(it.key, it.value.seconds) },
+                    usage = repository.reportedUsageNow().map { UsageEntry(it.key, it.value.seconds) },
                     extra = repository.extraNow().map { UsageEntry(it.key, it.value.seconds) },
                     requests = s.pendingRequests,
                     history = history,

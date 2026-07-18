@@ -37,6 +37,18 @@ data class EarnRuleDto(
 @Serializable
 data class VacationDto(val startEpochDay: Long, val endEpochDay: Long)
 
+/**
+ * Per-app policy overrides (budget + blocked windows) that ADD restrictions on top of the
+ * app's category. Day-type keys are [DayType] names; budgets are minutes.
+ */
+@Serializable
+data class AppPolicyDto(
+    val budgets: Map<String, Int> = emptyMap(),
+    val blockedWindows: Map<String, List<WindowDto>> = emptyMap(),
+) {
+    val isEmpty: Boolean get() = budgets.isEmpty() && blockedWindows.isEmpty()
+}
+
 /** Persistable per-app domain rule (see [DomainAppRule]). */
 @Serializable
 data class DomainAppRuleDto(
@@ -145,6 +157,8 @@ data class PolicySettings(
     val hardeningSeeded: Boolean = false,
     /** Restrict the child's self-update to unmetered (Wi-Fi) connections. */
     val updateWifiOnly: Boolean = false,
+    /** package -> per-app policy (budget + windows) that tightens its category. Family-wide. */
+    val appPolicies: Map<String, AppPolicyDto> = emptyMap(),
 ) {
     /**
      * One-time seeding of recommended anti-tamper [defaults] into [deviceRestrictions]. Idempotent
@@ -195,10 +209,23 @@ data class PolicySettings(
                     .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
             )
         }
+        val perApp = appPolicies
+            .filterKeys { it in assignments } // ignore rules for apps no longer classified
+            .mapValues { (_, dto) ->
+                CategoryPolicy(
+                    dailyBudget = dto.budgets
+                        .mapKeys { DayType.valueOf(it.key) }
+                        .mapValues { Duration.ofMinutes(it.value.toLong()) },
+                    blockedWindows = dto.blockedWindows
+                        .mapKeys { DayType.valueOf(it.key) }
+                        .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
+                )
+            }
         return FamilyConfig(
             version = version,
             assignments = assignments,
             policies = policies,
+            perAppPolicies = perApp,
             bedtime = bedtime.mapKeys { DayType.valueOf(it.key) }.mapValues { it.value.toTimeWindow() },
             essentialPackages = essentials,
             calendar = SchoolCalendar(

@@ -49,10 +49,10 @@ class WalcottRepository(
         }
     }.distinctUntilChanged()
 
-    /** Today's usage per category, reactive across midnight rollovers. */
+    /** Today's usage per category, reactive across midnight rollovers (per-app counters stripped). */
     val usageTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
         db.usage().observeDay(day)
-            .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+            .map { rows -> rows.filterNot { it.categoryId.contains('.') }.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
 
     val extraTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
@@ -75,8 +75,16 @@ class WalcottRepository(
     suspend fun configNow(): FamilyConfig =
         settingsStore.current().toFamilyConfig(essentials)
 
+    /**
+     * All of today's usage counters, keyed by categoryId AND by package (per-app budgets are
+     * counted under the package name — which always contains a dot, so it never collides with a
+     * category id). The enforcement engine needs both; reports to the parent use [reportedUsageNow].
+     */
     suspend fun usageNow(): Map<String, Duration> =
         db.usage().getDay(today()).associate { it.categoryId to Duration.ofSeconds(it.seconds) }
+
+    /** Today's per-category usage only (strips per-app package counters), for the parent report. */
+    suspend fun reportedUsageNow(): Map<String, Duration> = usageNow().filterKeys { !it.contains('.') }
 
     suspend fun extraNow(): Map<String, Duration> =
         db.usage().getExtraDay(today()).associate { it.categoryId to Duration.ofSeconds(it.seconds) }
@@ -87,10 +95,11 @@ class WalcottRepository(
         return sumDurations(extraNow(), earned)
     }
 
-    /** Usage for the last 7 days: epochDay -> (categoryId -> duration). */
+    /** Usage for the last 7 days: epochDay -> (categoryId -> duration). Per-app counters stripped. */
     suspend fun weeklyUsage(): Map<Long, Map<String, Duration>> {
         val end = today()
         return db.usage().getRange(end - 6, end)
+            .filterNot { it.categoryId.contains('.') }
             .groupBy { it.epochDay }
             .mapValues { (_, rows) -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }

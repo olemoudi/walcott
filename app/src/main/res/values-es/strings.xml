@@ -471,4 +471,12 @@
     <string name="remote_result_no_package">no se indicó ninguna app</string>
     <string name="update_wifi_only_title">Actualizar solo con Wi-Fi</string>
     <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
+    <!-- Ajustes por app (Apps y categorías) -->
+    <string name="app_has_override">reglas propias</string>
+    <string name="app_own_limit">Límite diario propio de esta app</string>
+    <string name="app_own_limit_hint">Se suma al de su categoría. La app se bloquea cuando se agota cualquiera de los dos.</string>
+    <string name="app_own_window">Bloquear esta app en un horario</string>
+    <string name="app_window_toggle">Bloquear en el horario indicado</string>
+    <string name="app_web_filter">Filtro web</string>
+    <string name="app_web_filter_link">Abrir reglas de filtro web</string>
 </resources>

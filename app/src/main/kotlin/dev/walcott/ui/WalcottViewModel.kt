@@ -375,6 +375,33 @@ class WalcottViewModel(
         repository.updateSettings { it.copy(budgets = it.budgets.withBudget(categoryId, dayType.name, minutes)) }
     }
 
+    // --- Per-app policy (Apps & categories) ---
+
+    private fun mutateAppPolicy(
+        pkg: String,
+        transform: (dev.walcott.data.AppPolicyDto) -> dev.walcott.data.AppPolicyDto,
+    ) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            val next = transform(s.appPolicies[pkg] ?: dev.walcott.data.AppPolicyDto())
+            // Drop the entry entirely once it carries no restrictions, so it never lingers.
+            s.copy(appPolicies = if (next.isEmpty) s.appPolicies - pkg else s.appPolicies + (pkg to next))
+        }
+    }
+
+    /** Set (or clear, with null) this app's own daily budget for a day type. */
+    fun setAppBudget(pkg: String, dayType: DayType, minutes: Int?) = mutateAppPolicy(pkg) { dto ->
+        val budgets = dto.budgets.toMutableMap()
+        if (minutes == null) budgets.remove(dayType.name) else budgets[dayType.name] = minutes
+        dto.copy(budgets = budgets)
+    }
+
+    /** Set (or clear, with null) this app's blocked window, applied to every day type. */
+    fun setAppWindow(pkg: String, window: dev.walcott.data.WindowDto?) = mutateAppPolicy(pkg) { dto ->
+        dto.copy(
+            blockedWindows = if (window == null) emptyMap() else DAY_TYPES.associate { it.name to listOf(window) },
+        )
+    }
+
     fun setBedtime(bedtime: Map<String, dev.walcott.data.WindowDto>) = viewModelScope.launch {
         repository.updateSettings { it.copy(bedtime = bedtime) }
     }

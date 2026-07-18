@@ -32,15 +32,26 @@ object RuleEngine {
 
         val categoryId = config.assignments[packageName]
             ?: return Verdict.Blocked(BlockReason.UNCLASSIFIED)
-        val policy = config.policies[categoryId] ?: return Verdict.Allowed
+        val policy = config.policies[categoryId]
+        val appPolicy = config.perAppPolicies[packageName]
+        if (policy == null && appPolicy == null) return Verdict.Allowed
 
-        if (policy.blockedWindows[dayType].orEmpty().any { time in it }) {
-            return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
+        // Blocked windows: category OR per-app (the per-app ones only add restrictions).
+        val inCategoryWindow = policy?.blockedWindows?.get(dayType).orEmpty().any { time in it }
+        val inAppWindow = appPolicy?.blockedWindows?.get(dayType).orEmpty().any { time in it }
+        if (inCategoryWindow || inAppWindow) return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
+
+        // Budgets: the category budget (widened by earned/granted extra) and the per-app budget
+        // (a hard sub-cap, no extra) are independent limits — whichever bites first blocks, and
+        // the reported remaining is the tighter of the two.
+        val categoryRemaining = policy?.dailyBudget?.get(dayType)?.let { budget ->
+            budget + (extraTime[categoryId] ?: Duration.ZERO) - (usageToday[categoryId] ?: Duration.ZERO)
         }
-
-        val budget = policy.dailyBudget[dayType] ?: return Verdict.Allowed
-        val allowedTotal = budget + (extraTime[categoryId] ?: Duration.ZERO)
-        val remaining = allowedTotal - (usageToday[categoryId] ?: Duration.ZERO)
+        val appRemaining = appPolicy?.dailyBudget?.get(dayType)?.let { budget ->
+            budget - (usageToday[packageName] ?: Duration.ZERO)
+        }
+        val remaining = listOfNotNull(categoryRemaining, appRemaining).minOrNull()
+            ?: return Verdict.Allowed // neither has a budget for this day type
         return if (remaining > Duration.ZERO) {
             Verdict.AllowedWithBudget(remaining)
         } else {

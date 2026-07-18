@@ -32,6 +32,7 @@ import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.data.PolicySettings
 import dev.walcott.ui.parent.AppAssignScreen
+import dev.walcott.ui.parent.AppDetailScreen
 import dev.walcott.ui.parent.AppSettingsScreen
 import dev.walcott.ui.parent.LocationSettingsScreen
 import dev.walcott.ui.parent.BudgetsScreen
@@ -54,7 +55,7 @@ private fun overrideChildName(settings: PolicySettings, childId: String?): Strin
 
 private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY, CHILD_DETAIL, CHILD_MAP,
-    APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
+    APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
     APP_SETTINGS, DEBUG_LOGS,
 }
 
@@ -91,6 +92,8 @@ fun WalcottApp(
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
     // policy, and back returns to the child detail.
     var overrideChildId by remember { mutableStateOf<String?>(null) }
+    // Selected package for the per-app detail screen (Apps & categories).
+    var appDetailPkg by remember { mutableStateOf<String?>(null) }
     // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
     var gateAllowCreate by remember { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
@@ -144,6 +147,7 @@ fun WalcottApp(
             // Reached from the home gear on the parent, from the device hub on a child.
             Screen.APP_SETTINGS -> if (parentMode) Screen.FAMILIES else Screen.FAMILY
             Screen.DEBUG_LOGS -> Screen.APP_SETTINGS
+            Screen.APP_DETAIL -> Screen.APPS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
@@ -230,7 +234,19 @@ fun WalcottApp(
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
                         onBack = ::back,
                     )
-                    Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.APPS -> AppAssignScreen(
+                        viewModel,
+                        onBack = { screen = Screen.FAMILY },
+                        onOpenApp = { pkg -> appDetailPkg = pkg; screen = Screen.APP_DETAIL },
+                    )
+                    Screen.APP_DETAIL -> appDetailPkg?.let { pkg ->
+                        AppDetailScreen(
+                            viewModel,
+                            packageName = pkg,
+                            onBack = ::back,
+                            onOpenWebFilter = { overrideChildId = null; screen = Screen.WEBFILTER },
+                        )
+                    }
                     Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.EARN -> EarnRulesScreen(
