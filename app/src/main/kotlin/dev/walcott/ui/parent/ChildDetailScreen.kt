@@ -90,6 +90,9 @@ fun ChildDetailScreen(
     childId: String,
     onBack: () -> Unit,
     onOpenMap: (String) -> Unit,
+    onEditEarn: () -> Unit,
+    onEditWebFilter: () -> Unit,
+    onEditProtection: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -177,12 +180,24 @@ fun ChildDetailScreen(
                 }
             }
 
-            // --- Location ---
+            // --- Location (inherits the family defaults unless customized) ---
             item {
+                val resolved = settings.resolveForChild(childId)
                 LocationCard(
-                    intervalMinutes = entry.overrides.trackingIntervalMinutes ?: 0,
+                    customized = entry.overrides.trackingIntervalMinutes != null ||
+                        entry.overrides.locationHistoryEnabled != null,
+                    onSetCustomized = { on ->
+                        viewModel.setChildOverrides(
+                            childId,
+                            entry.overrides.copy(
+                                trackingIntervalMinutes = if (on) resolved.trackingIntervalMinutes else null,
+                                locationHistoryEnabled = if (on) resolved.locationHistoryEnabled else null,
+                            ),
+                        )
+                    },
+                    intervalMinutes = resolved.trackingIntervalMinutes,
                     onSetInterval = { viewModel.setTrackingInterval(childId, it) },
-                    historyEnabled = settings.resolveForChild(childId).locationHistoryEnabled,
+                    historyEnabled = resolved.locationHistoryEnabled,
                     onSetHistory = { viewModel.setLocationHistory(childId, it) },
                     hasDevice = snapshot != null,
                     onLocateNow = { snapshot?.let { viewModel.requestLocation(it.deviceId) } },
@@ -249,6 +264,45 @@ fun ChildDetailScreen(
                         },
                     )
                 }
+            }
+            item {
+                OverrideSwitchRow(
+                    title = stringResource(R.string.override_earn_title),
+                    checked = entry.overrides.earnRules != null,
+                    onToggle = { on ->
+                        viewModel.setChildOverrides(
+                            childId,
+                            entry.overrides.copy(earnRules = if (on) settings.earnRules else null),
+                        )
+                    },
+                    onEdit = onEditEarn.takeIf { entry.overrides.earnRules != null },
+                )
+            }
+            item {
+                OverrideSwitchRow(
+                    title = stringResource(R.string.override_webfilter_title),
+                    checked = entry.overrides.blockedDomains != null,
+                    onToggle = { on ->
+                        viewModel.setChildOverrides(
+                            childId,
+                            entry.overrides.copy(blockedDomains = if (on) settings.blockedDomains else null),
+                        )
+                    },
+                    onEdit = onEditWebFilter.takeIf { entry.overrides.blockedDomains != null },
+                )
+            }
+            item {
+                OverrideSwitchRow(
+                    title = stringResource(R.string.override_protection_title),
+                    checked = entry.overrides.deviceRestrictions != null,
+                    onToggle = { on ->
+                        viewModel.setChildOverrides(
+                            childId,
+                            entry.overrides.copy(deviceRestrictions = if (on) settings.deviceRestrictions else null),
+                        )
+                    },
+                    onEdit = onEditProtection.takeIf { entry.overrides.deviceRestrictions != null },
+                )
             }
 
             item { Spacer(Modifier.height(spacing.xl)) }
@@ -716,10 +770,10 @@ private fun remoteResultLabel(context: android.content.Context, detail: String):
     else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail
 }
 
-private val TRACKING_INTERVALS = listOf(0, 5, 15, 30, 60)
-
 @Composable
 private fun LocationCard(
+    customized: Boolean,
+    onSetCustomized: (Boolean) -> Unit,
     intervalMinutes: Int,
     onSetInterval: (Int) -> Unit,
     historyEnabled: Boolean,
@@ -732,49 +786,57 @@ private fun LocationCard(
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.location_section_title), style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(R.string.tracking_periodic_title),
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(top = spacing.sm),
-            )
+            // Children inherit the family's location defaults; the switch snapshots them
+            // into a per-child override, mirroring the other override rows.
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(vertical = spacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                TRACKING_INTERVALS.forEach { m ->
-                    FilterChip(
-                        selected = m == intervalMinutes,
-                        onClick = { onSetInterval(m) },
-                        label = {
-                            Text(
-                                if (m == 0) stringResource(R.string.tracking_off)
-                                else stringResource(R.string.tracking_minutes_fmt, m),
-                            )
-                        },
-                    )
-                }
-            }
-            Text(
-                stringResource(R.string.tracking_battery_warning),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            // History is opt-in: without it a child reports only its current position, which
-            // is the smaller thing to keep on a family server.
-            Row(
-                Modifier.fillMaxWidth().padding(top = spacing.md),
+                Modifier.fillMaxWidth().padding(top = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.location_history_title), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.location_history_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Text(
+                    stringResource(
+                        if (customized) R.string.location_customized else R.string.location_inherited,
+                        if (intervalMinutes == 0) {
+                            stringResource(R.string.tracking_off)
+                        } else {
+                            stringResource(R.string.tracking_minutes_fmt, intervalMinutes)
+                        },
+                        stringResource(
+                            if (historyEnabled) R.string.location_history_on else R.string.location_history_off,
+                        ),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(checked = customized, onCheckedChange = onSetCustomized)
+            }
+            if (customized) {
+                Text(
+                    stringResource(R.string.tracking_periodic_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+                TrackingIntervalChips(selected = intervalMinutes, onSelect = onSetInterval)
+                Text(
+                    stringResource(R.string.tracking_battery_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.location_history_title), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.location_history_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(spacing.sm))
+                    Switch(checked = historyEnabled, onCheckedChange = onSetHistory)
                 }
-                Spacer(Modifier.width(spacing.sm))
-                Switch(checked = historyEnabled, onCheckedChange = onSetHistory)
             }
             if (hasDevice) {
                 Row(
@@ -794,7 +856,12 @@ private fun LocationCard(
 }
 
 @Composable
-private fun OverrideSwitchRow(title: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+private fun OverrideSwitchRow(
+    title: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onEdit: (() -> Unit)? = null,
+) {
     val spacing = Tokens.spacing
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm), verticalAlignment = Alignment.CenterVertically) {
@@ -809,6 +876,9 @@ private fun OverrideSwitchRow(title: String, checked: Boolean, onToggle: (Boolea
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            if (onEdit != null) {
+                TextButton(onClick = onEdit) { Text(stringResource(R.string.action_edit)) }
             }
             Switch(checked = checked, onCheckedChange = onToggle)
         }

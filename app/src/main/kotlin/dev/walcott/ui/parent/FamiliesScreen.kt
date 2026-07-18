@@ -20,11 +20,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -86,6 +88,7 @@ fun FamiliesScreen(
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
+    var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
 
     // Re-check when the user comes back from the notification settings we deep-link into.
     var notificationsEnabled by remember { mutableStateOf(true) }
@@ -207,10 +210,29 @@ fun FamiliesScreen(
                     modifier = Modifier.padding(top = spacing.sm),
                 )
             }
-            items(legacyDevices, key = { it.deviceId }) { device -> LegacyDeviceRow(device) }
+            items(legacyDevices, key = { it.deviceId }) { device ->
+                LegacyDeviceRow(device, onRemove = { removingDevice = device })
+            }
         }
 
         item { Spacer(Modifier.height(spacing.xl)) }
+    }
+
+    removingDevice?.let { device ->
+        AlertDialog(
+            onDismissRequest = { removingDevice = null },
+            title = { Text(stringResource(R.string.legacy_remove_title)) },
+            text = { Text(stringResource(R.string.legacy_remove_confirm, device.displayName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.removeLegacyDevice(device.deviceId)
+                    removingDevice = null
+                }) { Text(stringResource(R.string.action_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { removingDevice = null }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
     }
 
     if (showAddChild) {
@@ -421,7 +443,7 @@ private fun StatusChips(snapshot: ChildSnapshot) {
 }
 
 @Composable
-private fun LegacyDeviceRow(device: ChildSnapshot) {
+private fun LegacyDeviceRow(device: ChildSnapshot, onRemove: () -> Unit) {
     val spacing = Tokens.spacing
     Surface(
         shape = RoundedCornerShape(22.dp),
@@ -437,12 +459,19 @@ private fun LegacyDeviceRow(device: ChildSnapshot) {
                 modifier = Modifier.size(28.dp),
             )
             Spacer(Modifier.width(spacing.md))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(device.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(
                     stringResource(R.string.legacy_device_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onRemove) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    contentDescription = stringResource(R.string.legacy_remove_title),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

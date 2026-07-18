@@ -42,11 +42,24 @@ private val RESTRICTIONS = listOf(
     RestrictionUi(DeviceRestrictions.KEY_UNKNOWN_SOURCES, R.string.restriction_unknown_sources_title, R.string.restriction_unknown_sources_desc),
 )
 
-/** Toggles that stop the child from changing critical device settings (Device Owner). */
+/**
+ * Toggles that stop the child from changing critical device settings (Device Owner).
+ * With a [childId] it edits that child's override instead of the family policy.
+ */
 @Composable
-fun DeviceProtectionScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
+fun DeviceProtectionScreen(
+    viewModel: WalcottViewModel,
+    onBack: () -> Unit,
+    childId: String? = null,
+    childName: String? = null,
+) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val enabledKeys = if (childId == null) {
+        settings.deviceRestrictions
+    } else {
+        settings.children.firstOrNull { it.childId == childId }?.overrides?.deviceRestrictions.orEmpty()
+    }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_protection_title), onBack)
@@ -54,6 +67,9 @@ fun DeviceProtectionScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
+            if (childName != null) {
+                item { OverrideScopeBanner(childName) }
+            }
             item {
                 Text(
                     stringResource(R.string.protection_note),
@@ -65,8 +81,8 @@ fun DeviceProtectionScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 RestrictionRow(
                     title = stringResource(restriction.titleRes),
                     description = stringResource(restriction.descRes),
-                    checked = restriction.key in settings.deviceRestrictions,
-                    onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on) },
+                    checked = restriction.key in enabledKeys,
+                    onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on, childId) },
                 )
             }
             item { Spacer(Modifier.height(spacing.xl)) }

@@ -432,4 +432,24 @@
     <!-- Usage access fail-closed (child home) -->
     <string name="usage_access_card_title">Apps locked: usage access is off</string>
     <string name="usage_access_card_desc">Walcott can\'t count screen time, so apps with limits stay locked. Tap here, find Walcott and turn usage access on.</string>
+
+    <!-- Family QoL: rename, legacy device removal, app settings, family location, per-child overrides -->
+    <string name="action_edit">Edit</string>
+    <string name="rename_family">Rename family</string>
+    <string name="legacy_remove_title">Remove device</string>
+    <string name="legacy_remove_confirm">Remove %1$s from the list? If the device is still active and paired, it will re-appear on its next check-in.</string>
+    <string name="app_settings_title">App settings</string>
+    <string name="app_settings_subtitle">Updates, app lock, debug logs and device mode</string>
+    <string name="nav_location_title">Location</string>
+    <string name="nav_location_subtitle">Tracking interval and 48-hour history for the whole family</string>
+    <string name="location_family_note">Family defaults. Each child inherits these; you can customize a child from their own screen.</string>
+    <string name="override_scope_banner">Editing %1$s\'s custom rules. The family rules no longer apply to this section for them.</string>
+    <string name="override_earn_title">Custom earned time</string>
+    <string name="override_webfilter_title">Custom web filter</string>
+    <string name="override_protection_title">Custom device protection</string>
+    <string name="location_inherited">Family setting: %1$s · history %2$s</string>
+    <string name="location_customized">Custom for this child: %1$s · history %2$s</string>
+    <string name="location_history_on">on</string>
+    <string name="location_history_off">off</string>
+    <string name="webfilter_child_rules_note">Per-app domain rules are managed at the family level and still apply to this child.</string>
 </resources>

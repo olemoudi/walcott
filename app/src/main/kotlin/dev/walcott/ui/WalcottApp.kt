@@ -30,7 +30,10 @@ import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.child.ChildStatusScreen
+import dev.walcott.data.PolicySettings
 import dev.walcott.ui.parent.AppAssignScreen
+import dev.walcott.ui.parent.AppSettingsScreen
+import dev.walcott.ui.parent.LocationSettingsScreen
 import dev.walcott.ui.parent.BudgetsScreen
 import dev.walcott.ui.parent.CalendarScreen
 import dev.walcott.ui.parent.ChildDetailScreen
@@ -45,9 +48,14 @@ import dev.walcott.ui.parent.PinGateScreen
 import dev.walcott.ui.parent.WebFilterScreen
 import dev.walcott.ui.parent.WeeklyReportScreen
 
+/** Child name for the override-scope banner, or null when editing the family policy. */
+private fun overrideChildName(settings: PolicySettings, childId: String?): String? =
+    childId?.let { id -> settings.children.firstOrNull { it.childId == id }?.name }
+
 private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY, CHILD_DETAIL, CHILD_MAP,
-    APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, DEBUG_LOGS,
+    APPS, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
+    APP_SETTINGS, DEBUG_LOGS,
 }
 
 @Composable
@@ -80,6 +88,9 @@ fun WalcottApp(
         )
     }
     var childDetailId by remember { mutableStateOf<String?>(null) }
+    // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
+    // policy, and back returns to the child detail.
+    var overrideChildId by remember { mutableStateOf<String?>(null) }
     // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
     var gateAllowCreate by remember { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
@@ -120,10 +131,17 @@ fun WalcottApp(
 
     fun back() {
         screen = when (screen) {
+            Screen.EARN, Screen.WEBFILTER, Screen.PROTECTION ->
+                if (overrideChildId != null) {
+                    overrideChildId = null
+                    Screen.CHILD_DETAIL
+                } else {
+                    Screen.FAMILY
+                }
             Screen.APPS, Screen.BUDGETS, Screen.CHILDREN,
-            Screen.EARN, Screen.CALENDAR, Screen.REPORT, Screen.WEBFILTER, Screen.PROTECTION,
-            Screen.DEBUG_LOGS,
+            Screen.CALENDAR, Screen.REPORT, Screen.LOCATION, Screen.APP_SETTINGS,
             -> Screen.FAMILY
+            Screen.DEBUG_LOGS -> Screen.APP_SETTINGS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
@@ -180,6 +198,9 @@ fun WalcottApp(
                                 childDetailId = it
                                 screen = Screen.CHILD_MAP
                             },
+                            onEditEarn = { overrideChildId = childId; screen = Screen.EARN },
+                            onEditWebFilter = { overrideChildId = childId; screen = Screen.WEBFILTER },
+                            onEditProtection = { overrideChildId = childId; screen = Screen.PROTECTION },
                         )
                     }
                     Screen.CHILD_MAP -> childDetailId?.let { childId ->
@@ -197,30 +218,48 @@ fun WalcottApp(
                         onOpenApps = { screen = Screen.APPS },
                         onOpenBudgets = { screen = Screen.BUDGETS },
                         onOpenChildren = { screen = Screen.CHILDREN },
-                        onOpenEarn = { screen = Screen.EARN },
+                        onOpenEarn = { overrideChildId = null; screen = Screen.EARN },
                         onOpenCalendar = { screen = Screen.CALENDAR },
                         onOpenReport = { screen = Screen.REPORT },
-                        onOpenWebFilter = { screen = Screen.WEBFILTER },
-                        onOpenProtection = { screen = Screen.PROTECTION },
-                        onOpenDebugLogs = { screen = Screen.DEBUG_LOGS },
-                        onChangeMode = {
-                            viewModel.resetDeviceMode()
-                            screen = Screen.MODE_SELECT
-                        },
-                        installsBlocked = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions,
-                        installExemptionUntil = installExemption,
-                        onAllowInstalls = { viewModel.allowInstallsTemporarily() },
+                        onOpenWebFilter = { overrideChildId = null; screen = Screen.WEBFILTER },
+                        onOpenProtection = { overrideChildId = null; screen = Screen.PROTECTION },
+                        onOpenLocation = { screen = Screen.LOCATION },
+                        onOpenAppSettings = { screen = Screen.APP_SETTINGS },
                         onBack = ::back,
                     )
                     Screen.APPS -> AppAssignScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
-                    Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.EARN -> EarnRulesScreen(
+                        viewModel, onBack = ::back,
+                        childId = overrideChildId, childName = overrideChildName(settings, overrideChildId),
+                    )
                     Screen.CALENDAR -> CalendarScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
-                    Screen.WEBFILTER -> WebFilterScreen(viewModel, onBack = { screen = Screen.FAMILY })
-                    Screen.PROTECTION -> DeviceProtectionScreen(viewModel, onBack = { screen = Screen.FAMILY })
-                    Screen.DEBUG_LOGS -> DebugLogScreen(onBack = { screen = Screen.FAMILY })
+                    Screen.WEBFILTER -> WebFilterScreen(
+                        viewModel, onBack = ::back,
+                        childId = overrideChildId, childName = overrideChildName(settings, overrideChildId),
+                    )
+                    Screen.PROTECTION -> DeviceProtectionScreen(
+                        viewModel, onBack = ::back,
+                        childId = overrideChildId, childName = overrideChildName(settings, overrideChildId),
+                    )
+                    Screen.LOCATION -> LocationSettingsScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.APP_SETTINGS -> AppSettingsScreen(
+                        viewModel = viewModel,
+                        deviceOwner = deviceOwner,
+                        childDevice = !parentMode,
+                        installsBlocked = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions,
+                        installExemptionUntil = installExemption,
+                        onAllowInstalls = { viewModel.allowInstallsTemporarily() },
+                        onOpenDebugLogs = { screen = Screen.DEBUG_LOGS },
+                        onChangeMode = {
+                            viewModel.resetDeviceMode()
+                            screen = Screen.MODE_SELECT
+                        },
+                        onBack = ::back,
+                    )
+                    Screen.DEBUG_LOGS -> DebugLogScreen(onBack = ::back)
                 }
             }
         }

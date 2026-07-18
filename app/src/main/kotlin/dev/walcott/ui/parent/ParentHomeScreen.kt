@@ -13,25 +13,24 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InsertChart
-import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -41,32 +40,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import android.provider.Settings
 import dev.walcott.R
-import dev.walcott.data.PinResult
 import dev.walcott.enforcement.AppBlockerService
 import dev.walcott.ui.WalcottViewModel
-import kotlinx.coroutines.launch
+import dev.walcott.ui.components.NavCard
 import dev.walcott.ui.components.WalcottTopBar
-import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
-import java.time.Duration
 
 /**
  * Rules hub. In parent mode it is the family's settings (title = family name); in child
  * mode it sits behind the PIN gate as this device's local settings (fallback path).
+ * App-level settings (updates, app lock, logs, device mode) live in [AppSettingsScreen].
  */
 @Composable
 fun ParentHomeScreen(
@@ -82,17 +75,21 @@ fun ParentHomeScreen(
     onOpenReport: () -> Unit,
     onOpenWebFilter: () -> Unit,
     onOpenProtection: () -> Unit,
-    onOpenDebugLogs: () -> Unit,
-    onChangeMode: () -> Unit,
-    installsBlocked: Boolean,
-    installExemptionUntil: Long,
-    onAllowInstalls: () -> Unit,
+    onOpenLocation: () -> Unit,
+    onOpenAppSettings: () -> Unit,
     onBack: () -> Unit,
 ) {
     val spacing = Tokens.spacing
-    var confirmChangeMode by remember { mutableStateOf(false) }
+    var showRenameFamily by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        WalcottTopBar(title, onBack)
+        WalcottTopBar(title, onBack) {
+            // The family name is user data, not chrome — let the parent change it in place.
+            if (!childDevice) {
+                IconButton(onClick = { showRenameFamily = true }) {
+                    Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.rename_family))
+                }
+            }
+        }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = spacing.screen)
                 .padding(bottom = spacing.xl),
@@ -107,91 +104,56 @@ fun ParentHomeScreen(
             NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets)
             NavCard(Icons.Outlined.Language, stringResource(R.string.nav_webfilter_title), stringResource(R.string.nav_webfilter_subtitle), onOpenWebFilter)
             NavCard(Icons.Outlined.Security, stringResource(R.string.nav_protection_title), stringResource(R.string.nav_protection_subtitle), onOpenProtection)
+            NavCard(Icons.Outlined.LocationOn, stringResource(R.string.nav_location_title), stringResource(R.string.nav_location_subtitle), onOpenLocation)
             NavCard(Icons.Outlined.EmojiEvents, stringResource(R.string.nav_earn_title), stringResource(R.string.nav_earn_subtitle), onOpenEarn)
             NavCard(Icons.Outlined.CalendarMonth, stringResource(R.string.nav_calendar_title), stringResource(R.string.nav_calendar_subtitle), onOpenCalendar)
             if (!childDevice) {
                 NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
             }
             NavCard(Icons.Outlined.InsertChart, stringResource(R.string.nav_report_title), stringResource(R.string.nav_report_subtitle), onOpenReport)
-            if (!childDevice) {
-                AppLockCard(viewModel)
-            }
-            AppUpdateCard(deviceOwner)
             NavCard(
-                Icons.Outlined.BugReport,
-                stringResource(R.string.nav_debug_title),
-                stringResource(R.string.nav_debug_subtitle),
-                onClick = onOpenDebugLogs,
+                Icons.Outlined.Settings,
+                stringResource(R.string.app_settings_title),
+                stringResource(R.string.app_settings_subtitle),
+                onClick = onOpenAppSettings,
             )
-            if (childDevice && installsBlocked) {
-                val remainingMs = installExemptionUntil - System.currentTimeMillis()
-                NavCard(
-                    Icons.Outlined.InstallMobile,
-                    stringResource(R.string.allow_installs_title),
-                    if (remainingMs > 0) {
-                        stringResource(R.string.allow_installs_active, Duration.ofMillis(remainingMs).humanize())
-                    } else {
-                        stringResource(R.string.allow_installs_desc)
-                    },
-                    onClick = onAllowInstalls,
-                )
-            }
-            if (childDevice) {
-                NavCard(
-                    Icons.Outlined.SwapHoriz,
-                    stringResource(R.string.change_device_mode),
-                    stringResource(R.string.change_device_mode_subtitle),
-                    onClick = { confirmChangeMode = true },
-                )
-            }
         }
     }
 
-    if (confirmChangeMode) {
-        // Re-verify the PIN before leaving child mode (which would drop enforcement).
-        val scope = rememberCoroutineScope()
-        var pin by remember { mutableStateOf("") }
-        var pinError by remember { mutableStateOf<String?>(null) }
-        val wrongPin = stringResource(R.string.pin_incorrect)
-        val lockedFmt = stringResource(R.string.pin_locked)
-        AlertDialog(
-            onDismissRequest = { confirmChangeMode = false },
-            title = { Text(stringResource(R.string.change_device_mode)) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.change_mode_confirm))
-                    OutlinedTextField(
-                        value = pin,
-                        onValueChange = { pin = it.filter(Char::isDigit).take(8); pinError = null },
-                        label = { Text(stringResource(R.string.pin_label)) },
-                        singleLine = true,
-                        isError = pinError != null,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
-                    )
-                    pinError?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(enabled = pin.isNotEmpty(), onClick = {
-                    scope.launch {
-                        when (val result = viewModel.verifyPin(pin)) {
-                            is PinResult.Ok -> { confirmChangeMode = false; onChangeMode() }
-                            is PinResult.Wrong -> pinError = wrongPin
-                            is PinResult.Locked ->
-                                pinError = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
-                        }
-                    }
-                }) { Text(stringResource(R.string.change_mode_confirm_button)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmChangeMode = false }) { Text(stringResource(R.string.action_cancel)) }
+    if (showRenameFamily) {
+        RenameFamilyDialog(
+            initial = title,
+            onDismiss = { showRenameFamily = false },
+            onRename = { name ->
+                viewModel.renameFamily(name)
+                showRenameFamily = false
             },
         )
     }
+}
+
+@Composable
+private fun RenameFamilyDialog(initial: String, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    var name by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.rename_family)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.family_name_label)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = { onRename(name.trim()) }) {
+                Text(stringResource(R.string.action_save))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 @Composable
@@ -226,28 +188,6 @@ private fun ProtectionBanner(deviceOwner: Boolean) {
             if (!deviceOwner) {
                 Text(stringResource(R.string.protection_enable_action), style = MaterialTheme.typography.labelLarge, color = color)
             }
-        }
-    }
-}
-
-@Composable
-private fun NavCard(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    val spacing = Tokens.spacing
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(spacing.md))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

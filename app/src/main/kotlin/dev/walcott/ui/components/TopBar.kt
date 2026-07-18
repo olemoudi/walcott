@@ -18,9 +18,13 @@ import androidx.compose.ui.res.stringResource
 import dev.walcott.R
 import dev.walcott.ui.theme.Tokens
 
-/** Minimal top bar with a back button and a title. */
+/** Minimal top bar with a back button, a title, and optional trailing [actions]. */
 @Composable
-fun WalcottTopBar(title: String, onBack: () -> Unit) {
+fun WalcottTopBar(
+    title: String,
+    onBack: () -> Unit,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+) {
     val spacing = Tokens.spacing
     Row(
         Modifier.fillMaxWidth().padding(horizontal = spacing.sm, vertical = spacing.sm),
@@ -30,6 +34,7 @@ fun WalcottTopBar(title: String, onBack: () -> Unit) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
         }
         Spacer(Modifier.width(spacing.xs))
-        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        actions()
     }
 }

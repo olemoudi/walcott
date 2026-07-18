@@ -42,11 +42,22 @@ import dev.walcott.ui.components.AppIcon
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
 
+/** Web filter editor; with a [childId] it edits that child's blocked-domain override. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebFilterScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
+fun WebFilterScreen(
+    viewModel: WalcottViewModel,
+    onBack: () -> Unit,
+    childId: String? = null,
+    childName: String? = null,
+) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val blockedDomains = if (childId == null) {
+        settings.blockedDomains
+    } else {
+        settings.children.firstOrNull { it.childId == childId }?.overrides?.blockedDomains.orEmpty()
+    }
     val apps by viewModel.appRows.collectAsStateWithLifecycle()
     val labelOf = remember(apps) { apps.associate { it.app.packageName to it.app.label } }
 
@@ -62,6 +73,9 @@ fun WebFilterScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
+            if (childName != null) {
+                item { OverrideScopeBanner(childName) }
+            }
             item {
                 Text(
                     stringResource(R.string.webfilter_dns_note),
@@ -81,35 +95,49 @@ fun WebFilterScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
-                    OutlinedButton(onClick = { viewModel.addBlockedDomain(newDomain); newDomain = "" }) {
+                    OutlinedButton(onClick = { viewModel.addBlockedDomain(newDomain, childId); newDomain = "" }) {
                         Text(stringResource(R.string.action_add))
                     }
                 }
             }
-            if (settings.blockedDomains.isEmpty()) {
+            if (blockedDomains.isEmpty()) {
                 item { Text(stringResource(R.string.webfilter_empty_domains), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            items(settings.blockedDomains.sorted(), key = { it }) { domain ->
-                DeletableRow(domain, onDelete = { viewModel.removeBlockedDomain(domain) })
+            items(blockedDomains.sorted(), key = { it }) { domain ->
+                DeletableRow(domain, onDelete = { viewModel.removeBlockedDomain(domain, childId) })
             }
 
-            item {
+            // Per-app domain rules aren't part of the per-child overrides; in child scope
+            // just say so instead of silently hiding a family-wide behavior.
+            if (childId != null) {
+                item {
+                    Text(
+                        stringResource(R.string.webfilter_child_rules_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = spacing.md),
+                    )
+                }
+            }
+            if (childId == null) item {
                 Text(
                     stringResource(R.string.webfilter_advanced),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(top = spacing.md),
                 )
             }
-            itemsIndexed(settings.domainAppRules) { index, rule ->
-                val appLabel = labelOf[rule.packageName] ?: rule.packageName
-                val text = if (rule.allowOnlyFromApp) {
-                    stringResource(R.string.webfilter_rule_allow_only, rule.domain, appLabel)
-                } else {
-                    stringResource(R.string.webfilter_rule_block_in, rule.domain, appLabel)
+            if (childId == null) {
+                itemsIndexed(settings.domainAppRules) { index, rule ->
+                    val appLabel = labelOf[rule.packageName] ?: rule.packageName
+                    val text = if (rule.allowOnlyFromApp) {
+                        stringResource(R.string.webfilter_rule_allow_only, rule.domain, appLabel)
+                    } else {
+                        stringResource(R.string.webfilter_rule_block_in, rule.domain, appLabel)
+                    }
+                    DeletableRow(text, onDelete = { viewModel.removeDomainAppRule(index) })
                 }
-                DeletableRow(text, onDelete = { viewModel.removeDomainAppRule(index) })
             }
-            item {
+            if (childId == null) item {
                 AddRuleCard(
                     domain = ruleDomain,
                     onDomainChange = { ruleDomain = it },

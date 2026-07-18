@@ -432,4 +432,24 @@
     <!-- Fail-closed de acceso de uso (home del hijo) -->
     <string name="usage_access_card_title">Apps bloqueadas: falta el acceso de uso</string>
     <string name="usage_access_card_desc">Walcott no puede contar el tiempo de pantalla, así que las apps con límite quedan bloqueadas. Toca aquí, busca Walcott y activa el acceso de uso.</string>
+
+    <!-- QoL de familia: renombrar, quitar dispositivos, ajustes de la app, localización de familia, overrides por hijo -->
+    <string name="action_edit">Editar</string>
+    <string name="rename_family">Renombrar familia</string>
+    <string name="legacy_remove_title">Quitar dispositivo</string>
+    <string name="legacy_remove_confirm">¿Quitar %1$s de la lista? Si el dispositivo sigue activo y emparejado, reaparecerá en su próximo contacto.</string>
+    <string name="app_settings_title">Ajustes de la app</string>
+    <string name="app_settings_subtitle">Actualizaciones, bloqueo de la app, registros y modo del dispositivo</string>
+    <string name="nav_location_title">Ubicación</string>
+    <string name="nav_location_subtitle">Frecuencia de rastreo e historial de 48 horas para toda la familia</string>
+    <string name="location_family_note">Valores por defecto de la familia. Cada hijo los hereda; puedes personalizar a un hijo desde su propia pantalla.</string>
+    <string name="override_scope_banner">Editando las reglas personalizadas de %1$s. Las reglas de la familia ya no aplican a esta sección para este hijo.</string>
+    <string name="override_earn_title">Tiempo ganado personalizado</string>
+    <string name="override_webfilter_title">Filtro web personalizado</string>
+    <string name="override_protection_title">Protección del dispositivo personalizada</string>
+    <string name="location_inherited">Ajuste de la familia: %1$s · historial %2$s</string>
+    <string name="location_customized">Personalizado para este hijo: %1$s · historial %2$s</string>
+    <string name="location_history_on">activado</string>
+    <string name="location_history_off">desactivado</string>
+    <string name="webfilter_child_rules_note">Las reglas de dominio por app se gestionan a nivel de familia y siguen aplicando a este hijo.</string>
 </resources>

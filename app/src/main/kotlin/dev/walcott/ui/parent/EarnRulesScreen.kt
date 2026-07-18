@@ -39,10 +39,21 @@ import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
 
+/** Earn-rule editor; with a [childId] it edits that child's override instead of the family. */
 @Composable
-fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
+fun EarnRulesScreen(
+    viewModel: WalcottViewModel,
+    onBack: () -> Unit,
+    childId: String? = null,
+    childName: String? = null,
+) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val rules = if (childId == null) {
+        settings.earnRules
+    } else {
+        settings.children.firstOrNull { it.childId == childId }?.overrides?.earnRules.orEmpty()
+    }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_earn_title), onBack)
@@ -50,13 +61,16 @@ fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            if (settings.earnRules.isEmpty()) {
+            if (childName != null) {
+                item { OverrideScopeBanner(childName) }
+            }
+            if (rules.isEmpty()) {
                 item { Text(stringResource(R.string.earn_empty), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            itemsIndexed(settings.earnRules) { index, rule ->
-                EarnRuleCard(rule, onDelete = { viewModel.removeEarnRule(index) })
+            itemsIndexed(rules) { index, rule ->
+                EarnRuleCard(rule, onDelete = { viewModel.removeEarnRule(index, childId) })
             }
-            item { AddEarnRuleCard(onAdd = { viewModel.addEarnRule(it) }) }
+            item { AddEarnRuleCard(onAdd = { viewModel.addEarnRule(it, childId) }) }
         }
     }
 }

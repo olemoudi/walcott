@@ -102,6 +102,29 @@ class WalcottViewModel(
         repository.updateSettings { s -> s.copy(children = s.children.filterNot { it.childId == childId }) }
     }
 
+    /** Rename the family (shown on the parent home and on every enrolled child). */
+    fun renameFamily(name: String) = viewModelScope.launch {
+        repository.updateSettings { it.copy(familyName = name) }
+    }
+
+    /** Forget an orphaned device (it re-appears if it is still alive and paired). */
+    fun removeLegacyDevice(deviceId: String) = viewModelScope.launch { sync.removeChildDevice(deviceId) }
+
+    /**
+     * Applies [transform] to one child's overrides. The scoped rule editors funnel through
+     * here so "edit for this child" and "edit for the family" share the same shapes.
+     */
+    private fun updateOverrides(childId: String, transform: (dev.walcott.data.ChildOverrides) -> dev.walcott.data.ChildOverrides) =
+        viewModelScope.launch {
+            repository.updateSettings { s ->
+                s.copy(
+                    children = s.children.map {
+                        if (it.childId == childId) it.copy(overrides = transform(it.overrides)) else it
+                    },
+                )
+            }
+        }
+
     fun setChildOverrides(childId: String, overrides: dev.walcott.data.ChildOverrides) = viewModelScope.launch {
         repository.updateSettings { s ->
             s.copy(children = s.children.map { if (it.childId == childId) it.copy(overrides = overrides) else it })
@@ -138,6 +161,16 @@ class WalcottViewModel(
                 },
             )
         }
+    }
+
+    /** Family-default location tracking interval (0 = off); children inherit unless overridden. */
+    fun setFamilyTrackingInterval(minutes: Int) = viewModelScope.launch {
+        repository.updateSettings { it.copy(trackingIntervalMinutes = minutes) }
+    }
+
+    /** Family-default 48h location history; children inherit unless overridden. */
+    fun setFamilyLocationHistory(enabled: Boolean) = viewModelScope.launch {
+        repository.updateSettings { it.copy(locationHistoryEnabled = enabled) }
     }
 
     /** Set this child's periodic location-tracking interval (0 = off). */
@@ -178,12 +211,24 @@ class WalcottViewModel(
             byDay
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    fun addEarnRule(rule: dev.walcott.data.EarnRuleDto) =
-        viewModelScope.launch { repository.updateSettings { it.copy(earnRules = it.earnRules + rule) } }
+    /** Adds an earn rule to the family, or to [childId]'s override when given. */
+    fun addEarnRule(rule: dev.walcott.data.EarnRuleDto, childId: String? = null) =
+        if (childId == null) {
+            viewModelScope.launch { repository.updateSettings { it.copy(earnRules = it.earnRules + rule) } }
+        } else {
+            updateOverrides(childId) { it.copy(earnRules = it.earnRules.orEmpty() + rule) }
+        }
 
-    fun removeEarnRule(index: Int) = viewModelScope.launch {
-        repository.updateSettings { it.copy(earnRules = it.earnRules.filterIndexed { i, _ -> i != index }) }
-    }
+    fun removeEarnRule(index: Int, childId: String? = null) =
+        if (childId == null) {
+            viewModelScope.launch {
+                repository.updateSettings { it.copy(earnRules = it.earnRules.filterIndexed { i, _ -> i != index }) }
+            }
+        } else {
+            updateOverrides(childId) {
+                it.copy(earnRules = it.earnRules.orEmpty().filterIndexed { i, _ -> i != index })
+            }
+        }
 
     fun addHoliday(epochDay: Long) =
         viewModelScope.launch { repository.updateSettings { it.copy(holidays = it.holidays + epochDay) } }
@@ -199,20 +244,36 @@ class WalcottViewModel(
         repository.updateSettings { it.copy(vacations = it.vacations.filterIndexed { i, _ -> i != index }) }
     }
 
-    fun addBlockedDomain(raw: String) {
+    fun addBlockedDomain(raw: String, childId: String? = null) {
         val domain = normalizeDomain(raw)
         if (domain.isEmpty()) return
-        viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains + domain) } }
-    }
-
-    fun removeBlockedDomain(domain: String) =
-        viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains - domain) } }
-
-    fun setDeviceRestriction(key: String, enabled: Boolean) = viewModelScope.launch {
-        repository.updateSettings {
-            it.copy(deviceRestrictions = if (enabled) it.deviceRestrictions + key else it.deviceRestrictions - key)
+        if (childId == null) {
+            viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains + domain) } }
+        } else {
+            updateOverrides(childId) { it.copy(blockedDomains = it.blockedDomains.orEmpty() + domain) }
         }
     }
+
+    fun removeBlockedDomain(domain: String, childId: String? = null) =
+        if (childId == null) {
+            viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains - domain) } }
+        } else {
+            updateOverrides(childId) { it.copy(blockedDomains = it.blockedDomains.orEmpty() - domain) }
+        }
+
+    fun setDeviceRestriction(key: String, enabled: Boolean, childId: String? = null) =
+        if (childId == null) {
+            viewModelScope.launch {
+                repository.updateSettings {
+                    it.copy(deviceRestrictions = if (enabled) it.deviceRestrictions + key else it.deviceRestrictions - key)
+                }
+            }
+        } else {
+            updateOverrides(childId) {
+                val current = it.deviceRestrictions.orEmpty()
+                it.copy(deviceRestrictions = if (enabled) current + key else current - key)
+            }
+        }
 
     fun addDomainAppRule(rawDomain: String, packageName: String, allowOnlyFromApp: Boolean) {
         val domain = normalizeDomain(rawDomain)

@@ -310,6 +310,25 @@ class SyncManager(
         runCatching { publishSelf() }
     }
 
+    /**
+     * Forget a device the parent no longer tracks (orphaned test devices, re-paired phones).
+     * Purely local: if the device is still alive and paired it will re-appear on its next
+     * publish, which is the honest behavior — removal is for devices that are actually gone.
+     */
+    suspend fun removeChildDevice(deviceId: String) {
+        syncStore.update { s ->
+            s.copy(
+                children = s.children.filterNot { it.deviceId == deviceId },
+                lastSeen = s.lastSeen - deviceId,
+                staleNotifiedLastSeen = s.staleNotifiedLastSeen - deviceId,
+                enforcementNotified = s.enforcementNotified - deviceId,
+                usageAccessNotified = s.usageAccessNotified - deviceId,
+                mockLocationNotified = s.mockLocationNotified - deviceId,
+                pinAlertedTotal = s.pinAlertedTotal - deviceId,
+            )
+        }
+    }
+
     /** Parent grants an unsolicited bonus (chores, good behaviour) to a child device. */
     suspend fun giveBonus(targetDeviceId: String, categoryId: String, minutes: Int) {
         syncStore.update { s ->
