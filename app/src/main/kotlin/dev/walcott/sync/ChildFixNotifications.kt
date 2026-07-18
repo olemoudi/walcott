@@ -26,7 +26,10 @@ object ChildFixNotifications {
     const val FIX_NETWORK_LOCATION = "network_location"
     const val FIX_LOCATION_PERMISSION = "location_permission"
 
-    private const val CHANNEL = "walcott_child_fix"
+    // "_quiet" channel id: the old HIGH-importance channel is immutable once created, so
+    // silencing child-side notifications requires a new channel and deleting the old one.
+    private const val CHANNEL = "walcott_child_fix_quiet"
+    private const val OLD_CHANNEL = "walcott_child_fix"
 
     fun notify(context: Context, fix: String) {
         val (titleRes, textRes, intent) = when (fix) {
@@ -53,11 +56,14 @@ object ChildFixNotifications {
 
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.deleteNotificationChannel(OLD_CHANNEL)
+            // LOW: visible in the shade with its deep link, but never a sound, vibration
+            // or heads-up — the child device stays quiet.
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL,
                     context.getString(R.string.fix_channel_name),
-                    NotificationManager.IMPORTANCE_HIGH,
+                    NotificationManager.IMPORTANCE_LOW,
                 ),
             )
         }
@@ -72,7 +78,8 @@ object ChildFixNotifications {
             .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(textRes)))
             .setAutoCancel(true)
             .setContentIntent(tap)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(fix.hashCode(), notification) }
     }

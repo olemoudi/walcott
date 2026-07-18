@@ -20,14 +20,24 @@ object LocationPolicy {
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
         val admin = WalcottAdminReceiver.componentName(context)
         val pkg = context.packageName
-        // Force-grant foreground location so the child can't revoke it.
+        // Grant foreground location if missing, then hand control back to DEFAULT. Keeping
+        // the grant admin-HELD (GRANT_STATE_GRANTED) is what makes Android 12+ show the
+        // persistent "your admin can access this device's location" transparency notice on
+        // fully managed devices. Moving to DEFAULT leaves the permission granted but drops
+        // the admin hold — and with it the notice's basis. If the child revokes it from
+        // Settings, this method re-grants on the next service start or watchdog pass.
         val foreground = listOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
         )
         for (perm in foreground) {
             runCatching {
-                dpm.setPermissionGrantState(admin, pkg, perm, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
+                val granted = ContextCompat.checkSelfPermission(context, perm) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (!granted) {
+                    dpm.setPermissionGrantState(admin, pkg, perm, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
+                }
+                dpm.setPermissionGrantState(admin, pkg, perm, DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
             }
         }
         // Deliberately do NOT admin-grant ACCESS_BACKGROUND_LOCATION: an admin-forced background

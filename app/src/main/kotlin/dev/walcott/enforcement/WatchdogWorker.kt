@@ -26,6 +26,9 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
             // Failures here mean enforcement may be down while looking healthy — keep them visible.
             runCatching { EnforcementService.start(applicationContext) }
                 .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
+            // Location is granted-but-not-held (see LocationPolicy): if the child revoked
+            // it from Settings, this re-grants within one watchdog period.
+            runCatching { dev.walcott.location.LocationPolicy.ensureEnforced(applicationContext) }
             runCatching {
                 val settings = app.repository.settingsFlow.first()
                 DeviceRestrictions.apply(
