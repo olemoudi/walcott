@@ -70,6 +70,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.walcott.BuildConfig
 import dev.walcott.R
+import dev.walcott.enforcement.UsageAccess
 import dev.walcott.location.LocationPolicy
 import dev.walcott.rules.BlockReason
 import dev.walcott.rules.CategoryState
@@ -115,9 +116,16 @@ fun ChildStatusScreen(
     // card disappears once granted from settings.
     val lifecycleOwner = LocalLifecycleOwner.current
     var locationGranted by remember { mutableStateOf(LocationPolicy.hasFineLocation(context)) }
+    // Usage access can't be force-granted (it's an AppOp), and without it the enforcement
+    // loop fails closed and suspends the managed apps — so the child needs to see why
+    // everything is locked and exactly where to fix it.
+    var usageAccessOn by remember { mutableStateOf(UsageAccess.granted(context)) }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) locationGranted = LocationPolicy.hasFineLocation(context)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                locationGranted = LocationPolicy.hasFineLocation(context)
+                usageAccessOn = UsageAccess.granted(context)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -162,6 +170,18 @@ fun ChildStatusScreen(
                 }
             }
             item { HeroCard(state) }
+            if (!usageAccessOn) {
+                item {
+                    UsageAccessCard(onFix = {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    })
+                }
+            }
             if (showLocationNudge) {
                 item {
                     LocationPermissionCard(
@@ -263,6 +283,40 @@ private fun LocationPermissionCard(onFix: () -> Unit) {
                 Text(stringResource(R.string.location_permission_title), style = MaterialTheme.typography.titleMedium, color = color)
                 Text(
                     stringResource(R.string.location_permission_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = color,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Heads-up when usage access is off: the enforcement loop is failing closed (apps with
+ * limits stay suspended), so this explains the lock and deep-links the exact setting.
+ */
+@Composable
+private fun UsageAccessCard(onFix: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        onClick = onFix,
+        shape = RoundedCornerShape(22.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Lock,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.usage_access_card_title), style = MaterialTheme.typography.titleMedium, color = color)
+                Text(
+                    stringResource(R.string.usage_access_card_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = color,
                 )

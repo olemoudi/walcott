@@ -34,18 +34,27 @@ object LocationPolicy {
         // grant triggers a persistent, non-dismissible "your IT admin is allowing … to access your
         // location" system notification. Sampling runs inside the location-typed foreground service
         // (EnforcementService), which grants while-in-use access without the background permission,
-        // and on Android 14+ the FGS type is required regardless. Reset any prior force-grant back
-        // to DEFAULT so that notification clears on devices provisioned by an earlier build.
+        // and on Android 14+ the FGS type is required regardless. DENY it rather than reset to
+        // DEFAULT: DEFAULT only releases admin control and leaves a grant from an earlier build in
+        // place, so that privacy notification never cleared on devices provisioned before the fix.
         runCatching {
             dpm.setPermissionGrantState(
                 admin, pkg, Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-                DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT,
+                DevicePolicyManager.PERMISSION_GRANT_STATE_DENIED,
             )
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        // Only flip location on when it is actually off: every admin setLocationEnabled(true)
+        // re-posts the system's "location enabled by your admin" notification, and this runs on
+        // every service (re)start, so calling it unconditionally spammed the child with it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !locationEnabled(context)) {
             runCatching { dpm.setLocationEnabled(admin, true) }
         }
     }
+
+    /** Whether system location is currently on (the admin toggle is only needed when it isn't). */
+    fun locationEnabled(context: Context): Boolean = runCatching {
+        context.getSystemService(android.location.LocationManager::class.java)?.isLocationEnabled == true
+    }.getOrDefault(false)
 
     fun hasFineLocation(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==

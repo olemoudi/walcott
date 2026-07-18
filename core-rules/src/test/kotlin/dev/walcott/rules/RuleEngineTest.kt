@@ -213,4 +213,30 @@ class RuleEngineTest {
         )
         assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(45)), verdict)
     }
+
+    @Test
+    fun `a config with budgets requires usage counting`() {
+        // Revoking usage access must fail closed here: budgets can't count down without it.
+        assertEquals(true, RuleEngine.requiresUsageCounting(config))
+    }
+
+    @Test
+    fun `a config with only time-based rules does not require usage counting`() {
+        // Bedtime and blocked windows read the clock, not the usage counter.
+        val timeOnly = config.copy(
+            policies = mapOf(
+                "games" to CategoryPolicy(
+                    blockedWindows = mapOf(
+                        DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(8, 30), LocalTime.of(14, 30))),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(false, RuleEngine.requiresUsageCounting(timeOnly))
+    }
+
+    @Test
+    fun `an empty config does not require usage counting`() {
+        assertEquals(false, RuleEngine.requiresUsageCounting(config.copy(policies = emptyMap())))
+    }
 }

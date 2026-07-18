@@ -335,6 +335,9 @@ class SyncManager(
     /** Publish this child's snapshot now (used by the periodic location sampler). */
     suspend fun publishLocationUpdate() = publishSelf()
 
+    /** Publish now because a health signal changed (e.g. usage access toggled). */
+    suspend fun publishHealthUpdate() = publishSelf()
+
     /** PIN check with escalating brute-force lockout (device-local state). */
     suspend fun verifyPinGuarded(pin: String): PinResult {
         val s = syncStore.current()

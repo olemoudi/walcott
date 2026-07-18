@@ -278,8 +278,8 @@
     <string name="enforcement_degraded_title">%1$s perdió la protección completa</string>
     <string name="enforcement_degraded_text">El dispositivo ya no está totalmente gestionado — el bloqueo depende ahora de un respaldo más débil</string>
     <string name="usage_access_off_title">El recuento de tiempo está apagado en %1$s</string>
-    <string name="usage_access_off_text">Se revocó el acceso de uso — los límites de tiempo no están descontando</string>
-    <string name="usage_access_off_child">El acceso de uso está apagado en este dispositivo: los límites de tiempo no descuentan</string>
+    <string name="usage_access_off_text">Se revocó el acceso de uso — las apps con límite quedan bloqueadas hasta reactivarlo</string>
+    <string name="usage_access_off_child">El acceso de uso está apagado en este dispositivo, así que las apps con límite quedan bloqueadas. El hijo puede arreglarlo desde el aviso de su pantalla de inicio, o usa «Pedir que arreglen permisos» más abajo.</string>
     <string name="mock_location_title">%1$s podría estar falseando su ubicación</string>
     <string name="mock_location_text">Las ubicaciones recientes vienen de una app de GPS simulado</string>
     <string name="new_app_title">App nueva en el dispositivo de %1$s</string>
@@ -428,4 +428,8 @@
     <string name="map_point_count">%1$d ubicaciones en las últimas 48 h</string>
     <string name="map_accuracy_fmt">±%1$d m</string>
     <string name="map_recenter">Recentrar</string>
+
+    <!-- Fail-closed de acceso de uso (home del hijo) -->
+    <string name="usage_access_card_title">Apps bloqueadas: falta el acceso de uso</string>
+    <string name="usage_access_card_desc">Walcott no puede contar el tiempo de pantalla, así que las apps con límite quedan bloqueadas. Toca aquí, busca Walcott y activa el acceso de uso.</string>
 </resources>

@@ -77,7 +77,11 @@ object DeviceRestrictions {
 
         // Side effects: locking the setting is only useful if the setting is in the safe state.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (KEY_LOCATION in enabledKeys) runCatching { dpm.setLocationEnabled(admin, true) }
+            // Skip when location is already on: each admin setLocationEnabled(true) re-posts the
+            // system's "enabled by your admin" notification, and apply() runs on every policy sync.
+            if (KEY_LOCATION in enabledKeys && !dev.walcott.location.LocationPolicy.locationEnabled(context)) {
+                runCatching { dpm.setLocationEnabled(admin, true) }
+            }
             if (KEY_DATETIME in enabledKeys) {
                 runCatching { dpm.setAutoTimeEnabled(admin, true) }
                 runCatching { dpm.setAutoTimeZoneEnabled(admin, true) }

@@ -47,4 +47,14 @@ object RuleEngine {
             Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED)
         }
     }
+
+    /**
+     * Whether this config must fail CLOSED when screen-time counting is unavailable (usage
+     * access revoked). Budgets depend on the counter: without it they never run out, so
+     * revoking the permission would mean unlimited time — the opposite of what the parent
+     * configured. Pure time rules (bedtime, blocked windows) don't need the counter, so a
+     * config without budgets can safely keep enforcing as usual.
+     */
+    fun requiresUsageCounting(config: FamilyConfig): Boolean =
+        config.policies.values.any { it.dailyBudget.isNotEmpty() }
 }

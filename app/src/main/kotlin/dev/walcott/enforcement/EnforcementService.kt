@@ -202,9 +202,11 @@ class EnforcementService : LifecycleService() {
     }
 
     private suspend fun runLoop() {
-        val repo = (application as WalcottApplication).repository
+        val app = application as WalcottApplication
+        val repo = app.repository
         var lastTick = SystemClock.elapsedRealtime()
         var lastForeground: String? = null
+        var lastUsageAccess: Boolean? = null
 
         while (currentCoroutineContext().isActive) {
             // Screen off: nothing accrues and blocked apps stay suspended, so park with
@@ -239,8 +241,29 @@ class EnforcementService : LifecycleService() {
             }
             lastForeground = foreground
 
-            val blocked = managed.filterTo(mutableSetOf()) { pkg ->
-                RuleEngine.evaluate(config, pkg, now, usage, extra) is Verdict.Blocked
+            // Fail CLOSED when the config needs the usage counter but usage access is revoked:
+            // without it budgets never count down, so a child could disable the toggle for
+            // unlimited time. Suspending everything managed makes revoking it self-defeating —
+            // the apps come back the moment the permission does. A Device Owner can't grant or
+            // pin usage access (it's an AppOp, out of setPermissionGrantState's reach), so this
+            // is the strongest enforcement available.
+            val usageAccessOk = UsageAccess.granted(this)
+            if (usageAccessOk != lastUsageAccess) {
+                if (lastUsageAccess != null) {
+                    DebugLog.w(TAG, "usage access changed: granted=$usageAccessOk")
+                    // Tell the parent right away instead of waiting for the next re-emit.
+                    lifecycleScope.launch { runCatching { app.syncManager.publishHealthUpdate() } }
+                }
+                lastUsageAccess = usageAccessOk
+            }
+            val failClosed = !usageAccessOk && RuleEngine.requiresUsageCounting(config)
+
+            val blocked = if (failClosed) {
+                managed.toMutableSet()
+            } else {
+                managed.filterTo(mutableSetOf()) { pkg ->
+                    RuleEngine.evaluate(config, pkg, now, usage, extra) is Verdict.Blocked
+                }
             }
             enforcer.apply(managed, blocked)
 
@@ -251,11 +274,17 @@ class EnforcementService : LifecycleService() {
     }
 
     private fun startForegroundCompat() {
-        val channelId = "walcott_enforcement"
+        // IMPORTANCE_MIN: the mandatory FGS notification stays out of the status bar and sits
+        // collapsed in the silent section, instead of a permanent "Walcott is protecting your
+        // device" row on the child's phone. A new channel id because channel importance is
+        // immutable once created; the old LOW channel is deleted so installs that upgrade
+        // actually quiet down.
+        val channelId = "walcott_enforcement_quiet"
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.deleteNotificationChannel("walcott_enforcement")
             nm.createNotificationChannel(
-                NotificationChannel(channelId, getString(R.string.service_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
+                NotificationChannel(channelId, getString(R.string.service_channel_name), NotificationManager.IMPORTANCE_MIN).apply {
                     description = getString(R.string.service_channel_desc)
                 },
             )
@@ -298,6 +327,7 @@ class EnforcementService : LifecycleService() {
         /** Hard floor between sampling cycles, so a never-succeeding fix can't spin the radio. */
         private const val MIN_LOCATION_GAP_MILLIS = 30_000L
         private const val LOC_TAG = "WalcottLocation"
+        private const val TAG = "WalcottEnforce"
 
         fun start(context: Context) {
             val intent = Intent(context, EnforcementService::class.java)
