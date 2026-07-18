@@ -479,4 +479,21 @@
     <string name="app_window_toggle">Bloquear en el horario indicado</string>
     <string name="app_web_filter">Filtro web</string>
     <string name="app_web_filter_link">Abrir reglas de filtro web</string>
+    <!-- Tiempo ganado por idle (modelo de ventanas de tokens) -->
+    <string name="minutes_fmt">%1$d min</string>
+    <string name="hours_fmt">%1$d h</string>
+    <string name="earn_idle_intro">Premia el tiempo idle: mientras tu hijo NO usa apps restringidas (la pantalla apagada también cuenta), acumula tiempo que se convierte en minutos extra, con topes, como un presupuesto de tokens.</string>
+    <string name="earn_enable">Ganar tiempo extra estando idle</string>
+    <string name="earn_rate_title">Tasa de conversión</string>
+    <string name="earn_idle_per">Idle necesario</string>
+    <string name="earn_reward_each">Extra ganado cada vez</string>
+    <string name="earn_caps_title">Límites</string>
+    <string name="earn_caps_hint">Limita a qué velocidad (ventana rodante) y cuánto (por semana) se puede ganar.</string>
+    <string name="earn_window_hours">Ventana rodante</string>
+    <string name="earn_window_cap">Máximo por ventana</string>
+    <string name="earn_weekly_cap">Máximo por semana</string>
+    <string name="earn_target_title">El tiempo extra va a</string>
+    <string name="earn_windows_title">¿Cuándo puede ganar?</string>
+    <string name="earn_windows_hint">Activa un día para ganar solo en ese horario (p. ej. después de clase). Apagado = gana a cualquier hora ese día.</string>
+    <string name="earn_window_all_day">Gana a cualquier hora</string>
 </resources>

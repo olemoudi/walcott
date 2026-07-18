@@ -479,4 +479,21 @@
     <string name="app_window_toggle">Block during set hours</string>
     <string name="app_web_filter">Web filter</string>
     <string name="app_web_filter_link">Open web filter rules</string>
+    <!-- Idle-earn (token-window model) -->
+    <string name="minutes_fmt">%1$d min</string>
+    <string name="hours_fmt">%1$d h</string>
+    <string name="earn_idle_intro">Reward idle time: while your child is NOT on restricted apps (screen off counts too), they bank time that turns into extra minutes — with caps, like a token budget.</string>
+    <string name="earn_enable">Earn extra time by being idle</string>
+    <string name="earn_rate_title">Conversion rate</string>
+    <string name="earn_idle_per">Idle needed</string>
+    <string name="earn_reward_each">Extra earned each time</string>
+    <string name="earn_caps_title">Limits</string>
+    <string name="earn_caps_hint">Cap how fast (rolling window) and how much (per week) can be earned.</string>
+    <string name="earn_window_hours">Rolling window</string>
+    <string name="earn_window_cap">Max earned per window</string>
+    <string name="earn_weekly_cap">Max earned per week</string>
+    <string name="earn_target_title">Extra time goes to</string>
+    <string name="earn_windows_title">When can they earn?</string>
+    <string name="earn_windows_hint">Turn a day on to earn only during those hours (e.g. after school). Off = earns any time that day.</string>
+    <string name="earn_window_all_day">Earns any time</string>
 </resources>

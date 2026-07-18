@@ -216,24 +216,19 @@ class WalcottViewModel(
             byDay
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    /** Adds an earn rule to the family, or to [childId]'s override when given. */
-    fun addEarnRule(rule: dev.walcott.data.EarnRuleDto, childId: String? = null) =
-        if (childId == null) {
-            viewModelScope.launch { repository.updateSettings { it.copy(earnRules = it.earnRules + rule) } }
-        } else {
-            updateOverrides(childId) { it.copy(earnRules = it.earnRules.orEmpty() + rule) }
-        }
+    /** Set (or clear, with null) the family idle-earn config. */
+    fun setIdleEarn(config: dev.walcott.data.IdleEarnDto?) =
+        viewModelScope.launch { repository.updateSettings { it.copy(idleEarn = config) } }
 
-    fun removeEarnRule(index: Int, childId: String? = null) =
-        if (childId == null) {
-            viewModelScope.launch {
-                repository.updateSettings { it.copy(earnRules = it.earnRules.filterIndexed { i, _ -> i != index }) }
-            }
-        } else {
-            updateOverrides(childId) {
-                it.copy(earnRules = it.earnRules.orEmpty().filterIndexed { i, _ -> i != index })
-            }
+    /** Set (or clear) the earn window for a day type, on the current idle-earn config. */
+    fun setEarnWindow(dayType: DayType, window: dev.walcott.data.WindowDto?) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            val current = s.idleEarn ?: return@updateSettings s
+            val windows = current.earnWindows.toMutableMap()
+            if (window == null) windows.remove(dayType.name) else windows[dayType.name] = listOf(window)
+            s.copy(idleEarn = current.copy(earnWindows = windows))
         }
+    }
 
     fun addHoliday(epochDay: Long) =
         viewModelScope.launch { repository.updateSettings { it.copy(holidays = it.holidays + epochDay) } }
@@ -310,13 +305,19 @@ class WalcottViewModel(
         }
     }
 
+    /** The idle-earn target category id (or "") so childState can attribute earned minutes. */
+    private val settingsFlowForEarn: kotlinx.coroutines.flow.Flow<String> =
+        repository.settingsFlow.map { it.idleEarn?.targetCategoryId ?: "" }
+
     val childState: StateFlow<ChildUiState> = combine(
         repository.familyConfigFlow,
         repository.usageTodayFlow,
         repository.effectiveExtraTodayFlow,
-        repository.earnedTodayFlow,
+        combine(sync.earnedTodayMinutes, settingsFlowForEarn) { minutes, target -> Pair(minutes, target) },
         clock,
-    ) { config, usage, effectiveExtra, earned, now ->
+    ) { config, usage, effectiveExtra, earnedPair, now ->
+        val earnedMinutes = earnedPair.first
+        val earnTarget = earnedPair.second
         val dayType = config.calendar.dayTypeOf(now.toLocalDate())
         val bedtimeTonight = config.bedtime[dayType]
         val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
@@ -335,7 +336,8 @@ class WalcottViewModel(
                 CategoryStatusUi(
                     category = category,
                     status = RuleEngine.categoryStatus(config, id, now, usage, effectiveExtra),
-                    earned = earned[id] ?: Duration.ZERO,
+                    // Idle-earned time all lands in the target category.
+                    earned = if (id == earnTarget) Duration.ofMinutes(earnedMinutes.toLong()) else Duration.ZERO,
                 )
             }
         ChildUiState(

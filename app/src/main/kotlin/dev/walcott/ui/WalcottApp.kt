@@ -134,14 +134,14 @@ fun WalcottApp(
 
     fun back() {
         screen = when (screen) {
-            Screen.EARN, Screen.WEBFILTER, Screen.PROTECTION ->
+            Screen.WEBFILTER, Screen.PROTECTION ->
                 if (overrideChildId != null) {
                     overrideChildId = null
                     Screen.CHILD_DETAIL
                 } else {
                     Screen.FAMILY
                 }
-            Screen.APPS, Screen.BUDGETS, Screen.CHILDREN,
+            Screen.APPS, Screen.BUDGETS, Screen.CHILDREN, Screen.EARN,
             Screen.CALENDAR, Screen.REPORT, Screen.LOCATION,
             -> Screen.FAMILY
             // Reached from the home gear on the parent, from the device hub on a child.
@@ -205,7 +205,6 @@ fun WalcottApp(
                                 childDetailId = it
                                 screen = Screen.CHILD_MAP
                             },
-                            onEditEarn = { overrideChildId = childId; screen = Screen.EARN },
                             onEditWebFilter = { overrideChildId = childId; screen = Screen.WEBFILTER },
                             onEditProtection = { overrideChildId = childId; screen = Screen.PROTECTION },
                         )
@@ -249,10 +248,7 @@ fun WalcottApp(
                     }
                     Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
-                    Screen.EARN -> EarnRulesScreen(
-                        viewModel, onBack = ::back,
-                        childId = overrideChildId, childName = overrideChildName(settings, overrideChildId),
-                    )
+                    Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.CALENDAR -> CalendarScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.WEBFILTER -> WebFilterScreen(

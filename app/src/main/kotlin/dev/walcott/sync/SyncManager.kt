@@ -12,6 +12,9 @@ import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.enforcement.EnforcementBackends
 import dev.walcott.enforcement.UsageAccess
 import dev.walcott.location.LocationSampler
+import dev.walcott.rules.EarnGrant
+import dev.walcott.rules.IdleEarnConfig
+import dev.walcott.rules.IdleEarnEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -393,6 +396,55 @@ class SyncManager(
 
     /** Publish this child's snapshot now (used by the periodic location sampler). */
     suspend fun publishLocationUpdate() = publishSelf()
+
+    // --- Idle-earn (token-window model) ---
+
+    /** Minutes earned today, for the child's "earned" display. Reactive to the grant ledger. */
+    val earnedTodayMinutes: StateFlow<Int> = syncStore.state.map { s ->
+        val zone = java.time.ZoneId.systemDefault()
+        val dayStart = LocalDate.now().atStartOfDay(zone).toInstant().toEpochMilli()
+        IdleEarnEngine.earnedOnDay(
+            s.earnGrants.map { EarnGrant(it.epochMs, it.minutes) }, dayStart, dayStart + 86_400_000L,
+        )
+    }.stateIn(scope, SharingStarted.Eagerly, 0)
+
+    /**
+     * Banks [seconds] of idle time, then converts as much as the caps allow into earned extra
+     * for the target category. Called by the enforcement loop (child only). Bounded so a child
+     * can't stockpile more than a week's worth of idle while a cap is saturated.
+     */
+    suspend fun accrueAndConvertIdle(seconds: Long, config: IdleEarnConfig): Int {
+        if (seconds > 0) {
+            val bankCapSeconds = idleBankCapSeconds(config)
+            syncStore.update {
+                it.copy(idleEarnBankSeconds = (it.idleEarnBankSeconds + seconds).coerceIn(0, bankCapSeconds))
+            }
+        }
+        val now = System.currentTimeMillis()
+        val s = syncStore.current()
+        val ledger = s.earnGrants.map { EarnGrant(it.epochMs, it.minutes) }
+        val grant = IdleEarnEngine.grantableMinutes(config, ledger, s.idleEarnBankSeconds / 60, now)
+        if (grant <= 0) return 0
+
+        repository.grantExtraMinutes(config.targetCategoryId, grant.toLong())
+        val consumedSeconds = IdleEarnEngine.idleConsumedFor(config, grant) * 60
+        val pruned = IdleEarnEngine.prune(ledger + EarnGrant(now, grant), now)
+            .map { EarnGrantEntry(it.epochMs, it.minutes) }
+        syncStore.update {
+            it.copy(
+                idleEarnBankSeconds = (it.idleEarnBankSeconds - consumedSeconds).coerceAtLeast(0),
+                earnGrants = pruned,
+            )
+        }
+        dev.walcott.debug.DebugLog.i(TAG, "idle-earn granted $grant min to ${config.targetCategoryId}")
+        return grant
+    }
+
+    /** Idle needed to reach the weekly cap; the bank never exceeds this, so nothing stockpiles. */
+    private fun idleBankCapSeconds(config: IdleEarnConfig): Long {
+        val reward = config.rewardMinutes.coerceAtLeast(1)
+        return config.weeklyCapMinutes.toLong() / reward * config.minutesIdlePerReward * 60L
+    }
 
     /** Publish now because a health signal changed (e.g. usage access toggled). */
     suspend fun publishHealthUpdate() = publishSelf()

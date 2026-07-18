@@ -5,6 +5,7 @@ import dev.walcott.rules.DayType
 import dev.walcott.rules.DomainAppRule
 import dev.walcott.rules.EarnRule
 import dev.walcott.rules.FamilyConfig
+import dev.walcott.rules.IdleEarnConfig
 import dev.walcott.rules.SchoolCalendar
 import dev.walcott.rules.TimeWindow
 import kotlinx.serialization.Serializable
@@ -36,6 +37,33 @@ data class EarnRuleDto(
 /** Persistable vacation range (inclusive), as epoch days. */
 @Serializable
 data class VacationDto(val startEpochDay: Long, val endEpochDay: Long)
+
+/**
+ * Idle-earn configuration (see [dev.walcott.rules.IdleEarnConfig]): banking idle time into
+ * extra minutes for [targetCategoryId], with a rolling-window and a weekly cap, earning only
+ * inside [earnWindows] (dayType name -> windows; empty = all day). Null = feature off.
+ */
+@Serializable
+data class IdleEarnDto(
+    val targetCategoryId: String,
+    val minutesIdlePerReward: Int,
+    val rewardMinutes: Int,
+    val windowHours: Int,
+    val windowCapMinutes: Int,
+    val weeklyCapMinutes: Int,
+    val earnWindows: Map<String, List<WindowDto>> = emptyMap(),
+) {
+    fun toConfig() = IdleEarnConfig(
+        targetCategoryId = targetCategoryId,
+        minutesIdlePerReward = minutesIdlePerReward,
+        rewardMinutes = rewardMinutes,
+        windowHours = windowHours,
+        windowCapMinutes = windowCapMinutes,
+        weeklyCapMinutes = weeklyCapMinutes,
+        earnWindows = earnWindows.mapKeys { DayType.valueOf(it.key) }
+            .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
+    )
+}
 
 /**
  * Per-app policy overrides (budget + blocked windows) that ADD restrictions on top of the
@@ -159,6 +187,8 @@ data class PolicySettings(
     val updateWifiOnly: Boolean = false,
     /** package -> per-app policy (budget + windows) that tightens its category. Family-wide. */
     val appPolicies: Map<String, AppPolicyDto> = emptyMap(),
+    /** Idle-earn config (token-window model). Null = children earn no extra time from idle. */
+    val idleEarn: IdleEarnDto? = null,
 ) {
     /**
      * One-time seeding of recommended anti-tamper [defaults] into [deviceRestrictions]. Idempotent

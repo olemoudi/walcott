@@ -90,7 +90,6 @@ fun ChildDetailScreen(
     childId: String,
     onBack: () -> Unit,
     onOpenMap: (String) -> Unit,
-    onEditEarn: () -> Unit,
     onEditWebFilter: () -> Unit,
     onEditProtection: () -> Unit,
 ) {
@@ -264,19 +263,6 @@ fun ChildDetailScreen(
                         },
                     )
                 }
-            }
-            item {
-                OverrideSwitchRow(
-                    title = stringResource(R.string.override_earn_title),
-                    checked = entry.overrides.earnRules != null,
-                    onToggle = { on ->
-                        viewModel.setChildOverrides(
-                            childId,
-                            entry.overrides.copy(earnRules = if (on) settings.earnRules else null),
-                        )
-                    },
-                    onEdit = onEditEarn.takeIf { entry.overrides.earnRules != null },
-                )
             }
             item {
                 OverrideSwitchRow(

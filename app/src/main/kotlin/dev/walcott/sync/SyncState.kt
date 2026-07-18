@@ -12,6 +12,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+/** One idle-earn grant (extra minutes earned at a moment), for the rolling-window caps. */
+@Serializable
+data class EarnGrantEntry(val epochMs: Long, val minutes: Int)
+
 /** Persistent sync bookkeeping, separate from the rules ([dev.walcott.data.PolicySettings]). */
 @Serializable
 data class SyncState(
@@ -39,6 +43,10 @@ data class SyncState(
     val lastWrongPinMs: Long = 0,
     /** Ids of remote commands this device already ran, so a replayed snapshot can't re-run them. */
     val appliedCommandIds: Set<String> = emptySet(),
+    /** Banked idle seconds not yet converted into earned extra time (idle-earn model). */
+    val idleEarnBankSeconds: Long = 0,
+    /** Idle-earn grants over the last week, for the rolling-window and weekly caps. */
+    val earnGrants: List<EarnGrantEntry> = emptyList(),
     /** Result of the most recent remote command, echoed to the parent in the next snapshot. */
     val lastCommandAck: CommandAck? = null,
     /** Why the last self-update attempt failed ("" = the last check was clean). */

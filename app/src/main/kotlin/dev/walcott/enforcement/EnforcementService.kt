@@ -251,15 +251,44 @@ class EnforcementService : LifecycleService() {
         var lastAppliedBlocked: Set<String>? = null
         var lastAppliedManaged: Set<String>? = null
         var lastApplyAt = 0L
+        // Idle-earn: idle seconds are batched locally and flushed to the store ~once a minute,
+        // so a child idling all evening doesn't hammer DataStore. Screen-off counts as idle.
+        var idleAccumSeconds = 0L
+        var lastEarnFlushAt = SystemClock.elapsedRealtime()
 
         while (currentCoroutineContext().isActive) {
-            // Screen off: nothing accrues and blocked apps stay suspended, so park with
-            // zero wakeups until it comes back on, then re-evaluate right away (a bedtime
-            // or blocked window may have started meanwhile).
+            val config = repo.configNow()
+            val idleCfg = repo.idleEarnConfigNow()
+            val nowForEarn = LocalDateTime.now()
+            val earningNow = idleCfg != null &&
+                dev.walcott.rules.IdleEarnEngine.isEarningTime(
+                    idleCfg, config.calendar.dayTypeOf(nowForEarn.toLocalDate()), nowForEarn.toLocalTime(),
+                )
+
+            // Screen off: blocked apps stay suspended. With idle-earn off we park with zero
+            // wakeups; with it on we wake every few minutes so "putting the phone down" earns
+            // (screen off = not using managed apps = idle).
             if (!screenOn.value) {
                 lastForeground = null
-                screenOn.first { it }
+                val parkStart = SystemClock.elapsedRealtime()
+                // Only wake periodically to accrue idle when earning is actually possible now
+                // (feature on AND inside an earn window); otherwise park with zero wakeups.
+                if (idleCfg == null || !earningNow) {
+                    screenOn.first { it }
+                } else {
+                    kotlinx.coroutines.withTimeoutOrNull(IDLE_STEP_MILLIS) { screenOn.first { it } }
+                }
+                val offSeconds = (SystemClock.elapsedRealtime() - parkStart) / 1000
+                if (earningNow && offSeconds > 0) idleAccumSeconds += offSeconds.coerceAtMost(MAX_IDLE_STEP_SECONDS)
                 lastTick = SystemClock.elapsedRealtime()
+                if (idleCfg != null && idleAccumSeconds > 0 &&
+                    SystemClock.elapsedRealtime() - lastEarnFlushAt >= EARN_FLUSH_MILLIS
+                ) {
+                    app.syncManager.accrueAndConvertIdle(idleAccumSeconds, idleCfg)
+                    idleAccumSeconds = 0
+                    lastEarnFlushAt = SystemClock.elapsedRealtime()
+                }
+                if (!screenOn.value) continue // still off: keep accruing in the next step
             }
 
             val nowClock = SystemClock.elapsedRealtime()
@@ -267,10 +296,11 @@ class EnforcementService : LifecycleService() {
             lastTick = nowClock
 
             val foreground = sampler.currentForeground()
+            // Fresh clock for rule evaluation: a screen-off park above can span minutes.
+            val now = LocalDateTime.now()
 
-            val config = repo.configNow()
             val usage = repo.usageNow()
-            val extra = repo.effectiveExtraNow() // manually granted + earned by use
+            val extra = repo.effectiveExtraNow() // manually granted + idle-earned
             if (inventoryDirty || config.assignments != lastAssignments ||
                 nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS
             ) {
@@ -279,13 +309,12 @@ class EnforcementService : LifecycleService() {
                 lastAssignments = config.assignments
                 inventoryDirty = false
             }
-            val now = LocalDateTime.now()
 
             // Credit time only on consecutive sightings of the same managed app, so the
             // slow idle tick can't attribute time actually spent elsewhere.
-            if (foreground != null && foreground == lastForeground && foreground in managed &&
-                deltaSeconds in 1..MAX_CREDIT_SECONDS
-            ) {
+            val creditedUsage = foreground != null && foreground == lastForeground &&
+                foreground in managed && deltaSeconds in 1..MAX_CREDIT_SECONDS
+            if (creditedUsage) {
                 config.assignments[foreground]?.let { categoryId ->
                     repo.addUsageSeconds(categoryId, deltaSeconds)
                 }
@@ -294,6 +323,10 @@ class EnforcementService : LifecycleService() {
                 if (foreground in config.perAppPolicies) {
                     repo.addUsageSeconds(foreground, deltaSeconds)
                 }
+            }
+            // Idle-earn: screen on but not on a managed app, inside an earning window.
+            if (idleCfg != null && earningNow && !creditedUsage && deltaSeconds in 1..MAX_IDLE_STEP_SECONDS) {
+                idleAccumSeconds += deltaSeconds
             }
             lastForeground = foreground
 
@@ -329,6 +362,15 @@ class EnforcementService : LifecycleService() {
                 lastAppliedBlocked = blocked
                 lastAppliedManaged = managed
                 lastApplyAt = nowClock
+            }
+
+            // Flush accrued idle into earned time about once a minute (batched to spare DataStore).
+            if (idleCfg != null && idleAccumSeconds > 0 &&
+                nowClock - lastEarnFlushAt >= EARN_FLUSH_MILLIS
+            ) {
+                app.syncManager.accrueAndConvertIdle(idleAccumSeconds, idleCfg)
+                idleAccumSeconds = 0
+                lastEarnFlushAt = nowClock
             }
 
             // Tight cadence only while a managed app is actually in use (budget countdown
@@ -390,6 +432,13 @@ class EnforcementService : LifecycleService() {
         private const val INVENTORY_TTL_MILLIS = 60_000L
         /** Periodic full re-assert of suspension state, catching any external drift. */
         private const val REASSERT_MILLIS = 30_000L
+        // Idle-earn cadence, kept coarse so screen-off earning costs few wakeups/writes: the
+        // child wakes ~every 5 min while the screen is off to accrue idle, and batched idle is
+        // flushed into earned time on the same period. Earned time needs no finer precision.
+        private const val EARN_FLUSH_MILLIS = 5 * 60_000L
+        private const val IDLE_STEP_MILLIS = 5 * 60_000L
+        /** Cap on idle credited per accrual, so a long screen-off park can't dump hours at once. */
+        private const val MAX_IDLE_STEP_SECONDS = 360L
         /** Backoff after a cycle that produced no fix (indoors, GPS warming up, airplane mode). */
         private const val RETRY_LOCATION_MILLIS = 60_000L
         /** Hard floor between sampling cycles, so a never-succeeding fix can't spin the radio. */

@@ -1,12 +1,10 @@
 package dev.walcott.data
 
-import dev.walcott.rules.EarnEngine
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.sync.LocationPoint
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -60,20 +58,21 @@ class WalcottRepository(
             .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
 
-    /** Extra earned today from earn-rules (kept separate so the UI can show the bonus). */
-    val earnedTodayFlow: Flow<Map<String, Duration>> =
-        combine(settingsFlow, usageTodayFlow) { settings, usage ->
-            EarnEngine.computeEarned(settings.toEarnRules(), usage)
-        }
-
-    /** Total extra applied to budgets today: manually granted + earned by use. */
-    val effectiveExtraTodayFlow: Flow<Map<String, Duration>> =
-        combine(extraTodayFlow, earnedTodayFlow) { granted, earned -> sumDurations(granted, earned) }
+    /**
+     * Total extra applied to budgets today. Idle-earned time is granted straight into
+     * [extraTodayFlow] by the enforcement service (see [dev.walcott.sync.SyncManager]), so this
+     * is simply the granted extra — no separate earn recomputation, no double counting.
+     */
+    val effectiveExtraTodayFlow: Flow<Map<String, Duration>> = extraTodayFlow
 
     // --- Snapshots for the service (always recompute "today") ---
 
     suspend fun configNow(): FamilyConfig =
         settingsStore.current().toFamilyConfig(essentials)
+
+    /** The idle-earn config right now, or null when the feature is off. */
+    suspend fun idleEarnConfigNow(): dev.walcott.rules.IdleEarnConfig? =
+        settingsStore.current().idleEarn?.toConfig()
 
     /**
      * All of today's usage counters, keyed by categoryId AND by package (per-app budgets are
@@ -89,11 +88,8 @@ class WalcottRepository(
     suspend fun extraNow(): Map<String, Duration> =
         db.usage().getExtraDay(today()).associate { it.categoryId to Duration.ofSeconds(it.seconds) }
 
-    /** Granted + earned extra, as the enforcement service applies it. */
-    suspend fun effectiveExtraNow(): Map<String, Duration> {
-        val earned = EarnEngine.computeEarned(settingsStore.current().toEarnRules(), usageNow())
-        return sumDurations(extraNow(), earned)
-    }
+    /** Extra applied to budgets (manual grants + idle-earned, which is granted into extra_time). */
+    suspend fun effectiveExtraNow(): Map<String, Duration> = extraNow()
 
     /** Usage for the last 7 days: epochDay -> (categoryId -> duration). Per-app counters stripped. */
     suspend fun weeklyUsage(): Map<Long, Map<String, Duration>> {
@@ -104,11 +100,6 @@ class WalcottRepository(
             .mapValues { (_, rows) -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
 
-    private fun sumDurations(a: Map<String, Duration>, b: Map<String, Duration>): Map<String, Duration> {
-        val out = a.toMutableMap()
-        b.forEach { (k, v) -> out[k] = (out[k] ?: Duration.ZERO) + v }
-        return out
-    }
 
     suspend fun managedPackagesNow(): Set<String> =
         inventory.managedPackages(settingsStore.current().assignments)
