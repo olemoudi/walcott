@@ -169,6 +169,32 @@ fun FamiliesScreen(
             )
         }
 
+        // Pending child requests, actionable right from the home (they also arrive as a
+        // parent notification). Approving/denying here resolves them immediately.
+        if (requests.isNotEmpty() || asks.isNotEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.pending_requests),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
+            items(requests, key = { "req-" + it.request.requestId }) { pending ->
+                ExtraTimeRequestCard(
+                    pending = pending,
+                    onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
+                    onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
+                )
+            }
+            items(asks, key = { "ask-" + it.ask.requestId }) { pending ->
+                AskRequestCard(
+                    pending = pending,
+                    onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
+                    onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
+                )
+            }
+        }
+
         // Onboarding coach: a brand-new family enforces nothing until apps are classified and
         // limits set. Show the remaining steps until they're done, then it disappears.
         val childDone = settings.children.isNotEmpty()

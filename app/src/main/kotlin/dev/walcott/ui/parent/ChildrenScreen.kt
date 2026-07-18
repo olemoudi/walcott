@@ -57,7 +57,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 item { Text(stringResource(R.string.no_requests), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
                 items(requests, key = { it.request.requestId }) { pending ->
-                    RequestCard(
+                    ExtraTimeRequestCard(
                         pending = pending,
                         onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
                         onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
@@ -97,57 +97,6 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 bonusTarget = null
             },
         )
-    }
-}
-
-@Composable
-private fun RequestCard(pending: SyncManager.PendingRequest, onApprove: () -> Unit, onDeny: () -> Unit) {
-    val spacing = Tokens.spacing
-    val category = AppCategory.byId(pending.request.categoryId)
-    val categoryName = category?.let { stringResource(it.nameRes) } ?: pending.request.categoryId
-
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-            Text(pending.childName, style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(R.string.request_summary, categoryName, pending.request.minutes),
-                color = category?.color ?: MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (pending.request.reason.isNotBlank()) {
-                Text("“${pending.request.reason}”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                Button(onClick = onApprove, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.approve)) }
-                OutlinedButton(onClick = onDeny, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.deny)) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AskRequestCard(pending: SyncManager.PendingAsk, onApprove: () -> Unit, onDeny: () -> Unit) {
-    val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-            Text(pending.childName, style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(
-                    if (pending.ask.kind == ChildRequest.KIND_APP) R.string.ask_summary_app else R.string.ask_summary_other,
-                    pending.ask.text,
-                ),
-            )
-            if (pending.ask.kind == ChildRequest.KIND_APP) {
-                Text(
-                    stringResource(R.string.ask_approve_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                Button(onClick = onApprove, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.approve)) }
-                OutlinedButton(onClick = onDeny, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.deny)) }
-            }
-        }
     }
 }
 

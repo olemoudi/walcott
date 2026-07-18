@@ -60,7 +60,8 @@ class RemoteCommandRunner(
      * is diagnosable from the parent's phone (network failure vs a rejected install).
      */
     private suspend fun updateNow(): Pair<Boolean, String> =
-        when (Updater(context).checkAndUpdate()) {
+        // force=true: a parent explicitly asking to update now overrides the Wi-Fi-only policy.
+        when (Updater(context).checkAndUpdate(force = true)) {
             UpdateCheckOutcome.UP_TO_DATE -> true to "up_to_date"
             UpdateCheckOutcome.INSTALL_STARTED -> true to "installing"
             UpdateCheckOutcome.TRANSIENT_FAILURE -> false to "download_failed"

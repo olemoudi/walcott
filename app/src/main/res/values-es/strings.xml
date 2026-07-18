@@ -469,4 +469,6 @@
     <string name="install_prompt_text">Toca para instalar %1$s desde Play.</string>
     <string name="remote_result_install_opened">abierto en el móvil del hijo</string>
     <string name="remote_result_no_package">no se indicó ninguna app</string>
+    <string name="update_wifi_only_title">Actualizar solo con Wi-Fi</string>
+    <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
 </resources>

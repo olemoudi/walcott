@@ -163,6 +163,11 @@ class WalcottViewModel(
         }
     }
 
+    /** Restrict the child self-update to Wi-Fi (family-wide policy). */
+    fun setUpdateWifiOnly(enabled: Boolean) = viewModelScope.launch {
+        repository.updateSettings { it.copy(updateWifiOnly = enabled) }
+    }
+
     /** Family-default location tracking interval (0 = off); children inherit unless overridden. */
     fun setFamilyTrackingInterval(minutes: Int) = viewModelScope.launch {
         repository.updateSettings { it.copy(trackingIntervalMinutes = minutes) }

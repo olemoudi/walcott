@@ -49,7 +49,14 @@ class Updater(private val context: Context) {
      * concurrent run would abort the other's half-written session, and both would download
      * the full APK. A second caller just reports UP_TO_DATE and lets the first finish.
      */
-    suspend fun checkAndUpdate(): UpdateCheckOutcome {
+    suspend fun checkAndUpdate(force: Boolean = false): UpdateCheckOutcome {
+        // Wi-Fi-only policy: skip on a metered connection unless [force] (a parent's explicit
+        // "Update now" overrides it — they asked for it right now). The child stays on its
+        // current build until it next sees Wi-Fi; the periodic check retries.
+        if (!force && wifiOnlyBlocks()) {
+            DebugLog.i(TAG, "update skipped: Wi-Fi-only and connection is metered")
+            return UpdateCheckOutcome.UP_TO_DATE
+        }
         if (!updateMutex.tryLock()) {
             DebugLog.i(TAG, "update check already in flight; skipping")
             return UpdateCheckOutcome.UP_TO_DATE
@@ -59,6 +66,16 @@ class Updater(private val context: Context) {
         } finally {
             updateMutex.unlock()
         }
+    }
+
+    /** True when the policy restricts updates to Wi-Fi and the active connection is metered. */
+    private suspend fun wifiOnlyBlocks(): Boolean {
+        val app = context.applicationContext as? WalcottApplication ?: return false
+        val wifiOnly = runCatching { app.repository.settingsFlow.first().updateWifiOnly }.getOrDefault(false)
+        if (!wifiOnly) return false
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return false
+        // isActiveNetworkMetered covers cellular and metered Wi-Fi hotspots.
+        return runCatching { cm.isActiveNetworkMetered }.getOrDefault(false)
     }
 
     private suspend fun doCheckAndUpdate(): UpdateCheckOutcome = withContext(Dispatchers.IO) {

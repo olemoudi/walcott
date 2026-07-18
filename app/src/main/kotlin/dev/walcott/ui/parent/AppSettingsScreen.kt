@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
@@ -15,6 +19,8 @@ import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,10 +29,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.data.PinResult
 import dev.walcott.ui.WalcottViewModel
@@ -68,6 +77,14 @@ fun AppSettingsScreen(
                 AppLockCard(viewModel)
             }
             AppUpdateCard(deviceOwner)
+            // Wi-Fi-only updates: a family policy, so it's only editable on the parent.
+            if (!childDevice) {
+                val settings by viewModel.settings.collectAsStateWithLifecycle()
+                UpdateWifiOnlyCard(
+                    enabled = settings.updateWifiOnly,
+                    onToggle = { viewModel.setUpdateWifiOnly(it) },
+                )
+            }
             NavCard(
                 Icons.Outlined.BugReport,
                 stringResource(R.string.nav_debug_title),
@@ -142,5 +159,24 @@ fun AppSettingsScreen(
                 TextButton(onClick = { confirmChangeMode = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
+    }
+}
+
+@Composable
+private fun UpdateWifiOnlyCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    val spacing = Tokens.spacing
+    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.update_wifi_only_title), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(R.string.update_wifi_only_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        }
     }
 }

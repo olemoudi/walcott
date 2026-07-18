@@ -143,6 +143,8 @@ data class PolicySettings(
     val locationHistoryEnabled: Boolean = false,
     /** True once recommended anti-tamper defaults were seeded (so we only seed once). */
     val hardeningSeeded: Boolean = false,
+    /** Restrict the child's self-update to unmetered (Wi-Fi) connections. */
+    val updateWifiOnly: Boolean = false,
 ) {
     /**
      * One-time seeding of recommended anti-tamper [defaults] into [deviceRestrictions]. Idempotent

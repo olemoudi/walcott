@@ -469,4 +469,6 @@
     <string name="install_prompt_text">Tap to install %1$s from Play.</string>
     <string name="remote_result_install_opened">opened on the child device</string>
     <string name="remote_result_no_package">no app specified</string>
+    <string name="update_wifi_only_title">Update on Wi-Fi only</string>
+    <string name="update_wifi_only_desc">Child devices download updates only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
 </resources>
