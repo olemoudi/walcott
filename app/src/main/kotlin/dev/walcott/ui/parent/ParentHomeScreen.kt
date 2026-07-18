@@ -111,12 +111,16 @@ fun ParentHomeScreen(
                 NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren)
             }
             NavCard(Icons.Outlined.InsertChart, stringResource(R.string.nav_report_title), stringResource(R.string.nav_report_subtitle), onOpenReport)
-            NavCard(
-                Icons.Outlined.Settings,
-                stringResource(R.string.app_settings_title),
-                stringResource(R.string.app_settings_subtitle),
-                onClick = onOpenAppSettings,
-            )
+            // On the parent the gear on the home screen opens App settings; only the
+            // child's PIN-gated device-settings hub keeps an inline entry.
+            if (childDevice) {
+                NavCard(
+                    Icons.Outlined.Settings,
+                    stringResource(R.string.app_settings_title),
+                    stringResource(R.string.app_settings_subtitle),
+                    onClick = onOpenAppSettings,
+                )
+            }
         }
     }
 

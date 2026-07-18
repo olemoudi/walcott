@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="walcott_window_bg">#F5F6FB</color>
+    <!-- Launcher icon backdrop (dark ink, kin of the dark-theme background). -->
+    <color name="ic_launcher_background">#10141C</color>
 </resources>

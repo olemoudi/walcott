@@ -139,8 +139,10 @@ fun WalcottApp(
                     Screen.FAMILY
                 }
             Screen.APPS, Screen.BUDGETS, Screen.CHILDREN,
-            Screen.CALENDAR, Screen.REPORT, Screen.LOCATION, Screen.APP_SETTINGS,
+            Screen.CALENDAR, Screen.REPORT, Screen.LOCATION,
             -> Screen.FAMILY
+            // Reached from the home gear on the parent, from the device hub on a child.
+            Screen.APP_SETTINGS -> if (parentMode) Screen.FAMILIES else Screen.FAMILY
             Screen.DEBUG_LOGS -> Screen.APP_SETTINGS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
@@ -188,6 +190,7 @@ fun WalcottApp(
                             childDetailId = childId
                             screen = Screen.CHILD_DETAIL
                         },
+                        onOpenAppSettings = { screen = Screen.APP_SETTINGS },
                     )
                     Screen.CHILD_DETAIL -> childDetailId?.let { childId ->
                         ChildDetailScreen(

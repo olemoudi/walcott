@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -79,6 +80,7 @@ fun FamiliesScreen(
     viewModel: WalcottViewModel,
     onOpenFamily: () -> Unit,
     onOpenChild: (String) -> Unit,
+    onOpenAppSettings: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
@@ -129,6 +131,15 @@ fun FamiliesScreen(
                     modifier = Modifier.weight(1f),
                 )
                 ModeBadge(DeviceMode.PARENT)
+                // App-level settings (updates, app lock, logs) live at top level, not
+                // inside the family's rules.
+                IconButton(onClick = onOpenAppSettings) {
+                    Icon(
+                        Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.app_settings_title),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
