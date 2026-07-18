@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.first
 class RemoteCommandRunner(
     private val context: Context,
     private val repository: WalcottRepository,
+    /** Opens the tight, self-closing install window for a parent-pushed install. */
+    private val openInstallForPush: suspend (pkg: String) -> Unit = {},
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -35,6 +37,7 @@ class RemoteCommandRunner(
                 RemoteAction.UPDATE_NOW -> updateNow()
                 RemoteAction.REAPPLY_POLICY -> reapplyPolicy()
                 RemoteAction.REQUEST_PERMISSIONS -> requestPermissions()
+                RemoteAction.INSTALL_APP -> installApp(command.arg)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -75,6 +78,19 @@ class RemoteCommandRunner(
         DeviceRestrictions.apply(context, restrictions, installExemptUntilMs = 0)
         EnforcementService.start(context)
         return true to "reapplied"
+    }
+
+    /**
+     * Assisted Play install: opens the tight install window and prompts the child to tap
+     * Install in Play. Play can't be driven silently, so this is the honest ceiling — the
+     * window slams shut the moment anything installs (see EnforcementService's package
+     * receiver), keeping the opportunity to sneak in an alternative app minimal.
+     */
+    private suspend fun installApp(pkg: String): Pair<Boolean, String> {
+        if (pkg.isBlank()) return false to "no_package"
+        openInstallForPush(pkg)
+        InstallPromptNotifications.notify(context, pkg)
+        return true to "opened"
     }
 
     /**

@@ -23,6 +23,12 @@ data class SyncState(
     val appliedBonusIds: Set<String> = emptySet(),
     /** Until when app installs are temporarily allowed on this device (PIN gate or approval). */
     val installExemptionUntilMs: Long = 0,
+    /**
+     * Target package of a parent-pushed install, while its self-closing window is open.
+     * Non-empty means "one install allowed, then re-arm the block"; "" for the blanket
+     * PIN-gated window. See [SyncManager.openInstallForPush]/[SyncManager.closeInstallWindow].
+     */
+    val pendingInstallPackage: String = "",
     /** requestedAtMs of the newest location request this child has already answered. */
     val appliedLocationRequestMs: Long = 0,
     /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */

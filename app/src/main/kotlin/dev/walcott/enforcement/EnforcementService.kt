@@ -65,6 +65,17 @@ class EnforcementService : LifecycleService() {
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             inventoryDirty = true
+            // A genuinely NEW install (not an app self-update) during a parent-pushed install
+            // window closes that window at once, re-arming the install block so the child can't
+            // slip a second app in behind the pushed one.
+            if (intent?.action == Intent.ACTION_PACKAGE_ADDED &&
+                !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+            ) {
+                val app = application as WalcottApplication
+                if (app.syncManager.pendingInstall.value.isNotEmpty()) {
+                    lifecycleScope.launch { runCatching { app.syncManager.closeInstallWindow() } }
+                }
+            }
         }
     }
 

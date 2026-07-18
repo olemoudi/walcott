@@ -90,6 +90,8 @@ data class RemoteCommand(
     /** One of [RemoteAction]; unknown actions are ignored so old children degrade cleanly. */
     val action: String,
     val issuedAtMs: Long,
+    /** Action payload (e.g. the package name for [RemoteAction.INSTALL_APP]); "" when unused. */
+    val arg: String = "",
 )
 
 /** Actions a parent can trigger remotely on a child device. */
@@ -103,6 +105,13 @@ object RemoteAction {
      * grant (usage access, network location). Nothing else can fix those remotely.
      */
     const val REQUEST_PERMISSIONS = "request_permissions"
+
+    /**
+     * Assisted install of a Play app ([RemoteCommand.arg] = package). The child opens a tight,
+     * self-closing install window and prompts the user to tap Install in Play. Play cannot be
+     * driven silently, so one tap on the child is unavoidable.
+     */
+    const val INSTALL_APP = "install_app"
 }
 
 /** How a child device says a [RemoteCommand] went, echoed back in its snapshot. */

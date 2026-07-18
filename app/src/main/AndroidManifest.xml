@@ -45,6 +45,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Play share target: the parent shares an app from Play Store into Walcott to push an
+             assisted install to a child. Its own task, finishes after sending. -->
+        <activity
+            android:name=".install.ShareInstallActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/install_share_label"
+            android:theme="@style/Theme.Walcott">
+            <intent-filter android:label="@string/install_share_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <!-- Modern (API 29+) Device Owner provisioning handshake driven by the setup wizard after
              it installs Walcott from the QR. BIND_DEVICE_ADMIN restricts launch to the system. -->
         <activity

@@ -78,6 +78,18 @@ class WalcottApplication : Application() {
     }
 
     /**
+     * Pushes an assisted app install to a child from the share-sheet flow. Runs on the app
+     * scope (not the launching activity's) so it survives the activity finishing immediately.
+     * Classifies the app first, when a category was chosen, so it isn't blocked on install.
+     */
+    fun pushAppInstall(deviceId: String, pkg: String, categoryId: String?) {
+        appScope.launch {
+            if (categoryId != null) repository.assign(pkg, categoryId)
+            syncManager.sendCommand(deviceId, dev.walcott.sync.RemoteAction.INSTALL_APP, arg = pkg)
+        }
+    }
+
+    /**
      * Starts/stops enforcement when the device mode CHANGES (a foreground, user-driven
      * event, so the foreground-service start is always allowed). The initial start is
      * done by MainActivity / BootReceiver, which run in exempt contexts — reacting to the

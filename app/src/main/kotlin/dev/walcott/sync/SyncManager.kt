@@ -240,10 +240,41 @@ class SyncManager(
         publishSelf()
     }
 
-    /** PIN-gated manual exemption: allow installs on this device for a while. */
+    /** PIN-gated manual exemption: allow installs on this device for a while (blanket). */
     suspend fun allowInstallsTemporarily() {
         syncStore.update {
             it.copy(installExemptionUntilMs = System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS)
+        }
+    }
+
+    /** True while a parent-pushed install's tight window is open (drives the close-on-install). */
+    val pendingInstall: StateFlow<String> =
+        syncStore.state.map { it.pendingInstallPackage }.stateIn(scope, SharingStarted.Eagerly, "")
+
+    /**
+     * Opens the tight, self-closing window for a parent-pushed install of [pkg]. The safety
+     * cap is short: [closeInstallWindow] normally slams it shut on the first install, so this
+     * ceiling only matters if nothing installs at all.
+     */
+    suspend fun openInstallForPush(pkg: String) {
+        syncStore.update {
+            it.copy(
+                installExemptionUntilMs = System.currentTimeMillis() + INSTALL_PUSH_EXEMPTION_MS,
+                pendingInstallPackage = pkg,
+            )
+        }
+    }
+
+    /**
+     * Closes the pushed-install window and re-arms [DeviceRestrictions.KEY_INSTALLS]
+     * immediately (not just via the collector), so the child can't slip a second install in.
+     */
+    suspend fun closeInstallWindow() {
+        if (syncStore.current().pendingInstallPackage.isEmpty()) return
+        syncStore.update { it.copy(installExemptionUntilMs = 0, pendingInstallPackage = "") }
+        // Synchronous re-arm: don't wait for the settings/exemption collector to react.
+        runCatching {
+            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = 0)
         }
     }
 
@@ -297,14 +328,14 @@ class SyncManager(
      * Parent queues a remote fix for a child device (see [RemoteAction]). Applied on the
      * child's next check-in and acknowledged back in its snapshot.
      */
-    suspend fun sendCommand(targetDeviceId: String, action: String) {
+    suspend fun sendCommand(targetDeviceId: String, action: String, arg: String = "") {
         val now = System.currentTimeMillis()
         syncStore.update { s ->
             s.copy(
                 parentVersion = s.parentVersion + 1,
                 commands = SyncEngine.withCommand(
                     s.commands,
-                    RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, action, now),
+                    RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, action, now, arg),
                     now,
                 ),
             )
@@ -582,7 +613,7 @@ class SyncManager(
      * stale set would run an APK install concurrently with itself.
      */
     private suspend fun applyCommands(snapshot: ParentSnapshot, deviceId: String) = commandMutex.withLock {
-        val runner by lazy { RemoteCommandRunner(context, repository) }
+        val runner by lazy { RemoteCommandRunner(context, repository, openInstallForPush = { openInstallForPush(it) }) }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
             // Re-check under the lock: a concurrent handler may have claimed it since.
             if (command.id in syncStore.current().appliedCommandIds) continue
@@ -696,6 +727,12 @@ class SyncManager(
 
     companion object {
         private const val TAG = "WalcottSync"
+        /**
+         * Safety cap on the pushed-install window: the window normally closes on the first
+         * install (see [closeInstallWindow]), so this only bounds the "nothing installed" case.
+         * Kept short to minimize the opportunity to sneak in an alternative app.
+         */
+        private const val INSTALL_PUSH_EXEMPTION_MS = 5 * 60 * 1000L
         // Re-emits only heal lost messages: real changes (settings edits, requests,
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.

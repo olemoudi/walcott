@@ -145,8 +145,8 @@ class WalcottViewModel(
         viewModelScope.launch { sync.requestLocation(targetDeviceId) }
 
     /** Queue a remote fix for a child device (see [dev.walcott.sync.RemoteAction]). */
-    fun sendRemoteCommand(targetDeviceId: String, action: String) =
-        viewModelScope.launch { sync.sendCommand(targetDeviceId, action) }
+    fun sendRemoteCommand(targetDeviceId: String, action: String, arg: String = "") =
+        viewModelScope.launch { sync.sendCommand(targetDeviceId, action, arg) }
 
     /** Turn the 48h location trail on/off for this child (off = current position only). */
     fun setLocationHistory(childId: String, enabled: Boolean) = viewModelScope.launch {

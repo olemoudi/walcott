@@ -72,6 +72,35 @@ class RemoteCommandTest {
     }
 
     @Test
+    fun `pushing two different apps coexists but re-pushing the same app retries`() {
+        val one = RemoteCommand("1", "child-1", RemoteAction.INSTALL_APP, now, arg = "com.a")
+        val two = RemoteCommand("2", "child-1", RemoteAction.INSTALL_APP, now, arg = "com.b")
+        val again = RemoteCommand("3", "child-1", RemoteAction.INSTALL_APP, now, arg = "com.a")
+
+        val afterTwo = SyncEngine.withCommand(SyncEngine.withCommand(emptyList(), one, now), two, now)
+        assertEquals(setOf("1", "2"), afterTwo.map { it.id }.toSet()) // different apps stay
+
+        val afterAgain = SyncEngine.withCommand(afterTwo, again, now)
+        // Re-pushing com.a replaces command 1, keeps com.b (2).
+        assertEquals(setOf("2", "3"), afterAgain.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `the install package arg survives the wire`() {
+        val key = FamilyCrypto.generateFamilyKey()
+        val pair = FamilyCrypto.generateSigningKeyPair()
+        val snapshot = ParentSnapshot(
+            version = 1,
+            policyJson = "{}",
+            commands = listOf(RemoteCommand("x", "child-1", RemoteAction.INSTALL_APP, now, arg = "com.spotify.music")),
+        )
+        val decoded = SyncProtocol.decode(
+            SyncProtocol.encodeParent(snapshot, key, pair.private), key, pair.public,
+        ) as IncomingMessage.FromParent
+        assertEquals("com.spotify.music", decoded.snapshot.commands.single().arg)
+    }
+
+    @Test
     fun `the same action for different devices coexists`() {
         val first = SyncEngine.withCommand(emptyList(), command("a", deviceId = "child-1"), now)
         val second = SyncEngine.withCommand(first, command("b", deviceId = "child-2"), now)

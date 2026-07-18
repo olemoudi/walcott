@@ -73,10 +73,11 @@ object SyncEngine {
             .sortedBy { it.issuedAtMs }
 
     /**
-     * Queues [command], replacing any pending command of the same action for that device
-     * (re-tapping "Update now" should retry, not stack) and dropping entries older than
-     * [COMMAND_TTL_MS] so a child that never comes back can't grow the parent snapshot
-     * without bound.
+     * Queues [command], replacing any pending command with the same action AND argument for
+     * that device (re-tapping "Update now", or re-pushing the same app, should retry not
+     * stack — but pushing two *different* apps must coexist, hence the [RemoteCommand.arg]
+     * in the key) and dropping entries older than [COMMAND_TTL_MS] so a child that never
+     * comes back can't grow the parent snapshot without bound.
      */
     fun withCommand(
         current: List<RemoteCommand>,
@@ -84,7 +85,7 @@ object SyncEngine {
         nowMs: Long,
     ): List<RemoteCommand> =
         current.filterNot {
-            (it.deviceId == command.deviceId && it.action == command.action) ||
+            (it.deviceId == command.deviceId && it.action == command.action && it.arg == command.arg) ||
                 nowMs - it.issuedAtMs > COMMAND_TTL_MS
         } + command
 

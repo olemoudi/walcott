@@ -767,6 +767,8 @@ private fun remoteResultLabel(context: android.content.Context, detail: String):
     "install_failed" -> context.getString(R.string.remote_result_install_failed)
     "reapplied" -> context.getString(R.string.remote_result_reapplied)
     "nothing_missing" -> context.getString(R.string.remote_result_nothing_missing)
+    "opened" -> context.getString(R.string.remote_result_install_opened)
+    "no_package" -> context.getString(R.string.remote_result_no_package)
     else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail
 }
 

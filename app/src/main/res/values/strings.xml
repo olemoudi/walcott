@@ -452,4 +452,21 @@
     <string name="location_history_on">on</string>
     <string name="location_history_off">off</string>
     <string name="webfilter_child_rules_note">Per-app domain rules are managed at the family level and still apply to this child.</string>
+
+    <!-- Remote assisted app install (share from Play) -->
+    <string name="install_share_label">Install on a child</string>
+    <string name="install_share_title">Install on a child</string>
+    <string name="install_share_app">App: %1$s</string>
+    <string name="install_share_pick_child">On which child?</string>
+    <string name="install_share_pick_category">Category (optional)</string>
+    <string name="install_share_send">Send</string>
+    <string name="install_share_sent">Sent to %1$s</string>
+    <string name="install_share_bad_link">Couldn\'t read the app link. Share the app\'s full Play Store page.</string>
+    <string name="install_share_parent_only">Only the parent device can install apps on a child.</string>
+    <string name="install_share_no_children">No linked child devices yet.</string>
+    <string name="install_channel_name">App install requests</string>
+    <string name="install_prompt_title">Install requested</string>
+    <string name="install_prompt_text">Tap to install %1$s from Play.</string>
+    <string name="remote_result_install_opened">opened on the child device</string>
+    <string name="remote_result_no_package">no app specified</string>
 </resources>

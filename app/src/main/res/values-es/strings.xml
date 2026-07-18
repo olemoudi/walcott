@@ -452,4 +452,21 @@
     <string name="location_history_on">activado</string>
     <string name="location_history_off">desactivado</string>
     <string name="webfilter_child_rules_note">Las reglas de dominio por app se gestionan a nivel de familia y siguen aplicando a este hijo.</string>
+
+    <!-- Instalación remota asistida (compartir desde Play) -->
+    <string name="install_share_label">Instalar en un hijo</string>
+    <string name="install_share_title">Instalar en un hijo</string>
+    <string name="install_share_app">App: %1$s</string>
+    <string name="install_share_pick_child">¿En qué hijo?</string>
+    <string name="install_share_pick_category">Categoría (opcional)</string>
+    <string name="install_share_send">Enviar</string>
+    <string name="install_share_sent">Enviado a %1$s</string>
+    <string name="install_share_bad_link">No pude leer el enlace de la app. Comparte la ficha completa de Play Store.</string>
+    <string name="install_share_parent_only">Solo el dispositivo del padre puede instalar apps en un hijo.</string>
+    <string name="install_share_no_children">Aún no hay dispositivos de hijos vinculados.</string>
+    <string name="install_channel_name">Peticiones de instalación</string>
+    <string name="install_prompt_title">Instalación solicitada</string>
+    <string name="install_prompt_text">Toca para instalar %1$s desde Play.</string>
+    <string name="remote_result_install_opened">abierto en el móvil del hijo</string>
+    <string name="remote_result_no_package">no se indicó ninguna app</string>
 </resources>
