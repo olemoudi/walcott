@@ -23,6 +23,7 @@ import dev.walcott.location.LocationPolicy
 import dev.walcott.location.LocationSampler
 import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
+import dev.walcott.update.UpdateCheckOutcome
 import dev.walcott.update.Updater
 import dev.walcott.rules.Verdict
 import kotlinx.coroutines.currentCoroutineContext
@@ -95,9 +96,21 @@ class EnforcementService : LifecycleService() {
      * process is guaranteed to be alive to download and (silently) install a new version.
      */
     private fun scheduleUpdateChecks() {
+        val app = application as WalcottApplication
         lifecycleScope.launch {
             while (currentCoroutineContext().isActive) {
+                // Report the outcome to the parent: a child silently stuck on an old build
+                // is otherwise only diagnosable by picking the device up.
                 runCatching { Updater(applicationContext).checkAndUpdate() }
+                    .onSuccess { outcome ->
+                        app.syncManager.recordUpdateError(
+                            when (outcome) {
+                                UpdateCheckOutcome.TRANSIENT_FAILURE -> "download_failed"
+                                UpdateCheckOutcome.INSTALL_FAILURE -> "install_failed"
+                                else -> ""
+                            },
+                        )
+                    }
                 delay(UPDATE_CHECK_MILLIS)
             }
         }
@@ -117,18 +130,35 @@ class EnforcementService : LifecycleService() {
                     DebugLog.i(LOC_TAG, "tracking interval resolved: $minutes min")
                     if (minutes <= 0) return@collectLatest
                     val sampler = LocationSampler(this@EnforcementService)
+                    val periodMs = minutes * 60_000L
                     while (currentCoroutineContext().isActive) {
+                        val startedAt = SystemClock.elapsedRealtime()
+                        var gotFix = false
                         runCatching {
                             val fix = sampler.currentFix()
                             if (fix != null) {
                                 app.repository.recordLocation(fix)
+                                gotFix = true
                                 DebugLog.i(LOC_TAG, "recorded fix acc=${fix.accuracyM}m mock=${fix.mock}")
                             } else {
                                 DebugLog.w(LOC_TAG, "no location fix this cycle")
                             }
                             app.syncManager.publishLocationUpdate()
                         }.onFailure { DebugLog.e(LOC_TAG, "location sampling cycle failed", it) }
-                        delay(minutes * 60_000L)
+
+                        // Sleep the REMAINDER of the period, not a full one: acquiring a fix can
+                        // take up to a minute (three providers, each with its own timeout), and
+                        // adding that to every cycle made the real interval drift well past the
+                        // one the parent chose. A failed cycle retries sooner — a device that
+                        // just walked outdoors shouldn't stay unlocatable for a whole period.
+                        //
+                        // The floor is what keeps that safe: with no fix available the sampler
+                        // burns its full timeout on every provider, so subtracting the elapsed
+                        // time would leave a zero wait and spin the GPS continuously — exactly
+                        // in the indoors/airplane-mode case where it can never succeed.
+                        val target = if (gotFix) periodMs else minOf(RETRY_LOCATION_MILLIS, periodMs)
+                        val elapsed = SystemClock.elapsedRealtime() - startedAt
+                        delay((target - elapsed).coerceAtLeast(MIN_LOCATION_GAP_MILLIS))
                     }
                 }
         }
@@ -263,6 +293,10 @@ class EnforcementService : LifecycleService() {
         private const val TICK_IDLE_MILLIS = 15_000L
         private const val MAX_CREDIT_SECONDS = 15L
         private const val UPDATE_CHECK_MILLIS = 6 * 60 * 60 * 1000L
+        /** Backoff after a cycle that produced no fix (indoors, GPS warming up, airplane mode). */
+        private const val RETRY_LOCATION_MILLIS = 60_000L
+        /** Hard floor between sampling cycles, so a never-succeeding fix can't spin the radio. */
+        private const val MIN_LOCATION_GAP_MILLIS = 30_000L
         private const val LOC_TAG = "WalcottLocation"
 
         fun start(context: Context) {

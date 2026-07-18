@@ -78,6 +78,43 @@ data class LocationPoint(
 @Serializable
 data class LocationRequest(val deviceId: String, val requestedAtMs: Long)
 
+/**
+ * A one-shot instruction the parent sends to a specific child device, applied on the next
+ * check-in and acknowledged in [ChildSnapshot.lastCommand]. Applied idempotently by [id],
+ * like bonuses and resolutions, so a replayed parent snapshot can't run it twice.
+ */
+@Serializable
+data class RemoteCommand(
+    val id: String,
+    val deviceId: String,
+    /** One of [RemoteAction]; unknown actions are ignored so old children degrade cleanly. */
+    val action: String,
+    val issuedAtMs: Long,
+)
+
+/** Actions a parent can trigger remotely on a child device. */
+object RemoteAction {
+    /** Run the self-update now (silent install on a Device Owner child). */
+    const val UPDATE_NOW = "update_now"
+    /** Re-grant location, re-apply device restrictions and restart the enforcement service. */
+    const val REAPPLY_POLICY = "reapply_policy"
+    /**
+     * Ask the child device to show a guided notification for a permission only its user can
+     * grant (usage access, network location). Nothing else can fix those remotely.
+     */
+    const val REQUEST_PERMISSIONS = "request_permissions"
+}
+
+/** How a child device says a [RemoteCommand] went, echoed back in its snapshot. */
+@Serializable
+data class CommandAck(
+    val id: String,
+    val action: String,
+    val ok: Boolean,
+    val detail: String = "",
+    val completedAtMs: Long,
+)
+
 /** Published by each child device; the parent aggregates the latest per device. */
 @Serializable
 data class ChildSnapshot(
@@ -118,6 +155,13 @@ data class ChildSnapshot(
     /** Cumulative wrong parent-PIN attempts on this device, and the last one's wall-clock time. */
     val pinWrongTotal: Int = 0,
     val lastWrongPinMs: Long = 0,
+    /** Result of the most recent [RemoteCommand] this device ran, so the parent sees it landed. */
+    val lastCommand: CommandAck? = null,
+    /**
+     * Why this device's last self-update attempt failed, or "" when the last check was clean.
+     * Makes a child stuck on an old build diagnosable without touching the phone.
+     */
+    val updateError: String = "",
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */
@@ -140,6 +184,8 @@ data class ParentSnapshot(
     val bonuses: List<Bonus> = emptyList(),
     /** Pending "locate now" asks, at most one per target device. */
     val locationRequests: List<LocationRequest> = emptyList(),
+    /** Pending remote fixes, applied once per [RemoteCommand.id] by the target device. */
+    val commands: List<RemoteCommand> = emptyList(),
 )
 
 // --- Envelope on the wire ---

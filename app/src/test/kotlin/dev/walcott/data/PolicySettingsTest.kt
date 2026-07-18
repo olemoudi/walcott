@@ -118,6 +118,22 @@ class PolicySettingsTest {
     }
 
     @Test
+    fun `config written before location history existed still decodes`() {
+        // The additive-change contract: an existing install must upgrade without a migration,
+        // and must not silently start collecting a location trail it never opted into.
+        val json = Json { ignoreUnknownKeys = true }
+        val decoded = json.decodeFromString(
+            PolicySettings.serializer(),
+            """{"version":5,"trackingIntervalMinutes":15,"children":[{"childId":"a","name":"Ana"}]}""",
+        )
+        assertEquals(false, decoded.locationHistoryEnabled)
+        assertEquals(15, decoded.trackingIntervalMinutes)
+        assertEquals(null, decoded.children.single().overrides.locationHistoryEnabled)
+        // Resolving that legacy child must not invent a value either.
+        assertEquals(false, decoded.resolveForChild("a").locationHistoryEnabled)
+    }
+
+    @Test
     fun `assignments round-trip through serialization`() {
         val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
         val withApps = settings.copy(assignments = mapOf("com.game" to "games", "com.chat" to "social"))

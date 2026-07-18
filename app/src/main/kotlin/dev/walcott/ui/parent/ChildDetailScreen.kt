@@ -69,6 +69,7 @@ import dev.walcott.provisioning.DeviceOwnerProvisioning
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.EnforcementStatus
 import dev.walcott.sync.PairingPayload
+import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Role
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.format.humanize
@@ -166,11 +167,23 @@ fun ChildDetailScreen(
                 }
             }
 
+            // --- Remote fixes (only meaningful once a device is actually linked) ---
+            if (snapshot != null) {
+                item {
+                    RemoteFixCard(
+                        snapshot = snapshot,
+                        onCommand = { action -> viewModel.sendRemoteCommand(snapshot.deviceId, action) },
+                    )
+                }
+            }
+
             // --- Location ---
             item {
                 LocationCard(
                     intervalMinutes = entry.overrides.trackingIntervalMinutes ?: 0,
                     onSetInterval = { viewModel.setTrackingInterval(childId, it) },
+                    historyEnabled = settings.resolveForChild(childId).locationHistoryEnabled,
+                    onSetHistory = { viewModel.setLocationHistory(childId, it) },
                     hasDevice = snapshot != null,
                     onLocateNow = { snapshot?.let { viewModel.requestLocation(it.deviceId) } },
                     onOpenMap = { onOpenMap(childId) },
@@ -565,12 +578,152 @@ private fun WrongPinCard(total: Int, lastAttemptMs: Long) {
     }
 }
 
+/**
+ * The remote-fix panel: everything the parent can repair on a linked child device without
+ * holding it. Each row states what it does, because "Re-apply protection" is meaningless
+ * on its own, and the last command's outcome is echoed back so an action isn't a shot in
+ * the dark. Permissions that genuinely need someone at the device get "Ask to fix", which
+ * raises a guided notification there rather than pretending to fix them from here.
+ */
+@Composable
+private fun RemoteFixCard(snapshot: ChildSnapshot, onCommand: (String) -> Unit) {
+    val spacing = Tokens.spacing
+    val context = LocalContext.current
+    // Local echo: the child only acknowledges on its next check-in, so without this the
+    // button would look inert for up to a re-emit interval. The send time is tracked too,
+    // so re-running an action shows "sent" rather than the previous run's stale result.
+    var sentAtMs by remember(snapshot.deviceId) { mutableStateOf(0L) }
+    var awaitingAck by remember(snapshot.deviceId) { mutableStateOf(false) }
+    val outdated = snapshot.appVersionCode in 1 until BuildConfig.VERSION_CODE
+    val needsPermissionNudge = !snapshot.usageAccessOn || !snapshot.networkLocationOn
+
+    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(stringResource(R.string.remote_fix_section), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.remote_fix_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // A child that couldn't self-update is the case "Update now" exists for; say why.
+            if (snapshot.updateError.isNotBlank()) {
+                Text(
+                    stringResource(R.string.child_update_error, remoteResultLabel(context, snapshot.updateError)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
+
+            RemoteFixRow(
+                title = stringResource(R.string.remote_update_now),
+                description = stringResource(R.string.remote_update_desc),
+                emphasized = outdated || snapshot.updateError.isNotBlank(),
+                onClick = {
+                    onCommand(RemoteAction.UPDATE_NOW)
+                    sentAtMs = System.currentTimeMillis()
+                    awaitingAck = true
+                },
+            )
+            RemoteFixRow(
+                title = stringResource(R.string.remote_reapply),
+                description = stringResource(R.string.remote_reapply_desc),
+                emphasized = snapshot.enforcement == EnforcementStatus.NONE,
+                onClick = {
+                    onCommand(RemoteAction.REAPPLY_POLICY)
+                    sentAtMs = System.currentTimeMillis()
+                    awaitingAck = true
+                },
+            )
+            RemoteFixRow(
+                title = stringResource(R.string.remote_ask_permissions),
+                description = stringResource(R.string.remote_ask_permissions_desc),
+                emphasized = needsPermissionNudge,
+                onClick = {
+                    onCommand(RemoteAction.REQUEST_PERMISSIONS)
+                    sentAtMs = System.currentTimeMillis()
+                    awaitingAck = true
+                },
+            )
+
+            // An acknowledgement only counts for the command we just sent if the child
+            // completed it after we sent it; otherwise we are still waiting.
+            val ack = snapshot.lastCommand
+            val stillWaiting = awaitingAck && (ack == null || ack.completedAtMs < sentAtMs)
+            if (stillWaiting) {
+                Text(
+                    stringResource(R.string.remote_command_sent),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            } else if (ack != null) {
+                Text(
+                    stringResource(
+                        if (ack.ok) R.string.remote_command_ok else R.string.remote_command_failed,
+                        remoteResultLabel(context, ack.detail),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (ack.ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoteFixRow(title: String, description: String, emphasized: Boolean, onClick: () -> Unit) {
+    val spacing = Tokens.spacing
+    Row(
+        Modifier.fillMaxWidth().padding(top = spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                // Highlight the action that matches a problem this child actually has.
+                color = if (emphasized) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(spacing.sm))
+        if (emphasized) {
+            Button(onClick = onClick) { Text(stringResource(R.string.action_fix)) }
+        } else {
+            OutlinedButton(onClick = onClick) { Text(stringResource(R.string.action_run)) }
+        }
+    }
+}
+
+/**
+ * Maps a command's machine-readable detail onto localized text. Unknown details (a newer
+ * child reporting something this build doesn't know) fall through verbatim.
+ */
+private fun remoteResultLabel(context: android.content.Context, detail: String): String = when (detail) {
+    "up_to_date" -> context.getString(R.string.remote_result_up_to_date)
+    "installing" -> context.getString(R.string.remote_result_installing)
+    "download_failed" -> context.getString(R.string.remote_result_download_failed)
+    "install_failed" -> context.getString(R.string.remote_result_install_failed)
+    "reapplied" -> context.getString(R.string.remote_result_reapplied)
+    "nothing_missing" -> context.getString(R.string.remote_result_nothing_missing)
+    else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail
+}
+
 private val TRACKING_INTERVALS = listOf(0, 5, 15, 30, 60)
 
 @Composable
 private fun LocationCard(
     intervalMinutes: Int,
     onSetInterval: (Int) -> Unit,
+    historyEnabled: Boolean,
+    onSetHistory: (Boolean) -> Unit,
     hasDevice: Boolean,
     onLocateNow: () -> Unit,
     onOpenMap: () -> Unit,
@@ -606,6 +759,23 @@ private fun LocationCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // History is opt-in: without it a child reports only its current position, which
+            // is the smaller thing to keep on a family server.
+            Row(
+                Modifier.fillMaxWidth().padding(top = spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.location_history_title), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(R.string.location_history_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(spacing.sm))
+                Switch(checked = historyEnabled, onCheckedChange = onSetHistory)
+            }
             if (hasDevice) {
                 Row(
                     Modifier.fillMaxWidth().padding(top = spacing.md),

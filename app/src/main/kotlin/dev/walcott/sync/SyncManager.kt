@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -45,6 +47,8 @@ class SyncManager(
     private var reEmitJob: Job? = null
     /** In-memory mirror of [SyncState.ntfySinceSec] so the transport's sinceProvider never blocks. */
     @Volatile private var sinceCache: Long = 0
+    /** Serializes remote-command execution across concurrently handled parent snapshots. */
+    private val commandMutex = Mutex()
 
     val identity: StateFlow<FamilyIdentity> =
         identityStore.identity.stateIn(scope, SharingStarted.Eagerly, FamilyIdentity())
@@ -280,6 +284,32 @@ class SyncManager(
         publishSelf()
     }
 
+    /**
+     * Parent queues a remote fix for a child device (see [RemoteAction]). Applied on the
+     * child's next check-in and acknowledged back in its snapshot.
+     */
+    suspend fun sendCommand(targetDeviceId: String, action: String) {
+        val now = System.currentTimeMillis()
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                commands = SyncEngine.withCommand(
+                    s.commands,
+                    RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, action, now),
+                    now,
+                ),
+            )
+        }
+        publishSelf()
+    }
+
+    /** Records how the last self-update went, so the parent can see why a child is stuck. */
+    suspend fun recordUpdateError(error: String) {
+        if (syncStore.current().updateError == error) return
+        syncStore.update { it.copy(updateError = error) }
+        runCatching { publishSelf() }
+    }
+
     /** Parent grants an unsolicited bonus (chores, good behaviour) to a child device. */
     suspend fun giveBonus(targetDeviceId: String, categoryId: String, minutes: Int) {
         syncStore.update { s ->
@@ -353,6 +383,7 @@ class SyncManager(
                     resolutions = state.resolutions,
                     bonuses = state.bonuses,
                     locationRequests = state.locationRequests,
+                    commands = state.commands,
                 )
                 transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, ParentKeystore.privateKey()))
             }
@@ -368,6 +399,14 @@ class SyncManager(
                         .filterNot { it.isSystem }
                         .map { InstalledAppInfo(it.packageName, it.label) }
                 }
+                // History off (the default) reports only the current position; on, the 48h
+                // trail is decimated so it can't push the snapshot past ntfy's message cap.
+                val historyOn = settingsStore.current().resolveForChild(id.childId).locationHistoryEnabled
+                val locations = if (historyOn) {
+                    LocationTrail.compress(repository.recentLocations(), System.currentTimeMillis())
+                } else {
+                    repository.latestLocation()
+                }
                 val snapshot = ChildSnapshot(
                     deviceId = id.deviceId,
                     displayName = id.displayName,
@@ -380,8 +419,7 @@ class SyncManager(
                     history = history,
                     asks = s.pendingAsks,
                     apps = apps,
-                    // Cap the trail so the (gzipped) snapshot stays well under ntfy's message cap.
-                    locations = repository.recentLocations().takeLast(MAX_LOCATION_POINTS),
+                    locations = locations,
                     networkLocationOn = LocationSampler(context).networkProviderEnabled(),
                     usageAccessOn = UsageAccess.granted(context),
                     appVersionCode = BuildConfig.VERSION_CODE,
@@ -389,6 +427,8 @@ class SyncManager(
                     enforcement = EnforcementBackends.status(context),
                     pinWrongTotal = s.pinWrongTotal,
                     lastWrongPinMs = s.lastWrongPinMs,
+                    lastCommand = s.lastCommandAck,
+                    updateError = s.updateError,
                 )
                 transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
             }
@@ -433,6 +473,11 @@ class SyncManager(
             publishSelf()
         }
 
+        // Remote fixes from the parent (update now, re-apply policy, nudge for permissions).
+        // Run before the grants below so a device whose enforcement had lapsed is repaired
+        // first; each command publishes its own acknowledgement.
+        applyCommands(snapshot, deviceId)
+
         // Apply resolutions to our pending requests and asks, idempotently.
         val asksById = s.pendingAsks.associateBy { it.requestId }
         val pendingIds = s.pendingRequests.map { it.requestId }.toSet() + asksById.keys
@@ -472,15 +517,41 @@ class SyncManager(
         }
     }
 
+    /**
+     * Runs any remote commands addressed to this device. Each is marked applied *before* it
+     * runs, so a command that kills the process midway (an update install restarts us) can't
+     * loop forever; the parent sees the missing acknowledgement instead.
+     *
+     * Serialized under [commandMutex] and re-reading the applied set inside it, because every
+     * incoming message is handled in its own coroutine: when ntfy replays the backlog after a
+     * reconnect, the same parent snapshot can be in flight twice, and a check-then-act on a
+     * stale set would run an APK install concurrently with itself.
+     */
+    private suspend fun applyCommands(snapshot: ParentSnapshot, deviceId: String) = commandMutex.withLock {
+        val runner by lazy { RemoteCommandRunner(context, repository) }
+        for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
+            // Re-check under the lock: a concurrent handler may have claimed it since.
+            if (command.id in syncStore.current().appliedCommandIds) continue
+            syncStore.update { it.copy(appliedCommandIds = it.appliedCommandIds + command.id) }
+            val ack = runner.run(command)
+            syncStore.update { it.copy(lastCommandAck = ack, childVersion = it.childVersion + 1) }
+            publishSelf()
+        }
+    }
+
     private suspend fun applyChildSnapshot(snapshot: ChildSnapshot) {
         val before = syncStore.current()
         val prevRequestIds = before.children.flatMap { it.requests }.map { it.requestId }.toSet()
         val prevAskIds = before.children.flatMap { it.asks }.map { it.requestId }.toSet()
         val merged = SyncEngine.mergeChild(before.children.associateBy { it.deviceId }, snapshot).values.toList()
+        // A child that acknowledged a command has run it: drop it from the queue so it isn't
+        // carried in every subsequent parent snapshot.
+        val ackedId = snapshot.lastCommand?.id
         syncStore.update {
             it.copy(
                 children = merged,
                 lastSeen = it.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
+                commands = if (ackedId != null) it.commands.filterNot { c -> c.id == ackedId } else it.commands,
             )
         }
 
@@ -574,7 +645,5 @@ class SyncManager(
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.
         private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
-        /** 12h of fixes at the seeded 15-min tracking interval. */
-        private const val MAX_LOCATION_POINTS = 48
     }
 }

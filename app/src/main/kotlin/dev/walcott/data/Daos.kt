@@ -68,6 +68,13 @@ interface LocationDao {
     @Query("SELECT * FROM location_point WHERE epochMs >= :sinceMs ORDER BY epochMs")
     suspend fun getSince(sinceMs: Long): List<LocationPointEntity>
 
+    /**
+     * Newest fix only, for children reporting just their current position. A dedicated query
+     * because the 48h window can hold hundreds of rows and this runs on every check-in.
+     */
+    @Query("SELECT * FROM location_point WHERE epochMs >= :sinceMs ORDER BY epochMs DESC LIMIT 1")
+    suspend fun getLatestSince(sinceMs: Long): LocationPointEntity?
+
     @Query("DELETE FROM location_point WHERE epochMs < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long)
 }

@@ -384,4 +384,48 @@
     <string name="app_lock_biometric_title">Unlock Walcott</string>
     <string name="app_lock_biometric_subtitle">Confirm it\'s you to open parent mode</string>
     <string name="app_lock_use_pin">Use PIN</string>
+
+    <string name="action_fix">Fix</string>
+    <string name="action_run">Run</string>
+
+    <!-- Remote fixes (parent acts on a child device) -->
+    <string name="remote_fix_section">Fix remotely</string>
+    <string name="remote_fix_hint">Act on this device without having it in your hands.</string>
+    <string name="remote_update_now">Update now</string>
+    <string name="remote_update_desc">Download and install the latest Walcott on this device</string>
+    <string name="remote_reapply">Re-apply protection</string>
+    <string name="remote_reapply_desc">Restart enforcement and re-apply the rules, if blocking stopped working</string>
+    <string name="remote_ask_permissions">Ask to fix permissions</string>
+    <string name="remote_ask_permissions_desc">Show a notification on the child device with a shortcut to the setting they need to turn on</string>
+    <string name="remote_command_sent">Sent — it will run on the next check-in</string>
+    <string name="remote_command_ok">Done: %1$s</string>
+    <string name="remote_command_failed">Failed: %1$s</string>
+    <string name="remote_result_up_to_date">already on the latest version</string>
+    <string name="remote_result_installing">update downloaded, installing</string>
+    <string name="remote_result_download_failed">could not download the update</string>
+    <string name="remote_result_install_failed">the install was rejected</string>
+    <string name="remote_result_reapplied">protection re-applied</string>
+    <string name="remote_result_nothing_missing">nothing to fix</string>
+    <string name="remote_result_notified">the child was notified</string>
+    <string name="child_update_error">This device could not update itself (%1$s). Try "Update now".</string>
+
+    <!-- Guided fixes shown on the child device -->
+    <string name="fix_channel_name">Setup needed</string>
+    <string name="fix_usage_access_title">Walcott needs usage access</string>
+    <string name="fix_usage_access_text">Screen time isn\'t being counted. Tap here, find Walcott in the list and turn it on.</string>
+    <string name="fix_network_location_title">Turn on location accuracy</string>
+    <string name="fix_network_location_text">Location doesn\'t work indoors right now. Tap here and turn on Wi-Fi/network location.</string>
+    <string name="fix_location_permission_title">Walcott needs location permission</string>
+    <string name="fix_location_permission_text">Tap here, open Permissions and allow Location.</string>
+
+    <!-- Location history + map timeline -->
+    <string name="location_history_title">Location history</string>
+    <string name="location_history_desc">Keep the last 48 hours so you can replay where this device has been. Off means you only see its current position.</string>
+    <string name="map_timeline_latest">Now</string>
+    <string name="map_history_off_hint">Showing the current position only. Turn on location history to replay the last 48 hours.</string>
+    <string name="map_play">Play</string>
+    <string name="map_pause">Pause</string>
+    <string name="map_point_count">%1$d locations over the last 48 h</string>
+    <string name="map_accuracy_fmt">±%1$d m</string>
+    <string name="map_recenter">Re-centre</string>
 </resources>

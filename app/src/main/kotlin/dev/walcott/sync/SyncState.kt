@@ -31,12 +31,20 @@ data class SyncState(
     /** Monotonic tally of wrong PINs (never reset), reported to the parent, and the last one's time. */
     val pinWrongTotal: Int = 0,
     val lastWrongPinMs: Long = 0,
+    /** Ids of remote commands this device already ran, so a replayed snapshot can't re-run them. */
+    val appliedCommandIds: Set<String> = emptySet(),
+    /** Result of the most recent remote command, echoed to the parent in the next snapshot. */
+    val lastCommandAck: CommandAck? = null,
+    /** Why the last self-update attempt failed ("" = the last check was clean). */
+    val updateError: String = "",
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
     val bonuses: List<Bonus> = emptyList(),
     /** Pending "locate now" asks, at most one per target device. */
     val locationRequests: List<LocationRequest> = emptyList(),
+    /** Remote fixes queued for child devices, cleared as they are acknowledged. */
+    val commands: List<RemoteCommand> = emptyList(),
     val children: List<ChildSnapshot> = emptyList(),
     /** deviceId -> wall-clock ms of the last message received from that child. */
     val lastSeen: Map<String, Long> = emptyMap(),

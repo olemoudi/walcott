@@ -384,4 +384,48 @@
     <string name="app_lock_biometric_title">Desbloquear Walcott</string>
     <string name="app_lock_biometric_subtitle">Confirma que eres tú para abrir el modo padre</string>
     <string name="app_lock_use_pin">Usar PIN</string>
+
+    <string name="action_fix">Arreglar</string>
+    <string name="action_run">Ejecutar</string>
+
+    <!-- Arreglos remotos (el padre actúa sobre el móvil del hijo) -->
+    <string name="remote_fix_section">Arreglar en remoto</string>
+    <string name="remote_fix_hint">Actúa sobre este móvil sin tenerlo delante.</string>
+    <string name="remote_update_now">Actualizar ahora</string>
+    <string name="remote_update_desc">Descarga e instala la última versión de Walcott en este móvil</string>
+    <string name="remote_reapply">Reaplicar protección</string>
+    <string name="remote_reapply_desc">Reinicia el bloqueo y vuelve a aplicar las reglas, si dejó de funcionar</string>
+    <string name="remote_ask_permissions">Pedir que arreglen permisos</string>
+    <string name="remote_ask_permissions_desc">Muestra una notificación en el móvil del hijo con un acceso directo al ajuste que debe activar</string>
+    <string name="remote_command_sent">Enviado: se ejecutará en el próximo contacto</string>
+    <string name="remote_command_ok">Hecho: %1$s</string>
+    <string name="remote_command_failed">Falló: %1$s</string>
+    <string name="remote_result_up_to_date">ya tiene la última versión</string>
+    <string name="remote_result_installing">actualización descargada, instalando</string>
+    <string name="remote_result_download_failed">no se pudo descargar la actualización</string>
+    <string name="remote_result_install_failed">la instalación fue rechazada</string>
+    <string name="remote_result_reapplied">protección reaplicada</string>
+    <string name="remote_result_nothing_missing">nada que arreglar</string>
+    <string name="remote_result_notified">se avisó al hijo</string>
+    <string name="child_update_error">Este móvil no pudo actualizarse solo (%1$s). Prueba «Actualizar ahora».</string>
+
+    <!-- Arreglos guiados que se muestran en el móvil del hijo -->
+    <string name="fix_channel_name">Falta configurar algo</string>
+    <string name="fix_usage_access_title">Walcott necesita acceso de uso</string>
+    <string name="fix_usage_access_text">El tiempo de pantalla no se está contando. Toca aquí, busca Walcott en la lista y actívalo.</string>
+    <string name="fix_network_location_title">Activa la precisión de ubicación</string>
+    <string name="fix_network_location_text">Ahora mismo la ubicación no funciona en interiores. Toca aquí y activa la ubicación por Wi-Fi/red.</string>
+    <string name="fix_location_permission_title">Walcott necesita permiso de ubicación</string>
+    <string name="fix_location_permission_text">Toca aquí, abre Permisos y permite la Ubicación.</string>
+
+    <!-- Historial de ubicación + línea de tiempo del mapa -->
+    <string name="location_history_title">Historial de ubicación</string>
+    <string name="location_history_desc">Guarda las últimas 48 horas para poder repasar dónde ha estado este móvil. Si está apagado, solo verás su posición actual.</string>
+    <string name="map_timeline_latest">Ahora</string>
+    <string name="map_history_off_hint">Mostrando solo la posición actual. Activa el historial para repasar las últimas 48 horas.</string>
+    <string name="map_play">Reproducir</string>
+    <string name="map_pause">Pausar</string>
+    <string name="map_point_count">%1$d ubicaciones en las últimas 48 h</string>
+    <string name="map_accuracy_fmt">±%1$d m</string>
+    <string name="map_recenter">Recentrar</string>
 </resources>

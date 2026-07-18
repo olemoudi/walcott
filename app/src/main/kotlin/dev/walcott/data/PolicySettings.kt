@@ -78,11 +78,13 @@ data class ChildOverrides(
     val deviceRestrictions: Set<String>? = null,
     /** Periodic location-tracking interval in minutes (0 = off). Null inherits the family value. */
     val trackingIntervalMinutes: Int? = null,
+    /** Whether this child reports a 48h trail rather than just its current position. */
+    val locationHistoryEnabled: Boolean? = null,
 ) {
     val isEmpty: Boolean
         get() = budgets == null && blockedWindows == null && bedtime == null &&
             earnRules == null && blockedDomains == null && deviceRestrictions == null &&
-            trackingIntervalMinutes == null
+            trackingIntervalMinutes == null && locationHistoryEnabled == null
 }
 
 /** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */
@@ -134,6 +136,11 @@ data class PolicySettings(
     val assignments: Map<String, String> = emptyMap(),
     /** Family-default periodic location-tracking interval in minutes (0 = off). */
     val trackingIntervalMinutes: Int = 0,
+    /**
+     * Family default for keeping a 48h location trail. Off means a child reports only its
+     * current position, so history is something the parent opts into per family or per child.
+     */
+    val locationHistoryEnabled: Boolean = false,
     /** True once recommended anti-tamper defaults were seeded (so we only seed once). */
     val hardeningSeeded: Boolean = false,
 ) {
@@ -158,6 +165,7 @@ data class PolicySettings(
             blockedDomains = overrides.blockedDomains ?: blockedDomains,
             deviceRestrictions = overrides.deviceRestrictions ?: deviceRestrictions,
             trackingIntervalMinutes = overrides.trackingIntervalMinutes ?: trackingIntervalMinutes,
+            locationHistoryEnabled = overrides.locationHistoryEnabled ?: locationHistoryEnabled,
         )
     }
 

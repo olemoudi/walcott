@@ -86,6 +86,37 @@ class ChildOverridesTest {
         assertTrue(ChildOverrides().isEmpty)
         assertTrue(!ChildOverrides(bedtime = emptyMap()).isEmpty)
         assertTrue(!ChildOverrides(trackingIntervalMinutes = 0).isEmpty)
+        assertTrue(!ChildOverrides(locationHistoryEnabled = false).isEmpty)
+    }
+
+    @Test
+    fun `location history resolves per-child override over the family default`() {
+        val fam = family.copy(
+            locationHistoryEnabled = true,
+            children = listOf(
+                // Explicitly opted out, even though the family keeps history.
+                ChildEntry("h1", "Ana", ChildOverrides(locationHistoryEnabled = false)),
+                ChildEntry("h2", "Bea"),
+            ),
+        )
+        assertEquals(false, fam.resolveForChild("h1").locationHistoryEnabled)
+        assertEquals(true, fam.resolveForChild("h2").locationHistoryEnabled)
+    }
+
+    @Test
+    fun `location history is off unless someone turns it on`() {
+        // History is opt-in: a family that never touched the setting must not collect a trail.
+        assertEquals(false, PolicySettings().locationHistoryEnabled)
+        assertEquals(false, family.resolveForChild("child-b").locationHistoryEnabled)
+    }
+
+    @Test
+    fun `a child can keep history while the family default is off`() {
+        val fam = family.copy(
+            locationHistoryEnabled = false,
+            children = listOf(ChildEntry("h1", "Ana", ChildOverrides(locationHistoryEnabled = true))),
+        )
+        assertEquals(true, fam.resolveForChild("h1").locationHistoryEnabled)
     }
 
     @Test

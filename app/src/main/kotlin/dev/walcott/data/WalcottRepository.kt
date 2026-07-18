@@ -101,8 +101,18 @@ class WalcottRepository(
 
     /** The last [LOCATION_RETENTION_MS] of fixes, oldest first, for the parent's map. */
     suspend fun recentLocations(): List<LocationPoint> =
-        db.locations().getSince(System.currentTimeMillis() - LOCATION_RETENTION_MS)
-            .map { LocationPoint(lat = it.lat, lng = it.lng, epochMs = it.epochMs, accuracyM = it.accuracyM, mock = it.mock) }
+        db.locations().getSince(System.currentTimeMillis() - LOCATION_RETENTION_MS).map { it.toPoint() }
+
+    /**
+     * Just the current position, for children whose parent hasn't enabled location history.
+     * History is always retained locally, so switching the option on shows the past 48h
+     * immediately instead of starting from empty.
+     */
+    suspend fun latestLocation(): List<LocationPoint> =
+        listOfNotNull(db.locations().getLatestSince(System.currentTimeMillis() - LOCATION_RETENTION_MS)?.toPoint())
+
+    private fun LocationPointEntity.toPoint() =
+        LocationPoint(lat = lat, lng = lng, epochMs = epochMs, accuracyM = accuracyM, mock = mock)
 
     // --- Assignments (in the synced policy; changes republish to children) ---
 
@@ -155,7 +165,10 @@ class WalcottRepository(
     }
 
     companion object {
-        /** Location history retention shown on the parent map. */
-        const val LOCATION_RETENTION_MS = 12 * 60 * 60 * 1000L
+        /**
+         * Location history retention shown on the parent map. Matches the trail window the
+         * child publishes, so the timeline never runs past the data it has.
+         */
+        const val LOCATION_RETENTION_MS = dev.walcott.sync.LocationTrail.WINDOW_MS
     }
 }
