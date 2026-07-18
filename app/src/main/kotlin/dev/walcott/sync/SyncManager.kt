@@ -45,6 +45,8 @@ class SyncManager(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var transport: SyncTransport? = null
     private var reEmitJob: Job? = null
+    /** Parent-only republish-on-edit collector; tracked so reconnects don't stack duplicates. */
+    private var settingsWatchJob: Job? = null
     /** In-memory mirror of [SyncState.ntfySinceSec] so the transport's sinceProvider never blocks. */
     @Volatile private var sinceCache: Long = 0
     /** Serializes remote-command execution across concurrently handled parent snapshots. */
@@ -104,11 +106,16 @@ class SyncManager(
                 }
             }
         }
-        // Parent republishes whenever the rules change.
-        if (id.role == Role.PARENT) {
+        // Parent republishes whenever the rules change. Cancel any previous collector
+        // first: connect() runs again on re-pairing, and a leaked collector would double
+        // every publish for the rest of the process's life.
+        settingsWatchJob?.cancel()
+        settingsWatchJob = if (id.role == Role.PARENT) {
             scope.launch {
                 settingsStore.settings.drop(1).collect { publishConfigChanged() }
             }
+        } else {
+            null
         }
         // Re-emit heals lost messages from the moment a device is paired — including devices
         // paired during this process's lifetime (pairing used to publish exactly once).
@@ -164,6 +171,8 @@ class SyncManager(
         transport = null
         reEmitJob?.cancel()
         reEmitJob = null
+        settingsWatchJob?.cancel()
+        settingsWatchJob = null
         identityStore.save(FamilyIdentity())
     }
 
@@ -389,7 +398,23 @@ class SyncManager(
 
     // --- Publish / receive ---
 
+    /**
+     * Publishes this device's snapshot. Never throws: it is called from many fire-and-forget
+     * spots (resolve, bonus, command, PIN failure), and a Keystore or encoding hiccup killing
+     * those coroutines silently would drop the user's action with no trace. The periodic
+     * re-emit retries anything a failed publish missed.
+     */
     private suspend fun publishSelf() {
+        try {
+            publishSelfOrThrow()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            dev.walcott.debug.DebugLog.e(TAG, "publish failed", t)
+        }
+    }
+
+    private suspend fun publishSelfOrThrow() {
         val id = identityStore.current()
         val transport = transport ?: return
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
@@ -452,7 +477,14 @@ class SyncManager(
                     lastCommand = s.lastCommandAck,
                     updateError = s.updateError,
                 )
-                transport.publish(SyncProtocol.encodeChild(snapshot, familyKey))
+                // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
+                // child would silently vanish from the parent, which is far worse than a
+                // temporarily thinner snapshot.
+                val fitted = SnapshotFit.encodeChild(snapshot, familyKey)
+                if (fitted.degraded != null) {
+                    dev.walcott.debug.DebugLog.w(TAG, "snapshot over size budget; degraded: ${fitted.degraded}")
+                }
+                transport.publish(fitted.encoded)
             }
             Role.UNPAIRED -> Unit
         }
@@ -663,6 +695,7 @@ class SyncManager(
     }
 
     companion object {
+        private const val TAG = "WalcottSync"
         // Re-emits only heal lost messages: real changes (settings edits, requests,
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.

@@ -13,7 +13,6 @@ import dev.walcott.enforcement.DeviceRestrictions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -37,12 +36,32 @@ enum class UpdateCheckOutcome {
  */
 class Updater(private val context: Context) {
 
-    private val client = OkHttpClient.Builder()
+    // Derived from the shared client (pools reused); long timeouts for the APK download.
+    private val client = dev.walcott.net.Http.client.newBuilder()
         .callTimeout(5, TimeUnit.MINUTES)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    suspend fun checkAndUpdate(): UpdateCheckOutcome = withContext(Dispatchers.IO) {
+    /**
+     * Single-flight wrapper: update checks fire from several places (the enforcement
+     * service's 6h loop, the periodic worker, launch/focus triggers, a remote command) and
+     * two overlapping runs are actively harmful — install() abandons stale sessions, so a
+     * concurrent run would abort the other's half-written session, and both would download
+     * the full APK. A second caller just reports UP_TO_DATE and lets the first finish.
+     */
+    suspend fun checkAndUpdate(): UpdateCheckOutcome {
+        if (!updateMutex.tryLock()) {
+            DebugLog.i(TAG, "update check already in flight; skipping")
+            return UpdateCheckOutcome.UP_TO_DATE
+        }
+        try {
+            return doCheckAndUpdate()
+        } finally {
+            updateMutex.unlock()
+        }
+    }
+
+    private suspend fun doCheckAndUpdate(): UpdateCheckOutcome = withContext(Dispatchers.IO) {
         DebugLog.i(TAG, "checking for update")
         UpdateCenter.report(UpdateUiState.Checking)
         val info = runCatching { fetchInfo() }.onFailure { DebugLog.w(TAG, "fetch failed", it) }.getOrNull()
@@ -164,5 +183,7 @@ class Updater(private val context: Context) {
 
     companion object {
         private const val TAG = "WalcottUpdater"
+        /** Process-wide: Updater is instantiated per check, so the lock must be shared. */
+        private val updateMutex = kotlinx.coroutines.sync.Mutex()
     }
 }

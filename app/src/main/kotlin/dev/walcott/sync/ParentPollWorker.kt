@@ -13,7 +13,6 @@ import dev.walcott.debug.DebugLog
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
@@ -37,7 +36,7 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val sinceParam = if (since > 0) since.toString() else "all"
         val url = "${id.ntfyServer.trimEnd('/')}/${id.topic}/json?poll=1&since=$sinceParam"
 
-        val client = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
+        val client = dev.walcott.net.Http.client.newBuilder().callTimeout(30, TimeUnit.SECONDS).build()
         val json = Json { ignoreUnknownKeys = true }
         val lines = runCatching {
             client.newCall(Request.Builder().url(url).build()).execute().use { resp ->

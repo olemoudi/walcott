@@ -3,8 +3,13 @@ package dev.walcott.data
 import dev.walcott.rules.EarnEngine
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.sync.LocationPoint
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import java.time.Duration
 import java.time.LocalDate
@@ -13,6 +18,7 @@ import java.time.LocalDate
  * Single facade over persistence (Room + DataStore) and inventory. The UI consumes reactive
  * flows; the enforcement service uses the snapshot functions (`*Now`).
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class WalcottRepository(
     private val db: WalcottDatabase,
     private val settingsStore: SettingsStore,
@@ -30,12 +36,29 @@ class WalcottRepository(
     val familyConfigFlow: Flow<FamilyConfig> =
         settingsFlow.map { it.toFamilyConfig(essentials) }
 
-    /** Today's usage per category, reactive (pinned to the subscription day). */
-    val usageTodayFlow: Flow<Map<String, Duration>> = db.usage().observeDay(today())
-        .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+    /**
+     * The current epoch day, re-checked once a minute. On an always-on child device the
+     * process lives across midnight, so anything keyed to "today" must re-subscribe when
+     * the day changes — a flow pinned to the construction-time day would show yesterday's
+     * usage forever after the first rollover.
+     */
+    private val todayFlow: Flow<Long> = flow {
+        while (true) {
+            emit(LocalDate.now().toEpochDay())
+            delay(DAY_CHECK_MILLIS)
+        }
+    }.distinctUntilChanged()
 
-    val extraTodayFlow: Flow<Map<String, Duration>> = db.usage().observeExtraDay(today())
-        .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+    /** Today's usage per category, reactive across midnight rollovers. */
+    val usageTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
+        db.usage().observeDay(day)
+            .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+    }
+
+    val extraTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
+        db.usage().observeExtraDay(day)
+            .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+    }
 
     /** Extra earned today from earn-rules (kept separate so the UI can show the bonus). */
     val earnedTodayFlow: Flow<Map<String, Duration>> =
@@ -170,5 +193,7 @@ class WalcottRepository(
          * child publishes, so the timeline never runs past the data it has.
          */
         const val LOCATION_RETENTION_MS = dev.walcott.sync.LocationTrail.WINDOW_MS
+        /** How often the "today" flows re-check the date (cheap; rollover lands within a minute). */
+        private const val DAY_CHECK_MILLIS = 60_000L
     }
 }

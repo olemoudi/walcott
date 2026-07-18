@@ -60,6 +60,14 @@ class EnforcementService : LifecycleService() {
         }
     }
 
+    /** Set when a package is (un)installed, so the managed-set cache refreshes immediately. */
+    @Volatile private var inventoryDirty = true
+    private val packageReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            inventoryDirty = true
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         enforcer = Enforcer(this)
@@ -76,6 +84,19 @@ class EnforcementService : LifecycleService() {
             },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        // Package changes invalidate the managed-set cache (see runLoop). System broadcast,
+        // so NOT_EXPORTED is fine under the Android 14 receiver-flag rule.
+        ContextCompat.registerReceiver(
+            this,
+            packageReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addDataScheme("package")
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         // Grant location before startForeground so the service can claim the location FGS type.
         LocationPolicy.ensureEnforced(this)
         startForegroundCompat()
@@ -88,6 +109,7 @@ class EnforcementService : LifecycleService() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenReceiver) }
+        runCatching { unregisterReceiver(packageReceiver) }
         super.onDestroy()
     }
 
@@ -207,6 +229,17 @@ class EnforcementService : LifecycleService() {
         var lastTick = SystemClock.elapsedRealtime()
         var lastForeground: String? = null
         var lastUsageAccess: Boolean? = null
+        // Managed-set cache: enumerating PackageManager (launchable apps + labels) on every
+        // 2s tick was pure binder churn — the set only changes on (un)installs and
+        // classification edits, both of which invalidate it explicitly below.
+        var managed: Set<String> = emptySet()
+        var managedFetchedAt = 0L
+        var lastAssignments: Map<String, String>? = null
+        // Suspension is only re-asserted when the target state changes (or periodically as
+        // a self-heal), instead of N isPackageSuspended binder calls per tick.
+        var lastAppliedBlocked: Set<String>? = null
+        var lastAppliedManaged: Set<String>? = null
+        var lastApplyAt = 0L
 
         while (currentCoroutineContext().isActive) {
             // Screen off: nothing accrues and blocked apps stay suspended, so park with
@@ -227,7 +260,14 @@ class EnforcementService : LifecycleService() {
             val config = repo.configNow()
             val usage = repo.usageNow()
             val extra = repo.effectiveExtraNow() // manually granted + earned by use
-            val managed = repo.managedPackagesNow()
+            if (inventoryDirty || config.assignments != lastAssignments ||
+                nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS
+            ) {
+                managed = repo.managedPackagesNow()
+                managedFetchedAt = nowClock
+                lastAssignments = config.assignments
+                inventoryDirty = false
+            }
             val now = LocalDateTime.now()
 
             // Credit time only on consecutive sightings of the same managed app, so the
@@ -258,14 +298,22 @@ class EnforcementService : LifecycleService() {
             }
             val failClosed = !usageAccessOk && RuleEngine.requiresUsageCounting(config)
 
-            val blocked = if (failClosed) {
-                managed.toMutableSet()
+            val blocked: Set<String> = if (failClosed) {
+                managed
             } else {
                 managed.filterTo(mutableSetOf()) { pkg ->
                     RuleEngine.evaluate(config, pkg, now, usage, extra) is Verdict.Blocked
                 }
             }
-            enforcer.apply(managed, blocked)
+            // Re-assert on change, plus periodically so external state drift self-heals.
+            if (blocked != lastAppliedBlocked || managed != lastAppliedManaged ||
+                nowClock - lastApplyAt > REASSERT_MILLIS
+            ) {
+                enforcer.apply(managed, blocked)
+                lastAppliedBlocked = blocked
+                lastAppliedManaged = managed
+                lastApplyAt = nowClock
+            }
 
             // Tight cadence only while a managed app is actually in use (budget countdown
             // needs it); blocked apps are already suspended, so idling can tick slowly.
@@ -322,6 +370,10 @@ class EnforcementService : LifecycleService() {
         private const val TICK_IDLE_MILLIS = 15_000L
         private const val MAX_CREDIT_SECONDS = 15L
         private const val UPDATE_CHECK_MILLIS = 6 * 60 * 60 * 1000L
+        /** Managed-set cache TTL; the package receiver invalidates it instantly anyway. */
+        private const val INVENTORY_TTL_MILLIS = 60_000L
+        /** Periodic full re-assert of suspension state, catching any external drift. */
+        private const val REASSERT_MILLIS = 30_000L
         /** Backoff after a cycle that produced no fix (indoors, GPS warming up, airplane mode). */
         private const val RETRY_LOCATION_MILLIS = 60_000L
         /** Hard floor between sampling cycles, so a never-succeeding fix can't spin the radio. */

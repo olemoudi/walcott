@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class NtfyTransport(
     server: String,
     private val topic: String,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = dev.walcott.net.Http.client,
     /**
      * Unix-seconds cursor appended as `since=` when (re)connecting, so messages published
      * while the socket was down are replayed instead of lost. 0 = no replay (legacy behavior).
