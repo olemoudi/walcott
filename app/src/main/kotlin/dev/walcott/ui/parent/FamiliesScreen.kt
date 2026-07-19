@@ -216,11 +216,14 @@ fun FamiliesScreen(
         // doesn't re-send blindly, and cancellable while still queued.
         if (pendingOps.isNotEmpty()) {
             item {
-                Text(
-                    stringResource(R.string.pending_ops_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = spacing.sm),
-                )
+                Column(Modifier.padding(top = spacing.sm)) {
+                    Text(stringResource(R.string.pending_ops_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.pending_ops_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             items(pendingOps, key = { "op-" + it.deviceId + it.action + it.arg + it.sentAtMs }) { op ->
                 PendingOpRow(

@@ -107,6 +107,23 @@ class PendingOpsTest {
     }
 
     @Test
+    fun `acks from other actions never create a waiting entry`() {
+        val updated = child(
+            lastCommand = CommandAck(
+                id = "u", action = RemoteAction.UPDATE_NOW, ok = true,
+                detail = "installing", completedAtMs = now,
+            ),
+        )
+        assertTrue(SyncEngine.pendingOps(emptyList(), emptyList(), listOf(updated), now).isEmpty())
+    }
+
+    @Test
+    fun `a failed install ack is not shown as waiting`() {
+        val failed = child(lastCommand = openedAck("com.a").copy(ok = false, detail = "no_package"))
+        assertTrue(SyncEngine.pendingOps(emptyList(), emptyList(), listOf(failed), now).isEmpty())
+    }
+
+    @Test
     fun `a stale opened ack ages out of the list`() {
         val old = child(lastCommand = openedAck("com.a", completedAtMs = now - SyncEngine.COMMAND_TTL_MS - 1))
         assertTrue(SyncEngine.pendingOps(emptyList(), emptyList(), listOf(old), now).isEmpty())

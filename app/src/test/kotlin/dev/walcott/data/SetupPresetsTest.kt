@@ -48,6 +48,17 @@ class SetupPresetsTest {
     }
 
     @Test
+    fun `the default idle-earn starter is internally consistent`() {
+        val earn = SetupPresets.defaultIdleEarn()
+        assertTrue(earn.minutesIdlePerReward > 0 && earn.rewardMinutes > 0)
+        // The rolling-window cap must fit at least one whole reward block, or the wizard
+        // would enable a feature that can never grant anything.
+        assertTrue(earn.windowCapMinutes >= earn.rewardMinutes)
+        assertTrue(earn.weeklyCapMinutes >= earn.windowCapMinutes)
+        assertEquals(AppCategory.GAMES.id, earn.targetCategoryId)
+    }
+
+    @Test
     fun `protection preset adds the recommended set plus the install block`() {
         val out = SetupPresets.withProtection(PolicySettings(), blockInstalls = true)
         assertTrue(out.deviceRestrictions.containsAll(DeviceRestrictions.RECOMMENDED_DEFAULTS))

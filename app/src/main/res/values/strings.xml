@@ -508,6 +508,7 @@
     <string name="remote_result_no_package">no app specified</string>
     <!-- Pending remote actions (parent home) -->
     <string name="pending_ops_title">Pending actions</string>
+    <string name="pending_ops_hint">They run on the device\'s next check-in; cancelling only works until then.</string>
     <string name="pending_op_install">Install %1$s</string>
     <string name="pending_op_locate">Location request</string>
     <string name="pending_op_meta">%1$s · sent %2$s ago</string>

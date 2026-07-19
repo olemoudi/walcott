@@ -508,6 +508,7 @@
     <string name="remote_result_no_package">no se indicó ninguna app</string>
     <!-- Acciones remotas pendientes (inicio del padre) -->
     <string name="pending_ops_title">Acciones pendientes</string>
+    <string name="pending_ops_hint">Se ejecutan en el próximo check-in del dispositivo; cancelar solo funciona hasta entonces.</string>
     <string name="pending_op_install">Instalar %1$s</string>
     <string name="pending_op_locate">Petición de ubicación</string>
     <string name="pending_op_meta">%1$s · enviada hace %2$s</string>

@@ -9,6 +9,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -251,7 +253,7 @@ fun SetupWizardScreen(
                     WizardStep.LOCATION -> LocationStep(viewModel)
                     WizardStep.EARN -> EarnStep(viewModel)
                     WizardStep.WEBFILTER -> WebFilterStep(viewModel)
-                    WizardStep.SUMMARY -> SummaryStep(settings = settings)
+                    WizardStep.SUMMARY -> SummaryStep(settings = settings, steps = steps)
                 }
             }
         }
@@ -304,6 +306,7 @@ private fun BedtimeStep(viewModel: WalcottViewModel) {
     BedtimeCard(bedtime = settings.bedtime, onChange = { viewModel.setBedtime(it) })
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ScreenTimeStep(viewModel: WalcottViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -316,7 +319,7 @@ private fun ScreenTimeStep(viewModel: WalcottViewModel) {
     // Selection derives from the stored policy (games' school budget as the representative),
     // so re-entering the wizard shows what is actually configured.
     val current = settings.budgets[SetupPresets.LEISURE_CATEGORY_IDS.first()]?.get(DayType.SCHOOL.name)
-    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
         FilterChip(
             selected = current == null,
             onClick = { viewModel.setLeisureBudget(null) },
@@ -357,6 +360,7 @@ private fun ProtectionStep(viewModel: WalcottViewModel) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LocationStep(viewModel: WalcottViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -366,7 +370,7 @@ private fun LocationStep(viewModel: WalcottViewModel) {
         stringResource(R.string.nav_location_title),
         stringResource(R.string.step_location_teach),
     )
-    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
         FilterChip(
             selected = settings.trackingIntervalMinutes == 0,
             onClick = { viewModel.setFamilyTrackingInterval(0) },
@@ -445,48 +449,65 @@ private fun WebFilterStep(viewModel: WalcottViewModel) {
 }
 
 @Composable
-private fun SummaryStep(settings: dev.walcott.data.PolicySettings) {
+private fun SummaryStep(settings: dev.walcott.data.PolicySettings, steps: List<WizardStep>) {
     val spacing = Tokens.spacing
     StepHeader(
         Icons.Outlined.AutoFixHigh,
         stringResource(R.string.step_summary_title),
         stringResource(R.string.step_summary_teach),
     )
+    // Only recap what THIS preset walked through: the basic wizard never asked about
+    // protection or location, so listing them as "Off" would read as something undone.
     val bedtime = settings.bedtime[DayType.SCHOOL.name]
     val leisure = settings.budgets[SetupPresets.LEISURE_CATEGORY_IDS.first()]?.get(DayType.SCHOOL.name)
-    SummaryRow(
-        stringResource(R.string.bedtime_title),
-        bedtime?.let {
+    if (WizardStep.BEDTIME in steps) {
+        SummaryRow(
+            stringResource(R.string.bedtime_title),
+            bedtime?.let {
+                stringResource(
+                    R.string.bedtime_range,
+                    LocalTime.ofSecondOfDay(it.startMinute * 60L).hhmm(),
+                    LocalTime.ofSecondOfDay(it.endMinute * 60L).hhmm(),
+                )
+            } ?: stringResource(R.string.summary_not_set),
+            bedtime != null,
+        )
+    }
+    if (WizardStep.SCREEN_TIME in steps) {
+        SummaryRow(
+            stringResource(R.string.step_screen_time_title),
+            leisure?.let { Duration.ofMinutes(it.toLong()).humanize() } ?: stringResource(R.string.no_limit),
+            leisure != null,
+        )
+    }
+    if (WizardStep.PROTECTION in steps) {
+        SummaryRow(
+            stringResource(R.string.step_protection_installs),
             stringResource(
-                R.string.bedtime_range,
-                LocalTime.ofSecondOfDay(it.startMinute * 60L).hhmm(),
-                LocalTime.ofSecondOfDay(it.endMinute * 60L).hhmm(),
-            )
-        } ?: stringResource(R.string.summary_not_set),
-        bedtime != null,
-    )
-    SummaryRow(
-        stringResource(R.string.step_screen_time_title),
-        leisure?.let { Duration.ofMinutes(it.toLong()).humanize() } ?: stringResource(R.string.no_limit),
-        leisure != null,
-    )
-    SummaryRow(
-        stringResource(R.string.step_protection_installs),
-        stringResource(
-            if (DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions) R.string.summary_on
-            else R.string.summary_off,
-        ),
-        DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions,
-    )
-    SummaryRow(
-        stringResource(R.string.nav_location_title),
-        if (settings.trackingIntervalMinutes > 0) {
-            stringResource(R.string.tracking_minutes_fmt, settings.trackingIntervalMinutes)
-        } else {
-            stringResource(R.string.tracking_off)
-        },
-        settings.trackingIntervalMinutes > 0,
-    )
+                if (DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions) R.string.summary_on
+                else R.string.summary_off,
+            ),
+            DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions,
+        )
+    }
+    if (WizardStep.LOCATION in steps) {
+        SummaryRow(
+            stringResource(R.string.nav_location_title),
+            if (settings.trackingIntervalMinutes > 0) {
+                stringResource(R.string.tracking_minutes_fmt, settings.trackingIntervalMinutes)
+            } else {
+                stringResource(R.string.tracking_off)
+            },
+            settings.trackingIntervalMinutes > 0,
+        )
+    }
+    if (WizardStep.EARN in steps) {
+        SummaryRow(
+            stringResource(R.string.nav_earn_title),
+            stringResource(if (settings.idleEarn != null) R.string.summary_on else R.string.summary_off),
+            settings.idleEarn != null,
+        )
+    }
     Spacer(Modifier.height(spacing.sm))
     Text(
         stringResource(R.string.summary_next_hint),
