@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -104,6 +105,10 @@ fun ChildStatusScreen(
     val state by viewModel.childState.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val pendingInstall by viewModel.pendingInstall.collectAsStateWithLifecycle()
+    val myRequests by viewModel.myPendingRequests.collectAsStateWithLifecycle()
+    val myAsks by viewModel.myPendingAsks.collectAsStateWithLifecycle()
+    val notice by viewModel.notice.collectAsStateWithLifecycle()
+    val installExemption by viewModel.installExemption.collectAsStateWithLifecycle()
     val spacing = Tokens.spacing
     val scope = rememberCoroutineScope()
 
@@ -149,7 +154,11 @@ fun ChildStatusScreen(
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { text ->
             scope.launch {
-                if (!viewModel.pairAsChild(text)) {
+                if (viewModel.pairAsChild(text)) {
+                    // Positive confirmation: scanning worked and this phone now belongs
+                    // to the family — otherwise success just looks like "nothing happened".
+                    Toast.makeText(context, R.string.pairing_success, Toast.LENGTH_SHORT).show()
+                } else {
                     Toast.makeText(context, R.string.pairing_failed, Toast.LENGTH_SHORT).show()
                 }
             }
@@ -172,6 +181,17 @@ fun ChildStatusScreen(
                 }
             }
             item { HeroCard(state) }
+            // The parents' latest answer: approvals celebrate, denials are said out loud
+            // (a request that just vanishes teaches the child to spam it), bonuses explain
+            // where the surprise minutes came from. Stays until dismissed.
+            notice?.let { n ->
+                item { NoticeCard(n, onDismiss = { viewModel.dismissNotice() }) }
+            }
+            // An approved app ask opened the timed install window: say so, with the countdown.
+            val exemptionLeftMs = installExemption - System.currentTimeMillis()
+            if (identity.role == Role.CHILD && exemptionLeftMs > 0 && pendingInstall.isEmpty()) {
+                item { InstallWindowCard(exemptionLeftMs) }
+            }
             // Backstop for the silent install-prompt notification: a parent-pushed install
             // stays visible here until it completes, and tapping re-opens the install window.
             if (pendingInstall.isNotEmpty()) {
@@ -214,9 +234,19 @@ fun ChildStatusScreen(
                 }
             }
             items(state.categories, key = { it.category.id }) { card ->
-                CategoryCard(card, onRequestExtra = {
-                    if (identity.role == Role.CHILD) pendingRemote = card else pending = card
-                })
+                CategoryCard(
+                    card,
+                    // While this category's request is unanswered the button says so,
+                    // instead of inviting a duplicate.
+                    requestPending = myRequests.any { it.categoryId == card.category.id },
+                    onRequestExtra = {
+                        if (identity.role == Role.CHILD) pendingRemote = card else pending = card
+                    },
+                )
+            }
+            // Everything sent and still unanswered, so "did it go through?" has an answer.
+            if (myAsks.isNotEmpty()) {
+                item { WaitingCard(myAsks.map { it.text }) }
             }
             if (identity.role == Role.CHILD) {
                 item { AskCard(onClick = { showAsk = true }) }
@@ -245,6 +275,7 @@ fun ChildStatusScreen(
             onSend = { minutes, reason ->
                 viewModel.requestExtraTimeRemote(card.category.id, minutes, reason)
                 pendingRemote = null
+                Toast.makeText(context, R.string.request_sent, Toast.LENGTH_SHORT).show()
             },
         )
     }
@@ -339,6 +370,112 @@ private fun UsageAccessCard(onFix: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = color,
                 )
+            }
+        }
+    }
+}
+
+/** The parents' latest answer: approval, denial or bonus. Stays until the child dismisses it. */
+@Composable
+private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Unit) {
+    val spacing = Tokens.spacing
+    val categoryName = dev.walcott.AppCategory.byId(notice.categoryId)
+        ?.let { stringResource(it.nameRes) } ?: notice.categoryId
+    val title = when {
+        notice.kind == "bonus" -> stringResource(R.string.notice_bonus, notice.minutes, categoryName)
+        !notice.approved -> stringResource(R.string.notice_denied)
+        notice.kind == "time" -> stringResource(R.string.notice_approved_time, notice.minutes, categoryName)
+        notice.kind == ChildRequest.KIND_APP -> stringResource(R.string.notice_approved_app, notice.text)
+        else -> stringResource(R.string.notice_approved_other, notice.text)
+    }
+    val subtitle = when {
+        !notice.approved && notice.text.isNotBlank() -> notice.text
+        !notice.approved -> stringResource(R.string.notice_denied_desc)
+        else -> null
+    }
+    val positive = notice.approved
+    val container = if (positive) MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+    else MaterialTheme.colorScheme.surfaceVariant
+    val tint = if (positive) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Surface(shape = RoundedCornerShape(22.dp), color = container, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = spacing.lg, vertical = spacing.md), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (positive) Icons.Filled.CheckCircle else Icons.Filled.Lock,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                subtitle?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_ok)) }
+        }
+    }
+}
+
+/** An approved app ask opened the install window — tell the child, with the countdown. */
+@Composable
+private fun InstallWindowCard(remainingMs: Long) {
+    val spacing = Tokens.spacing
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.InstallMobile,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column {
+                Text(
+                    stringResource(R.string.install_window_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    stringResource(
+                        R.string.install_window_desc,
+                        java.time.Duration.ofMillis(remainingMs).humanize(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        }
+    }
+}
+
+/** Everything sent and still unanswered, so "did it go through?" always has an answer. */
+@Composable
+private fun WaitingCard(texts: List<String>) {
+    val spacing = Tokens.spacing
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.HourglassEmpty,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column {
+                Text(stringResource(R.string.child_waiting_title), style = MaterialTheme.typography.titleSmall)
+                texts.forEach {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
@@ -629,7 +766,7 @@ private fun HeroCard(state: ChildUiState) {
 }
 
 @Composable
-private fun CategoryCard(card: CategoryStatusUi, onRequestExtra: () -> Unit) {
+private fun CategoryCard(card: CategoryStatusUi, requestPending: Boolean, onRequestExtra: () -> Unit) {
     val spacing = Tokens.spacing
     val category = card.category
     val status = card.status
@@ -697,7 +834,29 @@ private fun CategoryCard(card: CategoryStatusUi, onRequestExtra: () -> Unit) {
                     Text(blockedReasonText(status.blockReason), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (status.blockReason == BlockReason.BUDGET_EXHAUSTED) {
                         Spacer(Modifier.height(spacing.md))
-                        RequestExtraButton(category.color, onRequestExtra)
+                        if (requestPending) {
+                            // Already asked: say so instead of inviting a duplicate request.
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    Icons.Outlined.HourglassEmpty,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(spacing.xs))
+                                Text(
+                                    stringResource(R.string.request_waiting_button),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            RequestExtraButton(category.color, onRequestExtra)
+                        }
                     }
                 }
             }

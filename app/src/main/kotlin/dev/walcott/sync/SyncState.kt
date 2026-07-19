@@ -16,6 +16,22 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class EarnGrantEntry(val epochMs: Long, val minutes: Int)
 
+/**
+ * What the child home shows about the parents' latest answer (approval, denial, bonus).
+ * Kept until the child dismisses it, so an answer that arrives while the phone is in a
+ * drawer is still seen.
+ */
+@Serializable
+data class NoticeEntry(
+    /** "time" | ChildRequest.KIND_APP | ChildRequest.KIND_OTHER | "bonus". */
+    val kind: String,
+    val approved: Boolean,
+    val minutes: Int = 0,
+    val categoryId: String = "",
+    val text: String = "",
+    val atMs: Long,
+)
+
 /** Persistent sync bookkeeping, separate from the rules ([dev.walcott.data.PolicySettings]). */
 @Serializable
 data class SyncState(
@@ -37,6 +53,10 @@ data class SyncState(
     val pendingInstallCommandId: String = "",
     /** requestedAtMs of the newest location request this child has already answered. */
     val appliedLocationRequestMs: Long = 0,
+    /** Version of the newest parent snapshot whose rules this child has adopted. */
+    val appliedParentVersion: Long = 0,
+    /** The parents' latest answer (approval/denial/bonus), shown until the child dismisses it. */
+    val lastNotice: NoticeEntry? = null,
     /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */
     val pinFailedAttempts: Int = 0,
     val pinLockedUntilMs: Long = 0,

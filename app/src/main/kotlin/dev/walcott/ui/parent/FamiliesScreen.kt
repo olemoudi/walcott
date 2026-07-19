@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -110,6 +111,7 @@ fun FamiliesScreen(
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
+    val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
 
@@ -300,6 +302,7 @@ fun FamiliesScreen(
                 snapshot = snapshot,
                 lastSeenMs = snapshot?.let { lastSeen[it.deviceId] },
                 nowMs = nowMs,
+                parentVersion = parentVersion,
                 onClick = { onOpenChild(entry.childId) },
             )
         }
@@ -407,6 +410,7 @@ private fun ChildRow(
     snapshot: ChildSnapshot?,
     lastSeenMs: Long?,
     nowMs: Long,
+    parentVersion: Long,
     onClick: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -462,7 +466,7 @@ private fun ChildRow(
                         },
                     )
                 }
-                if (snapshot != null) StatusChips(snapshot)
+                if (snapshot != null) StatusChips(snapshot, parentVersion)
             }
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -580,11 +584,16 @@ private fun SetupChecklistCard(steps: List<SetupStep>) {
 
 /** At-a-glance health of a linked child: a green shield when all good, warning chips otherwise. */
 @Composable
-private fun StatusChips(snapshot: ChildSnapshot) {
+private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
     val spacing = Tokens.spacing
     val warn = Color(0xFFB26A00)
     val error = MaterialTheme.colorScheme.error
     val chips = buildList {
+        // Rule edits in flight: the child hasn't confirmed the latest policy version yet
+        // (legacy children that don't report it never show this, rather than always).
+        if (snapshot.appliedPolicyVersion in 1 until parentVersion) {
+            add(Triple(Icons.Outlined.Sync, stringResource(R.string.chip_rules_syncing), warn))
+        }
         when (snapshot.enforcement) {
             EnforcementStatus.DEVICE_OWNER ->
                 add(Triple(Icons.Filled.Shield, stringResource(R.string.chip_protected), MaterialTheme.colorScheme.secondary))

@@ -178,4 +178,60 @@ class PendingOpsTest {
         )
         assertTrue(!SyncEngine.locatePending(ops, "child-1"))
     }
+
+    // --- The "your parents answered" notice on the child home ---
+
+    private fun timeRequest(id: String) =
+        ExtraTimeRequest(requestId = id, categoryId = "games", minutes = 15, createdAtEpochMs = now)
+
+    private fun appAsk(id: String) =
+        ChildRequest(requestId = id, kind = ChildRequest.KIND_APP, text = "Minecraft", createdAtEpochMs = now)
+
+    @Test
+    fun `an approved time request summarizes with its category and granted minutes`() {
+        val summary = SyncEngine.latestResolutionSummary(
+            fresh = listOf(Resolution("r1", approved = true, grantedMinutes = 30, resolvedAtEpochMs = now)),
+            requests = listOf(timeRequest("r1")),
+            asks = emptyList(),
+        )
+        assertEquals(true, summary?.approved)
+        assertEquals(30, summary?.grantedMinutes)
+        assertEquals("games", summary?.categoryId)
+    }
+
+    @Test
+    fun `a denied request still produces a notice — silence is not an answer`() {
+        val summary = SyncEngine.latestResolutionSummary(
+            fresh = listOf(Resolution("r1", approved = false, grantedMinutes = 0, resolvedAtEpochMs = now)),
+            requests = listOf(timeRequest("r1")),
+            asks = emptyList(),
+        )
+        assertEquals(false, summary?.approved)
+    }
+
+    @Test
+    fun `an approved app ask carries its kind and text`() {
+        val summary = SyncEngine.latestResolutionSummary(
+            fresh = listOf(Resolution("a1", approved = true, grantedMinutes = 0, resolvedAtEpochMs = now)),
+            requests = emptyList(),
+            asks = listOf(appAsk("a1")),
+        )
+        assertEquals(ChildRequest.KIND_APP, summary?.kind)
+        assertEquals("Minecraft", summary?.text)
+    }
+
+    @Test
+    fun `the newest resolution wins and foreign resolutions are ignored`() {
+        val summary = SyncEngine.latestResolutionSummary(
+            fresh = listOf(
+                Resolution("r1", approved = false, grantedMinutes = 0, resolvedAtEpochMs = now - 1000),
+                Resolution("a1", approved = true, grantedMinutes = 0, resolvedAtEpochMs = now),
+                Resolution("someone-else", approved = true, grantedMinutes = 60, resolvedAtEpochMs = now + 1000),
+            ),
+            requests = listOf(timeRequest("r1")),
+            asks = listOf(appAsk("a1")),
+        )
+        assertEquals(ChildRequest.KIND_APP, summary?.kind)
+        assertEquals(true, summary?.approved)
+    }
 }

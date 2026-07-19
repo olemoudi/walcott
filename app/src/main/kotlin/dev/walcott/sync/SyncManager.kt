@@ -89,6 +89,24 @@ class SyncManager(
     val installExemption: StateFlow<Long> =
         syncStore.state.map { it.installExemptionUntilMs }.stateIn(scope, SharingStarted.Eagerly, 0L)
 
+    // --- Child-side visibility of its own request lifecycle ---
+
+    /** This device's own unanswered time requests (child home "waiting" section). */
+    val myPendingRequests: StateFlow<List<ExtraTimeRequest>> =
+        syncStore.state.map { it.pendingRequests }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** This device's own unanswered asks (apps, anything). */
+    val myPendingAsks: StateFlow<List<ChildRequest>> =
+        syncStore.state.map { it.pendingAsks }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** The parents' latest answer (approval/denial/bonus), until the child dismisses it. */
+    val notice: StateFlow<NoticeEntry?> =
+        syncStore.state.map { it.lastNotice }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    suspend fun dismissNotice() {
+        syncStore.update { it.copy(lastNotice = null) }
+    }
+
     // --- Lifecycle ---
 
     fun start() {
@@ -644,6 +662,7 @@ class SyncManager(
                     lastWrongPinMs = s.lastWrongPinMs,
                     lastCommand = s.lastCommandAck,
                     answeredLocationRequestMs = s.appliedLocationRequestMs,
+                    appliedPolicyVersion = s.appliedParentVersion,
                     updateError = s.updateError,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
@@ -702,6 +721,15 @@ class SyncManager(
         // first; each command publishes its own acknowledgement.
         applyCommands(snapshot, deviceId)
 
+        // Record which rules version this child now runs, and echo it promptly so the
+        // parent's "updating rules…" indicator clears (a re-emit would take minutes).
+        val newRulesAdopted = snapshot.version > s.appliedParentVersion
+        if (newRulesAdopted) {
+            syncStore.update {
+                it.copy(appliedParentVersion = maxOf(it.appliedParentVersion, snapshot.version))
+            }
+        }
+
         // Apply resolutions to our pending requests and asks, idempotently.
         val asksById = s.pendingAsks.associateBy { it.requestId }
         val pendingIds = s.pendingRequests.map { it.requestId }.toSet() + asksById.keys
@@ -723,7 +751,30 @@ class SyncManager(
             if (bonus.minutes > 0) repository.grantExtraMinutes(bonus.categoryId, bonus.minutes.toLong())
         }
 
-        if (freshResolutions.isEmpty() && freshBonuses.isEmpty()) return
+        if (freshResolutions.isEmpty() && freshBonuses.isEmpty()) {
+            if (newRulesAdopted) publishSelf()
+            return
+        }
+        // The child home tells the child what was answered — a denial or a surprise bonus
+        // must not just silently vanish or appear.
+        val summary = SyncEngine.latestResolutionSummary(freshResolutions, s.pendingRequests, s.pendingAsks)
+        val noticeFromResolution = summary?.let {
+            NoticeEntry(
+                kind = if (it.categoryId.isNotEmpty()) "time" else it.kind,
+                approved = it.approved,
+                minutes = it.grantedMinutes,
+                categoryId = it.categoryId,
+                text = it.text,
+                atMs = System.currentTimeMillis(),
+            )
+        }
+        val noticeFromBonus = freshBonuses.lastOrNull { it.minutes > 0 }?.let {
+            NoticeEntry(
+                kind = "bonus", approved = true, minutes = it.minutes,
+                categoryId = it.categoryId, atMs = System.currentTimeMillis(),
+            )
+        }
+
         val resolvedIds = freshResolutions.map { it.requestId }.toSet()
         val bonusIds = freshBonuses.map { it.id }.toSet()
         syncStore.update {
@@ -732,6 +783,7 @@ class SyncManager(
                 pendingAsks = it.pendingAsks.filterNot { a -> a.requestId in resolvedIds },
                 appliedResolutionIds = it.appliedResolutionIds + resolvedIds,
                 appliedBonusIds = it.appliedBonusIds + bonusIds,
+                lastNotice = noticeFromResolution ?: noticeFromBonus ?: it.lastNotice,
                 installExemptionUntilMs = if (approvedAppAsk) {
                     System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS
                 } else {
@@ -739,6 +791,8 @@ class SyncManager(
                 },
             )
         }
+        // The pending list shrank (and possibly the rules changed): tell the parent now.
+        publishSelf()
     }
 
     /**

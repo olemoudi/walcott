@@ -117,6 +117,21 @@
     <string name="pairing_step_link">2 · Vincula el dispositivo</string>
     <string name="enroll_next">Siguiente</string>
     <string name="pairing_failed">No se pudo leer ese código</string>
+    <string name="pairing_success">Vinculado a tu familia ✓</string>
+    <!-- Ciclo de vida de peticiones (lado hijo) -->
+    <string name="child_waiting_title">Esperando respuesta</string>
+    <string name="request_waiting_button">Enviada — esperando respuesta</string>
+    <string name="notice_approved_time">¡Aprobado! +%1$d min de %2$s</string>
+    <string name="notice_approved_app">Ya puedes instalar %1$s</string>
+    <string name="notice_approved_other">Te han dicho que sí: %1$s</string>
+    <string name="notice_denied">Esta vez no</string>
+    <string name="notice_denied_desc">Tu petición no ha sido aprobada</string>
+    <string name="notice_bonus">¡Un regalo! +%1$d min de %2$s</string>
+    <string name="install_window_title">Ya puedes instalar tu app</string>
+    <string name="install_window_desc">Instalar está permitido durante %1$s más</string>
+    <!-- Indicador de sincronización de reglas (lado padre) -->
+    <string name="chip_rules_syncing">Actualizando reglas</string>
+    <string name="detail_rules_syncing">Enviando los últimos cambios de reglas — se aplicarán en el próximo check-in</string>
 
     <!-- Sync: panel del padre / peticiones -->
     <string name="nav_children_title">Hijos y peticiones</string>

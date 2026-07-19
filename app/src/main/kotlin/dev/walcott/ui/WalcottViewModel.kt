@@ -54,11 +54,21 @@ class WalcottViewModel(
         sync.state.map { it.children }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val lastSeen: StateFlow<Map<String, Long>> =
         sync.state.map { it.lastSeen }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    /** The parent's current rules version, to tell which children have caught up. */
+    val parentVersion: StateFlow<Long> =
+        sync.state.map { it.parentVersion }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
     val pendingRequests: StateFlow<List<SyncManager.PendingRequest>> = sync.pendingRequests
     val pendingAsks: StateFlow<List<SyncManager.PendingAsk>> = sync.pendingAsks
     val installExemption: StateFlow<Long> = sync.installExemption
     /** Package of a parent-pushed install still waiting for its tap on this device, or "". */
     val pendingInstall: StateFlow<String> = sync.pendingInstall
+    /** This device's own unanswered requests/asks, for the child home's "waiting" section. */
+    val myPendingRequests: StateFlow<List<dev.walcott.sync.ExtraTimeRequest>> = sync.myPendingRequests
+    val myPendingAsks: StateFlow<List<dev.walcott.sync.ChildRequest>> = sync.myPendingAsks
+    /** The parents' latest answer (approval/denial/bonus), until dismissed. */
+    val notice: StateFlow<dev.walcott.sync.NoticeEntry?> = sync.notice
+
+    fun dismissNotice() = viewModelScope.launch { sync.dismissNotice() }
 
     fun askFor(kind: String, text: String) = viewModelScope.launch { sync.askFor(kind, text) }
     fun allowInstallsTemporarily() = viewModelScope.launch { sync.allowInstallsTemporarily() }

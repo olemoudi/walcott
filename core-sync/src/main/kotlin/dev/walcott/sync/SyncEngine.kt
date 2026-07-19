@@ -164,4 +164,58 @@ object SyncEngine {
     /** True while a "locate now" for [deviceId] is still unanswered (drives the locating spinner). */
     fun locatePending(ops: List<PendingOp>, deviceId: String): Boolean =
         ops.any { it.action == ACTION_LOCATE && it.deviceId == deviceId }
+
+    /**
+     * What the child should be told about the parent's answer: which request it was, whether
+     * it was approved, and what was granted. Denials matter as much as approvals — without
+     * this the child's request would just silently vanish.
+     */
+    data class ResolutionSummary(
+        val approved: Boolean,
+        val grantedMinutes: Int,
+        /** Category for a time request; "" for a generic ask. */
+        val categoryId: String,
+        /** [ChildRequest.kind] for an ask; "" for a time request. */
+        val kind: String,
+        /** The ask's free-form text; "" for a time request. */
+        val text: String,
+        val resolvedAtMs: Long,
+    )
+
+    /**
+     * The newest of [fresh] resolutions matched back to the child's own pending requests and
+     * asks, or null when none of them concern this device. Callers show it as the "your
+     * parents answered" notice.
+     */
+    fun latestResolutionSummary(
+        fresh: List<Resolution>,
+        requests: List<ExtraTimeRequest>,
+        asks: List<ChildRequest>,
+    ): ResolutionSummary? {
+        val requestsById = requests.associateBy { it.requestId }
+        val asksById = asks.associateBy { it.requestId }
+        return fresh
+            .mapNotNull { resolution ->
+                requestsById[resolution.requestId]?.let { request ->
+                    ResolutionSummary(
+                        approved = resolution.approved,
+                        grantedMinutes = resolution.grantedMinutes,
+                        categoryId = request.categoryId,
+                        kind = "",
+                        text = "",
+                        resolvedAtMs = resolution.resolvedAtEpochMs,
+                    )
+                } ?: asksById[resolution.requestId]?.let { ask ->
+                    ResolutionSummary(
+                        approved = resolution.approved,
+                        grantedMinutes = 0,
+                        categoryId = "",
+                        kind = ask.kind,
+                        text = ask.text,
+                        resolvedAtMs = resolution.resolvedAtEpochMs,
+                    )
+                }
+            }
+            .maxByOrNull { it.resolvedAtMs }
+    }
 }

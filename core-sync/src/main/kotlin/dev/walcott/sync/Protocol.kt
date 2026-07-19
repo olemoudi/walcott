@@ -183,6 +183,11 @@ data class ChildSnapshot(
      */
     val answeredLocationRequestMs: Long = 0,
     /**
+     * [ParentSnapshot.version] of the newest rules this device has adopted, so the parent can
+     * tell "rule change still in flight" from "received". 0 = legacy child that doesn't report it.
+     */
+    val appliedPolicyVersion: Long = 0,
+    /**
      * Why this device's last self-update attempt failed, or "" when the last check was clean.
      * Makes a child stuck on an old build diagnosable without touching the phone.
      */

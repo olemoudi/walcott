@@ -98,6 +98,7 @@ fun ChildDetailScreen(
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
+    val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
 
     // Brief nulls are expected: right after "Add child" (store write in flight) or removal.
     val entry = settings.children.firstOrNull { it.childId == childId } ?: return
@@ -141,7 +142,11 @@ fun ChildDetailScreen(
                 }
             } else {
                 item {
-                    LinkedCard(snapshot, onShowCode = { showCode = true })
+                    LinkedCard(
+                        snapshot,
+                        rulesSyncing = snapshot.appliedPolicyVersion in 1 until parentVersion,
+                        onShowCode = { showCode = true },
+                    )
                 }
             }
 
@@ -449,7 +454,7 @@ private fun EnrollInstallStep(mode: EnrollMode) {
 }
 
 @Composable
-private fun LinkedCard(snapshot: ChildSnapshot, onShowCode: () -> Unit) {
+private fun LinkedCard(snapshot: ChildSnapshot, rulesSyncing: Boolean, onShowCode: () -> Unit) {
     val spacing = Tokens.spacing
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
@@ -465,6 +470,15 @@ private fun LinkedCard(snapshot: ChildSnapshot, onShowCode: () -> Unit) {
                     stringResource(R.string.child_detail_linked, snapshot.displayName),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                // A rule edit is on its way: honest about eventual consistency, and clears
+                // the moment the child confirms the new version.
+                if (rulesSyncing) {
+                    Text(
+                        stringResource(R.string.detail_rules_syncing),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFB26A00),
+                    )
+                }
                 // The fleet is sideloaded + self-updating; a child stuck behind our own build
                 // (0 = legacy child that doesn't report it yet) is worth a red flag.
                 if (snapshot.appVersionCode > 0) {
