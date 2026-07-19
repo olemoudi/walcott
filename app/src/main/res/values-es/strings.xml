@@ -139,6 +139,11 @@
     <string name="nav_children_subtitle">Ver uso y aprobar peticiones de tiempo</string>
     <string name="no_children">Aún no hay dispositivos vinculados</string>
     <string name="pending_requests">Peticiones pendientes</string>
+    <string name="request_time_card_title">Pedir más tiempo</string>
+    <string name="request_time_card_desc">Pide tiempo extra — para todo, o para una app</string>
+    <string name="request_time_pick">Más tiempo para…</string>
+    <string name="request_all_apps">Todas las apps</string>
+    <string name="request_time_for">Más tiempo para %1$s</string>
     <string name="no_requests">Sin peticiones pendientes</string>
     <string name="usage_today">Uso de hoy</string>
     <string name="approve">Aprobar</string>

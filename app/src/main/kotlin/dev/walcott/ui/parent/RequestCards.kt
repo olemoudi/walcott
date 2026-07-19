@@ -29,14 +29,21 @@ import dev.walcott.ui.theme.Tokens
 @Composable
 fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> Unit, onDeny: () -> Unit) {
     val spacing = Tokens.spacing
-    val category = AppCategory.byId(pending.request.categoryId)
-    val categoryName = category?.let { stringResource(it.nameRes) } ?: pending.request.categoryId
+    val key = pending.request.categoryId
+    val category = AppCategory.byId(key)
+    // The target can be a category, a single app, or "all apps" — name it the way the child chose.
+    val targetName = when {
+        key == dev.walcott.rules.ExtraTime.ALL_APPS -> stringResource(R.string.request_all_apps)
+        category != null -> stringResource(category.nameRes)
+        pending.request.targetLabel.isNotBlank() -> pending.request.targetLabel
+        else -> key
+    }
 
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             Text(pending.childName, style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.request_summary, categoryName, pending.request.minutes),
+                stringResource(R.string.request_summary, targetName, pending.request.minutes),
                 color = category?.color ?: MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (pending.request.reason.isNotBlank()) {

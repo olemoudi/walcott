@@ -153,8 +153,17 @@ class WalcottViewModel(
         }
     }
 
-    fun requestExtraTimeRemote(categoryId: String, minutes: Int, reason: String) =
-        viewModelScope.launch { sync.requestExtraTime(categoryId, minutes, reason) }
+    fun requestExtraTimeRemote(categoryId: String, minutes: Int, reason: String, targetLabel: String = "") =
+        viewModelScope.launch { sync.requestExtraTime(categoryId, minutes, reason, targetLabel) }
+
+    /** This child device's own launchable (non-system) apps, for the "request more time" list. */
+    val myApps: StateFlow<List<InstalledApp>> =
+        flow {
+            val apps = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                repository.inventory.launchableApps().filterNot { it.isSystem }
+            }
+            emit(apps)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun resolveRequest(requestId: String, approved: Boolean, grantedMinutes: Int) =
         viewModelScope.launch { sync.resolveRequest(requestId, approved, grantedMinutes) }

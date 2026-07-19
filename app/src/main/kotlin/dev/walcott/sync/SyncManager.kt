@@ -362,7 +362,7 @@ class SyncManager(
         if (pushedLanded) publishSelf()
     }
 
-    suspend fun requestExtraTime(categoryId: String, minutes: Int, reason: String) {
+    suspend fun requestExtraTime(categoryId: String, minutes: Int, reason: String, targetLabel: String = "") {
         syncStore.update { s ->
             s.copy(
                 childVersion = s.childVersion + 1,
@@ -372,6 +372,7 @@ class SyncManager(
                     minutes = minutes,
                     reason = reason,
                     createdAtEpochMs = System.currentTimeMillis(),
+                    targetLabel = targetLabel,
                 ),
             )
         }

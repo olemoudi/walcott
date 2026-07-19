@@ -46,7 +46,18 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     app.repository.updateSettings { decoded }
                 }
                 when (mode) {
-                    "child" -> app.identityStore.save(app.identityStore.current().copy(mode = DeviceMode.CHILD))
+                    // Mark it a paired child (role=CHILD) so child-only UI (requests, asks) shows;
+                    // a generated family key keeps the sync layer from choking on empty crypto.
+                    "child" -> app.identityStore.save(
+                        app.identityStore.current().copy(
+                            mode = DeviceMode.CHILD,
+                            role = dev.walcott.sync.Role.CHILD,
+                            topic = "debug-topic",
+                            familyKeyB64 = dev.walcott.sync.FamilyCrypto.toB64(
+                                dev.walcott.sync.FamilyCrypto.generateFamilyKey().encoded,
+                            ),
+                        ),
+                    )
                     "parent" -> app.identityStore.save(app.identityStore.current().copy(mode = DeviceMode.PARENT))
                     "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
                 }

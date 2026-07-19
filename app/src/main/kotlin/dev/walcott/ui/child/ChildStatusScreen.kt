@@ -28,20 +28,24 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -84,6 +88,7 @@ import dev.walcott.sync.Role
 import dev.walcott.ui.CategoryStatusUi
 import dev.walcott.ui.ChildUiState
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.AppIcon
 import dev.walcott.ui.components.ModeBadge
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
@@ -115,6 +120,10 @@ fun ChildStatusScreen(
     var pending by remember { mutableStateOf<CategoryStatusUi?>(null) }
     var pendingRemote by remember { mutableStateOf<CategoryStatusUi?>(null) }
     var showAsk by remember { mutableStateOf(false) }
+    // "Request more time" flow: pick a target (all apps or one app), then the minutes.
+    var showRequestSheet by remember { mutableStateOf(false) }
+    var requestTarget by remember { mutableStateOf<RequestTarget?>(null) }
+    val myApps by viewModel.myApps.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
 
@@ -249,6 +258,9 @@ fun ChildStatusScreen(
                 item { WaitingCard(myAsks.map { it.text }) }
             }
             if (identity.role == Role.CHILD) {
+                item {
+                    RequestTimeCard(onClick = { showRequestSheet = true })
+                }
                 item { AskCard(onClick = { showAsk = true }) }
             }
             // Version visible on the child home without unlocking settings (self-updates are
@@ -289,7 +301,32 @@ fun ChildStatusScreen(
             },
         )
     }
+    if (showRequestSheet) {
+        RequestTimeSheet(
+            apps = myApps,
+            inventory = viewModel.repository.inventory,
+            onDismiss = { showRequestSheet = false },
+            onPick = { target ->
+                showRequestSheet = false
+                requestTarget = target
+            },
+        )
+    }
+    requestTarget?.let { target ->
+        RequestTimeDialog(
+            title = target.label,
+            onDismiss = { requestTarget = null },
+            onSend = { minutes, reason ->
+                viewModel.requestExtraTimeRemote(target.key, minutes, reason, target.label)
+                requestTarget = null
+                Toast.makeText(context, R.string.request_sent, Toast.LENGTH_SHORT).show()
+            },
+        )
+    }
 }
+
+/** A target for an extra-time request: all apps, or one app. */
+private data class RequestTarget(val key: String, val label: String)
 
 /** Unwraps the Activity behind a Compose context, for permission-rationale checks. */
 private fun android.content.Context.findActivity(): android.app.Activity? {
@@ -513,6 +550,124 @@ private fun PendingInstallCard(pkg: String, onOpen: () -> Unit) {
             }
         }
     }
+}
+
+/** Child entry point to request more time — for everything, or for a single app. */
+@Composable
+private fun RequestTimeCard(onClick: () -> Unit) {
+    val spacing = Tokens.spacing
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.MoreTime,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column {
+                Text(stringResource(R.string.request_time_card_title), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.request_time_card_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** Bottom sheet: pick "all apps" or a single app to request extra time for. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RequestTimeSheet(
+    apps: List<dev.walcott.data.InstalledApp>,
+    inventory: dev.walcott.data.AppInventory,
+    onDismiss: () -> Unit,
+    onPick: (RequestTarget) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val allApps = stringResource(R.string.request_all_apps)
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding()) {
+            item {
+                Text(
+                    stringResource(R.string.request_time_pick),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
+                )
+            }
+            item {
+                RequestTargetRow(
+                    label = allApps,
+                    icon = { Icon(Icons.Filled.Apps, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp)) },
+                    onClick = { onPick(RequestTarget(dev.walcott.rules.ExtraTime.ALL_APPS, allApps)) },
+                )
+            }
+            items(apps, key = { it.packageName }) { app ->
+                RequestTargetRow(
+                    label = app.label,
+                    icon = { AppIcon(app.packageName, inventory, size = 40.dp) },
+                    onClick = { onPick(RequestTarget(app.packageName, app.label)) },
+                )
+            }
+            item { Spacer(Modifier.height(spacing.lg)) }
+        }
+    }
+}
+
+@Composable
+private fun RequestTargetRow(label: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
+    val spacing = Tokens.spacing
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = spacing.lg, vertical = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon()
+        Spacer(Modifier.width(spacing.md))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** Minutes + optional reason for a chosen target (all apps or one app). */
+@Composable
+private fun RequestTimeDialog(title: String, onDismiss: () -> Unit, onSend: (Int, String) -> Unit) {
+    val spacing = Tokens.spacing
+    var minutes by remember { mutableStateOf(15) }
+    var reason by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.request_time_for, title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Text(stringResource(R.string.extra_how_much), style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    listOf(15, 30, 60).forEach { m ->
+                        FilterChip(
+                            selected = minutes == m,
+                            onClick = { minutes = m },
+                            label = { Text(stringResource(R.string.extra_minutes, m)) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it.take(120) },
+                    label = { Text(stringResource(R.string.reason_optional)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSend(minutes, reason.trim()) }) { Text(stringResource(R.string.send_request)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 /** Entry point for the child to ask the parents for something (an app, anything). */

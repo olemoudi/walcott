@@ -48,7 +48,10 @@ fun RuleEngine.categoryStatus(
     if (budget == null) {
         return CategoryStatus(categoryId, CategoryState.ALLOWED, used, null, null, null)
     }
-    val remaining = budget + (extraTime[categoryId] ?: Duration.ZERO) - used
+    // Category view: the category's own grant plus any "all apps" grant (per-app grants are a
+    // package concept and don't surface on the category card).
+    val remaining = budget + (extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO) +
+        (extraTime[categoryId] ?: Duration.ZERO) - used
     return if (remaining > Duration.ZERO) {
         CategoryStatus(categoryId, CategoryState.BUDGETED, used, budget, remaining, null)
     } else {

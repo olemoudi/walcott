@@ -7,6 +7,17 @@ import java.time.LocalTime
 
 enum class DayType { SCHOOL, WEEKEND, HOLIDAY }
 
+/**
+ * Keys for the extra-time map. Extra time can be granted three ways, and the engine sums
+ * whichever apply to a package: to one category (its id), to a single app (its package name,
+ * which always contains a dot), or to every app at once ([ExtraTime.ALL_APPS], a sentinel that
+ * is neither a category id nor a package). Categories are the optional power tool; "all apps"
+ * and "this app" are the simple, everyday grants.
+ */
+object ExtraTime {
+    const val ALL_APPS = "__all_apps__"
+}
+
 /** Parent-editable holidays and vacations; decides the day type. */
 data class SchoolCalendar(
     val holidays: Set<LocalDate> = emptySet(),

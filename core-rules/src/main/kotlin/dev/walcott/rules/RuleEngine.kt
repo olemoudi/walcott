@@ -41,14 +41,19 @@ object RuleEngine {
         val inAppWindow = appPolicy?.blockedWindows?.get(dayType).orEmpty().any { time in it }
         if (inCategoryWindow || inAppWindow) return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
 
-        // Budgets: the category budget (widened by earned/granted extra) and the per-app budget
-        // (a hard sub-cap, no extra) are independent limits — whichever bites first blocks, and
-        // the reported remaining is the tighter of the two.
+        // Extra time applying to this package: everyone's grant + its category's + its own.
+        val globalExtra = extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO
+        val appExtra = extraTime[packageName] ?: Duration.ZERO
+
+        // Budgets: the category budget (widened by global + category + this-app extra) and the
+        // per-app sub-cap (widened only by a grant to THIS app — a blanket "all apps" grant must
+        // not blow through a deliberately tight per-app cap). Whichever bites first blocks.
         val categoryRemaining = policy?.dailyBudget?.get(dayType)?.let { budget ->
-            budget + (extraTime[categoryId] ?: Duration.ZERO) - (usageToday[categoryId] ?: Duration.ZERO)
+            budget + globalExtra + (extraTime[categoryId] ?: Duration.ZERO) + appExtra -
+                (usageToday[categoryId] ?: Duration.ZERO)
         }
         val appRemaining = appPolicy?.dailyBudget?.get(dayType)?.let { budget ->
-            budget - (usageToday[packageName] ?: Duration.ZERO)
+            budget + appExtra - (usageToday[packageName] ?: Duration.ZERO)
         }
         val remaining = listOfNotNull(categoryRemaining, appRemaining).minOrNull()
             ?: return Verdict.Allowed // neither has a budget for this day type

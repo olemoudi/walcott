@@ -19,20 +19,28 @@ import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.ui.theme.Tokens
 
-/** Category + minutes picker for granting unsolicited bonus time to a child device. */
+/** Target + minutes picker for granting unsolicited bonus time to a child device. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun BonusDialog(onDismiss: () -> Unit, onGrant: (String, Int) -> Unit) {
     val spacing = Tokens.spacing
-    var category by remember { mutableStateOf(AppCategory.GAMES) }
+    // Target key: "all apps" is the simple default; categories are the optional power tool.
+    var target by remember { mutableStateOf(dev.walcott.rules.ExtraTime.ALL_APPS) }
     var minutes by remember { mutableIntStateOf(15) }
+    val allApps = stringResource(R.string.request_all_apps)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.give_bonus)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(AppCategory.GAMES, AppCategory.VIDEO, AppCategory.SOCIAL).forEach { c ->
-                        FilterChip(selected = category == c, onClick = { category = c }, label = { Text(stringResource(c.nameRes)) })
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = target == dev.walcott.rules.ExtraTime.ALL_APPS,
+                        onClick = { target = dev.walcott.rules.ExtraTime.ALL_APPS },
+                        label = { Text(allApps) },
+                    )
+                    AppCategory.entries.forEach { c ->
+                        FilterChip(selected = target == c.id, onClick = { target = c.id }, label = { Text(stringResource(c.nameRes)) })
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -42,7 +50,7 @@ internal fun BonusDialog(onDismiss: () -> Unit, onGrant: (String, Int) -> Unit) 
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onGrant(category.id, minutes) }) { Text(stringResource(R.string.action_grant)) } },
+        confirmButton = { TextButton(onClick = { onGrant(target, minutes) }) { Text(stringResource(R.string.action_grant)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

@@ -139,6 +139,11 @@
     <string name="nav_children_subtitle">See usage and approve time requests</string>
     <string name="no_children">No linked devices yet</string>
     <string name="pending_requests">Pending requests</string>
+    <string name="request_time_card_title">Request more time</string>
+    <string name="request_time_card_desc">Ask for extra time — for everything, or for one app</string>
+    <string name="request_time_pick">More time for…</string>
+    <string name="request_all_apps">All apps</string>
+    <string name="request_time_for">More time for %1$s</string>
     <string name="no_requests">No pending requests</string>
     <string name="usage_today">Today\'s usage</string>
     <string name="approve">Approve</string>

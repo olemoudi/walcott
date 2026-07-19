@@ -13,10 +13,17 @@ data class UsageEntry(val categoryId: String, val seconds: Long)
 @Serializable
 data class ExtraTimeRequest(
     val requestId: String,
+    /**
+     * The extra-time target key: a category id, a package name (single app), or the
+     * "all apps" sentinel (ExtraTime.ALL_APPS). Named for history; it is the generic key the
+     * grant is applied under.
+     */
     val categoryId: String,
     val minutes: Int,
     val reason: String = "",
     val createdAtEpochMs: Long,
+    /** Human label when the target is an app or "all apps"; "" for a category (resolved by id). */
+    val targetLabel: String = "",
 )
 
 @Serializable
