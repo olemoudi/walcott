@@ -51,6 +51,10 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
                 }
                 if (childApps != null) seedChild(app, childApps, intent.getIntExtra("child_battery", -1))
+                // Optional: render an installed app's icon and cache it under the fake apps'
+                // packages, so the parent app list exercises the remote-icon render path.
+                val iconFrom = intent.getStringExtra("child_icon_from")
+                if (iconFrom != null && childApps != null) seedIcons(app, childApps, iconFrom)
                 DebugLog.i("WalcottSeed", "seeded mode=$mode policy=${policyJson != null} childApps=${childApps != null}")
             } catch (t: Throwable) {
                 DebugLog.e("WalcottSeed", "seed failed", t)
@@ -84,5 +88,17 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 lastSeen = s.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
             )
         }
+    }
+
+    /** Caches [iconFrom]'s (an installed app) icon under each fake app's package, for the remote-render path. */
+    private fun seedIcons(app: WalcottApplication, spec: String, iconFrom: String) {
+        val pkgs = spec.substringAfter(":", "").substringAfter(":", "")
+            .split(",").filter { it.isNotBlank() }.map { it.substringBefore("=") }
+        val drawable = runCatching { app.packageManager.getApplicationIcon(iconFrom) }.getOrNull() ?: return
+        val bytes = dev.walcott.sync.IconStore.encode(drawable)
+            ?.let { dev.walcott.sync.IconStore.decodeBase64(it) } ?: return
+        val store = dev.walcott.sync.IconStore(app)
+        pkgs.forEach { store.store(it, bytes) }
+        DebugLog.i("WalcottSeed", "seeded ${pkgs.size} icons from $iconFrom")
     }
 }

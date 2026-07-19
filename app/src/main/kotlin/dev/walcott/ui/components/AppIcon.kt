@@ -28,21 +28,31 @@ import kotlinx.coroutines.withContext
 // Icons are immutable per package: in-memory cache avoids re-decoding while scrolling.
 private val iconCache = LruCache<String, ImageBitmap>(256)
 
-/** App icon loaded off the main thread, with a placeholder while it decodes. */
+/**
+ * App icon loaded off the main thread, with a placeholder while it decodes. Prefers the
+ * locally installed icon; on the parent (where the child's apps aren't installed) it falls
+ * back to [remoteLoader], the cache fed by the child over sync. [refreshKey] re-attempts the
+ * load when new remote icons arrive.
+ */
 @Composable
 fun AppIcon(
     packageName: String,
     inventory: AppInventory,
     modifier: Modifier = Modifier,
     size: Dp = 40.dp,
+    remoteLoader: ((String) -> ByteArray?)? = null,
+    refreshKey: Any? = null,
 ) {
     var bitmap by remember(packageName) { mutableStateOf(iconCache.get(packageName)) }
     val sizePx = with(LocalDensity.current) { size.roundToPx() }
 
-    LaunchedEffect(packageName) {
+    LaunchedEffect(packageName, refreshKey) {
         if (bitmap == null) {
             val decoded = withContext(Dispatchers.IO) {
-                inventory.icon(packageName)?.toBitmap(sizePx, sizePx)?.asImageBitmap()
+                (
+                    inventory.icon(packageName)?.toBitmap(sizePx, sizePx)
+                        ?: remoteLoader?.invoke(packageName)?.let { dev.walcott.sync.IconStore.toBitmap(it) }
+                    )?.asImageBitmap()
             }
             if (decoded != null) {
                 iconCache.put(packageName, decoded)

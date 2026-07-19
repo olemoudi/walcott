@@ -185,6 +185,12 @@ data class PolicySettings(
     val hardeningSeeded: Boolean = false,
     /** Restrict the child's self-update to unmetered (Wi-Fi) connections. */
     val updateWifiOnly: Boolean = false,
+    /**
+     * Notify the parent when a child installs a new app. Most useful when installs aren't
+     * blocked (with the install block on, a new app can't appear without the parent's tap
+     * anyway). Defaults on so a family that never opens the setting still gets warned.
+     */
+    val newAppAlerts: Boolean = true,
     /** package -> per-app policy (budget + windows) that tightens its category. Family-wide. */
     val appPolicies: Map<String, AppPolicyDto> = emptyMap(),
     /** Idle-earn config (token-window model). Null = children earn no extra time from idle. */

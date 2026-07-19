@@ -44,6 +44,7 @@ class SyncManager(
     private val identityStore: IdentityStore,
     private val syncStore: SyncStore,
     private val scope: CoroutineScope,
+    private val iconStore: IconStore = IconStore(context),
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var transport: SyncTransport? = null
@@ -612,6 +613,9 @@ class SyncManager(
                 // The PIN hash/salt travel with the policy so the parent's PIN also guards
                 // enrolled child devices (gate + leaving child mode).
                 val settings = settingsStore.current()
+                // Ask for icons of apps shown in the list that aren't cached yet; empties out.
+                val shownApps = state.children.flatMap { c -> c.apps.map { it.packageName } }
+                val iconRequests = IconSync.toRequest(shownApps, iconStore.cachedAmong(shownApps))
                 val snapshot = ParentSnapshot(
                     version = state.parentVersion,
                     policyJson = json.encodeToString(PolicySettings.serializer(), settings),
@@ -619,6 +623,7 @@ class SyncManager(
                     bonuses = state.bonuses,
                     locationRequests = state.locationRequests,
                     commands = state.commands,
+                    iconRequests = iconRequests,
                 )
                 transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, ParentKeystore.privateKey()))
             }
@@ -683,6 +688,29 @@ class SyncManager(
         if (id.role != Role.UNPAIRED) lastPublishAtMs = System.currentTimeMillis()
     }
 
+    /**
+     * Child: render and send a batch of the icons the parent asked for — only apps this child
+     * actually has, bounded so rendering stays cheap and one message stays under the size cap.
+     * The parent re-requests what's still missing, so the backlog drains over a few messages.
+     */
+    private suspend fun answerIconRequests(requests: List<String>, id: FamilyIdentity) {
+        val transport = transport ?: return
+        val candidates = withContext(Dispatchers.IO) {
+            requests.asSequence()
+                .filter { runCatching { context.packageManager.getApplicationInfo(it, 0) }.isSuccess }
+                .take(ICON_RENDER_LIMIT)
+                .mapNotNull { pkg ->
+                    val drawable = runCatching { context.packageManager.getApplicationIcon(pkg) }.getOrNull()
+                    drawable?.let { IconStore.encode(it) }?.let { AppIconData(pkg, it) }
+                }
+                .toList()
+        }
+        val packed = IconSync.pack(candidates)
+        if (packed.isEmpty()) return
+        val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
+        transport.publish(SyncProtocol.encodeChildIcons(IconPayload(id.deviceId, packed), familyKey))
+    }
+
     /** Current battery percentage (0–100), or -1 if the platform won't say. */
     private fun batteryPercent(): Int =
         runCatching {
@@ -703,8 +731,34 @@ class SyncManager(
         when {
             id.role == Role.CHILD && message is IncomingMessage.FromParent -> applyParentSnapshot(message.snapshot)
             id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot)
+            id.role == Role.PARENT && message is IncomingMessage.FromChildIcons -> applyIconPayload(message.payload)
         }
     }
+
+    /**
+     * Parent: cache the icons a child just sent. If apps still lack icons, re-publish so the
+     * next request goes out promptly — that request→answer→request loop drains the enrollment
+     * burst quickly and then falls silent (empty requests cost nothing).
+     */
+    private suspend fun applyIconPayload(payload: IconPayload) {
+        var stored = 0
+        for (icon in payload.icons) {
+            if (iconStore.has(icon.packageName)) continue
+            val bytes = IconStore.decodeBase64(icon.webpB64) ?: continue
+            iconStore.store(icon.packageName, bytes)
+            stored++
+        }
+        if (stored == 0) return
+        iconsCached.value = iconsCached.value + 1 // nudge the UI to re-read the cache
+        val shown = syncStore.current().children.flatMap { c -> c.apps.map { it.packageName } }
+        if (IconSync.toRequest(shown, iconStore.cachedAmong(shown)).isNotEmpty()) publishSelf()
+    }
+
+    /** Bumps whenever new icons land, so the app list recomposes and re-reads the disk cache. */
+    val iconsCached = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** Cached icon bytes for [pkg], or null if not fetched yet (parent-side render). */
+    fun iconBytes(pkg: String): ByteArray? = iconStore.read(pkg)
 
     private suspend fun applyParentSnapshot(snapshot: ParentSnapshot) {
         val id = identityStore.current()
@@ -736,6 +790,9 @@ class SyncManager(
         // Run before the grants below so a device whose enforcement had lapsed is repaired
         // first; each command publishes its own acknowledgement.
         applyCommands(snapshot, deviceId)
+
+        // Answer the parent's app-icon requests for apps this child has (a bounded trickle).
+        if (snapshot.iconRequests.isNotEmpty()) runCatching { answerIconRequests(snapshot.iconRequests, id) }
 
         // Record which rules version this child now runs, and echo it promptly so the
         // parent's "updating rules…" indicator clears (a re-emit would take minutes).
@@ -924,9 +981,13 @@ class SyncManager(
                 it.packageName !in before.seenAppPackages && it.packageName !in assignedPackages
             }
             if (newApps.isNotEmpty()) {
-                SyncNotifications.notifyNewApp(
-                    context, snapshot.displayName, newApps.first().label, newApps.size - 1, snapshot.deviceId,
-                )
+                // Always advance the seen-set (so turning the alert on later doesn't flood);
+                // only post the notification when the parent opted to be told.
+                if (settingsStore.current().newAppAlerts) {
+                    SyncNotifications.notifyNewApp(
+                        context, snapshot.displayName, newApps.first().label, newApps.size - 1, snapshot.deviceId,
+                    )
+                }
                 syncStore.update {
                     it.copy(seenAppPackages = it.seenAppPackages + newApps.map { a -> a.packageName })
                 }
@@ -968,5 +1029,7 @@ class SyncManager(
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.
         private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
+        /** How many app icons a child renders+sends per parent request (the rest trickle next cycle). */
+        private const val ICON_RENDER_LIMIT = 8
     }
 }

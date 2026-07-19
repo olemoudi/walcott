@@ -79,6 +79,16 @@ class PolicySettingsTest {
     }
 
     @Test
+    fun `new-app alerts default on and a legacy config without the field stays on`() {
+        // Default: a family that never opens the setting still gets warned.
+        assertEquals(true, PolicySettings().newAppAlerts)
+        // A config written before the field existed decodes with the default (no silent opt-out).
+        val json = Json { ignoreUnknownKeys = true }
+        val legacy = json.decodeFromString(PolicySettings.serializer(), """{"version":1}""")
+        assertEquals(true, legacy.newAppAlerts)
+    }
+
+    @Test
     fun `round-trips family name and children with overrides`() {
         val json = Json { encodeDefaults = true }
         val withChildren = settings.copy(

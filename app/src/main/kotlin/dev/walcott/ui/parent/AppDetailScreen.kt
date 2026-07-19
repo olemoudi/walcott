@@ -65,6 +65,7 @@ fun AppDetailScreen(
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val rows by viewModel.appRows.collectAsStateWithLifecycle()
+    val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
     val label = rows.firstOrNull { it.app.packageName == packageName }?.app?.label ?: packageName
     val categoryId = settings.assignments[packageName]
     val appPolicy = settings.appPolicies[packageName]
@@ -77,7 +78,13 @@ fun AppDetailScreen(
         ) {
             item {
                 Row(Modifier.fillMaxWidth().padding(top = spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                    AppIcon(packageName, viewModel.repository.inventory, size = 44.dp)
+                    AppIcon(
+                        packageName,
+                        viewModel.repository.inventory,
+                        size = 44.dp,
+                        remoteLoader = { viewModel.childAppIcon(it) },
+                        refreshKey = iconRefresh,
+                    )
                     Spacer(Modifier.width(spacing.md))
                     Text(label, style = MaterialTheme.typography.titleLarge)
                 }

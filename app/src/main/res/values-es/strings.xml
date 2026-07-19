@@ -344,6 +344,8 @@
     <string name="step_protection_teach">También activamos las protecciones anti-manipulación recomendadas: cambios de hora, VPNs, forzar el cierre de Walcott e instalar fuera de Play.</string>
     <string name="step_protection_installs">Pedir permiso para apps nuevas</string>
     <string name="step_protection_installs_desc">Instalar desde Play necesita tu aprobación; también puedes enviarle apps desde tu móvil.</string>
+    <string name="new_app_alerts_title">Avisarme de apps nuevas</string>
+    <string name="new_app_alerts_desc">Recibe una notificación cuando se instale una app nueva en el móvil de un hijo</string>
     <string name="step_location_teach">Ver dónde está el móvil en un mapa, actualizado con la frecuencia que elijas. Opcional — déjalo apagado si lo prefieres.</string>
     <string name="step_earn_teach">El tiempo sin pantalla puede ganar tiempo extra de juego, con topes para que no se acumule sin control.</string>
     <string name="step_earn_enable">Activar tiempo ganado</string>

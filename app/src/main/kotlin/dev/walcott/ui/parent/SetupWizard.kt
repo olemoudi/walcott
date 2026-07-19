@@ -365,6 +365,22 @@ private fun ProtectionStep(viewModel: WalcottViewModel) {
             Switch(checked = blockInstalls, onCheckedChange = { viewModel.applyProtectionPreset(it) })
         }
     }
+    // When installs aren't blocked, offer the softer option: just be told a new app appeared.
+    if (!blockInstalls) {
+        Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.new_app_alerts_title), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(R.string.new_app_alerts_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = settings.newAppAlerts, onCheckedChange = { viewModel.setNewAppAlerts(it) })
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

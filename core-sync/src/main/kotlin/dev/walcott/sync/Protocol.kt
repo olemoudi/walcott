@@ -220,7 +220,25 @@ data class ParentSnapshot(
     val locationRequests: List<LocationRequest> = emptyList(),
     /** Pending remote fixes, applied once per [RemoteCommand.id] by the target device. */
     val commands: List<RemoteCommand> = emptyList(),
+    /**
+     * Packages whose icons the parent still wants (shown in the app list but not cached yet).
+     * Bounded and empty in steady state, so it costs the parent message nothing once caught up.
+     * Any child that has one of these answers with a [IconPayload]. See [IconSync].
+     */
+    val iconRequests: List<String> = emptyList(),
 )
+
+/** One app icon, compressed small (WebP) and base64'd, sent child→parent on request. */
+@Serializable
+data class AppIconData(val packageName: String, val webpB64: String)
+
+/**
+ * A trickle of app icons a child sends in reply to [ParentSnapshot.iconRequests], in its own
+ * message so the (already large) [ChildSnapshot] never carries image bytes. Bounded per
+ * message so the initial burst at enrollment spreads across the channel politely.
+ */
+@Serializable
+data class IconPayload(val deviceId: String, val icons: List<AppIconData> = emptyList())
 
 // --- Envelope on the wire ---
 
@@ -236,6 +254,7 @@ private data class Envelope(
 sealed interface IncomingMessage {
     data class FromParent(val snapshot: ParentSnapshot) : IncomingMessage
     data class FromChild(val snapshot: ChildSnapshot) : IncomingMessage
+    data class FromChildIcons(val payload: IconPayload) : IncomingMessage
 }
 
 /**
@@ -255,6 +274,15 @@ object SyncProtocol {
         return json.encodeToString(
             Envelope.serializer(),
             Envelope("parent", "parent", snapshot.version, FamilyCrypto.toB64(ciphertext), FamilyCrypto.toB64(signature)),
+        )
+    }
+
+    fun encodeChildIcons(payload: IconPayload, familyKey: javax.crypto.SecretKey): String {
+        val bytes = gzip(json.encodeToString(IconPayload.serializer(), payload).toByteArray())
+        val ciphertext = FamilyCrypto.encrypt(familyKey, bytes)
+        return json.encodeToString(
+            Envelope.serializer(),
+            Envelope("icons", payload.deviceId, 0, FamilyCrypto.toB64(ciphertext), null),
         )
     }
 
@@ -286,6 +314,9 @@ object SyncProtocol {
             }.getOrNull()
             "child" -> runCatching {
                 IncomingMessage.FromChild(json.decodeFromString(ChildSnapshot.serializer(), text))
+            }.getOrNull()
+            "icons" -> runCatching {
+                IncomingMessage.FromChildIcons(json.decodeFromString(IconPayload.serializer(), text))
             }.getOrNull()
             else -> null
         }

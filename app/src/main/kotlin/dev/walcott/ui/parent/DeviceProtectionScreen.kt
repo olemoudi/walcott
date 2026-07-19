@@ -85,6 +85,17 @@ fun DeviceProtectionScreen(
                     onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on, childId) },
                 )
             }
+            // Family-wide alert (not a per-child override), most useful when installs aren't blocked.
+            if (childId == null && DeviceRestrictions.KEY_INSTALLS !in enabledKeys) {
+                item {
+                    RestrictionRow(
+                        title = stringResource(R.string.new_app_alerts_title),
+                        description = stringResource(R.string.new_app_alerts_desc),
+                        checked = settings.newAppAlerts,
+                        onToggle = { on -> viewModel.setNewAppAlerts(on) },
+                    )
+                }
+            }
             item { Spacer(Modifier.height(spacing.xl)) }
         }
     }

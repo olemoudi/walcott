@@ -75,6 +75,11 @@ class WalcottViewModel(
 
     fun dismissNotice() = viewModelScope.launch { sync.dismissNotice() }
 
+    /** Bumps when child app icons arrive over sync, so the app list re-reads the cache. */
+    val iconRefresh: StateFlow<Int> = sync.iconsCached
+    /** Cached child app icon bytes for [pkg] (parent-side), or null if not fetched yet. */
+    fun childAppIcon(pkg: String): ByteArray? = sync.iconBytes(pkg)
+
     fun askFor(kind: String, text: String) = viewModelScope.launch { sync.askFor(kind, text) }
     fun allowInstallsTemporarily() = viewModelScope.launch { sync.allowInstallsTemporarily() }
 
@@ -190,6 +195,11 @@ class WalcottViewModel(
     /** Restrict the child self-update to Wi-Fi (family-wide policy). */
     fun setUpdateWifiOnly(enabled: Boolean) = viewModelScope.launch {
         repository.updateSettings { it.copy(updateWifiOnly = enabled) }
+    }
+
+    /** Notify the parent when a child installs a new app (family-wide policy). */
+    fun setNewAppAlerts(enabled: Boolean) = viewModelScope.launch {
+        repository.updateSettings { it.copy(newAppAlerts = enabled) }
     }
 
     /** Family-default location tracking interval (0 = off); children inherit unless overridden. */

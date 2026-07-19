@@ -62,6 +62,7 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
     val spacing = Tokens.spacing
     val rows by viewModel.appRows.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     // Per-child filter (null = everyone). Only offered once there are two+ children to
     // tell apart — a single-child family gains nothing from the extra chrome.
@@ -132,6 +133,7 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
                         row,
                         hasOverride = row.app.packageName in settings.appPolicies,
                         showOwners = showOwners,
+                        iconRefresh = iconRefresh,
                         onClick = { onOpenApp(row.app.packageName) },
                     )
                 }
@@ -147,6 +149,7 @@ private fun AppAssignRow(
     row: AppRow,
     hasOverride: Boolean,
     showOwners: Boolean,
+    iconRefresh: Int,
     onClick: () -> Unit,
 ) {
     val category = row.categoryId?.let { AppCategory.byId(it) }
@@ -183,7 +186,15 @@ private fun AppAssignRow(
                 }
             }
         },
-        leadingContent = { AppIcon(row.app.packageName, viewModel.repository.inventory, size = 40.dp) },
+        leadingContent = {
+            AppIcon(
+                row.app.packageName,
+                viewModel.repository.inventory,
+                size = 40.dp,
+                remoteLoader = { viewModel.childAppIcon(it) },
+                refreshKey = iconRefresh,
+            )
+        },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (category != null) {

@@ -344,6 +344,8 @@
     <string name="step_protection_teach">We also switch on the recommended anti-tamper protections: clock changes, VPNs, force-closing Walcott and sideloading.</string>
     <string name="step_protection_installs">Ask permission for new apps</string>
     <string name="step_protection_installs_desc">Installing from Play needs your approval; you can also send apps from your phone.</string>
+    <string name="new_app_alerts_title">Tell me about new apps</string>
+    <string name="new_app_alerts_desc">Get a notification whenever a new app is installed on a child\'s phone</string>
     <string name="step_location_teach">See where the phone is on a map, updated at the interval you choose. Optional — leave it off if you prefer.</string>
     <string name="step_earn_teach">Time away from the screen can earn extra play time, with caps so it can\'t be binged.</string>
     <string name="step_earn_enable">Turn on earned time</string>
