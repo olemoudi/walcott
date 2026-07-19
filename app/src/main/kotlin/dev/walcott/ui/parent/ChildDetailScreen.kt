@@ -429,15 +429,15 @@ private fun EnrollmentSection(entry: ChildEntry, pairingText: String?) {
 private fun EnrollModeChips(mode: EnrollMode, onSelect: (EnrollMode) -> Unit) {
     val spacing = Tokens.spacing
     Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-        FilterChip(
+        dev.walcott.ui.components.ChoiceChip(
             selected = mode == EnrollMode.DEVICE_OWNER,
             onClick = { onSelect(EnrollMode.DEVICE_OWNER) },
-            label = { Text(stringResource(R.string.enroll_mode_do)) },
+            label = stringResource(R.string.enroll_mode_do),
         )
-        FilterChip(
+        dev.walcott.ui.components.ChoiceChip(
             selected = mode == EnrollMode.FALLBACK,
             onClick = { onSelect(EnrollMode.FALLBACK) },
-            label = { Text(stringResource(R.string.enroll_mode_fallback)) },
+            label = stringResource(R.string.enroll_mode_fallback),
         )
     }
 }

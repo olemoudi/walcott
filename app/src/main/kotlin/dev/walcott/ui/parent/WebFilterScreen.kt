@@ -206,8 +206,8 @@ private fun AddRuleCard(
             OutlinedButton(onClick = onPickApp, modifier = Modifier.fillMaxWidth()) {
                 Text(selectedLabel ?: stringResource(R.string.webfilter_choose_app))
             }
-            FilterChip(selected = allowOnly, onClick = { onModeChange(true) }, label = { Text(stringResource(R.string.webfilter_mode_allow_only)) })
-            FilterChip(selected = !allowOnly, onClick = { onModeChange(false) }, label = { Text(stringResource(R.string.webfilter_mode_block_in)) })
+            dev.walcott.ui.components.ChoiceChip(selected = allowOnly, onClick = { onModeChange(true) }, label = stringResource(R.string.webfilter_mode_allow_only))
+            dev.walcott.ui.components.ChoiceChip(selected = !allowOnly, onClick = { onModeChange(false) }, label = stringResource(R.string.webfilter_mode_block_in))
             OutlinedButton(onClick = onAdd, enabled = canAdd, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Text("  " + stringResource(R.string.action_add))

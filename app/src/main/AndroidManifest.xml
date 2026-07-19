@@ -132,6 +132,11 @@
             android:name=".update.InstallReceiver"
             android:exported="false" />
 
+        <!-- The child's ~30-minute check-in alarm (see HeartbeatAlarm). -->
+        <receiver
+            android:name=".sync.HeartbeatReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".WalcottAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"

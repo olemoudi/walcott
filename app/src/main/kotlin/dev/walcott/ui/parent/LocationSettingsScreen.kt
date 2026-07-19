@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.ChoiceChip
+import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
 
@@ -92,20 +94,28 @@ fun TrackingIntervalChips(selected: Int, onSelect: (Int) -> Unit) {
     val spacing = Tokens.spacing
     Row(
         Modifier.horizontalScroll(rememberScrollState()).padding(vertical = spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         TRACKING_INTERVALS.forEach { m ->
-            FilterChip(
+            ChoiceChip(
                 selected = m == selected,
                 onClick = { onSelect(m) },
-                label = {
-                    Text(
-                        if (m == 0) stringResource(R.string.tracking_off)
-                        else stringResource(R.string.tracking_minutes_fmt, m),
-                    )
-                },
+                label = if (m == 0) stringResource(R.string.tracking_off)
+                else stringResource(R.string.tracking_minutes_fmt, m),
             )
         }
+        // Any interval up to 24h the presets don't cover.
+        CustomValueChip(
+            selected = selected > 0 && selected !in TRACKING_INTERVALS,
+            customLabel = if (selected > 0 && selected !in TRACKING_INTERVALS) {
+                stringResource(R.string.tracking_minutes_fmt, selected)
+            } else {
+                null
+            },
+            dialogTitle = stringResource(R.string.custom_minutes_title),
+            initial = selected.takeIf { it > 0 } ?: 45,
+            onConfirm = onSelect,
+        )
     }
 }
 

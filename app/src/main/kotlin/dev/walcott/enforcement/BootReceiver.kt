@@ -36,6 +36,8 @@ class BootReceiver : BroadcastReceiver() {
                 if (IdentityStore(context).current().enforcesLocally) {
                     runCatching { EnforcementService.start(context) }
                         .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
+                    // Alarms don't survive a reboot: re-arm the 30-min check-in chain.
+                    runCatching { dev.walcott.sync.HeartbeatAlarm.schedule(context) }
                 }
             } finally {
                 pendingResult.finish()

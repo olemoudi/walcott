@@ -41,7 +41,6 @@ import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -647,15 +646,7 @@ private fun RequestTimeDialog(title: String, onDismiss: () -> Unit, onSend: (Int
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 Text(stringResource(R.string.extra_how_much), style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    listOf(15, 30, 60).forEach { m ->
-                        FilterChip(
-                            selected = minutes == m,
-                            onClick = { minutes = m },
-                            label = { Text(stringResource(R.string.extra_minutes, m)) },
-                        )
-                    }
-                }
+                dev.walcott.ui.components.MinutesChips(value = minutes, onSelect = { minutes = it })
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it.take(120) },
@@ -712,15 +703,15 @@ private fun AskDialog(onDismiss: () -> Unit, onSend: (String, String) -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    FilterChip(
+                    dev.walcott.ui.components.ChoiceChip(
                         selected = kind == ChildRequest.KIND_APP,
                         onClick = { kind = ChildRequest.KIND_APP },
-                        label = { Text(stringResource(R.string.ask_kind_app)) },
+                        label = stringResource(R.string.ask_kind_app),
                     )
-                    FilterChip(
+                    dev.walcott.ui.components.ChoiceChip(
                         selected = kind == ChildRequest.KIND_OTHER,
                         onClick = { kind = ChildRequest.KIND_OTHER },
-                        label = { Text(stringResource(R.string.ask_kind_other)) },
+                        label = stringResource(R.string.ask_kind_other),
                     )
                 }
                 OutlinedTextField(

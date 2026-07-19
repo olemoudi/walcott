@@ -63,6 +63,8 @@ import dev.walcott.data.SetupPresets
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.rules.DayType
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.ChoiceChip
+import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
@@ -325,20 +327,32 @@ private fun ScreenTimeStep(viewModel: WalcottViewModel) {
     )
     // Selection derives from the stored policy (games' school budget as the representative),
     // so re-entering the wizard shows what is actually configured.
+    val presets = listOf(60, 90, 120, 180)
     val current = settings.budgets[SetupPresets.LEISURE_CATEGORY_IDS.first()]?.get(DayType.SCHOOL.name)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-        FilterChip(
+        ChoiceChip(
             selected = current == null,
             onClick = { viewModel.setLeisureBudget(null) },
-            label = { Text(stringResource(R.string.no_limit)) },
+            label = stringResource(R.string.no_limit),
         )
-        listOf(60, 90, 120, 180).forEach { minutes ->
-            FilterChip(
+        presets.forEach { minutes ->
+            ChoiceChip(
                 selected = current == minutes,
                 onClick = { viewModel.setLeisureBudget(minutes) },
-                label = { Text(Duration.ofMinutes(minutes.toLong()).humanize()) },
+                label = Duration.ofMinutes(minutes.toLong()).humanize(),
             )
         }
+        CustomValueChip(
+            selected = current != null && current !in presets,
+            customLabel = if (current != null && current !in presets) {
+                Duration.ofMinutes(current.toLong()).humanize()
+            } else {
+                null
+            },
+            dialogTitle = stringResource(R.string.custom_minutes_title),
+            initial = current ?: 120,
+            onConfirm = { viewModel.setLeisureBudget(it) },
+        )
     }
 }
 
@@ -383,30 +397,19 @@ private fun ProtectionStep(viewModel: WalcottViewModel) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LocationStep(viewModel: WalcottViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val spacing = Tokens.spacing
     StepHeader(
         Icons.Outlined.LocationOn,
         stringResource(R.string.nav_location_title),
         stringResource(R.string.step_location_teach),
     )
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-        FilterChip(
-            selected = settings.trackingIntervalMinutes == 0,
-            onClick = { viewModel.setFamilyTrackingInterval(0) },
-            label = { Text(stringResource(R.string.tracking_off)) },
-        )
-        listOf(15, 30, 60).forEach { minutes ->
-            FilterChip(
-                selected = settings.trackingIntervalMinutes == minutes,
-                onClick = { viewModel.setFamilyTrackingInterval(minutes) },
-                label = { Text(stringResource(R.string.tracking_minutes_fmt, minutes)) },
-            )
-        }
-    }
+    // Reuse the shared interval chips (comfortable sizing + a custom option, up to 24h).
+    TrackingIntervalChips(
+        selected = settings.trackingIntervalMinutes,
+        onSelect = { viewModel.setFamilyTrackingInterval(it) },
+    )
 }
 
 @Composable

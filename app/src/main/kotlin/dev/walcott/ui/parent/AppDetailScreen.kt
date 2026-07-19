@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +39,10 @@ import dev.walcott.rules.DayType
 import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppIcon
-import dev.walcott.ui.components.Stepper
+import dev.walcott.ui.components.ChoiceChip
+import dev.walcott.ui.components.ComfortableChipPadding
+import dev.walcott.ui.components.CustomValueChip
+import dev.walcott.ui.components.NumberInputDialog
 import dev.walcott.ui.components.TimePickerDialog
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.hhmm
@@ -222,13 +224,23 @@ private fun PerDayBudgetCard(
             )
             FlowRow(
                 Modifier.padding(top = spacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 QuickChip(stringResource(R.string.app_limit_blocked)) { onSetAllDays(0) }
                 QuickChip(stringResource(R.string.no_limit)) { onSetAllDays(null) }
-                QuickChip("30m") { onSetAllDays(30) }
                 QuickChip("1h") { onSetAllDays(60) }
                 QuickChip("2h") { onSetAllDays(120) }
+                // Type any daily limit (up to 24h) applied to every day type at once.
+                var customAll by remember { mutableStateOf(false) }
+                QuickChip(stringResource(R.string.custom_value)) { customAll = true }
+                if (customAll) {
+                    NumberInputDialog(
+                        title = stringResource(R.string.custom_minutes_title),
+                        initial = 60,
+                        onDismiss = { customAll = false },
+                        onConfirm = { onSetAllDays(it); customAll = false },
+                    )
+                }
             }
 
             DAY_TYPES.forEach { dayType ->
@@ -237,36 +249,33 @@ private fun PerDayBudgetCard(
                 Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.titleSmall)
                 FlowRow(
                     Modifier.padding(top = spacing.xs),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    FilterChip(
+                    ChoiceChip(
                         selected = minutes == 0,
                         onClick = { onSetBudget(dayType, 0) },
-                        label = { Text(stringResource(R.string.app_limit_blocked)) },
+                        label = stringResource(R.string.app_limit_blocked),
                     )
-                    FilterChip(
+                    ChoiceChip(
                         selected = minutes == null,
                         onClick = { onSetBudget(dayType, null) },
-                        label = { Text(stringResource(R.string.no_limit)) },
+                        label = stringResource(R.string.no_limit),
                     )
-                    FilterChip(
-                        selected = minutes != null && minutes > 0,
-                        // Entering "limit" from Blocked/No-limit starts at 15m; keeps the current value otherwise.
-                        onClick = { if (minutes == null || minutes == 0) onSetBudget(dayType, 15) },
-                        label = { Text(stringResource(R.string.app_limit_timed)) },
-                    )
-                }
-                if (minutes != null && minutes > 0) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = spacing.xs),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        Stepper(
-                            valueLabel = Duration.ofMinutes(minutes.toLong()).humanize(),
-                            decrementEnabled = minutes > 15,
-                            onDecrement = { onSetBudget(dayType, (minutes - 15).coerceAtLeast(15)) },
-                            onIncrement = { onSetBudget(dayType, minutes + 15) },
+                    if (minutes != null && minutes > 0) {
+                        // A timed limit: the chip shows it and taps open a dialog to set any value up to 24h.
+                        CustomValueChip(
+                            selected = true,
+                            customLabel = Duration.ofMinutes(minutes.toLong()).humanize(),
+                            dialogTitle = stringResource(R.string.custom_minutes_title),
+                            initial = minutes,
+                            onConfirm = { onSetBudget(dayType, it) },
+                        )
+                    } else {
+                        ChoiceChip(
+                            selected = false,
+                            onClick = { onSetBudget(dayType, 60) }, // enter "limit" at a sensible default
+                            label = stringResource(R.string.app_limit_timed),
                         )
                     }
                 }
@@ -280,9 +289,9 @@ private fun QuickChip(label: String, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer) {
         Text(
             label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(ComfortableChipPadding),
         )
     }
 }

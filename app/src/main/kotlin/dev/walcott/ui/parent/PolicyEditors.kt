@@ -125,13 +125,14 @@ private fun BudgetPreset(label: String, onClick: () -> Unit) {
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(dev.walcott.ui.components.ComfortableChipPadding),
         )
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun CategoryBudgetCard(
     category: AppCategory,
@@ -161,21 +162,29 @@ internal fun CategoryBudgetCard(
                 HorizontalDivider()
                 // Quick presets applied to every day type at once — the common case, far fewer
                 // taps than stepping each of the three rows up from "no limit".
-                Row(
-                    Modifier.fillMaxWidth().padding(top = spacing.sm),
+                Text(
+                    stringResource(R.string.budget_apply_all),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().padding(top = spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        stringResource(R.string.budget_apply_all),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.weight(1f))
                     BudgetPreset(stringResource(R.string.no_limit)) { DAY_TYPES.forEach { onSetBudget(it, null) } }
-                    BudgetPreset("30m") { DAY_TYPES.forEach { onSetBudget(it, 30) } }
                     BudgetPreset("1h") { DAY_TYPES.forEach { onSetBudget(it, 60) } }
                     BudgetPreset("2h") { DAY_TYPES.forEach { onSetBudget(it, 120) } }
+                    var customAll by remember { mutableStateOf(false) }
+                    BudgetPreset(stringResource(R.string.custom_value)) { customAll = true }
+                    if (customAll) {
+                        dev.walcott.ui.components.NumberInputDialog(
+                            title = stringResource(R.string.custom_minutes_title),
+                            initial = 60,
+                            onDismiss = { customAll = false },
+                            onConfirm = { m -> DAY_TYPES.forEach { onSetBudget(it, m) }; customAll = false },
+                        )
+                    }
                 }
                 DAY_TYPES.forEach { dayType ->
                     val minutes = perDay[dayType.name]

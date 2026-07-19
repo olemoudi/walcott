@@ -162,12 +162,12 @@ private fun TargetCard(cfg: IdleEarnDto, onChange: (IdleEarnDto) -> Unit) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.earn_target_title), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.size(spacing.sm))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 AppCategory.entries.forEach { category ->
-                    FilterChip(
+                    dev.walcott.ui.components.ChoiceChip(
                         selected = cfg.targetCategoryId == category.id,
                         onClick = { onChange(cfg.copy(targetCategoryId = category.id)) },
-                        label = { Text(stringResource(category.nameRes)) },
+                        label = stringResource(category.nameRes),
                     )
                 }
             }

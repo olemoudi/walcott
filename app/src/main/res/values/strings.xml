@@ -74,6 +74,10 @@
     <string name="bedtime_end_title">Wakes up</string>
     <string name="daily_budget_header">Daily budget per category</string>
     <string name="no_limit">No limit</string>
+    <string name="custom_value">Custom</string>
+    <string name="custom_minutes_title">Custom minutes</string>
+    <string name="minutes_label">Minutes</string>
+    <string name="minutes_range">%1$d–%2$d min (up to 24h)</string>
     <plurals name="days_with_limit">
         <item quantity="one">%d day with a limit</item>
         <item quantity="other">%d days with a limit</item>

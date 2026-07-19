@@ -79,6 +79,11 @@ class WalcottApplication : Application() {
 
         // Child-side watchdog: keep enforcement alive and re-assert Device Owner policies.
         WatchdogWorker.schedule(this)
+
+        // Child-side ~30-min check-in that Doze can't defer for hours (see HeartbeatAlarm).
+        appScope.launch {
+            if (identityStore.current().enforcesLocally) dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
+        }
     }
 
     /**

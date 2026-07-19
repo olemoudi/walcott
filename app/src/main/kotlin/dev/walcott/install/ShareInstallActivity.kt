@@ -208,12 +208,12 @@ private fun InstallDialog(
                     }
                 }
                 Text(stringResource(R.string.install_share_pick_category), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AppCategory.entries.forEach { cat ->
-                        FilterChip(
+                        dev.walcott.ui.components.ChoiceChip(
                             selected = category == cat,
                             onClick = { category = if (category == cat) null else cat },
-                            label = { Text(stringResource(cat.nameRes)) },
+                            label = stringResource(cat.nameRes),
                         )
                     }
                 }

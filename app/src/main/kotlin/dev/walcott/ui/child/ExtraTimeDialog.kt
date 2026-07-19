@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -24,6 +23,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
+import dev.walcott.ui.components.MinutesChips
 import dev.walcott.ui.CategoryStatusUi
 import dev.walcott.ui.WalcottViewModel
 import kotlinx.coroutines.launch
@@ -47,15 +47,7 @@ fun ExtraTimeDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.extra_how_much), style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(15, 30, 60).forEach { option ->
-                        FilterChip(
-                            selected = minutes == option,
-                            onClick = { minutes = option },
-                            label = { Text(stringResource(R.string.extra_minutes, option)) },
-                        )
-                    }
-                }
+                MinutesChips(value = minutes, onSelect = { minutes = it })
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { pin = it.filter(Char::isDigit).take(8); error = false },

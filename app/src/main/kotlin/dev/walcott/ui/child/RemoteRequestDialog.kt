@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -21,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
 import dev.walcott.ui.CategoryStatusUi
+import dev.walcott.ui.components.MinutesChips
 
 /** Child-side: send a time request to the parent over the sync bus (no local PIN). */
 @Composable
@@ -38,15 +38,7 @@ fun RemoteRequestDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.extra_how_much), style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(15, 30, 60).forEach { option ->
-                        FilterChip(
-                            selected = minutes == option,
-                            onClick = { minutes = option },
-                            label = { Text(stringResource(R.string.extra_minutes, option)) },
-                        )
-                    }
-                }
+                MinutesChips(value = minutes, onSelect = { minutes = it })
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it.take(120) },

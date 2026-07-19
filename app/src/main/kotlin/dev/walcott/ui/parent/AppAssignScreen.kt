@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -53,6 +52,7 @@ import dev.walcott.R
 import dev.walcott.ui.AppRow
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppIcon
+import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
 
@@ -106,18 +106,18 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                         .padding(horizontal = spacing.screen, vertical = spacing.xs),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
-                    FilterChip(
+                    ChoiceChip(
                         selected = ownerFilter == null,
                         onClick = { ownerFilter = null },
-                        label = { Text(stringResource(R.string.apps_filter_all)) },
+                        label = stringResource(R.string.apps_filter_all),
                     )
                     allOwners.forEach { owner ->
-                        FilterChip(
+                        ChoiceChip(
                             selected = ownerFilter == owner.id,
                             onClick = { ownerFilter = if (ownerFilter == owner.id) null else owner.id },
-                            label = { Text(owner.name) },
+                            label = owner.name,
                         )
                     }
                 }

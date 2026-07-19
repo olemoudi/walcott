@@ -74,6 +74,10 @@
     <string name="bedtime_end_title">Se levanta</string>
     <string name="daily_budget_header">Presupuesto diario por categoría</string>
     <string name="no_limit">Sin límite</string>
+    <string name="custom_value">Personalizado</string>
+    <string name="custom_minutes_title">Minutos personalizados</string>
+    <string name="minutes_label">Minutos</string>
+    <string name="minutes_range">%1$d–%2$d min (hasta 24h)</string>
     <plurals name="days_with_limit">
         <item quantity="one">%d día con límite</item>
         <item quantity="other">%d días con límite</item>

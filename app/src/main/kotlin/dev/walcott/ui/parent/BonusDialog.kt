@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -17,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.AppCategory
 import dev.walcott.R
+import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.theme.Tokens
 
 /** Target + minutes picker for granting unsolicited bonus time to a child device. */
@@ -33,21 +33,17 @@ internal fun BonusDialog(onDismiss: () -> Unit, onGrant: (String, Int) -> Unit) 
         title = { Text(stringResource(R.string.give_bonus)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    ChoiceChip(
                         selected = target == dev.walcott.rules.ExtraTime.ALL_APPS,
                         onClick = { target = dev.walcott.rules.ExtraTime.ALL_APPS },
-                        label = { Text(allApps) },
+                        label = allApps,
                     )
                     AppCategory.entries.forEach { c ->
-                        FilterChip(selected = target == c.id, onClick = { target = c.id }, label = { Text(stringResource(c.nameRes)) })
+                        ChoiceChip(selected = target == c.id, onClick = { target = c.id }, label = stringResource(c.nameRes))
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(15, 30, 60).forEach { m ->
-                        FilterChip(selected = minutes == m, onClick = { minutes = m }, label = { Text(stringResource(R.string.extra_minutes, m)) })
-                    }
-                }
+                dev.walcott.ui.components.MinutesChips(value = minutes, onSelect = { minutes = it })
             }
         },
         confirmButton = { TextButton(onClick = { onGrant(target, minutes) }) { Text(stringResource(R.string.action_grant)) } },
