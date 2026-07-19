@@ -257,28 +257,73 @@ class SyncManager(
     /**
      * Opens the tight, self-closing window for a parent-pushed install of [pkg]. The safety
      * cap is short: [closeInstallWindow] normally slams it shut on the first install, so this
-     * ceiling only matters if nothing installs at all.
+     * ceiling only matters if nothing installs at all. [reopenInstallWindow] re-extends it
+     * whenever the child actually engages, so this first window expiring costs nothing.
      */
-    suspend fun openInstallForPush(pkg: String) {
+    suspend fun openInstallForPush(pkg: String, commandId: String) {
+        val until = System.currentTimeMillis() + INSTALL_PUSH_EXEMPTION_MS
         syncStore.update {
             it.copy(
-                installExemptionUntilMs = System.currentTimeMillis() + INSTALL_PUSH_EXEMPTION_MS,
+                installExemptionUntilMs = until,
                 pendingInstallPackage = pkg,
+                pendingInstallCommandId = commandId,
             )
         }
+        // Synchronous lift, mirroring closeInstallWindow's re-arm: the child may be looking
+        // at Play seconds from now, so don't depend on the exemption collector's timing.
+        runCatching {
+            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = until)
+        }
+    }
+
+    /**
+     * Re-extends the pushed-install window at the moment the child engages (notification or
+     * in-app card tap). The original window opens when the command ARRIVES, which can be long
+     * before anyone looks at the device; without this, tapping after it expired would open
+     * Play only for the install to be blocked by [DeviceRestrictions.KEY_INSTALLS].
+     */
+    suspend fun reopenInstallWindow() {
+        val s = syncStore.current()
+        if (s.pendingInstallPackage.isEmpty()) return
+        openInstallForPush(s.pendingInstallPackage, s.pendingInstallCommandId)
     }
 
     /**
      * Closes the pushed-install window and re-arms [DeviceRestrictions.KEY_INSTALLS]
      * immediately (not just via the collector), so the child can't slip a second install in.
+     * When [installedPkg] is the pushed package itself, the "opened" acknowledgement is
+     * upgraded to "installed" so the parent sees the install actually completed.
      */
-    suspend fun closeInstallWindow() {
-        if (syncStore.current().pendingInstallPackage.isEmpty()) return
-        syncStore.update { it.copy(installExemptionUntilMs = 0, pendingInstallPackage = "") }
+    suspend fun closeInstallWindow(installedPkg: String? = null) {
+        val s = syncStore.current()
+        if (s.pendingInstallPackage.isEmpty()) return
+        val pushedLanded = installedPkg == s.pendingInstallPackage && s.pendingInstallCommandId.isNotEmpty()
+        syncStore.update {
+            it.copy(
+                installExemptionUntilMs = 0,
+                pendingInstallPackage = "",
+                pendingInstallCommandId = "",
+                lastCommandAck = if (pushedLanded) {
+                    CommandAck(
+                        id = s.pendingInstallCommandId,
+                        action = RemoteAction.INSTALL_APP,
+                        ok = true,
+                        detail = RemoteAction.DETAIL_INSTALLED,
+                        completedAtMs = System.currentTimeMillis(),
+                        arg = s.pendingInstallPackage,
+                    )
+                } else {
+                    it.lastCommandAck
+                },
+                childVersion = if (pushedLanded) it.childVersion + 1 else it.childVersion,
+            )
+        }
+        InstallPromptNotifications.cancel(context, s.pendingInstallPackage)
         // Synchronous re-arm: don't wait for the settings/exemption collector to react.
         runCatching {
             DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = 0)
         }
+        if (pushedLanded) publishSelf()
     }
 
     suspend fun requestExtraTime(categoryId: String, minutes: Int, reason: String) {
@@ -341,6 +386,32 @@ class SyncManager(
                     RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, action, now, arg),
                     now,
                 ),
+            )
+        }
+        publishSelf()
+    }
+
+    /**
+     * Withdraws a queued command before the child fetches it. Best-effort: a command the
+     * child's transport already delivered will still run (and ack), which is the honest
+     * outcome — cancellation is for commands still sitting in the queue.
+     */
+    suspend fun cancelCommand(commandId: String) {
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                commands = s.commands.filterNot { it.id == commandId },
+            )
+        }
+        publishSelf()
+    }
+
+    /** Withdraws a pending "locate now" for a device. Best-effort, like [cancelCommand]. */
+    suspend fun cancelLocationRequest(targetDeviceId: String) {
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                locationRequests = s.locationRequests.filterNot { it.deviceId == targetDeviceId },
             )
         }
         publishSelf()
@@ -558,6 +629,7 @@ class SyncManager(
                     pinWrongTotal = s.pinWrongTotal,
                     lastWrongPinMs = s.lastWrongPinMs,
                     lastCommand = s.lastCommandAck,
+                    answeredLocationRequestMs = s.appliedLocationRequestMs,
                     updateError = s.updateError,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
@@ -665,7 +737,9 @@ class SyncManager(
      * stale set would run an APK install concurrently with itself.
      */
     private suspend fun applyCommands(snapshot: ParentSnapshot, deviceId: String) = commandMutex.withLock {
-        val runner by lazy { RemoteCommandRunner(context, repository, openInstallForPush = { openInstallForPush(it) }) }
+        val runner by lazy {
+            RemoteCommandRunner(context, repository, openInstallForPush = { pkg, id -> openInstallForPush(pkg, id) })
+        }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
             // Re-check under the lock: a concurrent handler may have claimed it since.
             if (command.id in syncStore.current().appliedCommandIds) continue

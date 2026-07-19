@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
+import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -102,6 +103,7 @@ fun ChildStatusScreen(
 ) {
     val state by viewModel.childState.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
+    val pendingInstall by viewModel.pendingInstall.collectAsStateWithLifecycle()
     val spacing = Tokens.spacing
     val scope = rememberCoroutineScope()
 
@@ -170,6 +172,23 @@ fun ChildStatusScreen(
                 }
             }
             item { HeroCard(state) }
+            // Backstop for the silent install-prompt notification: a parent-pushed install
+            // stays visible here until it completes, and tapping re-opens the install window.
+            if (pendingInstall.isNotEmpty()) {
+                item {
+                    PendingInstallCard(
+                        pkg = pendingInstall,
+                        onOpen = {
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(context, dev.walcott.install.InstallPromptActivity::class.java)
+                                        .putExtra(dev.walcott.install.InstallPromptActivity.EXTRA_PACKAGE, pendingInstall),
+                                )
+                            }
+                        },
+                    )
+                }
+            }
             if (!usageAccessOn) {
                 item {
                     UsageAccessCard(onFix = {
@@ -319,6 +338,40 @@ private fun UsageAccessCard(onFix: () -> Unit) {
                     stringResource(R.string.usage_access_card_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = color,
+                )
+            }
+        }
+    }
+}
+
+/** A parent pushed an app to install: the tap that opens Play (window re-opens on tap). */
+@Composable
+private fun PendingInstallCard(pkg: String, onOpen: () -> Unit) {
+    val spacing = Tokens.spacing
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.InstallMobile,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.install_child_card_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    stringResource(R.string.install_child_card_desc, pkg),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
         }

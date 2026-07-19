@@ -73,7 +73,10 @@ class EnforcementService : LifecycleService() {
             ) {
                 val app = application as WalcottApplication
                 if (app.syncManager.pendingInstall.value.isNotEmpty()) {
-                    lifecycleScope.launch { runCatching { app.syncManager.closeInstallWindow() } }
+                    // The added package tells closeInstallWindow whether the pushed app itself
+                    // landed (ack "installed" to the parent) or something else closed the window.
+                    val added = intent.data?.schemeSpecificPart
+                    lifecycleScope.launch { runCatching { app.syncManager.closeInstallWindow(added) } }
                 }
             }
         }

@@ -20,11 +20,17 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.InstallMobile
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,7 +66,9 @@ import dev.walcott.data.ChildEntry
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.EnforcementStatus
+import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Staleness
+import dev.walcott.sync.SyncEngine
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.ModeBadge
 import dev.walcott.ui.components.PermissionFixRow
@@ -89,6 +97,7 @@ fun FamiliesScreen(
     val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
+    val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
 
@@ -191,6 +200,35 @@ fun FamiliesScreen(
                     pending = pending,
                     onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
                     onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
+                )
+            }
+        }
+
+        // Everything sent to a child device that hasn't finished: queued remote fixes, pushed
+        // installs waiting for their tap in Play, location requests. Visible so the parent
+        // doesn't re-send blindly, and cancellable while still queued.
+        if (pendingOps.isNotEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.pending_ops_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
+            items(pendingOps, key = { "op-" + it.deviceId + it.action + it.arg + it.sentAtMs }) { op ->
+                PendingOpRow(
+                    op = op,
+                    childName = childNameFor(op.deviceId, settings.children, snapshots),
+                    nowMs = nowMs,
+                    onCancel = when {
+                        op.delivered -> null
+                        op.action == SyncEngine.ACTION_LOCATE -> {
+                            { viewModel.cancelLocationRequest(op.deviceId) }
+                        }
+                        else -> {
+                            { viewModel.cancelRemoteCommand(op.id) }
+                        }
+                    },
                 )
             }
         }
@@ -510,6 +548,80 @@ private fun LegacyDeviceRow(device: ChildSnapshot, onRemove: () -> Unit) {
                     contentDescription = stringResource(R.string.legacy_remove_title),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+/** The registry name for a device, falling back to what the device calls itself. */
+private fun childNameFor(deviceId: String, children: List<ChildEntry>, snapshots: List<ChildSnapshot>): String {
+    val snapshot = snapshots.firstOrNull { it.deviceId == deviceId } ?: return deviceId
+    return children.firstOrNull { it.childId == snapshot.childId }?.name ?: snapshot.displayName
+}
+
+/**
+ * One in-flight remote operation. Queued ones carry a cancel affordance; delivered ones
+ * (an install prompt already opened on the child) only wait, so they just say so.
+ */
+@Composable
+private fun PendingOpRow(
+    op: SyncEngine.PendingOp,
+    childName: String,
+    nowMs: Long,
+    onCancel: (() -> Unit)?,
+) {
+    val spacing = Tokens.spacing
+    val (icon, title) = when (op.action) {
+        RemoteAction.INSTALL_APP -> Icons.Outlined.InstallMobile to stringResource(R.string.pending_op_install, op.arg)
+        RemoteAction.UPDATE_NOW -> Icons.Outlined.SystemUpdate to stringResource(R.string.remote_update_now)
+        RemoteAction.REAPPLY_POLICY -> Icons.Outlined.Security to stringResource(R.string.remote_reapply)
+        RemoteAction.REQUEST_PERMISSIONS -> Icons.Outlined.Key to stringResource(R.string.remote_ask_permissions)
+        SyncEngine.ACTION_LOCATE -> Icons.Outlined.MyLocation to stringResource(R.string.pending_op_locate)
+        // A newer build's action this one doesn't know: show it raw rather than hide it.
+        else -> Icons.Outlined.PhoneAndroid to op.action
+    }
+    val age = Duration.ofMillis((nowMs - op.sentAtMs).coerceAtLeast(0)).humanize()
+
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(horizontal = spacing.lg, vertical = spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(R.string.pending_op_meta, childName, age),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (op.delivered) {
+                    Text(
+                        stringResource(R.string.pending_op_waiting_install),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+            if (onCancel != null) {
+                IconButton(onClick = onCancel) {
+                    Icon(
+                        Icons.Outlined.Close,
+                        contentDescription = stringResource(R.string.action_cancel),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

@@ -60,6 +60,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Tap target for a parent-pushed install (notification / child-home card): re-opens
+             the tight install window at tap time, then forwards to the app's Play page. -->
+        <activity
+            android:name=".install.InstallPromptActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Modern (API 29+) Device Owner provisioning handshake driven by the setup wizard after
              it installs Walcott from the QR. BIND_DEVICE_ADMIN restricts launch to the system. -->
         <activity

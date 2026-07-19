@@ -27,7 +27,7 @@ class RemoteCommandRunner(
     private val context: Context,
     private val repository: WalcottRepository,
     /** Opens the tight, self-closing install window for a parent-pushed install. */
-    private val openInstallForPush: suspend (pkg: String) -> Unit = {},
+    private val openInstallForPush: suspend (pkg: String, commandId: String) -> Unit = { _, _ -> },
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -37,7 +37,7 @@ class RemoteCommandRunner(
                 RemoteAction.UPDATE_NOW -> updateNow()
                 RemoteAction.REAPPLY_POLICY -> reapplyPolicy()
                 RemoteAction.REQUEST_PERMISSIONS -> requestPermissions()
-                RemoteAction.INSTALL_APP -> installApp(command.arg)
+                RemoteAction.INSTALL_APP -> installApp(command.arg, command.id)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -52,6 +52,7 @@ class RemoteCommandRunner(
             ok = result.first,
             detail = result.second,
             completedAtMs = System.currentTimeMillis(),
+            arg = command.arg,
         )
     }
 
@@ -85,13 +86,18 @@ class RemoteCommandRunner(
      * Assisted Play install: opens the tight install window and prompts the child to tap
      * Install in Play. Play can't be driven silently, so this is the honest ceiling — the
      * window slams shut the moment anything installs (see EnforcementService's package
-     * receiver), keeping the opportunity to sneak in an alternative app minimal.
+     * receiver), keeping the opportunity to sneak in an alternative app minimal. "opened"
+     * only means the prompt reached the device; a second "installed" ack follows from
+     * [SyncManager.closeInstallWindow] when the package actually lands.
      */
-    private suspend fun installApp(pkg: String): Pair<Boolean, String> {
+    private suspend fun installApp(pkg: String, commandId: String): Pair<Boolean, String> {
         if (pkg.isBlank()) return false to "no_package"
-        openInstallForPush(pkg)
+        if (runCatching { context.packageManager.getApplicationInfo(pkg, 0) }.isSuccess) {
+            return true to RemoteAction.DETAIL_ALREADY_INSTALLED
+        }
+        openInstallForPush(pkg, commandId)
         InstallPromptNotifications.notify(context, pkg)
-        return true to "opened"
+        return true to RemoteAction.DETAIL_INSTALL_OPENED
     }
 
     /**

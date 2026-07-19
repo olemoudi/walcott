@@ -33,6 +33,8 @@ data class SyncState(
      * PIN-gated window. See [SyncManager.openInstallForPush]/[SyncManager.closeInstallWindow].
      */
     val pendingInstallPackage: String = "",
+    /** The [RemoteCommand.id] behind [pendingInstallPackage], to ack "installed" when it lands. */
+    val pendingInstallCommandId: String = "",
     /** requestedAtMs of the newest location request this child has already answered. */
     val appliedLocationRequestMs: Long = 0,
     /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */

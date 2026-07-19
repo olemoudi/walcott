@@ -112,6 +112,15 @@ object RemoteAction {
      * driven silently, so one tap on the child is unavoidable.
      */
     const val INSTALL_APP = "install_app"
+
+    /**
+     * [CommandAck.detail] lifecycle of an [INSTALL_APP]: "opened" means the prompt reached the
+     * child (nothing installed yet); a second ack with "installed" follows when the pushed
+     * package actually lands. "already_installed" short-circuits both.
+     */
+    const val DETAIL_INSTALL_OPENED = "opened"
+    const val DETAIL_INSTALLED = "installed"
+    const val DETAIL_ALREADY_INSTALLED = "already_installed"
 }
 
 /** How a child device says a [RemoteCommand] went, echoed back in its snapshot. */
@@ -122,6 +131,8 @@ data class CommandAck(
     val ok: Boolean,
     val detail: String = "",
     val completedAtMs: Long,
+    /** The command's [RemoteCommand.arg] echoed back (the package for an install); "" if none. */
+    val arg: String = "",
 )
 
 /** Published by each child device; the parent aggregates the latest per device. */
@@ -166,6 +177,11 @@ data class ChildSnapshot(
     val lastWrongPinMs: Long = 0,
     /** Result of the most recent [RemoteCommand] this device ran, so the parent sees it landed. */
     val lastCommand: CommandAck? = null,
+    /**
+     * requestedAtMs of the newest "locate now" this device has answered, so the parent can tell
+     * a pending location request from a fulfilled one. 0 = legacy child that doesn't report it.
+     */
+    val answeredLocationRequestMs: Long = 0,
     /**
      * Why this device's last self-update attempt failed, or "" when the last check was clean.
      * Makes a child stuck on an old build diagnosable without touching the phone.

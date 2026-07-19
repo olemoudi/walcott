@@ -468,7 +468,18 @@
     <string name="install_prompt_title">Install requested</string>
     <string name="install_prompt_text">Tap to install %1$s from Play.</string>
     <string name="remote_result_install_opened">opened on the child device</string>
+    <string name="remote_result_installed">app installed</string>
+    <string name="remote_result_already_installed">it was already installed</string>
     <string name="remote_result_no_package">no app specified</string>
+    <!-- Pending remote actions (parent home) -->
+    <string name="pending_ops_title">Pending actions</string>
+    <string name="pending_op_install">Install %1$s</string>
+    <string name="pending_op_locate">Location request</string>
+    <string name="pending_op_meta">%1$s · sent %2$s ago</string>
+    <string name="pending_op_waiting_install">Opened on the device — waiting for the install in Play</string>
+    <!-- Parent-pushed install (child home) -->
+    <string name="install_child_card_title">Your parents want to install an app</string>
+    <string name="install_child_card_desc">Tap to open %1$s in Google Play and install it.</string>
     <string name="update_wifi_only_title">Update on Wi-Fi only</string>
     <string name="update_wifi_only_desc">Child devices download updates only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
     <!-- Per-app settings (Apps & categories) -->

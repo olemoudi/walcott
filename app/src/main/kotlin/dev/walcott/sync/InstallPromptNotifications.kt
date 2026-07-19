@@ -6,18 +6,20 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import dev.walcott.R
+import dev.walcott.install.InstallPromptActivity
 
 /**
  * Shown on the child device when a parent pushes an app to install (see
- * [RemoteAction.INSTALL_APP]). Tapping opens the app's Play page so the child taps Install —
- * Play can't be driven silently, and a background activity start would be blocked anyway
- * (Android 10+), so a notification is the reliable way to surface it. Silent, like every
- * other child-side notification.
+ * [RemoteAction.INSTALL_APP]). Tapping routes through [InstallPromptActivity], which re-opens
+ * the install window at tap time and forwards to the app's Play page — Play can't be driven
+ * silently, and a background activity start would be blocked anyway (Android 10+), so a
+ * notification is the reliable way to surface it. Silent, like every other child-side
+ * notification; the child-home card is the backstop if it goes unnoticed. It stays up (no
+ * auto-cancel) until the install completes, so a failed first attempt can be re-tapped.
  */
 object InstallPromptNotifications {
 
@@ -34,16 +36,9 @@ object InstallPromptNotifications {
                 ),
             )
         }
-        // Prefer the Play app; fall back to the Play website if Play isn't installed.
-        val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg"))
-            .setPackage("com.android.vending")
+        val open = Intent(context, InstallPromptActivity::class.java)
+            .putExtra(InstallPromptActivity.EXTRA_PACKAGE, pkg)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val webIntent = Intent(
-            Intent.ACTION_VIEW,
-            Uri.parse("https://play.google.com/store/apps/details?id=$pkg"),
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val open = if (marketIntent.resolveActivity(context.packageManager) != null) marketIntent else webIntent
-
         val tap = PendingIntent.getActivity(
             context, pkg.hashCode(), open,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -54,12 +49,16 @@ object InstallPromptNotifications {
             .setContentTitle(context.getString(R.string.install_prompt_title))
             .setContentText(context.getString(R.string.install_prompt_text, label))
             .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.install_prompt_text, label)))
-            .setAutoCancel(true)
             .setContentIntent(tap)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(pkg.hashCode(), notification) }
+    }
+
+    /** Dismisses the prompt for [pkg] (the pushed install completed or was superseded). */
+    fun cancel(context: Context, pkg: String) {
+        runCatching { NotificationManagerCompat.from(context).cancel(pkg.hashCode()) }
     }
 
     /** Whatever the package resolves to (if it's already known); otherwise the package name. */

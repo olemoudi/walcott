@@ -468,7 +468,18 @@
     <string name="install_prompt_title">Instalación solicitada</string>
     <string name="install_prompt_text">Toca para instalar %1$s desde Play.</string>
     <string name="remote_result_install_opened">abierto en el móvil del hijo</string>
+    <string name="remote_result_installed">app instalada</string>
+    <string name="remote_result_already_installed">ya estaba instalada</string>
     <string name="remote_result_no_package">no se indicó ninguna app</string>
+    <!-- Acciones remotas pendientes (inicio del padre) -->
+    <string name="pending_ops_title">Acciones pendientes</string>
+    <string name="pending_op_install">Instalar %1$s</string>
+    <string name="pending_op_locate">Petición de ubicación</string>
+    <string name="pending_op_meta">%1$s · enviada hace %2$s</string>
+    <string name="pending_op_waiting_install">Abierta en el dispositivo — esperando la instalación en Play</string>
+    <!-- Instalación enviada por los padres (inicio del hijo) -->
+    <string name="install_child_card_title">Tus padres quieren instalar una app</string>
+    <string name="install_child_card_desc">Toca para abrir %1$s en Google Play e instalarla.</string>
     <string name="update_wifi_only_title">Actualizar solo con Wi-Fi</string>
     <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
     <!-- Ajustes por app (Apps y categorías) -->

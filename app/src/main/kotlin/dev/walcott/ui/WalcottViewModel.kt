@@ -57,6 +57,8 @@ class WalcottViewModel(
     val pendingRequests: StateFlow<List<SyncManager.PendingRequest>> = sync.pendingRequests
     val pendingAsks: StateFlow<List<SyncManager.PendingAsk>> = sync.pendingAsks
     val installExemption: StateFlow<Long> = sync.installExemption
+    /** Package of a parent-pushed install still waiting for its tap on this device, or "". */
+    val pendingInstall: StateFlow<String> = sync.pendingInstall
 
     fun askFor(kind: String, text: String) = viewModelScope.launch { sync.askFor(kind, text) }
     fun allowInstallsTemporarily() = viewModelScope.launch { sync.allowInstallsTemporarily() }
@@ -147,6 +149,13 @@ class WalcottViewModel(
     /** Queue a remote fix for a child device (see [dev.walcott.sync.RemoteAction]). */
     fun sendRemoteCommand(targetDeviceId: String, action: String, arg: String = "") =
         viewModelScope.launch { sync.sendCommand(targetDeviceId, action, arg) }
+
+    /** Withdraw a queued remote command before the child fetches it (best-effort). */
+    fun cancelRemoteCommand(commandId: String) = viewModelScope.launch { sync.cancelCommand(commandId) }
+
+    /** Withdraw a pending "locate now" for a device (best-effort). */
+    fun cancelLocationRequest(targetDeviceId: String) =
+        viewModelScope.launch { sync.cancelLocationRequest(targetDeviceId) }
 
     /** Turn the 48h location trail on/off for this child (off = current position only). */
     fun setLocationHistory(childId: String, enabled: Boolean) = viewModelScope.launch {
@@ -304,6 +313,15 @@ class WalcottViewModel(
             delay(15_000)
         }
     }
+
+    /**
+     * Everything queued or in flight toward the children, for the home's pending-actions
+     * list. Re-derived on the 15s clock so entries age out without a sync event.
+     */
+    val pendingOps: StateFlow<List<dev.walcott.sync.SyncEngine.PendingOp>> =
+        combine(sync.state, clock) { s, _ ->
+            dev.walcott.sync.SyncEngine.pendingOps(s.commands, s.locationRequests, s.children, System.currentTimeMillis())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The idle-earn target category id (or "") so childState can attribute earned minutes. */
     private val settingsFlowForEarn: kotlinx.coroutines.flow.Flow<String> =

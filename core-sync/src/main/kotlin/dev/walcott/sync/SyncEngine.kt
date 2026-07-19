@@ -91,4 +91,73 @@ object SyncEngine {
 
     /** How long an unacknowledged remote command stays queued in the parent snapshot. */
     const val COMMAND_TTL_MS = 7 * 24 * 60 * 60 * 1000L
+
+    /** How long a "locate now" counts as pending; after this it's moot, answered or not. */
+    const val LOCATION_REQUEST_TTL_MS = 30 * 60 * 1000L
+
+    /** Pseudo-action for a pending "locate now" in [pendingOps] (not a [RemoteAction]). */
+    const val ACTION_LOCATE = "locate_now"
+
+    /**
+     * One remote operation the parent has in flight, for the pending-actions list.
+     * [delivered] is true once the child has received it — it can no longer be cancelled,
+     * we're just waiting for something to happen on the device (an install completing).
+     */
+    data class PendingOp(
+        /** The [RemoteCommand.id] behind this operation; "" for a location request. */
+        val id: String,
+        val deviceId: String,
+        /** A [RemoteAction], or [ACTION_LOCATE] for a location request. */
+        val action: String,
+        val arg: String,
+        val sentAtMs: Long,
+        val delivered: Boolean,
+    )
+
+    /**
+     * Everything the parent has asked of its children that hasn't finished yet, newest first:
+     * queued commands (cancellable — the child hasn't seen them), install prompts the child
+     * opened but whose package hasn't appeared in its app list, and unanswered location
+     * requests. Children that never check in can't complete anything, so every source is
+     * TTL-bounded to keep the list from fossilizing.
+     */
+    fun pendingOps(
+        commands: List<RemoteCommand>,
+        locationRequests: List<LocationRequest>,
+        children: List<ChildSnapshot>,
+        nowMs: Long,
+    ): List<PendingOp> {
+        val queued = commands
+            .filter { nowMs - it.issuedAtMs <= COMMAND_TTL_MS }
+            .map { PendingOp(it.id, it.deviceId, it.action, it.arg, it.issuedAtMs, delivered = false) }
+
+        // An install acked "opened" left the queue but isn't done until the package shows up
+        // in the child's reported apps. Skip it while a re-push of the same app is queued,
+        // so retrying doesn't show the operation twice.
+        val awaitingInstall = children.mapNotNull { child ->
+            val ack = child.lastCommand ?: return@mapNotNull null
+            val waiting = ack.action == RemoteAction.INSTALL_APP &&
+                ack.ok && ack.detail == RemoteAction.DETAIL_INSTALL_OPENED &&
+                ack.arg.isNotBlank() &&
+                nowMs - ack.completedAtMs <= COMMAND_TTL_MS &&
+                child.apps.none { it.packageName == ack.arg } &&
+                queued.none { it.deviceId == child.deviceId && it.arg == ack.arg }
+            if (waiting) {
+                PendingOp(ack.id, child.deviceId, ack.action, ack.arg, ack.completedAtMs, delivered = true)
+            } else {
+                null
+            }
+        }
+
+        val locates = locationRequests
+            .filter { request ->
+                nowMs - request.requestedAtMs <= LOCATION_REQUEST_TTL_MS &&
+                    children.none {
+                        it.deviceId == request.deviceId && it.answeredLocationRequestMs >= request.requestedAtMs
+                    }
+            }
+            .map { PendingOp("", it.deviceId, ACTION_LOCATE, "", it.requestedAtMs, delivered = false) }
+
+        return (queued + awaitingInstall + locates).sortedByDescending { it.sentAtMs }
+    }
 }
