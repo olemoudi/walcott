@@ -68,4 +68,25 @@ object RuleEngine {
      */
     fun requiresUsageCounting(config: FamilyConfig): Boolean =
         config.policies.values.any { it.dailyBudget.isNotEmpty() }
+
+    /**
+     * The set of [managed] packages that must be suspended right now — the single decision the
+     * enforcement loop acts on. Fails CLOSED: when the usage counter is unavailable
+     * ([usageCountingAvailable] = false) and the config relies on budgets, every managed app is
+     * blocked, so revoking usage access can never buy unlimited time. Pure, so this whole
+     * control (including the fail-closed branch) is unit-tested rather than only exercised live.
+     */
+    fun blockedPackages(
+        config: FamilyConfig,
+        managed: Set<String>,
+        now: LocalDateTime,
+        usageToday: Map<String, Duration> = emptyMap(),
+        extraTime: Map<String, Duration> = emptyMap(),
+        usageCountingAvailable: Boolean = true,
+    ): Set<String> {
+        if (!usageCountingAvailable && requiresUsageCounting(config)) return managed.toSet()
+        return managed.filterTo(mutableSetOf()) {
+            evaluate(config, it, now, usageToday, extraTime) is Verdict.Blocked
+        }
+    }
 }

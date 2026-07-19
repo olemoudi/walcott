@@ -4,9 +4,13 @@ import android.accessibilityservice.AccessibilityService
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import androidx.core.content.ContextCompat
 import dev.walcott.R
 import dev.walcott.WalcottApplication
 import dev.walcott.rules.FamilyConfig
@@ -41,6 +45,15 @@ class AppBlockerService : AccessibilityService() {
     private var lastNotifiedPkg: String? = null
     private var lastNotifiedAt = 0L
 
+    // A newly installed app is unclassified (so it must be blocked), but the config doesn't
+    // change on install — without this the managed set would go stale and the blocker would
+    // wave the new app through until the next policy edit.
+    private val packageReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            scope.launch { runCatching { managed = app.repository.managedPackagesNow() } }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         app = application as WalcottApplication
@@ -53,10 +66,21 @@ class AppBlockerService : AccessibilityService() {
         }
         scope.launch { app.repository.usageTodayFlow.collectLatest { usage = it } }
         scope.launch { app.repository.effectiveExtraTodayFlow.collectLatest { extra = it } }
+        ContextCompat.registerReceiver(
+            this,
+            packageReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addDataScheme("package")
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onDestroy() {
         INSTANCE = null
+        runCatching { unregisterReceiver(packageReceiver) }
         scope.cancel()
         super.onDestroy()
     }

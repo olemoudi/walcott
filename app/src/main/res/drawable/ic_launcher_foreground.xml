@@ -1,26 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Walcott logo: two overlapping checkmarks forming a W ("parental approval, twice").
-  The front (mint) check leans on the back (teal) one — its descender starts on the
-  teal ascender — so the silhouette reads as a lowercase-style W with a lowered middle
-  apex while the duotone keeps the two checks legible. Artwork sits inside the 66dp
-  safe zone of the 108dp adaptive-icon canvas.
+  Walcott mark: a guardian shield (the app protects a child's device) holding the twin
+  checkmarks that form a W ("Walcott", and "parental approval, twice"). White shield outline
+  + mint/teal checks on the violet gradient background — the app's identity in one glance.
+  Artwork sits inside the 66dp safe zone of the 108dp adaptive-icon canvas.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Shield: rounded-top badge tapering to a soft point. -->
     <path
-        android:pathData="M29.5,55 L39.5,65 L58,43"
+        android:pathData="M40,29 L68,29 Q73,29 73,34 L73,56 Q73,71 54,83 Q35,71 35,56 L35,34 Q35,29 40,29 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5"
+        android:strokeLineJoin="round" />
+    <!-- Back check (teal). -->
+    <path
+        android:pathData="M41,53 L48,60 L59,47"
         android:strokeColor="#2EC4B6"
-        android:strokeWidth="7.5"
+        android:strokeWidth="6"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
+    <!-- Front check (mint), leaning on the back one to read as a W. -->
     <path
-        android:pathData="M49.5,53 L61.5,65 L78.5,42.5"
+        android:pathData="M51,53 L59,61 L68,46"
         android:strokeColor="#57D3A0"
-        android:strokeWidth="7.5"
+        android:strokeWidth="6"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
 </vector>

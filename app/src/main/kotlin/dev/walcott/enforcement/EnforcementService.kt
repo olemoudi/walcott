@@ -25,7 +25,6 @@ import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
 import dev.walcott.update.UpdateCheckOutcome
 import dev.walcott.update.Updater
-import dev.walcott.rules.Verdict
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -357,15 +356,9 @@ class EnforcementService : LifecycleService() {
                 }
                 lastUsageAccess = usageAccessOk
             }
-            val failClosed = !usageAccessOk && RuleEngine.requiresUsageCounting(config)
 
-            val blocked: Set<String> = if (failClosed) {
-                managed
-            } else {
-                managed.filterTo(mutableSetOf()) { pkg ->
-                    RuleEngine.evaluate(config, pkg, now, usage, extra) is Verdict.Blocked
-                }
-            }
+            // The single control decision (fail-closed included) lives in the tested rule engine.
+            val blocked = RuleEngine.blockedPackages(config, managed, now, usage, extra, usageCountingAvailable = usageAccessOk)
             // Re-assert on change, plus periodically so external state drift self-heals.
             if (blocked != lastAppliedBlocked || managed != lastAppliedManaged ||
                 nowClock - lastApplyAt > REASSERT_MILLIS
