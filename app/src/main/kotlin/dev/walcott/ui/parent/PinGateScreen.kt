@@ -12,7 +12,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -61,6 +63,8 @@ fun PinGateScreen(
     var pin by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    // Deriving PBKDF2 takes a beat even off-main; the button says so instead of going dead.
+    var verifying by remember { mutableStateOf(false) }
 
     val tooShort = stringResource(R.string.pin_too_short)
     val mismatch = stringResource(R.string.pin_mismatch)
@@ -74,7 +78,9 @@ fun PinGateScreen(
     LaunchedEffect(blocked) { if (!blocked) pinFocus.requestFocus() }
 
     fun submit() {
+        if (verifying) return
         if (hasPin) {
+            verifying = true
             scope.launch {
                 when (val result = viewModel.verifyPin(pin)) {
                     is PinResult.Ok -> onUnlocked()
@@ -84,6 +90,7 @@ fun PinGateScreen(
                         error = lockedFmt.format(mins)
                     }
                 }
+                verifying = false
             }
         } else if (creating) {
             when {
@@ -173,9 +180,19 @@ fun PinGateScreen(
 
             Button(
                 onClick = ::submit,
-                enabled = pin.isNotEmpty(),
+                enabled = pin.isNotEmpty() && !verifying,
                 modifier = Modifier.fillMaxWidth().padding(top = spacing.lg),
-            ) { Text(stringResource(if (creating) R.string.action_create_pin else R.string.action_enter)) }
+            ) {
+                if (verifying) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = LocalContentColor.current,
+                    )
+                } else {
+                    Text(stringResource(if (creating) R.string.action_create_pin else R.string.action_enter))
+                }
+            }
         }
     }
 }

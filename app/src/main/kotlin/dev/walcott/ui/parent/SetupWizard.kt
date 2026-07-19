@@ -1,6 +1,7 @@
 package dev.walcott.ui.parent
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -225,8 +226,14 @@ fun SetupWizardScreen(
                 Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.action_cancel))
             }
         }
+        // Progress eases forward instead of jumping — the bar itself rewards each step.
+        val progress by animateFloatAsState(
+            targetValue = (stepIndex + 1f) / steps.size,
+            animationSpec = tween(Tokens.motion.medium, easing = Tokens.motion.emphasized),
+            label = "wizardProgress",
+        )
         LinearProgressIndicator(
-            progress = { (stepIndex + 1f) / steps.size },
+            progress = { progress },
             modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.screen),
         )
 

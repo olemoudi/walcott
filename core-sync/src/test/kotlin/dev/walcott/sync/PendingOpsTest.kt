@@ -153,4 +153,29 @@ class PendingOpsTest {
         val stale = LocationRequest("child-1", now - SyncEngine.LOCATION_REQUEST_TTL_MS - 1)
         assertTrue(SyncEngine.pendingOps(emptyList(), listOf(stale), listOf(child()), now).isEmpty())
     }
+
+    // --- The locating spinner (parent's "Locate now" button) ---
+
+    @Test
+    fun `locatePending follows the request lifecycle for its own device only`() {
+        val request = LocationRequest("child-1", now - 60_000)
+
+        val whilePending = SyncEngine.pendingOps(emptyList(), listOf(request), listOf(child()), now)
+        assertTrue(SyncEngine.locatePending(whilePending, "child-1"))
+        // Another device's spinner must not light up for this request.
+        assertTrue(!SyncEngine.locatePending(whilePending, "child-2"))
+
+        val answered = child(answeredLocationRequestMs = now - 60_000)
+        val afterAnswer = SyncEngine.pendingOps(emptyList(), listOf(request), listOf(answered), now)
+        assertTrue(!SyncEngine.locatePending(afterAnswer, "child-1"))
+    }
+
+    @Test
+    fun `a queued install command never triggers the locating spinner`() {
+        val ops = SyncEngine.pendingOps(
+            listOf(command("i", action = RemoteAction.INSTALL_APP, arg = "com.a")),
+            emptyList(), emptyList(), now,
+        )
+        assertTrue(!SyncEngine.locatePending(ops, "child-1"))
+    }
 }

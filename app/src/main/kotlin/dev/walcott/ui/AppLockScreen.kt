@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,6 +59,8 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
 
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    // PBKDF2 runs off-main but still takes a beat; show it instead of a frozen field.
+    var verifying by remember { mutableStateOf(false) }
     val wrongPin = stringResource(R.string.pin_incorrect)
     val lockedFmt = stringResource(R.string.pin_locked)
     val pinFocus = remember { FocusRequester() }
@@ -82,12 +85,15 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
     }
 
     fun submit() {
+        if (verifying) return
+        verifying = true
         scope.launch {
             when (val result = viewModel.verifyPin(pin)) {
                 is PinResult.Ok -> onUnlocked()
                 is PinResult.Wrong -> error = wrongPin
                 is PinResult.Locked -> error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
             }
+            verifying = false
         }
     }
 
@@ -125,12 +131,23 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
                 label = { Text(stringResource(R.string.pin_label)) },
                 singleLine = true,
                 isError = error != null,
+                enabled = !verifying,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.NumberPassword,
                     imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(onDone = { submit() }),
+                trailingIcon = if (verifying) {
+                    {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                } else {
+                    null
+                },
                 modifier = Modifier.fillMaxWidth().focusRequester(pinFocus),
             )
             error?.let {

@@ -97,6 +97,7 @@ fun ChildDetailScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
+    val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
 
     // Brief nulls are expected: right after "Add child" (store write in flight) or removal.
     val entry = settings.children.firstOrNull { it.childId == childId } ?: return
@@ -199,6 +200,9 @@ fun ChildDetailScreen(
                     historyEnabled = resolved.locationHistoryEnabled,
                     onSetHistory = { viewModel.setLocationHistory(childId, it) },
                     hasDevice = snapshot != null,
+                    // Live feedback: the button spins from tap until the device answers.
+                    locating = snapshot != null &&
+                        dev.walcott.sync.SyncEngine.locatePending(pendingOps, snapshot.deviceId),
                     onLocateNow = { snapshot?.let { viewModel.requestLocation(it.deviceId) } },
                     onOpenMap = { onOpenMap(childId) },
                 )
@@ -769,6 +773,7 @@ private fun LocationCard(
     historyEnabled: Boolean,
     onSetHistory: (Boolean) -> Unit,
     hasDevice: Boolean,
+    locating: Boolean,
     onLocateNow: () -> Unit,
     onOpenMap: () -> Unit,
 ) {
@@ -833,8 +838,14 @@ private fun LocationCard(
                     Modifier.fillMaxWidth().padding(top = spacing.md),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
-                    OutlinedButton(onClick = onLocateNow, modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.locate_now))
+                    OutlinedButton(onClick = onLocateNow, enabled = !locating, modifier = Modifier.weight(1f)) {
+                        if (locating) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(spacing.xs))
+                            Text(stringResource(R.string.locate_in_progress))
+                        } else {
+                            Text(stringResource(R.string.locate_now))
+                        }
                     }
                     Button(onClick = onOpenMap, modifier = Modifier.weight(1f)) {
                         Text(stringResource(R.string.view_on_map))

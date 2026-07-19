@@ -166,8 +166,10 @@ class WalcottRepository(
 
     suspend fun hasPin(): Boolean = settingsStore.current().pinHash != null
 
+    // PBKDF2 at 120k iterations takes long enough to freeze a frame or twenty — always
+    // derive off the main thread; the PIN screens show a progress state meanwhile.
     suspend fun setPin(pin: String) {
-        val hashed = Pin.hash(pin)
+        val hashed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Pin.hash(pin) }
         settingsStore.update { it.copy(pinHash = hashed.hash, pinSalt = hashed.salt) }
     }
 
@@ -175,7 +177,7 @@ class WalcottRepository(
         val s = settingsStore.current()
         val hash = s.pinHash ?: return false
         val salt = s.pinSalt ?: return false
-        return Pin.verify(pin, hash, salt)
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Pin.verify(pin, hash, salt) }
     }
 
     // --- Rule editing (parent mode) ---

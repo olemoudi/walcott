@@ -160,4 +160,8 @@ object SyncEngine {
 
         return (queued + awaitingInstall + locates).sortedByDescending { it.sentAtMs }
     }
+
+    /** True while a "locate now" for [deviceId] is still unanswered (drives the locating spinner). */
+    fun locatePending(ops: List<PendingOp>, deviceId: String): Boolean =
+        ops.any { it.action == ACTION_LOCATE && it.deviceId == deviceId }
 }

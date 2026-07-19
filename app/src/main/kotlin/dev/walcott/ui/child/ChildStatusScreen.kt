@@ -558,11 +558,19 @@ private fun BedtimeTonightRow(window: TimeWindow) {
 @Composable
 private fun HeroCard(state: ChildUiState) {
     val spacing = Tokens.spacing
+    // The signature gradient marks "your time today"; bedtime swaps to the calm container.
+    val heroBrush = Tokens.heroBrush
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = if (state.bedtimeActive) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.primary,
-        modifier = Modifier.fillMaxWidth(),
+        color = if (state.bedtimeActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+            .then(
+                if (state.bedtimeActive) {
+                    Modifier
+                } else {
+                    Modifier.background(heroBrush, RoundedCornerShape(28.dp))
+                },
+            ),
     ) {
         AnimatedContent(
             targetState = state.bedtimeActive,

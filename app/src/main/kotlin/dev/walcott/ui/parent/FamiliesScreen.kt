@@ -1,7 +1,11 @@
 package dev.walcott.ui.parent
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +38,7 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -196,18 +201,23 @@ fun FamiliesScreen(
                 )
             }
             items(requests, key = { "req-" + it.request.requestId }) { pending ->
-                ExtraTimeRequestCard(
-                    pending = pending,
-                    onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
-                    onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
-                )
+                // animateItem: resolved requests slide out instead of popping (and new ones in).
+                Box(Modifier.animateItem()) {
+                    ExtraTimeRequestCard(
+                        pending = pending,
+                        onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
+                        onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
+                    )
+                }
             }
             items(asks, key = { "ask-" + it.ask.requestId }) { pending ->
-                AskRequestCard(
-                    pending = pending,
-                    onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
-                    onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
-                )
+                Box(Modifier.animateItem()) {
+                    AskRequestCard(
+                        pending = pending,
+                        onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
+                        onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
+                    )
+                }
             }
         }
 
@@ -226,20 +236,22 @@ fun FamiliesScreen(
                 }
             }
             items(pendingOps, key = { "op-" + it.deviceId + it.action + it.arg + it.sentAtMs }) { op ->
-                PendingOpRow(
-                    op = op,
-                    childName = childNameFor(op.deviceId, settings.children, snapshots),
-                    nowMs = nowMs,
-                    onCancel = when {
-                        op.delivered -> null
-                        op.action == SyncEngine.ACTION_LOCATE -> {
-                            { viewModel.cancelLocationRequest(op.deviceId) }
-                        }
-                        else -> {
-                            { viewModel.cancelRemoteCommand(op.id) }
-                        }
-                    },
-                )
+                Box(Modifier.animateItem()) {
+                    PendingOpRow(
+                        op = op,
+                        childName = childNameFor(op.deviceId, settings.children, snapshots),
+                        nowMs = nowMs,
+                        onCancel = when {
+                            op.delivered -> null
+                            op.action == SyncEngine.ACTION_LOCATE -> {
+                                { viewModel.cancelLocationRequest(op.deviceId) }
+                            }
+                            else -> {
+                                { viewModel.cancelRemoteCommand(op.id) }
+                            }
+                        },
+                    )
+                }
             }
         }
 
@@ -346,17 +358,18 @@ fun FamiliesScreen(
 @Composable
 private fun FamilyCard(name: String, childrenCount: Int, pendingCount: Int, onClick: () -> Unit) {
     val spacing = Tokens.spacing
+    // Shares the child hero's signature gradient, so both homes open on the same identity.
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.fillMaxWidth(),
+        color = Color.Transparent,
+        modifier = Modifier.fillMaxWidth().background(Tokens.heroBrush, RoundedCornerShape(24.dp)),
     ) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.Groups,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(36.dp),
             )
             Spacer(Modifier.width(spacing.md))
@@ -364,25 +377,25 @@ private fun FamilyCard(name: String, childrenCount: Int, pendingCount: Int, onCl
                 Text(
                     name,
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
                 Text(
                     pluralStringResource(R.plurals.family_children_count, childrenCount, childrenCount),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
                 )
                 if (pendingCount > 0) {
                     Text(
                         pluralStringResource(R.plurals.family_pending_requests, pendingCount, pendingCount),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
             }
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                tint = MaterialTheme.colorScheme.onPrimary,
             )
         }
     }
@@ -528,14 +541,20 @@ private fun SetupChecklistCard(steps: List<SetupStep>) {
                         .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        if (step.done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
-                        contentDescription = null,
-                        tint = if (step.done) {
+                    // The check "lights up" when a step completes rather than swapping abruptly.
+                    val stepTint by animateColorAsState(
+                        targetValue = if (step.done) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
                         },
+                        animationSpec = tween(Tokens.motion.medium),
+                        label = "stepTint",
+                    )
+                    Icon(
+                        if (step.done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                        contentDescription = null,
+                        tint = stepTint,
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(spacing.sm))
@@ -691,11 +710,19 @@ private fun PendingOpRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (op.delivered) {
-                    Text(
-                        stringResource(R.string.pending_op_waiting_install),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                        Spacer(Modifier.width(spacing.xs))
+                        Text(
+                            stringResource(R.string.pending_op_waiting_install),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
                 }
             }
             if (onCancel != null) {

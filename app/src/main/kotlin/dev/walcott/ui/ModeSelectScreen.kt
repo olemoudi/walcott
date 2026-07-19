@@ -18,7 +18,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.SupervisorAccount
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -103,7 +105,18 @@ fun ModeSelectScreen(
                     },
                     enabled = !creating,
                     modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
-                ) { Text(stringResource(R.string.action_continue)) }
+                ) {
+                    // Creating the family generates keys in the Keystore — worth a beat of feedback.
+                    if (creating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = LocalContentColor.current,
+                        )
+                    } else {
+                        Text(stringResource(R.string.action_continue))
+                    }
+                }
             }
         }
 

@@ -230,6 +230,7 @@
     <string name="tracking_minutes_fmt">%1$d min</string>
     <string name="tracking_battery_warning">Frequent GPS reporting increases the child device\'s battery use.</string>
     <string name="locate_now">Locate now</string>
+    <string name="locate_in_progress">Locating…</string>
     <string name="view_on_map">View on map</string>
     <string name="map_title">Location</string>
     <string name="map_no_locations">No location reported yet. It will appear once the child device checks in.</string>
