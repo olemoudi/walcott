@@ -55,7 +55,16 @@ class EnforcementService : LifecycleService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> screenOn.value = true
-                Intent.ACTION_SCREEN_OFF -> screenOn.value = false
+                Intent.ACTION_SCREEN_OFF -> {
+                    screenOn.value = false
+                    // Checkpoint publish as the phone goes to rest: the parent's "last
+                    // signal" then matches the moment usage stopped, not up to a re-emit
+                    // interval earlier. Throttled so screen toggling doesn't spam.
+                    val app = application as WalcottApplication
+                    lifecycleScope.launch {
+                        runCatching { app.syncManager.publishHeartbeatIfStale(SCREEN_OFF_PUBLISH_MIN_MS) }
+                    }
+                }
             }
         }
     }
@@ -446,6 +455,8 @@ class EnforcementService : LifecycleService() {
         private const val RETRY_LOCATION_MILLIS = 60_000L
         /** Hard floor between sampling cycles, so a never-succeeding fix can't spin the radio. */
         private const val MIN_LOCATION_GAP_MILLIS = 30_000L
+        /** Screen-off checkpoint publish, skipped if anything published this recently. */
+        private const val SCREEN_OFF_PUBLISH_MIN_MS = 5 * 60_000L
         private const val LOC_TAG = "WalcottLocation"
         private const val TAG = "WalcottEnforce"
 

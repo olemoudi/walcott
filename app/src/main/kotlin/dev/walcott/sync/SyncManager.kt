@@ -52,6 +52,8 @@ class SyncManager(
     private var settingsWatchJob: Job? = null
     /** In-memory mirror of [SyncState.ntfySinceSec] so the transport's sinceProvider never blocks. */
     @Volatile private var sinceCache: Long = 0
+    /** Wall clock of the last successful publish, so heartbeats can skip redundant ones. */
+    @Volatile private var lastPublishAtMs: Long = 0
     /** Serializes remote-command execution across concurrently handled parent snapshots. */
     private val commandMutex = Mutex()
 
@@ -520,6 +522,18 @@ class SyncManager(
     /** Publish now because a health signal changed (e.g. usage access toggled). */
     suspend fun publishHealthUpdate() = publishSelf()
 
+    /**
+     * Publishes unless something else already published within [minIntervalMs]. This is the
+     * Doze-resilient heartbeat: the in-process 15-min re-emit can't fire while the device
+     * sleeps, so the watchdog worker (batched by Doze into maintenance windows) and the
+     * screen-off checkpoint call this instead — reusing wakeups that happen anyway, and the
+     * throttle keeps awake periods from double-publishing.
+     */
+    suspend fun publishHeartbeatIfStale(minIntervalMs: Long) {
+        if (System.currentTimeMillis() - lastPublishAtMs < minIntervalMs) return
+        publishSelf()
+    }
+
     /** PIN check with escalating brute-force lockout (device-local state). */
     suspend fun verifyPinGuarded(pin: String): PinResult {
         val s = syncStore.current()
@@ -643,6 +657,7 @@ class SyncManager(
             }
             Role.UNPAIRED -> Unit
         }
+        if (id.role != Role.UNPAIRED) lastPublishAtMs = System.currentTimeMillis()
     }
 
     private suspend fun handleIncoming(raw: String, id: FamilyIdentity) {

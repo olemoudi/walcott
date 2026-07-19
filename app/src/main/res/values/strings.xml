@@ -355,7 +355,8 @@
     <string name="location_network_off_warning">Indoor tracking is off on this device: turn on "Google Location Accuracy" (Settings › Location) so Wi-Fi/cell fixes work indoors.</string>
 
     <!-- Check-in staleness -->
-    <string name="child_stale_line">No check-in for %1$s — protection may be off</string>
+    <string name="child_resting_line">Last signal %1$s ago — normal while the phone is resting</string>
+    <string name="child_stale_line">No signal for %1$s — check that Walcott is still running on the device</string>
     <string name="stale_channel_name">Protection alerts</string>
     <string name="stale_alert_title">%1$s\'s phone may be unprotected</string>
     <string name="stale_alert_text">Walcott hasn\'t checked in for %1$s</string>

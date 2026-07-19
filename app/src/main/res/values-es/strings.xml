@@ -355,7 +355,8 @@
     <string name="location_network_off_warning">El seguimiento en interior está desactivado en este dispositivo: activa "Precisión de la ubicación de Google" (Ajustes › Ubicación) para que funcionen los fixes por Wi-Fi/celda en interior.</string>
 
     <!-- Check-in / falta de señal -->
-    <string name="child_stale_line">Sin señal desde hace %1$s — la protección podría estar inactiva</string>
+    <string name="child_resting_line">Última señal hace %1$s — normal si el móvil está en reposo</string>
+    <string name="child_stale_line">Sin señal desde hace %1$s — comprueba que Walcott siga activo en el móvil</string>
     <string name="stale_channel_name">Alertas de protección</string>
     <string name="stale_alert_title">El móvil de %1$s podría estar sin protección</string>
     <string name="stale_alert_text">Walcott no da señales desde hace %1$s</string>

@@ -1,24 +1,38 @@
 package dev.walcott.sync
 
 /**
- * Pure check-in staleness rules. Children heartbeat every ~15 min (sync re-emit), so a
- * long silence means the child device is off, offline — or the protection was tampered
- * with. The parent UI warns early; a notification fires only after a long outage.
+ * Pure check-in staleness rules. A resting phone is EXPECTED to go quiet for hours: Doze
+ * freezes the in-process 15-min re-emit, and the watchdog heartbeat only runs in Doze
+ * maintenance windows (up to every few hours in deep idle). So silence has two very
+ * different readings, and the parent UI must not cry wolf over the benign one:
+ *  - [Tier.RESTING]: informational — almost always just a phone that is asleep;
+ *  - [Tier.SILENT]: actionable — longer than any benign Doze gap, so the device is off,
+ *    offline for a long time, or the protection was tampered with. Aligned with the
+ *    notification threshold so the row and the alert never disagree.
  */
 object Staleness {
 
-    /** Silence after which the parent home shows a warning on the child row. */
-    const val WARN_AFTER_MS = 30 * 60 * 1000L
+    /** How a child's check-in silence should be presented on the parent home. */
+    enum class Tier { FRESH, RESTING, SILENT }
 
-    /** Silence after which the parent gets a notification. */
+    /** Silence after which the row mentions it, neutrally (phones sleep for hours). */
+    const val RESTING_AFTER_MS = 60 * 60 * 1000L
+
+    /** Silence after which the parent gets a notification (and the row turns red). */
     const val ALERT_AFTER_MS = 12 * 60 * 60 * 1000L
 
     /** Ms without a check-in, or null when the device has never checked in. */
     fun silenceMs(lastSeenMs: Long?, nowMs: Long): Long? =
         lastSeenMs?.let { (nowMs - it).coerceAtLeast(0) }
 
-    fun isWarn(lastSeenMs: Long?, nowMs: Long): Boolean =
-        silenceMs(lastSeenMs, nowMs)?.let { it >= WARN_AFTER_MS } ?: false
+    fun tierOf(lastSeenMs: Long?, nowMs: Long): Tier {
+        val silence = silenceMs(lastSeenMs, nowMs) ?: return Tier.FRESH
+        return when {
+            silence >= ALERT_AFTER_MS -> Tier.SILENT
+            silence >= RESTING_AFTER_MS -> Tier.RESTING
+            else -> Tier.FRESH
+        }
+    }
 
     /** Dedup value stored once a registered-but-never-reported child has been alerted. */
     const val NEVER = 0L

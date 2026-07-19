@@ -37,6 +37,10 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     app.syncManager.installExemption.value,
                 )
             }.onFailure { DebugLog.e(TAG, "restriction reassert failed", it) }
+            // Doze-resilient check-in: the in-process re-emit freezes while the device
+            // sleeps, but this worker still runs in Doze maintenance windows — so a phone
+            // resting all night keeps checking in a few times without any extra wakeups.
+            runCatching { app.syncManager.publishHeartbeatIfStale(HEARTBEAT_MIN_INTERVAL_MS) }
         }
         return Result.success()
     }
@@ -44,6 +48,8 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
     companion object {
         private const val NAME = "walcott_watchdog"
         private const val TAG = "WalcottWatchdog"
+        /** Skip the heartbeat when something already published this recently (awake periods). */
+        private const val HEARTBEAT_MIN_INTERVAL_MS = 10 * 60 * 1000L
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<WatchdogWorker>(15, TimeUnit.MINUTES).build()

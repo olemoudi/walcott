@@ -392,7 +392,9 @@ private fun ChildRow(
     val today = LocalDate.now().toEpochDay()
     val usageToday = snapshot?.takeIf { it.epochDay == today }
         ?.usage?.sumOf { it.seconds } ?: 0L
-    val stale = snapshot != null && Staleness.isWarn(lastSeenMs, nowMs)
+    // A quiet child is almost always just a phone at rest (Doze) — say so neutrally, and
+    // save the red for silences longer than any benign gap (see Staleness).
+    val tier = if (snapshot == null) Staleness.Tier.FRESH else Staleness.tierOf(lastSeenMs, nowMs)
 
     Surface(
         onClick = onClick,
@@ -405,7 +407,11 @@ private fun ChildRow(
             Icon(
                 Icons.Outlined.Face,
                 contentDescription = null,
-                tint = if (stale) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                tint = if (tier == Staleness.Tier.SILENT) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
                 modifier = Modifier.size(28.dp),
             )
             Spacer(Modifier.width(spacing.md))
@@ -420,14 +426,19 @@ private fun ChildRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (stale) {
+                if (tier != Staleness.Tier.FRESH) {
+                    val silence = Duration.ofMillis(Staleness.silenceMs(lastSeenMs, nowMs) ?: 0).humanize()
                     Text(
                         stringResource(
-                            R.string.child_stale_line,
-                            Duration.ofMillis(Staleness.silenceMs(lastSeenMs, nowMs) ?: 0).humanize(),
+                            if (tier == Staleness.Tier.SILENT) R.string.child_stale_line else R.string.child_resting_line,
+                            silence,
                         ),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = if (tier == Staleness.Tier.SILENT) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
                 if (snapshot != null) StatusChips(snapshot)

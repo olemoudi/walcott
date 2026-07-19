@@ -13,13 +13,17 @@ class StalenessTest {
     @Test
     fun `never seen devices are not warned about`() {
         assertNull(Staleness.silenceMs(null, now))
-        assertFalse(Staleness.isWarn(null, now))
+        assertEquals(Staleness.Tier.FRESH, Staleness.tierOf(null, now))
     }
 
     @Test
-    fun `warning starts after 30 minutes of silence`() {
-        assertFalse(Staleness.isWarn(now - Staleness.WARN_AFTER_MS + 1, now))
-        assertTrue(Staleness.isWarn(now - Staleness.WARN_AFTER_MS, now))
+    fun `short silences are fresh, hours are resting, half a day is silent`() {
+        assertEquals(Staleness.Tier.FRESH, Staleness.tierOf(now - Staleness.RESTING_AFTER_MS + 1, now))
+        assertEquals(Staleness.Tier.RESTING, Staleness.tierOf(now - Staleness.RESTING_AFTER_MS, now))
+        // Two hours idle — the exact case that used to show red — is merely resting.
+        assertEquals(Staleness.Tier.RESTING, Staleness.tierOf(now - 2 * 60 * 60 * 1000L, now))
+        assertEquals(Staleness.Tier.RESTING, Staleness.tierOf(now - Staleness.ALERT_AFTER_MS + 1, now))
+        assertEquals(Staleness.Tier.SILENT, Staleness.tierOf(now - Staleness.ALERT_AFTER_MS, now))
     }
 
     @Test
