@@ -66,6 +66,12 @@ class ShareInstallActivity : ComponentActivity() {
                 val settings by app.repository.settingsFlow.collectAsStateWithLifecycle(initialValue = null)
                 val snapshots by app.syncManager.state.collectAsStateWithLifecycle()
 
+                // Hold until the persisted identity actually loads: judging the mode (and
+                // initializing the PIN gate below) against the UNSET default would finish a
+                // legitimate cold-start share — or skip the gate it should have asserted.
+                val bootMode by app.syncManager.bootMode.collectAsStateWithLifecycle()
+                if (bootMode == null) return@WalcottTheme
+
                 if (identity.effectiveMode != DeviceMode.PARENT) {
                     toastAndFinish(R.string.install_share_parent_only)
                     return@WalcottTheme
@@ -75,6 +81,16 @@ class ShareInstallActivity : ComponentActivity() {
                 // Gate policy-writing entry points behind the parent PIN whenever app lock is on:
                 // the share sheet bypasses the main app's lock, so re-assert it here.
                 var unlocked by remember { mutableStateOf(!identity.appLock) }
+                // Like the main app lock, an unlock must not survive the background: re-lock
+                // on ON_STOP so a parked share dialog can't be resumed by someone else.
+                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && identity.appLock) unlocked = false
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
                 if (!unlocked) {
                     PinGate(
                         verify = { app.syncManager.verifyPinGuarded(it) },

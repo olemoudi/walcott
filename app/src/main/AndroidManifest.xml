@@ -26,8 +26,12 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- allowBackup off: the DataStore holds the family sync key and the parent-PIN hash;
+         cloud backup or device-to-device transfer would hand both to whoever controls the
+         child's Google account. Pairing is device-bound anyway, so backups have no value. -->
     <application
         android:name=".WalcottApplication"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"

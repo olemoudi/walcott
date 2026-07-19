@@ -123,6 +123,23 @@ fun WalcottApp(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    // A child device's PIN-gated screens (the local settings hub and everything behind it)
+    // must not survive a trip to the background: the parent unlocks, hands the phone back,
+    // and reopening the app would land the child straight in the settings. Snap back to the
+    // child home on ON_STOP, so the gate asks for the PIN again.
+    val childDevice = identity.effectiveMode == DeviceMode.CHILD
+    DisposableEffect(lifecycleOwner, childDevice) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && childDevice &&
+                screen != Screen.CHILD && screen != Screen.MODE_SELECT
+            ) {
+                screen = Screen.CHILD
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     if (appLockOn && !unlocked) {
         Surface(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().systemBarsPadding()) {
