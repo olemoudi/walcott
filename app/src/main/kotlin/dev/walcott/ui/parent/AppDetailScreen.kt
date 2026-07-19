@@ -42,7 +42,7 @@ import dev.walcott.ui.components.AppIcon
 import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.ComfortableChipPadding
 import dev.walcott.ui.components.CustomValueChip
-import dev.walcott.ui.components.NumberInputDialog
+import dev.walcott.ui.components.MinutesPickerDialog
 import dev.walcott.ui.components.TimePickerDialog
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.hhmm
@@ -234,7 +234,7 @@ private fun PerDayBudgetCard(
                 var customAll by remember { mutableStateOf(false) }
                 QuickChip(stringResource(R.string.custom_value)) { customAll = true }
                 if (customAll) {
-                    NumberInputDialog(
+                    MinutesPickerDialog(
                         title = stringResource(R.string.custom_minutes_title),
                         initial = 60,
                         onDismiss = { customAll = false },

@@ -178,7 +178,7 @@ internal fun CategoryBudgetCard(
                     var customAll by remember { mutableStateOf(false) }
                     BudgetPreset(stringResource(R.string.custom_value)) { customAll = true }
                     if (customAll) {
-                        dev.walcott.ui.components.NumberInputDialog(
+                        dev.walcott.ui.components.MinutesPickerDialog(
                             title = stringResource(R.string.custom_minutes_title),
                             initial = 60,
                             onDismiss = { customAll = false },

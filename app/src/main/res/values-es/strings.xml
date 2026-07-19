@@ -78,6 +78,8 @@
     <string name="custom_minutes_title">Minutos personalizados</string>
     <string name="minutes_label">Minutos</string>
     <string name="minutes_range">%1$d–%2$d min (hasta 24h)</string>
+    <string name="minutes_increase">Sumar 30 minutos</string>
+    <string name="minutes_decrease">Restar 30 minutos</string>
     <plurals name="days_with_limit">
         <item quantity="one">%d día con límite</item>
         <item quantity="other">%d días con límite</item>

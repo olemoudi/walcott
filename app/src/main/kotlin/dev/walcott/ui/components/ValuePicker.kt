@@ -1,12 +1,22 @@
 package dev.walcott.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -16,11 +26,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
+import dev.walcott.ui.format.humanize
+import java.time.Duration
 
 /**
  * A comfortably sized selection chip: a Material [FilterChip] with a taller touch target and
@@ -90,7 +104,7 @@ fun CustomValueChip(
         label = customLabel ?: stringResource(R.string.custom_value),
     )
     if (editing) {
-        NumberInputDialog(
+        MinutesPickerDialog(
             title = dialogTitle,
             initial = initial,
             minValue = minValue,
@@ -104,34 +118,96 @@ fun CustomValueChip(
     }
 }
 
-/** A small dialog to type a whole number in [minValue]..[maxValue] (e.g. custom minutes). */
+/** How much one tap of the +/- buttons moves the value. */
+private const val STEP_MINUTES = 30
+
+/**
+ * Next/previous value when stepping by [step]: from a value that isn't a multiple of the step,
+ * the buttons snap to the surrounding multiples (45 → 30 or 60) rather than drifting off-grid.
+ * Pure, so the stepping is unit-tested.
+ */
+internal fun nextStep(value: Int, step: Int = STEP_MINUTES): Int = ((value / step) + 1) * step
+
+internal fun previousStep(value: Int, step: Int = STEP_MINUTES): Int =
+    if (value % step == 0) value - step else (value / step) * step
+
+/**
+ * Picks a duration in minutes: big +/- buttons that move in 30-minute steps up to 24h, with the
+ * value editable by hand for anything in between, and a readable preview ("2h 30m") of what the
+ * number actually means.
+ */
 @Composable
-fun NumberInputDialog(
+fun MinutesPickerDialog(
     title: String,
     initial: Int,
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit,
     minValue: Int = 1,
-    maxValue: Int = 1440,
+    maxValue: Int = 24 * 60,
 ) {
     var text by remember { mutableStateOf(initial.coerceIn(minValue, maxValue).toString()) }
     val parsed = text.toIntOrNull()
     val valid = parsed != null && parsed in minValue..maxValue
+    // Steppers act on the last valid value, so typing garbage never strands the buttons.
+    val current = parsed?.coerceIn(minValue, maxValue) ?: initial.coerceIn(minValue, maxValue)
+
+    fun set(value: Int) {
+        text = value.coerceIn(minValue, maxValue).toString()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it.filter(Char::isDigit).take(4) },
-                label = { Text(stringResource(R.string.minutes_label)) },
-                singleLine = true,
-                isError = text.isNotEmpty() && !valid,
-                supportingText = { Text(stringResource(R.string.minutes_range, minValue, maxValue)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    FilledTonalIconButton(
+                        onClick = { set(previousStep(current)) },
+                        enabled = current > minValue,
+                        modifier = Modifier.size(56.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Remove,
+                            contentDescription = stringResource(R.string.minutes_decrease),
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.filter(Char::isDigit).take(4) },
+                        singleLine = true,
+                        isError = text.isNotEmpty() && !valid,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        textStyle = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center),
+                        modifier = Modifier.width(120.dp),
+                    )
+                    FilledTonalIconButton(
+                        onClick = { set(nextStep(current)) },
+                        enabled = current < maxValue,
+                        modifier = Modifier.size(56.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.minutes_increase),
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+                // What the number means, so nobody has to divide 150 by 60 in their head.
+                Text(
+                    if (valid) Duration.ofMinutes(parsed!!.toLong()).humanize() else "—",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                Text(
+                    stringResource(R.string.minutes_range, minValue, maxValue),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         },
         confirmButton = {
             TextButton(enabled = valid, onClick = { onConfirm(parsed!!) }) {

@@ -78,6 +78,8 @@
     <string name="custom_minutes_title">Custom minutes</string>
     <string name="minutes_label">Minutes</string>
     <string name="minutes_range">%1$d–%2$d min (up to 24h)</string>
+    <string name="minutes_increase">Add 30 minutes</string>
+    <string name="minutes_decrease">Subtract 30 minutes</string>
     <plurals name="days_with_limit">
         <item quantity="one">%d day with a limit</item>
         <item quantity="other">%d days with a limit</item>
