@@ -87,6 +87,31 @@ class ChildOverridesTest {
         assertTrue(!ChildOverrides(bedtime = emptyMap()).isEmpty)
         assertTrue(!ChildOverrides(trackingIntervalMinutes = 0).isEmpty)
         assertTrue(!ChildOverrides(locationHistoryEnabled = false).isEmpty)
+        assertTrue(!ChildOverrides(updateWifiOnly = false).isEmpty)
+    }
+
+    @Test
+    fun `update-wifi-only resolves per-child override over the family default`() {
+        val fam = family.copy(
+            updateWifiOnly = true, // family: Wi-Fi only
+            children = listOf(
+                // This child may use mobile data (e.g. a teen who is often out).
+                ChildEntry("w1", "Ana", ChildOverrides(updateWifiOnly = false)),
+                ChildEntry("w2", "Bea"),
+            ),
+        )
+        assertEquals(false, fam.resolveForChild("w1").updateWifiOnly) // override wins
+        assertEquals(true, fam.resolveForChild("w2").updateWifiOnly) // inherits the family default
+    }
+
+    @Test
+    fun `update-wifi-only defaults off and a child can be stricter than the family`() {
+        assertEquals(false, PolicySettings().updateWifiOnly)
+        val fam = family.copy(
+            updateWifiOnly = false,
+            children = listOf(ChildEntry("w1", "Ana", ChildOverrides(updateWifiOnly = true))),
+        )
+        assertEquals(true, fam.resolveForChild("w1").updateWifiOnly)
     }
 
     @Test

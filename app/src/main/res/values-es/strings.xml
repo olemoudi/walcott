@@ -548,6 +548,7 @@
     <string name="install_child_card_desc">Toca para abrir %1$s en Google Play e instalarla.</string>
     <string name="update_wifi_only_title">Actualizar solo con Wi-Fi</string>
     <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
+    <string name="update_wifi_following_family">Sigue el ajuste de la familia: %1$s</string>
     <!-- Ajustes por app (Apps y categorías) -->
     <string name="app_has_override">reglas propias</string>
     <string name="app_own_limit">Límite diario propio de esta app</string>

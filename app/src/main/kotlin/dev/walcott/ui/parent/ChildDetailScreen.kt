@@ -299,6 +299,15 @@ fun ChildDetailScreen(
                     onEdit = onEditProtection.takeIf { entry.overrides.deviceRestrictions != null },
                 )
             }
+            item {
+                UpdateWifiOverrideCard(
+                    override = entry.overrides.updateWifiOnly,
+                    familyValue = settings.updateWifiOnly,
+                    onSetOverride = { value ->
+                        viewModel.setChildOverrides(childId, entry.overrides.copy(updateWifiOnly = value))
+                    },
+                )
+            }
 
             item { Spacer(Modifier.height(spacing.xl)) }
         }
@@ -876,6 +885,59 @@ private fun LocationCard(
                     Button(onClick = onOpenMap, modifier = Modifier.weight(1f)) {
                         Text(stringResource(R.string.view_on_map))
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Per-child Wi-Fi-only-updates override. A single boolean, so the override is expressed as a
+ * "customize" switch that snapshots the family value; once customized, a second switch sets
+ * this child's value, and "follow family" clears it back to inheriting.
+ */
+@Composable
+private fun UpdateWifiOverrideCard(
+    override: Boolean?,
+    familyValue: Boolean,
+    onSetOverride: (Boolean?) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val customized = override != null
+    val value = override ?: familyValue
+    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.update_wifi_only_title), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (customized) {
+                            stringResource(R.string.override_customized_hint)
+                        } else {
+                            stringResource(
+                                R.string.update_wifi_following_family,
+                                stringResource(if (familyValue) R.string.summary_on else R.string.summary_off),
+                            )
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // Customize snapshots the current resolved value; turning it off re-inherits.
+                Switch(checked = customized, onCheckedChange = { on -> onSetOverride(if (on) value else null) })
+            }
+            if (customized) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.update_wifi_only_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = value, onCheckedChange = { onSetOverride(it) })
                 }
             }
         }

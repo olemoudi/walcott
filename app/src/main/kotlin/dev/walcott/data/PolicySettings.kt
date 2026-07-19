@@ -120,11 +120,14 @@ data class ChildOverrides(
     val trackingIntervalMinutes: Int? = null,
     /** Whether this child reports a 48h trail rather than just its current position. */
     val locationHistoryEnabled: Boolean? = null,
+    /** Restrict this child's self-update to Wi-Fi. Null inherits the family value. */
+    val updateWifiOnly: Boolean? = null,
 ) {
     val isEmpty: Boolean
         get() = budgets == null && blockedWindows == null && bedtime == null &&
             earnRules == null && blockedDomains == null && deviceRestrictions == null &&
-            trackingIntervalMinutes == null && locationHistoryEnabled == null
+            trackingIntervalMinutes == null && locationHistoryEnabled == null &&
+            updateWifiOnly == null
 }
 
 /** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */
@@ -218,6 +221,7 @@ data class PolicySettings(
             deviceRestrictions = overrides.deviceRestrictions ?: deviceRestrictions,
             trackingIntervalMinutes = overrides.trackingIntervalMinutes ?: trackingIntervalMinutes,
             locationHistoryEnabled = overrides.locationHistoryEnabled ?: locationHistoryEnabled,
+            updateWifiOnly = overrides.updateWifiOnly ?: updateWifiOnly,
         )
     }
 

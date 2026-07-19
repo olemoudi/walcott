@@ -548,6 +548,7 @@
     <string name="install_child_card_desc">Tap to open %1$s in Google Play and install it.</string>
     <string name="update_wifi_only_title">Update on Wi-Fi only</string>
     <string name="update_wifi_only_desc">Child devices download updates only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
+    <string name="update_wifi_following_family">Following the family setting: %1$s</string>
     <!-- Per-app settings (Apps & categories) -->
     <string name="app_has_override">custom rules</string>
     <string name="app_own_limit">This app\'s own daily limit</string>
