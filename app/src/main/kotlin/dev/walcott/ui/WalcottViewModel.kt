@@ -202,6 +202,18 @@ class WalcottViewModel(
         }
     }
 
+    // --- Guided setup (presets) ---
+
+    /** Caps every leisure category at [minutes] per day, all day types (null removes the caps). */
+    fun setLeisureBudget(minutes: Int?) = viewModelScope.launch {
+        repository.updateSettings { dev.walcott.data.SetupPresets.withLeisureBudget(it, minutes) }
+    }
+
+    /** Recommended anti-tamper set plus the parent's choice on blocking new installs. */
+    fun applyProtectionPreset(blockInstalls: Boolean) = viewModelScope.launch {
+        repository.updateSettings { dev.walcott.data.SetupPresets.withProtection(it, blockInstalls) }
+    }
+
     // Reloads the 7-day history whenever today's usage changes.
     val weeklyUsage: StateFlow<Map<Long, Map<String, java.time.Duration>>> =
         repository.usageTodayFlow.map { repository.weeklyUsage() }

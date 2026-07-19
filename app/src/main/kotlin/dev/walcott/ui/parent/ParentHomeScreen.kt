@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
@@ -77,6 +78,7 @@ fun ParentHomeScreen(
     onOpenProtection: () -> Unit,
     onOpenLocation: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onOpenGuidedSetup: () -> Unit,
     onBack: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -99,6 +101,16 @@ fun ParentHomeScreen(
             if (childDevice) {
                 ProtectionBanner(deviceOwner)
                 Spacer(Modifier.height(spacing.xs))
+            }
+            // The guided wizards stay reachable forever, not only during onboarding. Family
+            // policy only — a child device's local fallback hub doesn't offer them.
+            if (!childDevice) {
+                NavCard(
+                    Icons.Outlined.AutoFixHigh,
+                    stringResource(R.string.guided_setup_card_title),
+                    stringResource(R.string.guided_setup_card_desc),
+                    onOpenGuidedSetup,
+                )
             }
             NavCard(Icons.Outlined.Apps, stringResource(R.string.nav_apps_title), stringResource(R.string.nav_apps_subtitle), onOpenApps)
             NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets)

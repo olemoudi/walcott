@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.MyLocation
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
@@ -94,6 +95,7 @@ fun FamiliesScreen(
     // screen that completes it, instead of hunting through the rules hub.
     onOpenApps: () -> Unit,
     onOpenBudgets: () -> Unit,
+    onOpenGuidedSetup: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
@@ -245,6 +247,9 @@ fun FamiliesScreen(
         val limitsDone = settings.budgets.isNotEmpty() || settings.bedtime.isNotEmpty()
         val bedtimeDone = settings.bedtime.isNotEmpty()
         if (!(childDone && appsDone && limitsDone && bedtimeDone)) {
+            // The guided wizards, front and center until the family is fully set up (they
+            // stay reachable afterwards from the family rules hub).
+            item { GuidedSetupCard(onOpenGuidedSetup) }
             item {
                 SetupChecklistCard(
                     steps = listOf(
@@ -447,6 +452,44 @@ private fun ChildRow(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GuidedSetupCard(onClick: () -> Unit) {
+    val spacing = Tokens.spacing
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.AutoFixHigh,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.guided_setup_card_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    stringResource(R.string.guided_setup_card_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
     }

@@ -46,6 +46,9 @@ import dev.walcott.ui.parent.FamiliesScreen
 import dev.walcott.ui.parent.MapScreen
 import dev.walcott.ui.parent.ParentHomeScreen
 import dev.walcott.ui.parent.PinGateScreen
+import dev.walcott.ui.parent.SetupPreset
+import dev.walcott.ui.parent.SetupPresetChooserScreen
+import dev.walcott.ui.parent.SetupWizardScreen
 import dev.walcott.ui.parent.WebFilterScreen
 import dev.walcott.ui.parent.WeeklyReportScreen
 
@@ -54,7 +57,7 @@ private fun overrideChildName(settings: PolicySettings, childId: String?): Strin
     childId?.let { id -> settings.children.firstOrNull { it.childId == id }?.name }
 
 private enum class Screen {
-    MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY, CHILD_DETAIL, CHILD_MAP,
+    MODE_SELECT, CHILD, GATE, FAMILIES, SETUP_PRESETS, SETUP_WIZARD, FAMILY, CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
     APP_SETTINGS, DEBUG_LOGS,
 }
@@ -89,6 +92,8 @@ fun WalcottApp(
         )
     }
     var childDetailId by remember { mutableStateOf<String?>(null) }
+    // Which guided-setup preset is running (SETUP_WIZARD screen).
+    var wizardPreset by remember { mutableStateOf<SetupPreset?>(null) }
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
     // policy, and back returns to the child detail.
     var overrideChildId by remember { mutableStateOf<String?>(null) }
@@ -165,6 +170,8 @@ fun WalcottApp(
             Screen.APP_SETTINGS -> if (parentMode) Screen.FAMILIES else Screen.FAMILY
             Screen.DEBUG_LOGS -> Screen.APP_SETTINGS
             Screen.APP_DETAIL -> Screen.APPS
+            Screen.SETUP_PRESETS -> Screen.FAMILIES
+            Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
@@ -200,7 +207,14 @@ fun WalcottApp(
                     )
                     Screen.GATE -> PinGateScreen(
                         viewModel,
-                        onUnlocked = { screen = if (parentMode) Screen.FAMILIES else Screen.FAMILY },
+                        onUnlocked = {
+                            screen = when {
+                                !parentMode -> Screen.FAMILY
+                                // Fresh family: offer the guided setup right after the PIN.
+                                gateAllowCreate -> Screen.SETUP_PRESETS
+                                else -> Screen.FAMILIES
+                            }
+                        },
                         onBack = ::back,
                         allowCreate = gateAllowCreate,
                     )
@@ -214,7 +228,23 @@ fun WalcottApp(
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
                         onOpenApps = { screen = Screen.APPS },
                         onOpenBudgets = { screen = Screen.BUDGETS },
+                        onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
                     )
+                    Screen.SETUP_PRESETS -> SetupPresetChooserScreen(
+                        onPick = { preset ->
+                            wizardPreset = preset
+                            screen = Screen.SETUP_WIZARD
+                        },
+                        onSkip = { screen = Screen.FAMILIES },
+                    )
+                    Screen.SETUP_WIZARD -> wizardPreset?.let { preset ->
+                        SetupWizardScreen(
+                            viewModel,
+                            preset = preset,
+                            onDone = { screen = Screen.FAMILIES },
+                            onExit = { screen = Screen.FAMILIES },
+                        )
+                    }
                     Screen.CHILD_DETAIL -> childDetailId?.let { childId ->
                         ChildDetailScreen(
                             viewModel,
@@ -250,6 +280,7 @@ fun WalcottApp(
                         onOpenProtection = { overrideChildId = null; screen = Screen.PROTECTION },
                         onOpenLocation = { screen = Screen.LOCATION },
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
+                        onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
                         onBack = ::back,
                     )
                     Screen.APPS -> AppAssignScreen(
