@@ -41,7 +41,12 @@ data class ChildUiState(
     val categories: List<CategoryStatusUi> = emptyList(),
 )
 
-data class AppRow(val app: InstalledApp, val categoryId: String?)
+data class AppRow(
+    val app: InstalledApp,
+    val categoryId: String?,
+    /** Which children have this app installed (registry name, legacy device name as fallback). */
+    val owners: List<dev.walcott.data.AppCatalog.Owner> = emptyList(),
+)
 
 class WalcottViewModel(
     val repository: WalcottRepository,
@@ -396,13 +401,13 @@ class WalcottViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     // Parent classifies the apps its children actually have installed (reported over sync),
-    // deduplicated across children, not the parent device's own apps.
+    // deduplicated across children but remembering WHO has each one (tags + per-child filter).
     val appRows: StateFlow<List<AppRow>> =
-        combine(children, repository.assignmentsFlow) { snapshots, assignments ->
-            snapshots.flatMap { it.apps }
-                .distinctBy { it.packageName }
-                .sortedBy { it.label.lowercase() }
-                .map { AppRow(InstalledApp(it.packageName, it.label, isSystem = false), assignments[it.packageName]) }
+        combine(children, repository.assignmentsFlow, settings) { snapshots, assignments, s ->
+            dev.walcott.data.AppCatalog.build(snapshots, s.children.associate { it.childId to it.name })
+                .map {
+                    AppRow(InstalledApp(it.packageName, it.label, isSystem = false), assignments[it.packageName], it.owners)
+                }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // --- Actions ---

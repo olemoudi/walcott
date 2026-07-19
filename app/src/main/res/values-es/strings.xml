@@ -56,6 +56,7 @@
     <string name="protection_active">Protección activa (Device Owner)</string>
     <string name="protection_inactive">Sin Device Owner: el bloqueo no está garantizado</string>
     <string name="nav_apps_title">Apps y categorías</string>
+    <string name="apps_filter_all">Todos</string>
     <string name="nav_apps_subtitle">Clasifica cada app; las nuevas quedan bloqueadas hasta clasificarlas</string>
     <string name="nav_limits_title">Límites y horarios</string>
     <string name="nav_limits_subtitle">Presupuesto diario por categoría y hora de dormir</string>

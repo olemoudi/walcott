@@ -56,6 +56,7 @@
     <string name="protection_active">Protection active (Device Owner)</string>
     <string name="protection_inactive">No Device Owner: blocking isn\'t guaranteed</string>
     <string name="nav_apps_title">Apps and categories</string>
+    <string name="apps_filter_all">All</string>
     <string name="nav_apps_subtitle">Classify each app; new ones stay blocked until classified</string>
     <string name="nav_limits_title">Limits and schedules</string>
     <string name="nav_limits_subtitle">Daily budget per category and bedtime</string>

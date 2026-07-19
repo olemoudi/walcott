@@ -2,8 +2,12 @@ package dev.walcott.ui.parent
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -32,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,10 +63,19 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
     val rows by viewModel.appRows.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
+    // Per-child filter (null = everyone). Only offered once there are two+ children to
+    // tell apart — a single-child family gains nothing from the extra chrome.
+    var ownerFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    val allOwners = remember(rows) {
+        rows.flatMap { it.owners }.distinctBy { it.id }.sortedBy { it.name.lowercase() }
+    }
+    val showOwners = allOwners.size > 1
 
-    val filtered = remember(rows, query) {
-        if (query.isBlank()) rows
-        else rows.filter { it.app.label.contains(query, ignoreCase = true) }
+    val filtered = remember(rows, query, ownerFilter) {
+        rows.filter { row ->
+            (query.isBlank() || row.app.label.contains(query, ignoreCase = true)) &&
+                (ownerFilter == null || row.owners.any { it.id == ownerFilter })
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -85,6 +101,26 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.screen),
             )
+            if (showOwners) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(horizontal = spacing.screen, vertical = spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    FilterChip(
+                        selected = ownerFilter == null,
+                        onClick = { ownerFilter = null },
+                        label = { Text(stringResource(R.string.apps_filter_all)) },
+                    )
+                    allOwners.forEach { owner ->
+                        FilterChip(
+                            selected = ownerFilter == owner.id,
+                            onClick = { ownerFilter = if (ownerFilter == owner.id) null else owner.id },
+                            label = { Text(owner.name) },
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.width(spacing.sm))
             LazyColumn(
                 Modifier.fillMaxSize().padding(horizontal = spacing.sm),
@@ -95,6 +131,7 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
                         viewModel,
                         row,
                         hasOverride = row.app.packageName in settings.appPolicies,
+                        showOwners = showOwners,
                         onClick = { onOpenApp(row.app.packageName) },
                     )
                 }
@@ -103,18 +140,48 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AppAssignRow(viewModel: WalcottViewModel, row: AppRow, hasOverride: Boolean, onClick: () -> Unit) {
+private fun AppAssignRow(
+    viewModel: WalcottViewModel,
+    row: AppRow,
+    hasOverride: Boolean,
+    showOwners: Boolean,
+    onClick: () -> Unit,
+) {
     val category = row.categoryId?.let { AppCategory.byId(it) }
     ListItem(
         headlineContent = { Text(row.app.label) },
         supportingContent = {
-            // Category name (or "unclassified"), plus a hint when the app carries its own rules.
-            val base = category?.let { stringResource(it.nameRes) } ?: stringResource(R.string.unclassified_blocked)
-            Text(
-                if (hasOverride) "$base · ${stringResource(R.string.app_has_override)}" else base,
-                color = category?.color ?: MaterialTheme.colorScheme.error,
-            )
+            Column {
+                // Category name (or "unclassified"), plus a hint when the app carries its own rules.
+                val base = category?.let { stringResource(it.nameRes) } ?: stringResource(R.string.unclassified_blocked)
+                Text(
+                    if (hasOverride) "$base · ${stringResource(R.string.app_has_override)}" else base,
+                    color = category?.color ?: MaterialTheme.colorScheme.error,
+                )
+                // Who has it: one small tag per child (only in multi-child families).
+                if (showOwners && row.owners.isNotEmpty()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 2.dp),
+                    ) {
+                        row.owners.forEach { owner ->
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                            ) {
+                                Text(
+                                    owner.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         },
         leadingContent = { AppIcon(row.app.packageName, viewModel.repository.inventory, size = 40.dp) },
         trailingContent = {
