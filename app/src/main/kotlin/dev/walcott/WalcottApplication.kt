@@ -32,6 +32,9 @@ class WalcottApplication : Application() {
         private set
     lateinit var identityStore: IdentityStore
         private set
+    /** Exposed for the debug-only test seeder; the app itself goes through [syncManager]. */
+    lateinit var syncStore: SyncStore
+        private set
 
     private val appScope = CoroutineScope(SupervisorJob())
 
@@ -46,12 +49,13 @@ class WalcottApplication : Application() {
             inventory = AppInventory(this),
             ownPackage = packageName,
         )
+        syncStore = SyncStore(this)
         syncManager = SyncManager(
             context = this,
             repository = repository,
             settingsStore = settingsStore,
             identityStore = identityStore,
-            syncStore = SyncStore(this),
+            syncStore = syncStore,
             scope = appScope,
         )
         syncManager.start()

@@ -435,11 +435,23 @@ class WalcottViewModel(
         }
     }
 
-    /** Set (or clear, with null) this app's own daily budget for a day type. */
+    /**
+     * Set this app's own daily budget for a day type: a positive number of minutes, 0 to block
+     * the app entirely that day (even when its category is open), or null for no per-app limit.
+     */
     fun setAppBudget(pkg: String, dayType: DayType, minutes: Int?) = mutateAppPolicy(pkg) { dto ->
         val budgets = dto.budgets.toMutableMap()
         if (minutes == null) budgets.remove(dayType.name) else budgets[dayType.name] = minutes
         dto.copy(budgets = budgets)
+    }
+
+    /**
+     * Set this app's own daily budget the same way across ALL day types in one write — the
+     * common case (one limit, or "block it everywhere") without editing three rows. 0 blocks,
+     * null clears the per-app limit entirely.
+     */
+    fun setAppBudgetAllDays(pkg: String, minutes: Int?) = mutateAppPolicy(pkg) { dto ->
+        dto.copy(budgets = if (minutes == null) emptyMap() else DAY_TYPES.associate { it.name to minutes })
     }
 
     /** Set (or clear, with null) this app's blocked window, applied to every day type. */

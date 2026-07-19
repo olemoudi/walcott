@@ -33,6 +33,10 @@ class PolicySeedReceiver : BroadcastReceiver() {
         val policyJson = intent.getStringExtra("policy")
             ?: intent.getStringExtra("policy_b64")?.let { String(java.util.Base64.getDecoder().decode(it)) }
 
+        // Optional fake child snapshot so the parent's app list / catalog populates on a
+        // single emulator: "childId:Device Name:pkg=Label,pkg=Label" (no shell-special chars).
+        val childApps = intent.getStringExtra("child_apps")
+
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -46,12 +50,39 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     "parent" -> app.identityStore.save(app.identityStore.current().copy(mode = DeviceMode.PARENT))
                     "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
                 }
-                DebugLog.i("WalcottSeed", "seeded mode=$mode policy=${policyJson != null}")
+                if (childApps != null) seedChild(app, childApps, intent.getIntExtra("child_battery", -1))
+                DebugLog.i("WalcottSeed", "seeded mode=$mode policy=${policyJson != null} childApps=${childApps != null}")
             } catch (t: Throwable) {
                 DebugLog.e("WalcottSeed", "seed failed", t)
             } finally {
                 pending.finish()
             }
+        }
+    }
+
+    /** Writes a fake child snapshot ("childId:Name:pkg|Label,...") into the parent's sync store. */
+    private suspend fun seedChild(app: WalcottApplication, spec: String, batteryLevel: Int) {
+        val (childId, name, appsPart) = spec.split(":", limit = 3).let {
+            Triple(it.getOrElse(0) { "c1" }, it.getOrElse(1) { "Device" }, it.getOrElse(2) { "" })
+        }
+        val apps = appsPart.split(",").filter { it.isNotBlank() }.map {
+            val (pkg, label) = it.split("=", limit = 2).let { p -> p[0] to p.getOrElse(1) { p[0] } }
+            dev.walcott.sync.InstalledAppInfo(pkg, label)
+        }
+        val snapshot = dev.walcott.sync.ChildSnapshot(
+            deviceId = "dev-$childId",
+            displayName = name,
+            version = System.currentTimeMillis(),
+            epochDay = java.time.LocalDate.now().toEpochDay(),
+            childId = childId,
+            apps = apps,
+            batteryPercent = batteryLevel,
+        )
+        app.syncStore.update { s ->
+            s.copy(
+                children = s.children.filterNot { it.deviceId == snapshot.deviceId } + snapshot,
+                lastSeen = s.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
+            )
         }
     }
 }

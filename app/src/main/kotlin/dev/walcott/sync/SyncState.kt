@@ -94,6 +94,10 @@ data class SyncState(
     val usageAccessNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for mock-GPS fixes (cleared when the trail is clean again). */
     val mockLocationNotified: Set<String> = emptySet(),
+    /** deviceIds already alerted for low battery (cleared when charged/plugged in — see HealthAlerts). */
+    val lowBatteryNotified: Set<String> = emptySet(),
+    /** deviceIds already alerted for network location off (cleared when it recovers). */
+    val networkLocationNotified: Set<String> = emptySet(),
     /** Every app package ever seen across children, to notify only on genuinely new installs. */
     val seenAppPackages: Set<String> = emptySet(),
     /** True once [seenAppPackages] was seeded from existing data (prevents a first-run flood). */

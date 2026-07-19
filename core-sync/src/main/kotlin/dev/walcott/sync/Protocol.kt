@@ -187,6 +187,10 @@ data class ChildSnapshot(
      * tell "rule change still in flight" from "received". 0 = legacy child that doesn't report it.
      */
     val appliedPolicyVersion: Long = 0,
+    /** Battery level 0–100, or -1 when unknown/legacy. Lets the parent be warned before a child dies. */
+    val batteryPercent: Int = -1,
+    /** Whether the device is plugged in / charging (a low level while charging is not worth alerting). */
+    val charging: Boolean = false,
     /**
      * Why this device's last self-update attempt failed, or "" when the last check was clean.
      * Makes a child stuck on an old build diagnosable without touching the phone.

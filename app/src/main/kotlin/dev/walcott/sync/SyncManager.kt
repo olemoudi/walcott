@@ -458,6 +458,8 @@ class SyncManager(
                 enforcementNotified = s.enforcementNotified - deviceId,
                 usageAccessNotified = s.usageAccessNotified - deviceId,
                 mockLocationNotified = s.mockLocationNotified - deviceId,
+                lowBatteryNotified = s.lowBatteryNotified - deviceId,
+                networkLocationNotified = s.networkLocationNotified - deviceId,
                 pinAlertedTotal = s.pinAlertedTotal - deviceId,
             )
         }
@@ -663,6 +665,8 @@ class SyncManager(
                     lastCommand = s.lastCommandAck,
                     answeredLocationRequestMs = s.appliedLocationRequestMs,
                     appliedPolicyVersion = s.appliedParentVersion,
+                    batteryPercent = batteryPercent(),
+                    charging = batteryCharging(),
                     updateError = s.updateError,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
@@ -678,6 +682,18 @@ class SyncManager(
         }
         if (id.role != Role.UNPAIRED) lastPublishAtMs = System.currentTimeMillis()
     }
+
+    /** Current battery percentage (0–100), or -1 if the platform won't say. */
+    private fun batteryPercent(): Int =
+        runCatching {
+            context.getSystemService(android.os.BatteryManager::class.java)
+                ?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        }.getOrDefault(-1)
+
+    private fun batteryCharging(): Boolean =
+        runCatching {
+            context.getSystemService(android.os.BatteryManager::class.java)?.isCharging ?: false
+        }.getOrDefault(false)
 
     private suspend fun handleIncoming(raw: String, id: FamilyIdentity) {
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
@@ -875,6 +891,26 @@ class SyncManager(
             syncStore.update { it.copy(mockLocationNotified = it.mockLocationNotified + snapshot.deviceId) }
         } else if (!hasMock && snapshot.deviceId in before.mockLocationNotified) {
             syncStore.update { it.copy(mockLocationNotified = it.mockLocationNotified - snapshot.deviceId) }
+        }
+
+        // Low battery: warn once when a child drops below 20% unplugged (it may die and go
+        // silent); clear only past the recover mark or once charging, so it can't flap.
+        val alreadyLow = snapshot.deviceId in before.lowBatteryNotified
+        if (HealthAlerts.shouldAlertLowBattery(snapshot.batteryPercent, snapshot.charging, alreadyLow)) {
+            SyncNotifications.notifyLowBattery(context, snapshot.displayName, snapshot.batteryPercent, snapshot.deviceId)
+            syncStore.update { it.copy(lowBatteryNotified = it.lowBatteryNotified + snapshot.deviceId) }
+        } else if (alreadyLow && HealthAlerts.clearsLowBattery(snapshot.batteryPercent, snapshot.charging)) {
+            syncStore.update { it.copy(lowBatteryNotified = it.lowBatteryNotified - snapshot.deviceId) }
+        }
+
+        // Network (Wi-Fi/cell) location off: indoor tracking silently stops. Alert once,
+        // clear when it comes back. Defaults true, so legacy children never false-alarm.
+        val netLocOff = !snapshot.networkLocationOn
+        if (netLocOff && snapshot.deviceId !in before.networkLocationNotified) {
+            SyncNotifications.notifyNetworkLocationOff(context, snapshot.displayName, snapshot.deviceId)
+            syncStore.update { it.copy(networkLocationNotified = it.networkLocationNotified + snapshot.deviceId) }
+        } else if (!netLocOff && snapshot.deviceId in before.networkLocationNotified) {
+            syncStore.update { it.copy(networkLocationNotified = it.networkLocationNotified - snapshot.deviceId) }
         }
 
         // Notify about newly installed (still unclassified => blocked) apps. The first pass only

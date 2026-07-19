@@ -299,6 +299,12 @@
     <string name="usage_access_off_child">El acceso de uso está apagado en este dispositivo, así que las apps con límite quedan bloqueadas. El hijo puede arreglarlo desde el aviso de su pantalla de inicio, o usa «Pedir que arreglen permisos» más abajo.</string>
     <string name="mock_location_title">%1$s podría estar falseando su ubicación</string>
     <string name="mock_location_text">Las ubicaciones recientes vienen de una app de GPS simulado</string>
+    <string name="low_battery_title">Al móvil de %1$s le queda poca batería</string>
+    <string name="low_battery_text">Batería al %1$d%% y sin enchufar — podría agotarse y quedarse sin conexión</string>
+    <string name="net_location_off_title">No se puede localizar a %1$s en interiores</string>
+    <string name="net_location_off_text">La ubicación por Wi-Fi/red está apagada en su móvil, así que solo funciona en exteriores con GPS</string>
+    <string name="child_battery">Batería %1$d%%</string>
+    <string name="child_battery_charging">Batería %1$d%% · cargando</string>
     <string name="new_app_title">App nueva en el dispositivo de %1$s</string>
     <string name="new_app_text">Se instaló "%1$s" — seguirá bloqueada hasta que la clasifiques</string>
     <string name="new_app_text_more">Se instalaron "%1$s" y %2$d más — seguirán bloqueadas hasta que las clasifiques</string>
@@ -538,7 +544,9 @@
     <!-- Ajustes por app (Apps y categorías) -->
     <string name="app_has_override">reglas propias</string>
     <string name="app_own_limit">Límite diario propio de esta app</string>
-    <string name="app_own_limit_hint">Se suma al de su categoría. La app se bloquea cuando se agota cualquiera de los dos.</string>
+    <string name="app_own_limit_hint">Se suma al de su categoría. Bloquéala algunos días, limítala otros, o déjala a la categoría — se aplica lo que se agote antes.</string>
+    <string name="app_limit_blocked">Bloqueada</string>
+    <string name="app_limit_timed">Con límite</string>
     <string name="app_own_window">Bloquear esta app en un horario</string>
     <string name="app_window_toggle">Bloquear en el horario indicado</string>
     <string name="app_web_filter">Filtro web</string>

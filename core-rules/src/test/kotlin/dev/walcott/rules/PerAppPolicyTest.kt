@@ -101,6 +101,41 @@ class PerAppPolicyTest {
     }
 
     @Test
+    fun `a zero per-app budget blocks that day type even with category room and no usage`() {
+        // "Block this app completely on school days" = a 0-minute per-app cap, even though
+        // the category is wide open and nothing has been used yet.
+        val cfg = config(
+            categoryBudget = mapOf(DayType.SCHOOL to Duration.ofHours(3)),
+            appBudget = mapOf(DayType.SCHOOL to Duration.ZERO),
+        )
+        val verdict = RuleEngine.evaluate(cfg, "com.chat", schoolAfternoon)
+        assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), verdict)
+    }
+
+    @Test
+    fun `blocking one day type leaves the others untouched`() {
+        // School blocked (0), weekend has no entry -> weekend behaves as if no per-app cap.
+        val saturdayAfternoon = LocalDateTime.of(2026, 3, 7, 16, 0)
+        val cfg = config(appBudget = mapOf(DayType.SCHOOL to Duration.ZERO))
+        assertEquals(
+            Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED),
+            RuleEngine.evaluate(cfg, "com.chat", schoolAfternoon),
+        )
+        // Weekend: no app cap, category unrestricted -> allowed.
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(cfg, "com.chat", saturdayAfternoon))
+    }
+
+    @Test
+    fun `a zero per-app cap is a hard block that extra time cannot lift`() {
+        val cfg = config(appBudget = mapOf(DayType.SCHOOL to Duration.ZERO))
+        val verdict = RuleEngine.evaluate(
+            cfg, "com.chat", schoolAfternoon,
+            extraTime = mapOf("social" to Duration.ofHours(2)),
+        )
+        assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), verdict)
+    }
+
+    @Test
     fun `per-app extra time does not widen the per-app sub-cap`() {
         // extraTime is keyed by category; it must not loosen the per-app package budget.
         val cfg = config(appBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(15)))

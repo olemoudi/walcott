@@ -2,6 +2,8 @@ package dev.walcott.ui.parent
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -104,6 +106,7 @@ fun AppDetailScreen(
                 PerDayBudgetCard(
                     perDay = appPolicy?.budgets.orEmpty(),
                     onSetBudget = { dayType, minutes -> viewModel.setAppBudget(packageName, dayType, minutes) },
+                    onSetAllDays = { minutes -> viewModel.setAppBudgetAllDays(packageName, minutes) },
                 )
             }
 
@@ -189,30 +192,91 @@ private fun CategoryOptionRow(
     }
 }
 
-/** Per-day-type budget stepper (a category-agnostic twin of CategoryBudgetCard's inner rows). */
+/**
+ * Per-app daily limit editor. Each day type is one of three states — Blocked (a 0-minute cap
+ * that shuts the app even inside its category), a timed limit, or No limit — and an "apply to
+ * all days" row sets the common case (one limit everywhere, or block it outright) in one tap.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PerDayBudgetCard(perDay: Map<String, Int>, onSetBudget: (DayType, Int?) -> Unit) {
+private fun PerDayBudgetCard(
+    perDay: Map<String, Int>,
+    onSetBudget: (DayType, Int?) -> Unit,
+    onSetAllDays: (Int?) -> Unit,
+) {
     val spacing = Tokens.spacing
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(spacing.lg)) {
-            DAY_TYPES.forEachIndexed { index, dayType ->
-                if (index > 0) HorizontalDivider(Modifier.padding(vertical = 2.dp))
+            // Quick apply-all, so a single daily limit (or a blanket block) needs one tap, not three.
+            Text(
+                stringResource(R.string.budget_apply_all),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(
+                Modifier.padding(top = spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                QuickChip(stringResource(R.string.app_limit_blocked)) { onSetAllDays(0) }
+                QuickChip(stringResource(R.string.no_limit)) { onSetAllDays(null) }
+                QuickChip("30m") { onSetAllDays(30) }
+                QuickChip("1h") { onSetAllDays(60) }
+                QuickChip("2h") { onSetAllDays(120) }
+            }
+
+            DAY_TYPES.forEach { dayType ->
+                HorizontalDivider(Modifier.padding(vertical = spacing.sm))
                 val minutes = perDay[dayType.name]
-                Row(Modifier.fillMaxWidth().padding(vertical = spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(dayType.labelRes()), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Stepper(
-                        valueLabel = minutes?.let { Duration.ofMinutes(it.toLong()).humanize() }
-                            ?: stringResource(R.string.no_limit),
-                        decrementEnabled = minutes != null,
-                        onDecrement = {
-                            val next = (minutes ?: 0) - 15
-                            onSetBudget(dayType, if (next < 15) null else next)
-                        },
-                        onIncrement = { onSetBudget(dayType, (minutes ?: 0) + 15) },
+                Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.titleSmall)
+                FlowRow(
+                    Modifier.padding(top = spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    FilterChip(
+                        selected = minutes == 0,
+                        onClick = { onSetBudget(dayType, 0) },
+                        label = { Text(stringResource(R.string.app_limit_blocked)) },
                     )
+                    FilterChip(
+                        selected = minutes == null,
+                        onClick = { onSetBudget(dayType, null) },
+                        label = { Text(stringResource(R.string.no_limit)) },
+                    )
+                    FilterChip(
+                        selected = minutes != null && minutes > 0,
+                        // Entering "limit" from Blocked/No-limit starts at 15m; keeps the current value otherwise.
+                        onClick = { if (minutes == null || minutes == 0) onSetBudget(dayType, 15) },
+                        label = { Text(stringResource(R.string.app_limit_timed)) },
+                    )
+                }
+                if (minutes != null && minutes > 0) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = spacing.xs),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        Stepper(
+                            valueLabel = Duration.ofMinutes(minutes.toLong()).humanize(),
+                            decrementEnabled = minutes > 15,
+                            onDecrement = { onSetBudget(dayType, (minutes - 15).coerceAtLeast(15)) },
+                            onIncrement = { onSetBudget(dayType, minutes + 15) },
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuickChip(label: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 }
 

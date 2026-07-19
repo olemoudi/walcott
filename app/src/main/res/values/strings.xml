@@ -299,6 +299,12 @@
     <string name="usage_access_off_child">Usage access is off on this device, so apps with limits are locked. The child can fix it from the notice on their home screen, or use "Ask to fix" below.</string>
     <string name="mock_location_title">%1$s may be faking their location</string>
     <string name="mock_location_text">Recent locations came from a mock-GPS app</string>
+    <string name="low_battery_title">%1$s\'s phone is low on battery</string>
+    <string name="low_battery_text">Battery at %1$d%% and unplugged — it may run out and go offline</string>
+    <string name="net_location_off_title">Can\'t locate %1$s indoors</string>
+    <string name="net_location_off_text">Wi-Fi/network location is off on their phone, so tracking only works outdoors with GPS</string>
+    <string name="child_battery">Battery %1$d%%</string>
+    <string name="child_battery_charging">Battery %1$d%% · charging</string>
     <string name="new_app_title">New app on %1$s\'s device</string>
     <string name="new_app_text">"%1$s" was installed — it stays blocked until you classify it</string>
     <string name="new_app_text_more">"%1$s" and %2$d more were installed — they stay blocked until you classify them</string>
@@ -538,7 +544,9 @@
     <!-- Per-app settings (Apps & categories) -->
     <string name="app_has_override">custom rules</string>
     <string name="app_own_limit">This app\'s own daily limit</string>
-    <string name="app_own_limit_hint">On top of its category. The app is blocked when either limit runs out.</string>
+    <string name="app_own_limit_hint">On top of its category. Block it on some days, cap it on others, or leave it to the category — whichever runs out first wins.</string>
+    <string name="app_limit_blocked">Blocked</string>
+    <string name="app_limit_timed">Limit</string>
     <string name="app_own_window">Block this app during hours</string>
     <string name="app_window_toggle">Block during set hours</string>
     <string name="app_web_filter">Web filter</string>

@@ -479,6 +479,18 @@ private fun LinkedCard(snapshot: ChildSnapshot, rulesSyncing: Boolean, onShowCod
                         color = Color(0xFFB26A00),
                     )
                 }
+                // Battery at a glance (legacy children report -1 and show nothing).
+                if (snapshot.batteryPercent in 0..100) {
+                    val low = snapshot.batteryPercent < 20 && !snapshot.charging
+                    Text(
+                        stringResource(
+                            if (snapshot.charging) R.string.child_battery_charging else R.string.child_battery,
+                            snapshot.batteryPercent,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 // The fleet is sideloaded + self-updating; a child stuck behind our own build
                 // (0 = legacy child that doesn't report it yet) is worth a red flag.
                 if (snapshot.appVersionCode > 0) {

@@ -78,6 +78,22 @@ object SyncNotifications {
         notifId = "mock".hashCode() + deviceId.hashCode(),
     )
 
+    /** Alert when a child device drops below the low-battery mark unplugged (it may die soon). */
+    fun notifyLowBattery(context: Context, childName: String, percent: Int, deviceId: String) = post(
+        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        title = context.getString(R.string.low_battery_title, childName),
+        text = context.getString(R.string.low_battery_text, percent),
+        notifId = "batt".hashCode() + deviceId.hashCode(),
+    )
+
+    /** Alert when network (Wi-Fi/cell) location is off on a child: indoor tracking stops working. */
+    fun notifyNetworkLocationOff(context: Context, childName: String, deviceId: String) = post(
+        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        title = context.getString(R.string.net_location_off_title, childName),
+        text = context.getString(R.string.net_location_off_text),
+        notifId = "netloc".hashCode() + deviceId.hashCode(),
+    )
+
     /** A child installed app(s) the family hasn't classified yet (blocked until classified). */
     fun notifyNewApp(context: Context, childName: String, label: String, extraCount: Int, deviceId: String) = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
