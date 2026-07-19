@@ -195,6 +195,8 @@ fun WalcottApp(
                             screen = Screen.CHILD_DETAIL
                         },
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
+                        onOpenApps = { screen = Screen.APPS },
+                        onOpenBudgets = { screen = Screen.BUDGETS },
                     )
                     Screen.CHILD_DETAIL -> childDetailId?.let { childId ->
                         ChildDetailScreen(

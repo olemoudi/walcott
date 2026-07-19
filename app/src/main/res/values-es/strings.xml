@@ -101,7 +101,7 @@
 
     <!-- Configuración del hijo / QR -->
     <string name="qr_instructions">En el móvil del hijo, abre la cámara y escanea este código para descargar Walcott. Luego abre el archivo para instalarlo.</string>
-    <string name="qr_provision_note">Consejo: para protección total, instala en un móvil recién reseteado y configura Walcott como Device Owner.</string>
+    <string name="qr_provision_note">Nota: con la instalación simple el hijo podría desinstalar Walcott. Para una protección que no pueda quitar, usa la opción «Protección total» en un móvil borrado.</string>
 
     <!-- Sync: notificación de petición -->
     <string name="sync_request_channel_name">Peticiones de tiempo</string>
@@ -109,10 +109,10 @@
     <string name="sync_request_text">%1$s pide %2$d min</string>
 
     <!-- Sync: emparejamiento -->
-    <string name="enroll_mode_do">Device Owner</string>
-    <string name="enroll_mode_fallback">Instalar APK</string>
-    <string name="enroll_do_title">1 · Aprovisionar como Device Owner</string>
-    <string name="enroll_do_instructions">En un móvil del hijo recién restablecido de fábrica, toca 6 veces la pantalla de bienvenida para abrir el lector de QR y escanea este. Instala Walcott y lo configura como Device Owner (protección completa y resistente a manipulación).</string>
+    <string name="enroll_mode_do">Protección total</string>
+    <string name="enroll_mode_fallback">Instalación simple</string>
+    <string name="enroll_do_title">1 · Configurar con protección total</string>
+    <string name="enroll_do_instructions">La mejor opción: borra el móvil del hijo (restablecimiento de fábrica). En la primera pantalla de bienvenida, toca la pantalla 6 veces para abrir el lector de códigos y escanea este código. Walcott se instala solo, con una protección que el hijo no puede quitar.</string>
     <string name="pairing_step_download">1 · Instala la app</string>
     <string name="pairing_step_link">2 · Vincula el dispositivo</string>
     <string name="enroll_next">Siguiente</string>
@@ -299,6 +299,7 @@
     <string name="never_reported_text">Este dispositivo hijo nunca hizo check-in — quizá no se completó el enrolamiento</string>
     <string name="hero_pending_setup">Esperando configuración — las apps siguen bloqueadas hasta que un padre las clasifique</string>
     <string name="setup_title">Termina la configuración</string>
+    <string name="setup_hint">Toca un paso y te llevamos allí.</string>
     <string name="setup_step_child">Enrola un dispositivo hijo</string>
     <string name="setup_step_apps">Clasifica las apps en categorías</string>
     <string name="setup_step_limits">Pon límites de tiempo diarios</string>

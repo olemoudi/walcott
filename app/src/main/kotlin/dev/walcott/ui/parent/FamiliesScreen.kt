@@ -1,5 +1,6 @@
 package dev.walcott.ui.parent
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -89,6 +90,10 @@ fun FamiliesScreen(
     onOpenFamily: () -> Unit,
     onOpenChild: (String) -> Unit,
     onOpenAppSettings: () -> Unit,
+    // Setup-checklist shortcuts: a first-time parent taps a pending step and lands on the
+    // screen that completes it, instead of hunting through the rules hub.
+    onOpenApps: () -> Unit,
+    onOpenBudgets: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
@@ -240,7 +245,16 @@ fun FamiliesScreen(
         val limitsDone = settings.budgets.isNotEmpty() || settings.bedtime.isNotEmpty()
         val bedtimeDone = settings.bedtime.isNotEmpty()
         if (!(childDone && appsDone && limitsDone && bedtimeDone)) {
-            item { SetupChecklistCard(childDone, appsDone, limitsDone, bedtimeDone) }
+            item {
+                SetupChecklistCard(
+                    steps = listOf(
+                        SetupStep(stringResource(R.string.setup_step_child), childDone) { showAddChild = true },
+                        SetupStep(stringResource(R.string.setup_step_apps), appsDone, onOpenApps),
+                        SetupStep(stringResource(R.string.setup_step_limits), limitsDone, onOpenBudgets),
+                        SetupStep(stringResource(R.string.setup_step_bedtime), bedtimeDone, onOpenBudgets),
+                    ),
+                )
+            }
         }
 
         item {
@@ -427,15 +441,11 @@ private fun ChildRow(
     }
 }
 
+private data class SetupStep(val label: String, val done: Boolean, val onClick: () -> Unit)
+
 @Composable
-private fun SetupChecklistCard(childDone: Boolean, appsDone: Boolean, limitsDone: Boolean, bedtimeDone: Boolean) {
+private fun SetupChecklistCard(steps: List<SetupStep>) {
     val spacing = Tokens.spacing
-    val steps = listOf(
-        stringResource(R.string.setup_step_child) to childDone,
-        stringResource(R.string.setup_step_apps) to appsDone,
-        stringResource(R.string.setup_step_limits) to limitsDone,
-        stringResource(R.string.setup_step_bedtime) to bedtimeDone,
-    )
     Surface(
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -447,16 +457,24 @@ private fun SetupChecklistCard(childDone: Boolean, appsDone: Boolean, limitsDone
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
+            Text(
+                stringResource(R.string.setup_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+            )
             Spacer(Modifier.height(spacing.sm))
-            steps.forEach { (label, done) ->
+            steps.forEach { step ->
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    Modifier.fillMaxWidth()
+                        // Done steps stay as a record, not a button; pending ones navigate.
+                        .then(if (step.done) Modifier else Modifier.clickable(onClick = step.onClick))
+                        .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                        if (step.done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
                         contentDescription = null,
-                        tint = if (done) {
+                        tint = if (step.done) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
@@ -465,10 +483,19 @@ private fun SetupChecklistCard(childDone: Boolean, appsDone: Boolean, limitsDone
                     )
                     Spacer(Modifier.width(spacing.sm))
                     Text(
-                        label,
+                        step.label,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.weight(1f),
                     )
+                    if (!step.done) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }

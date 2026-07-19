@@ -101,7 +101,7 @@
 
     <!-- Child setup / QR -->
     <string name="qr_instructions">On the child\'s phone, open the camera and scan this code to download Walcott. Then open the file to install it.</string>
-    <string name="qr_provision_note">Tip: for full protection, install on a freshly reset phone and set Walcott as Device Owner.</string>
+    <string name="qr_provision_note">Note: with the simple install, the child could uninstall Walcott. For protection they can\'t remove, use the "Full protection" option on an erased phone.</string>
 
     <!-- Sync: request notification -->
     <string name="sync_request_channel_name">Extra-time requests</string>
@@ -109,10 +109,10 @@
     <string name="sync_request_text">%1$s is asking for %2$d min</string>
 
     <!-- Sync: pairing -->
-    <string name="enroll_mode_do">Device Owner</string>
-    <string name="enroll_mode_fallback">Install APK</string>
-    <string name="enroll_do_title">1 · Provision as Device Owner</string>
-    <string name="enroll_do_instructions">On a factory-reset child phone, tap the welcome screen 6 times to open the QR reader, then scan this. It installs Walcott and sets it as Device Owner (full, tamper-resistant protection).</string>
+    <string name="enroll_mode_do">Full protection</string>
+    <string name="enroll_mode_fallback">Simple install</string>
+    <string name="enroll_do_title">1 · Set up with full protection</string>
+    <string name="enroll_do_instructions">Best option: erase the child\'s phone (factory reset). On the first welcome screen, tap the screen 6 times to open the code scanner and scan this code. Walcott installs itself with protection the child can\'t remove.</string>
     <string name="pairing_step_download">1 · Install the app</string>
     <string name="pairing_step_link">2 · Link the device</string>
     <string name="enroll_next">Next</string>
@@ -299,6 +299,7 @@
     <string name="never_reported_text">This child device never checked in — the enrollment may not have finished</string>
     <string name="hero_pending_setup">Waiting for setup — apps stay blocked until a parent classifies them</string>
     <string name="setup_title">Finish setting up</string>
+    <string name="setup_hint">Tap a step and we\'ll take you there.</string>
     <string name="setup_step_child">Enroll a child device</string>
     <string name="setup_step_apps">Classify the apps into categories</string>
     <string name="setup_step_limits">Set daily time limits</string>
