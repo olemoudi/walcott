@@ -125,7 +125,11 @@ class SyncManager(
         transport = NtfyTransport(id.ntfyServer, id.topic, sinceProvider = { sinceCache }).also { t ->
             t.connect { raw, timeSec ->
                 scope.launch {
-                    handleIncoming(raw, id)
+                    // Advance the cursor even if handling throws: a single message that always
+                    // fails to process must not wedge the `since=` replay and re-deliver itself
+                    // forever. Losing its content is fine — the sender re-emits every cycle.
+                    runCatching { handleIncoming(raw, id) }
+                        .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handleIncoming failed", it) }
                     advanceCursor(timeSec)
                 }
             }
@@ -136,7 +140,13 @@ class SyncManager(
         settingsWatchJob?.cancel()
         settingsWatchJob = if (id.role == Role.PARENT) {
             scope.launch {
-                settingsStore.settings.drop(1).collect { publishConfigChanged() }
+                // Guard each emission: a transient failure while republishing a rule edit must
+                // not tear down the collector and leave the parent silently no longer syncing
+                // its edits for the rest of the process.
+                settingsStore.settings.drop(1).collect {
+                    runCatching { publishConfigChanged() }
+                        .onFailure { dev.walcott.debug.DebugLog.e(TAG, "publish on settings change failed", it) }
+                }
             }
         } else {
             null
@@ -159,7 +169,12 @@ class SyncManager(
     /** Applies one raw transport message and advances the replay cursor. Poll-worker entry point. */
     suspend fun applyIncoming(raw: String, timeSec: Long = 0) {
         val id = identityStore.current()
-        if (id.isPaired) handleIncoming(raw, id)
+        // Guarded like the live path: a message that can't be processed still advances the
+        // cursor, so the background poll can't get stuck re-fetching the same poison message.
+        if (id.isPaired) {
+            runCatching { handleIncoming(raw, id) }
+                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "applyIncoming failed", it) }
+        }
         advanceCursor(timeSec)
     }
 

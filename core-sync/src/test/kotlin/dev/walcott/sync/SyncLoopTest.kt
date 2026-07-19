@@ -1,6 +1,7 @@
 package dev.walcott.sync
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.security.PublicKey
@@ -145,6 +146,83 @@ class SyncLoopTest {
         parentApplyInbox(wire)
         assertEquals(1, parentSeesChildren.size)
         assertEquals(2, parentSeesChildren.getValue("dev-1").version)
+    }
+
+    /** Simulate a lossy channel: throw away every message currently queued in [both] directions. */
+    private fun dropAll(wire: Wire) {
+        wire.toParent.clear()
+        wire.toChild.clear()
+    }
+
+    @Test
+    fun `a dropped approval heals on the next re-emit, still granting exactly once`() {
+        val wire = Wire()
+        childFamilyKey = familyKey
+        childParentPublic = parentKeys.public
+
+        // Child has a pending request the parent approves.
+        childPending += ExtraTimeRequest("r1", "games", 15, "", 1000)
+        parentResolutions += Resolution("r1", approved = true, grantedMinutes = 15, resolvedAtEpochMs = 2000)
+        parentVersion = 1
+
+        // The approval is published but the channel drops it before the child sees it.
+        publishParent(wire)
+        dropAll(wire)
+        childApplyInbox(wire)
+        assertEquals(0, childGrantedMinutes) // nothing arrived
+
+        // Re-emit (the periodic heartbeat) carries the same resolution again; now it lands.
+        publishParent(wire)
+        childApplyInbox(wire)
+        assertEquals(15, childGrantedMinutes)
+
+        // And a third delivery (duplicate) does not double-grant.
+        publishParent(wire)
+        childApplyInbox(wire)
+        assertEquals(15, childGrantedMinutes)
+    }
+
+    @Test
+    fun `a dropped child request heals when the child re-emits its snapshot`() {
+        val wire = Wire()
+        childFamilyKey = familyKey
+        childParentPublic = parentKeys.public
+
+        childPending += ExtraTimeRequest("r1", "games", 15, "", 1000)
+        childVersion = 1
+
+        // First publish is lost entirely.
+        publishChild(wire)
+        dropAll(wire)
+        parentApplyInbox(wire)
+        assertTrue(parentSeesChildren.isEmpty()) // parent never saw the child
+
+        // The child re-emits (snapshots carry all pending requests every cycle) and converges.
+        publishChild(wire)
+        parentApplyInbox(wire)
+        assertEquals(listOf("r1"), parentSeesChildren.getValue("dev-1").requests.map { it.requestId })
+    }
+
+    @Test
+    fun `losing intermediate snapshots still converges to the latest state`() {
+        val wire = Wire()
+        childFamilyKey = familyKey
+        childParentPublic = parentKeys.public
+
+        // Parent edits rules several times; every intermediate publish is dropped.
+        for (v in 1..4) {
+            parentVersion = v.toLong()
+            parentPolicy = "RULES-v$v"
+            publishParent(wire)
+            dropAll(wire)
+        }
+        childApplyInbox(wire)
+        assertNull(childPolicy) // nothing got through
+
+        // A single surviving re-emit of the latest state is all it takes to catch up.
+        publishParent(wire)
+        childApplyInbox(wire)
+        assertEquals("RULES-v4", childPolicy)
     }
 
     @Test

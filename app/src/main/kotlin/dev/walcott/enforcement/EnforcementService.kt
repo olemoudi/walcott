@@ -122,7 +122,7 @@ class EnforcementService : LifecycleService() {
         // Grant location before startForeground so the service can claim the location FGS type.
         LocationPolicy.ensureEnforced(this)
         startForegroundCompat()
-        lifecycleScope.launch { runLoop() }
+        lifecycleScope.launch { runLoopResilient() }
         observeWebFilter()
         observeDeviceRestrictions()
         scheduleUpdateChecks()
@@ -243,6 +243,26 @@ class EnforcementService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         return START_STICKY
+    }
+
+    /**
+     * Keeps [runLoop] alive across unexpected exceptions. A throw from any tick — an OEM
+     * PackageManager quirk, a DataStore read error — would otherwise kill the loop coroutine
+     * for good: the service stays "running", so the watchdog's start() is a no-op and nothing
+     * ever revives it, leaving the child unprotected until the process is killed. Restarting
+     * the loop (losing only the tiny in-memory tick state, which is recomputed) is the fix.
+     */
+    private suspend fun runLoopResilient() {
+        while (currentCoroutineContext().isActive) {
+            try {
+                runLoop()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                DebugLog.e(TAG, "enforcement loop crashed; restarting", t)
+                delay(TICK_IDLE_MILLIS)
+            }
+        }
     }
 
     private suspend fun runLoop() {
