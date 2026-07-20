@@ -57,6 +57,8 @@ class SyncManager(
     @Volatile private var lastPublishAtMs: Long = 0
     /** Serializes remote-command execution across concurrently handled parent snapshots. */
     private val commandMutex = Mutex()
+    /** In-flight debounced auto-backup rewrite; replaced on every new trigger. */
+    private var autoBackupJob: Job? = null
 
     val identity: StateFlow<FamilyIdentity> =
         identityStore.identity.stateIn(scope, SharingStarted.Eagerly, FamilyIdentity())
@@ -146,11 +148,16 @@ class SyncManager(
                 settingsStore.settings.drop(1).collect {
                     runCatching { publishConfigChanged() }
                         .onFailure { dev.walcott.debug.DebugLog.e(TAG, "publish on settings change failed", it) }
+                    // Fire-and-forget backups: the same edits that republish also refresh the
+                    // backup file, so it can never quietly go months stale.
+                    scheduleAutoBackupRefresh()
                 }
             }
         } else {
             null
         }
+        // Catch up the auto-backup on process start too (edits can land between process lives).
+        if (id.role == Role.PARENT) scheduleAutoBackupRefresh()
         // Re-emit heals lost messages from the moment a device is paired — including devices
         // paired during this process's lifetime (pairing used to publish exactly once).
         periodicReEmit()
@@ -221,9 +228,16 @@ class SyncManager(
         identityStore.save(FamilyIdentity())
     }
 
-    /** Make this device the parent of a new family: generate identity + Keystore key. */
+    /**
+     * Make this device the parent of a new family. The signing key is generated in software
+     * (not the Keystore) so the family backup can export it: it sits beside the family key,
+     * which was always in the DataStore, so the at-rest exposure doesn't change class —
+     * though unlike the Keystore the key becomes exportable under root/forensic access,
+     * the accepted cost of restorability. Pre-v0.11 families keep their Keystore key
+     * (see [signingKey]).
+     */
     suspend fun becomeParent(familyName: String) {
-        ParentKeystore.ensureKeyPair()
+        val signingPair = FamilyCrypto.generateSigningKeyPair()
         val familyKey = FamilyCrypto.generateFamilyKey()
         val topic = "walcott-" + FamilyCrypto.toB64(UUID.randomUUID().toString().toByteArray()).take(24)
         val identity = FamilyIdentity(
@@ -232,7 +246,8 @@ class SyncManager(
             deviceId = "parent",
             topic = topic,
             familyKeyB64 = FamilyCrypto.toB64(familyKey.encoded),
-            parentPublicKeyB64 = FamilyCrypto.toB64(ParentKeystore.publicKey().encoded),
+            parentPublicKeyB64 = FamilyCrypto.toB64(signingPair.public.encoded),
+            parentPrivateKeyB64 = FamilyCrypto.toB64(signingPair.private.encoded),
         )
         identityStore.save(identity)
         settingsStore.update { it.copy(familyName = familyName) }
@@ -258,6 +273,9 @@ class SyncManager(
             ntfyServer = payload.ntfyServer,
         )
         identityStore.save(identity)
+        // A fresh pairing is a new trust bootstrap (the QR in hand IS the family): drop the
+        // replay baseline so a new family's lower version counter isn't mistaken for replay.
+        syncStore.update { it.copy(appliedParentVersion = 0) }
         // Show the family name right away; the first parent snapshot confirms it.
         if (payload.familyName.isNotBlank()) {
             settingsStore.update { it.copy(familyName = payload.familyName) }
@@ -539,6 +557,154 @@ class SyncManager(
         publishSelf()
     }
 
+    // --- Family backup / restore (TODO #1, option (a)) ---
+
+    /**
+     * Builds the passphrase-encrypted family backup file. For a legacy family whose signing
+     * key is locked in the Keystore (non-exportable), each backup carries a FRESH recovery
+     * keypair plus a [RotationCert] minted by the Keystore key — nothing on the wire changes
+     * until a restore actually happens. Newer families export their software key directly.
+     */
+    suspend fun createBackup(passphrase: CharArray): String {
+        // PBKDF2 at 600k iterations takes a moment by design; keep it off the caller's thread.
+        return withContext(Dispatchers.Default) { FamilyBackup.encrypt(buildBackupPayload(), passphrase) }
+    }
+
+    private suspend fun buildBackupPayload(): FamilyBackupPayload {
+        val id = identityStore.current()
+        check(id.role == Role.PARENT) { "only a parent device can create a family backup" }
+        val (publicB64, privateB64, certB64) = if (id.parentPrivateKeyB64.isNotBlank()) {
+            Triple(id.parentPublicKeyB64, id.parentPrivateKeyB64, "")
+        } else {
+            val recovery = FamilyCrypto.generateSigningKeyPair()
+            val cert = KeyRotation.create(recovery.public, ParentKeystore.privateKey())
+            Triple(
+                FamilyCrypto.toB64(recovery.public.encoded),
+                FamilyCrypto.toB64(recovery.private.encoded),
+                KeyRotation.encode(cert),
+            )
+        }
+        val settings = settingsStore.current()
+        return FamilyBackupPayload(
+            familyName = settings.familyName,
+            topic = id.topic,
+            ntfyServer = id.ntfyServer,
+            familyKeyB64 = id.familyKeyB64,
+            signingPublicKeyB64 = publicB64,
+            signingPrivateKeyB64 = privateB64,
+            rotationCertB64 = certB64,
+            policyJson = json.encodeToString(PolicySettings.serializer(), settings),
+            parentVersion = syncStore.current().parentVersion,
+            createdAtMs = System.currentTimeMillis(),
+        )
+    }
+
+    /** Call once the backup file actually reached its destination, so the card can say so. */
+    suspend fun recordBackupSaved() {
+        syncStore.update { it.copy(lastBackupAtMs = System.currentTimeMillis()) }
+    }
+
+    /**
+     * Turns on fire-and-forget backups into [uri] (a SAF document with persisted write
+     * permission): from now on every rule change rewrites the file, re-sealed with the KDF
+     * output cached here — the passphrase itself is never stored, and the cached key adds
+     * nothing an attacker with this phone doesn't already have (all keys live here anyway).
+     */
+    suspend fun enableAutoBackup(uri: String, passphrase: CharArray) {
+        val saltB64 = FamilyBackup.newSaltB64()
+        val keyB64 = withContext(Dispatchers.Default) { FamilyBackup.deriveKeyB64(passphrase, saltB64) }
+        syncStore.update {
+            it.copy(
+                autoBackupUri = uri,
+                autoBackupKeyB64 = keyB64,
+                autoBackupSaltB64 = saltB64,
+                autoBackupIterations = FamilyBackup.KDF_ITERATIONS,
+                autoBackupError = false,
+            )
+        }
+    }
+
+    suspend fun disableAutoBackup() {
+        syncStore.update {
+            it.copy(autoBackupUri = "", autoBackupKeyB64 = "", autoBackupSaltB64 = "", autoBackupError = false)
+        }
+    }
+
+    /** Debounced trigger: one rewrite shortly after a burst of rule edits, not one per edit. */
+    private fun scheduleAutoBackupRefresh() {
+        autoBackupJob?.cancel()
+        autoBackupJob = scope.launch {
+            delay(AUTO_BACKUP_DEBOUNCE_MS)
+            refreshAutoBackup()
+        }
+    }
+
+    /** Rewrites the auto-backup document with the current family state. Never throws. */
+    private suspend fun refreshAutoBackup() {
+        val s = syncStore.current()
+        if (s.autoBackupUri.isBlank() || identityStore.current().role != Role.PARENT) return
+        val ok = runCatching {
+            val text = withContext(Dispatchers.Default) {
+                FamilyBackup.encryptWithDerivedKey(
+                    buildBackupPayload(), s.autoBackupKeyB64, s.autoBackupSaltB64, s.autoBackupIterations,
+                )
+            }
+            withContext(Dispatchers.IO) {
+                val uri = android.net.Uri.parse(s.autoBackupUri)
+                // "wt" truncates the previous content; fall back for providers that reject it.
+                val stream = runCatching { context.contentResolver.openOutputStream(uri, "wt") }.getOrNull()
+                    ?: context.contentResolver.openOutputStream(uri)
+                checkNotNull(stream) { "no output stream" }.use { it.write(text.toByteArray()) }
+            }
+        }.onFailure {
+            dev.walcott.debug.DebugLog.w(TAG, "auto-backup refresh failed", it)
+        }.isSuccess
+        syncStore.update {
+            if (ok) it.copy(lastBackupAtMs = System.currentTimeMillis(), autoBackupError = false)
+            else it.copy(autoBackupError = true)
+        }
+    }
+
+    /**
+     * Resurrects a family from a backup on this (fresh) device: identity, keys, rules and
+     * children registry come back, and the first publish re-asserts the rules — children
+     * never need to be touched. False when the passphrase is wrong or the file is invalid.
+     */
+    suspend fun restoreBackup(fileJson: String, passphrase: CharArray): Boolean {
+        val payload = withContext(Dispatchers.Default) { FamilyBackup.decrypt(fileJson, passphrase) }
+            ?: return false
+        val policy = runCatching { json.decodeFromString(PolicySettings.serializer(), payload.policyJson) }
+            .getOrNull() ?: return false
+        // A crafted file must not silently point this device's transport at an arbitrary
+        // scheme/host. http stays allowed: self-hosted LAN ntfy servers are legitimate.
+        val server = runCatching { java.net.URI(payload.ntfyServer) }.getOrNull()
+        if (server?.scheme !in setOf("http", "https") || server?.host.isNullOrBlank()) return false
+        val identity = FamilyIdentity(
+            role = Role.PARENT,
+            mode = DeviceMode.PARENT,
+            deviceId = "parent",
+            topic = payload.topic,
+            familyKeyB64 = payload.familyKeyB64,
+            parentPublicKeyB64 = payload.signingPublicKeyB64,
+            parentPrivateKeyB64 = payload.signingPrivateKeyB64,
+            rotationCertB64 = payload.rotationCertB64,
+            ntfyServer = payload.ntfyServer,
+        )
+        settingsStore.update { policy }
+        // Resume far ABOVE the backed-up version: children gate rules on version
+        // monotonicity (SyncEngine.adoptsPolicy) and the lost phone may have published
+        // edits after this backup was taken. A same-key restore carries no rotation to
+        // rebase the children's counter, so the leap must dwarf any realistic edit count.
+        syncStore.update {
+            it.copy(parentVersion = maxOf(it.parentVersion, payload.parentVersion) + RESTORE_VERSION_LEAP)
+        }
+        identityStore.save(identity)
+        dev.walcott.debug.DebugLog.w(TAG, "family restored from backup (created ${payload.createdAtMs})")
+        connect(identity)
+        publishSelf()
+        return true
+    }
+
     /** Publish this child's snapshot now (used by the periodic location sampler). */
     suspend fun publishLocationUpdate() = publishSelf()
 
@@ -678,7 +844,8 @@ class SyncManager(
                     // The parent is the fleet's update canary: children only follow up to this.
                     parentVersionCode = BuildConfig.VERSION_CODE,
                 )
-                transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, ParentKeystore.privateKey()))
+                val rotation = id.rotationCertB64.takeIf { it.isNotBlank() }?.let { KeyRotation.decode(it) }
+                transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, signingKey(id), rotation))
             }
             Role.CHILD -> {
                 val s = syncStore.current()
@@ -811,10 +978,27 @@ class SyncManager(
             context.getSystemService(android.os.BatteryManager::class.java)?.isCharging ?: false
         }.getOrDefault(false)
 
+    /** The active parent signing key: software (new/restored families) or the legacy Keystore. */
+    private fun signingKey(id: FamilyIdentity): java.security.PrivateKey =
+        if (id.parentPrivateKeyB64.isNotBlank()) {
+            FamilyCrypto.privateKeyFromBytes(FamilyCrypto.fromB64(id.parentPrivateKeyB64))
+        } else {
+            ParentKeystore.privateKey()
+        }
+
     private suspend fun handleIncoming(raw: String, id: FamilyIdentity, timeSec: Long) {
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         val parentPublic = FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(id.parentPublicKeyB64))
-        val message = SyncProtocol.decode(raw, familyKey, parentPublic) ?: return
+        val decoded = SyncProtocol.decodeVerbose(raw, familyKey, parentPublic) ?: return
+        val message = decoded.message
+
+        // A restored parent proved a key rotation (see KeyRotation): make the new key this
+        // child's trust root. The old key died with the old phone, so this is permanent.
+        val rotatedKey = decoded.rotatedParentPublicKeyB64
+        if (rotatedKey != null && id.role == Role.CHILD && rotatedKey != id.parentPublicKeyB64) {
+            identityStore.save(identityStore.current().copy(parentPublicKeyB64 = rotatedKey))
+            dev.walcott.debug.DebugLog.w(TAG, "adopted rotated parent signing key (parent restored from backup)")
+        }
 
         // Clock-tamper watch (child only): every message carries the server's clock. Only this
         // device's own echo proves a forward-set clock; see ClockGuard for the replay caveat.
@@ -825,7 +1009,8 @@ class SyncManager(
         }
 
         when {
-            id.role == Role.CHILD && message is IncomingMessage.FromParent -> applyParentSnapshot(message.snapshot)
+            id.role == Role.CHILD && message is IncomingMessage.FromParent ->
+                applyParentSnapshot(message.snapshot, rotationAdopted = rotatedKey != null)
             id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot)
             id.role == Role.PARENT && message is IncomingMessage.FromChildIcons -> applyIconPayload(message.payload)
             id.role == Role.PARENT && message is IncomingMessage.FromChildDiag -> applyDiagPayload(message.payload)
@@ -862,12 +1047,23 @@ class SyncManager(
     /** Cached icon bytes for [pkg], or null if not fetched yet (parent-side render). */
     fun iconBytes(pkg: String): ByteArray? = iconStore.read(pkg)
 
-    private suspend fun applyParentSnapshot(snapshot: ParentSnapshot) {
+    private suspend fun applyParentSnapshot(snapshot: ParentSnapshot, rotationAdopted: Boolean) {
         val id = identityStore.current()
+        // Replay gate: an old captured envelope is still validly signed, so freshness must
+        // come from the version counter (see SyncEngine.adoptsPolicy). Everything below the
+        // rules — commands, resolutions, bonuses, icon/locate requests — stays idempotent by
+        // its own ids and keeps processing regardless, since re-emits reuse a version.
+        val newRulesAdopted = SyncEngine.adoptsPolicy(
+            snapshot.version, syncStore.current().appliedParentVersion, rotationAdopted,
+        )
         // Adopt the parent's rules, flattened to this child's slice. Prefer the parent's
         // PIN; keep the local one while none has synced yet (old parent, or first snapshot
         // not arrived — until then a locally created PIN still guards the gate).
-        val incoming = runCatching { json.decodeFromString(PolicySettings.serializer(), snapshot.policyJson) }.getOrNull()
+        val incoming = if (newRulesAdopted) {
+            runCatching { json.decodeFromString(PolicySettings.serializer(), snapshot.policyJson) }.getOrNull()
+        } else {
+            null
+        }
         if (incoming != null) {
             settingsStore.update { local ->
                 incoming.resolveForChild(id.childId).copy(
@@ -906,10 +1102,12 @@ class SyncManager(
 
         // Record which rules version this child now runs, and echo it promptly so the
         // parent's "updating rules…" indicator clears (a re-emit would take minutes).
-        val newRulesAdopted = snapshot.version > s.appliedParentVersion
         if (newRulesAdopted) {
             syncStore.update {
-                it.copy(appliedParentVersion = maxOf(it.appliedParentVersion, snapshot.version))
+                it.copy(
+                    appliedParentVersion =
+                        SyncEngine.rebasedPolicyVersion(snapshot.version, it.appliedParentVersion, rotationAdopted),
+                )
             }
         }
 
@@ -1174,5 +1372,9 @@ class SyncManager(
         private const val CLOCK_SKEW_RECORD_DELTA_MS = 60_000L
         /** Log lines offered to the diagnostics report before DiagFit trims to the size cap. */
         private const val DIAG_LOG_LINES = 80
+        /** One backup rewrite per burst of edits (a wizard changes many settings in seconds). */
+        private const val AUTO_BACKUP_DEBOUNCE_MS = 15_000L
+        /** How far a restore jumps the version counter past the backup's (see restoreBackup). */
+        private const val RESTORE_VERSION_LEAP = 1_000_000L
     }
 }

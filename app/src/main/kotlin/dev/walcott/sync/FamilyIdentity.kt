@@ -22,6 +22,19 @@ data class FamilyIdentity(
     val topic: String = "",
     val familyKeyB64: String = "",
     val parentPublicKeyB64: String = "",
+    /**
+     * Parent only: the signing private key (PKCS#8, base64url) when it lives in software —
+     * families created since v0.11, and any restored family. "" = legacy family whose key is
+     * in the Android Keystore ([ParentKeystore]). A software key sits beside the family key
+     * in the same store — equal at-rest exposure, but unlike the Keystore it IS exportable
+     * (root/forensic access can lift it): the accepted cost of making the backup possible.
+     */
+    val parentPrivateKeyB64: String = "",
+    /**
+     * Parent only, set by a restore: the [RotationCert] (encoded) proving the old key vouched
+     * for the current one. Attached to every envelope so children adopt the restored key.
+     */
+    val rotationCertB64: String = "",
     val ntfyServer: String = "https://ntfy.sh",
     /** Parent mode: require the PIN (or biometrics) on every app open / regain of focus. */
     val appLock: Boolean = false,

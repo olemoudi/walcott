@@ -25,6 +25,25 @@ object SyncEngine {
         if (current == null || incoming.version >= current.version) incoming else current
 
     /**
+     * Replay gate for the parent's rules: a child adopts them only from a snapshot strictly
+     * newer than the last one it applied, so a captured old envelope — validly signed, e.g.
+     * replayed by a removed child still holding the topic + family key — can't roll rules
+     * back to a laxer past state. The one exception is a message accepted through a verified
+     * key rotation: it comes from a parent restored from backup, whose version counter may
+     * legitimately restart lower.
+     */
+    fun adoptsPolicy(snapshotVersion: Long, appliedVersion: Long, rotationAdopted: Boolean): Boolean =
+        rotationAdopted || snapshotVersion > appliedVersion
+
+    /**
+     * The child's replay baseline after adopting [snapshotVersion]: normally the monotonic
+     * max, but a verified rotation REBASES it (possibly downward) so the restored parent's
+     * subsequent, incrementally-numbered snapshots keep passing [adoptsPolicy].
+     */
+    fun rebasedPolicyVersion(snapshotVersion: Long, appliedVersion: Long, rotationAdopted: Boolean): Long =
+        if (rotationAdopted) snapshotVersion else maxOf(appliedVersion, snapshotVersion)
+
+    /**
      * Resolutions a child hasn't applied yet: those addressed to its pending requests. The
      * caller tracks which requestIds are already applied to keep grants idempotent.
      */

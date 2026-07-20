@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the backups cache dir is ever exposed, and only through explicit share grants. -->
+<paths>
+    <cache-path name="backups" path="backups/" />
+</paths>

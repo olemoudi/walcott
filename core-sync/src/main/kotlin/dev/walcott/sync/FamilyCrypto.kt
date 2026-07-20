@@ -84,6 +84,10 @@ object FamilyCrypto {
     fun publicKeyFromBytes(x509: ByteArray): PublicKey =
         KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(x509))
 
+    /** Rehydrates a software signing key exported with [java.security.Key.getEncoded] (PKCS#8). */
+    fun privateKeyFromBytes(pkcs8: ByteArray): PrivateKey =
+        KeyFactory.getInstance("EC").generatePrivate(java.security.spec.PKCS8EncodedKeySpec(pkcs8))
+
     // --- Base64 helpers (URL-safe, no padding, for compact QR payloads) ---
 
     fun toB64(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)

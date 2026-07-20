@@ -382,6 +382,34 @@ class WalcottViewModel(
     val diagReports: StateFlow<Map<String, dev.walcott.sync.DiagPayload>> =
         sync.state.map { it.diagReports }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    // --- Family backup / restore ---
+
+    /** When the parent last saved a family backup (0 = never), for the backup card. */
+    val lastBackupAtMs: StateFlow<Long> =
+        sync.state.map { it.lastBackupAtMs }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
+    /** Builds the encrypted backup file's text; the caller writes it wherever the user chose. */
+    suspend fun createBackup(passphrase: CharArray): String = sync.createBackup(passphrase)
+
+    /** Record that a backup file actually reached its destination. */
+    fun recordBackupSaved() = viewModelScope.launch { sync.recordBackupSaved() }
+
+    /** Restores a family from a backup file. False = wrong passphrase or invalid file. */
+    suspend fun restoreBackup(fileJson: String, passphrase: CharArray): Boolean =
+        sync.restoreBackup(fileJson, passphrase)
+
+    data class AutoBackupUi(val enabled: Boolean, val failing: Boolean)
+
+    /** Whether the fire-and-forget backup is on, and whether its last rewrite failed. */
+    val autoBackup: StateFlow<AutoBackupUi> = sync.state
+        .map { AutoBackupUi(it.autoBackupUri.isNotBlank(), it.autoBackupError) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AutoBackupUi(false, false))
+
+    /** Start rewriting the backup into [uri] automatically on every rule change. */
+    suspend fun enableAutoBackup(uri: String, passphrase: CharArray) = sync.enableAutoBackup(uri, passphrase)
+
+    fun disableAutoBackup() = viewModelScope.launch { sync.disableAutoBackup() }
+
     /** The idle-earn target category id (or "") so childState can attribute earned minutes. */
     private val settingsFlowForEarn: kotlinx.coroutines.flow.Flow<String> =
         repository.settingsFlow.map { it.idleEarn?.targetCategoryId ?: "" }

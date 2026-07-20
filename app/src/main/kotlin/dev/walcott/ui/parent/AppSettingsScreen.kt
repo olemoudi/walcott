@@ -76,6 +76,11 @@ fun AppSettingsScreen(
             if (!childDevice) {
                 AppLockCard(viewModel)
             }
+            // The family's disaster recovery lives on the parent, whose keys are the family.
+            val identity by viewModel.identity.collectAsStateWithLifecycle()
+            if (identity.role == dev.walcott.sync.Role.PARENT) {
+                FamilyBackupCard(viewModel)
+            }
             AppUpdateCard(deviceOwner)
             // Wi-Fi-only updates: a family policy, so it's only editable on the parent.
             if (!childDevice) {

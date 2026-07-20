@@ -61,6 +61,43 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     "parent" -> app.identityStore.save(app.identityStore.current().copy(mode = DeviceMode.PARENT))
                     "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
                 }
+                // `--ez legacy_keys true` converts this parent family to a pre-v0.11 one
+                // (signing key in the Android Keystore, not exportable), so the backup's
+                // legacy branch — recovery keypair + RotationCert minted by the Keystore
+                // key — can be exercised end-to-end on one emulator.
+                if (intent.getBooleanExtra("legacy_keys", false)) {
+                    dev.walcott.sync.ParentKeystore.ensureKeyPair()
+                    app.identityStore.save(
+                        app.identityStore.current().copy(
+                            parentPublicKeyB64 = dev.walcott.sync.FamilyCrypto.toB64(
+                                dev.walcott.sync.ParentKeystore.publicKey().encoded,
+                            ),
+                            parentPrivateKeyB64 = "",
+                            rotationCertB64 = "",
+                        ),
+                    )
+                    DebugLog.i("WalcottSeed", "converted to legacy Keystore signing key")
+                }
+                // Family backup e2e hooks: `--es backup_pass P [--es backup_to F]` writes the
+                // encrypted backup into the app's files dir; `--es restore_from F --es
+                // restore_pass P` restores from it. Together with mode=reset they exercise
+                // the full lose-the-phone → restore path on one emulator.
+                intent.getStringExtra("backup_pass")?.let { pass ->
+                    // Basename only: the receiver is exported (adb), don't allow traversal.
+                    val name = (intent.getStringExtra("backup_to") ?: "debug-backup.json").substringAfterLast('/')
+                    val text = app.syncManager.createBackup(pass.toCharArray())
+                    java.io.File(context.filesDir, name).writeText(text)
+                    DebugLog.i("WalcottSeed", "backup written: $name (${text.length} bytes)")
+                }
+                intent.getStringExtra("restore_from")?.let { rawName ->
+                    val name = rawName.substringAfterLast('/')
+                    val pass = intent.getStringExtra("restore_pass") ?: ""
+                    val ok = app.syncManager.restoreBackup(
+                        java.io.File(context.filesDir, name).readText(),
+                        pass.toCharArray(),
+                    )
+                    DebugLog.i("WalcottSeed", "restore from $name -> ok=$ok")
+                }
                 if (childApps != null) seedChild(app, childApps, intent)
                 // Optional: back-date the child-side channel-health stamp (--el channel_ok_ago_ms N)
                 // so the "no connection with your family" card can be exercised without cutting

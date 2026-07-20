@@ -84,6 +84,13 @@ class WalcottApplication : Application() {
         appScope.launch {
             if (identityStore.current().enforcesLocally) dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
         }
+
+        // The share-a-backup flow parks the encrypted file in cache (see FamilyBackupCard);
+        // deleting it right after sharing would race the receiving app's read, so it is
+        // pruned here instead — the next process start, once any share has long finished.
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { java.io.File(cacheDir, "backups").deleteRecursively() }
+        }
     }
 
     /**

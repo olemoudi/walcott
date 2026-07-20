@@ -112,6 +112,16 @@ data class SyncState(
     val clockTamperNotified: Set<String> = emptySet(),
     /** deviceId -> latest health report received from that child (see [DiagPayload]). */
     val diagReports: Map<String, DiagPayload> = emptyMap(),
+    /** When the parent last saved a family backup file (0 = never), for the backup card. */
+    val lastBackupAtMs: Long = 0,
+    /** SAF document the backup auto-refreshes into ("" = auto-backup off). */
+    val autoBackupUri: String = "",
+    /** KDF output + parameters cached so auto-refresh can re-seal WITHOUT storing the passphrase. */
+    val autoBackupKeyB64: String = "",
+    val autoBackupSaltB64: String = "",
+    val autoBackupIterations: Int = 0,
+    /** True while the last auto-refresh failed (file deleted, permission revoked…). */
+    val autoBackupError: Boolean = false,
     /** Every app package ever seen across children, to notify only on genuinely new installs. */
     val seenAppPackages: Set<String> = emptySet(),
     /** True once [seenAppPackages] was seeded from existing data (prevents a first-run flood). */

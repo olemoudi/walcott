@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.SupervisorAccount
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -132,7 +133,112 @@ fun ModeSelectScreen(
                 onChildSelected()
             },
         )
+
+        Spacer(Modifier.height(spacing.md))
+
+        // Disaster recovery: a replaced parent phone loads the family backup file and the
+        // whole family comes back — children keep obeying without being touched.
+        RestoreBackupCard(viewModel, onRestored = onParentCreated)
     }
+}
+
+@Composable
+private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var backupText by remember { mutableStateOf<String?>(null) }
+    val readFailed = stringResource(R.string.backup_read_failed)
+
+    // Accept any type: cloud providers often serve the .json as octet-stream or text.
+    val openLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { String(it.readBytes()) }
+                }.getOrNull()
+            }
+            if (text == null) {
+                android.widget.Toast.makeText(context, readFailed, android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                backupText = text
+            }
+        }
+    }
+
+    ModeCard(
+        icon = Icons.Outlined.SettingsBackupRestore,
+        title = stringResource(R.string.restore_card_title),
+        description = stringResource(R.string.restore_card_desc),
+        selected = false,
+        onClick = { openLauncher.launch(arrayOf("*/*")) },
+    )
+
+    backupText?.let { text ->
+        RestorePassphraseDialog(
+            onDismiss = { backupText = null },
+            onRestore = { passphrase, onError ->
+                scope.launch {
+                    if (viewModel.restoreBackup(text, passphrase.toCharArray())) {
+                        backupText = null
+                        onRestored()
+                    } else {
+                        onError()
+                    }
+                }
+            },
+        )
+    }
+}
+
+/** Passphrase prompt for a picked backup file; stays open with an error on a wrong one. */
+@Composable
+private fun RestorePassphraseDialog(onDismiss: () -> Unit, onRestore: (String, onError: () -> Unit) -> Unit) {
+    val spacing = Tokens.spacing
+    var passphrase by remember { mutableStateOf("") }
+    var failed by remember { mutableStateOf(false) }
+    var restoring by remember { mutableStateOf(false) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!restoring) onDismiss() },
+        title = { Text(stringResource(R.string.restore_pass_title)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = passphrase,
+                    onValueChange = { passphrase = it; failed = false },
+                    label = { Text(stringResource(R.string.backup_pass_label)) },
+                    isError = failed,
+                    supportingText = { if (failed) Text(stringResource(R.string.restore_failed)) },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                enabled = passphrase.isNotEmpty() && !restoring,
+                onClick = {
+                    restoring = true
+                    onRestore(passphrase) { failed = true; restoring = false }
+                },
+            ) {
+                if (restoring) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(stringResource(R.string.restore_action))
+                }
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss, enabled = !restoring) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
 }
 
 @Composable

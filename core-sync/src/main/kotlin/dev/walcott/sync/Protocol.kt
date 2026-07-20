@@ -310,6 +310,11 @@ private data class Envelope(
     val version: Long,
     val ciphertext: String, // base64url of AES-GCM(familyKey, payloadJson)
     val signature: String? = null, // base64url of ECDSA(privateKey, ciphertext bytes)
+    /**
+     * Present after a parent restore whose signing key differs from the one children trust:
+     * a [RotationCert] minted by the old key. See [SyncProtocol.decodeVerbose].
+     */
+    val rotation: RotationCert? = null,
 )
 
 sealed interface IncomingMessage {
@@ -329,13 +334,22 @@ object SyncProtocol {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    fun encodeParent(snapshot: ParentSnapshot, familyKey: javax.crypto.SecretKey, parentPrivateKey: PrivateKey): String {
+    fun encodeParent(
+        snapshot: ParentSnapshot,
+        familyKey: javax.crypto.SecretKey,
+        parentPrivateKey: PrivateKey,
+        rotation: RotationCert? = null,
+    ): String {
         val payload = gzip(json.encodeToString(ParentSnapshot.serializer(), snapshot).toByteArray())
         val ciphertext = FamilyCrypto.encrypt(familyKey, payload)
         val signature = FamilyCrypto.sign(parentPrivateKey, ciphertext)
         return json.encodeToString(
             Envelope.serializer(),
-            Envelope("parent", "parent", snapshot.version, FamilyCrypto.toB64(ciphertext), FamilyCrypto.toB64(signature)),
+            Envelope(
+                "parent", "parent", snapshot.version,
+                FamilyCrypto.toB64(ciphertext), FamilyCrypto.toB64(signature),
+                rotation = rotation,
+            ),
         )
     }
 
@@ -366,20 +380,39 @@ object SyncProtocol {
         )
     }
 
+    /** [decodeVerbose]'s result: the message, plus the rotated parent key when one was adopted. */
+    data class Decoded(val message: IncomingMessage, val rotatedParentPublicKeyB64: String? = null)
+
     /** Returns null if the message can't be decrypted or a parent signature doesn't verify. */
-    fun decode(envelopeJson: String, familyKey: javax.crypto.SecretKey, parentPublicKey: PublicKey): IncomingMessage? {
+    fun decode(envelopeJson: String, familyKey: javax.crypto.SecretKey, parentPublicKey: PublicKey): IncomingMessage? =
+        decodeVerbose(envelopeJson, familyKey, parentPublicKey)?.message
+
+    /**
+     * Like [decode], but also reports a verified parent-key rotation. A parent envelope whose
+     * signature fails against [parentPublicKey] is still accepted when it carries a
+     * [RotationCert] signed by that trusted key AND its own signature verifies against the
+     * cert's new key — the restored-parent case. The caller must then persist the returned
+     * key as the new trust root, since the old key is gone with the old phone.
+     */
+    fun decodeVerbose(envelopeJson: String, familyKey: javax.crypto.SecretKey, parentPublicKey: PublicKey): Decoded? {
         val envelope = runCatching { json.decodeFromString(Envelope.serializer(), envelopeJson) }.getOrNull() ?: return null
         val ciphertext = runCatching { FamilyCrypto.fromB64(envelope.ciphertext) }.getOrNull() ?: return null
 
+        var rotatedKeyB64: String? = null
         if (envelope.kind == "parent") {
-            val sig = envelope.signature?.let { FamilyCrypto.fromB64(it) } ?: return null
-            if (!FamilyCrypto.verify(parentPublicKey, ciphertext, sig)) return null
+            val sig = envelope.signature?.let { runCatching { FamilyCrypto.fromB64(it) }.getOrNull() } ?: return null
+            if (!FamilyCrypto.verify(parentPublicKey, ciphertext, sig)) {
+                val cert = envelope.rotation ?: return null
+                val rotatedKey = KeyRotation.verify(cert, parentPublicKey) ?: return null
+                if (!FamilyCrypto.verify(rotatedKey, ciphertext, sig)) return null
+                rotatedKeyB64 = FamilyCrypto.toB64(rotatedKey.encoded)
+            }
         }
         val decrypted = runCatching { FamilyCrypto.decrypt(familyKey, ciphertext) }.getOrNull() ?: return null
         val plaintext = runCatching { gunzipIfNeeded(decrypted) }.getOrNull() ?: return null
         val text = String(plaintext)
 
-        return when (envelope.kind) {
+        val message = when (envelope.kind) {
             "parent" -> runCatching {
                 IncomingMessage.FromParent(json.decodeFromString(ParentSnapshot.serializer(), text))
             }.getOrNull()
@@ -393,7 +426,8 @@ object SyncProtocol {
                 IncomingMessage.FromChildDiag(json.decodeFromString(DiagPayload.serializer(), text))
             }.getOrNull()
             else -> null
-        }
+        } ?: return null
+        return Decoded(message, rotatedKeyB64)
     }
 
     private fun gzip(bytes: ByteArray): ByteArray {

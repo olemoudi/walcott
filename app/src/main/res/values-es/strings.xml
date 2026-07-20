@@ -630,4 +630,31 @@
     <string name="update_state_waiting_parent">Ya está disponible %1$s — este dispositivo espera a que el móvil del padre la tenga</string>
     <string name="child_update_waiting_parent">Se actualizará después de tu móvil — tu móvil es el canario de las versiones nuevas.</string>
     <string name="remote_result_waiting_parent">esperando a que tu móvil se actualice primero</string>
+    <!-- Copia de seguridad / restauración de la familia -->
+    <string name="backup_card_title">Copia de seguridad de la familia</string>
+    <string name="backup_card_desc">Un fichero cifrado con las claves y reglas de la familia. Si este móvil se pierde o se rompe, restáurala en uno nuevo y los hijos siguen obedeciendo — sin re-enrolar.</string>
+    <string name="backup_last">Última copia: %1$s</string>
+    <string name="backup_never">Aún no hay copia — si este móvil se pierde, la familia no se puede recuperar.</string>
+    <string name="backup_save_file">Guardar en un fichero</string>
+    <string name="backup_share">Enviar una copia</string>
+    <string name="backup_share_subject">Copia de seguridad de la familia Walcott</string>
+    <string name="backup_auto_checkbox">Mantener este fichero actualizado automáticamente cuando cambien las reglas</string>
+    <string name="backup_auto_on">Se actualiza automáticamente · última: %1$s</string>
+    <string name="backup_auto_switch">Actualizar automáticamente</string>
+    <string name="backup_auto_error">No se pudo actualizar la copia — quizá el fichero se movió. Guarda una nueva.</string>
+    <string name="backup_auto_unsupported">Esa ubicación no permite actualización automática — el fichero se guardó una vez</string>
+    <string name="backup_saved">Copia guardada</string>
+    <string name="backup_save_failed">No se pudo guardar la copia</string>
+    <string name="backup_pass_title">Contraseña de la copia</string>
+    <string name="backup_pass_desc">La necesitarás para restaurar la familia. Si la pierdes, la copia no sirve — no hay forma de recuperarla.</string>
+    <string name="backup_pass_label">Contraseña</string>
+    <string name="backup_pass_repeat">Repite la contraseña</string>
+    <string name="backup_pass_mismatch">No coinciden</string>
+    <string name="backup_pass_short">Mínimo %1$d caracteres</string>
+    <string name="backup_read_failed">No se pudo leer ese fichero</string>
+    <string name="restore_card_title">Restaurar una copia de familia</string>
+    <string name="restore_card_desc">¿Repones un móvil de padre perdido? Carga su fichero de copia y la familia vuelve.</string>
+    <string name="restore_pass_title">Contraseña de la copia</string>
+    <string name="restore_failed">Contraseña incorrecta o fichero de copia no válido</string>
+    <string name="restore_action">Restaurar</string>
 </resources>

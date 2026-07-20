@@ -630,4 +630,31 @@
     <string name="update_state_waiting_parent">%1$s is out — this device waits until the parent\'s phone runs it</string>
     <string name="child_update_waiting_parent">Will update after your phone does — your phone is the canary for new versions.</string>
     <string name="remote_result_waiting_parent">waiting for your phone to update first</string>
+    <!-- Family backup / restore -->
+    <string name="backup_card_title">Family backup</string>
+    <string name="backup_card_desc">An encrypted file with the family\'s keys and rules. If this phone is lost or broken, restore it on a new one and the children keep obeying — no re-enrollment.</string>
+    <string name="backup_last">Last backup: %1$s</string>
+    <string name="backup_never">No backup yet — if this phone is lost, the family can\'t be recovered.</string>
+    <string name="backup_save_file">Save to a file</string>
+    <string name="backup_share">Send a copy</string>
+    <string name="backup_share_subject">Walcott family backup</string>
+    <string name="backup_auto_checkbox">Keep this file updated automatically when the rules change</string>
+    <string name="backup_auto_on">Updates automatically · last: %1$s</string>
+    <string name="backup_auto_switch">Update automatically</string>
+    <string name="backup_auto_error">Couldn\'t update the backup — the file may have moved. Save a new one.</string>
+    <string name="backup_auto_unsupported">That location doesn\'t allow automatic updates — the file was saved once</string>
+    <string name="backup_saved">Backup saved</string>
+    <string name="backup_save_failed">Couldn\'t save the backup</string>
+    <string name="backup_pass_title">Backup passphrase</string>
+    <string name="backup_pass_desc">You\'ll need it to restore the family. If you lose it, the backup is useless — there is no reset.</string>
+    <string name="backup_pass_label">Passphrase</string>
+    <string name="backup_pass_repeat">Repeat passphrase</string>
+    <string name="backup_pass_mismatch">They don\'t match</string>
+    <string name="backup_pass_short">At least %1$d characters</string>
+    <string name="backup_read_failed">Couldn\'t read that file</string>
+    <string name="restore_card_title">Restore a family backup</string>
+    <string name="restore_card_desc">Replacing a lost parent phone? Load its backup file and the family comes back.</string>
+    <string name="restore_pass_title">Backup passphrase</string>
+    <string name="restore_failed">Wrong passphrase or invalid backup file</string>
+    <string name="restore_action">Restore</string>
 </resources>
