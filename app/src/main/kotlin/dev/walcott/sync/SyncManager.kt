@@ -128,7 +128,7 @@ class SyncManager(
                     // Advance the cursor even if handling throws: a single message that always
                     // fails to process must not wedge the `since=` replay and re-deliver itself
                     // forever. Losing its content is fine — the sender re-emits every cycle.
-                    runCatching { handleIncoming(raw, id) }
+                    runCatching { handleIncoming(raw, id, timeSec) }
                         .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handleIncoming failed", it) }
                     advanceCursor(timeSec)
                 }
@@ -172,7 +172,7 @@ class SyncManager(
         // Guarded like the live path: a message that can't be processed still advances the
         // cursor, so the background poll can't get stuck re-fetching the same poison message.
         if (id.isPaired) {
-            runCatching { handleIncoming(raw, id) }
+            runCatching { handleIncoming(raw, id, timeSec) }
                 .onFailure { dev.walcott.debug.DebugLog.e(TAG, "applyIncoming failed", it) }
         }
         advanceCursor(timeSec)
@@ -180,12 +180,18 @@ class SyncManager(
 
     /**
      * Moves the `since=` cursor forward. Advances on EVERY message — including our own echoes
-     * and undecodable ones — or reconnects would replay them forever.
+     * and undecodable ones — or reconnects would replay them forever. A received message is
+     * also end-to-end proof the channel works right now, so the channel-health stamp rides
+     * on the same write.
      */
     private suspend fun advanceCursor(timeSec: Long) {
         if (timeSec <= sinceCache) return
         sinceCache = timeSec
-        syncStore.update { if (timeSec > it.ntfySinceSec) it.copy(ntfySinceSec = timeSec) else it }
+        val now = System.currentTimeMillis()
+        syncStore.update {
+            val next = if (timeSec > it.ntfySinceSec) it.copy(ntfySinceSec = timeSec) else it
+            next.copy(lastChannelOkMs = now)
+        }
     }
 
     // --- Mode & pairing ---
@@ -461,6 +467,32 @@ class SyncManager(
         runCatching { publishSelf() }
     }
 
+    /** Records the heartbeat self-test's result; publishes on change so the parent hears promptly. */
+    suspend fun recordEnforcementGap(packages: List<String>) {
+        if (syncStore.current().enforcementGaps == packages) return
+        syncStore.update { it.copy(enforcementGaps = packages, childVersion = it.childVersion + 1) }
+        runCatching { publishSelf() }
+    }
+
+    /** The parent app's build as last published in its snapshot (0 = unknown/legacy parent). */
+    suspend fun parentAppVersionCode(): Int = syncStore.current().parentAppVersionCode
+
+    /**
+     * Records a clock-skew measurement (see [ClockGuard]). Persisted only on a meaningful
+     * change so per-message jitter (network delay) doesn't churn DataStore; published
+     * immediately when the tampered/clean verdict flips so the parent hears promptly.
+     */
+    private suspend fun recordClockSkew(skewMs: Long) {
+        val previous = syncStore.current().clockSkewMs
+        val verdictFlipped = ClockGuard.isTampered(skewMs) != ClockGuard.isTampered(previous)
+        if (!verdictFlipped && kotlin.math.abs(skewMs - previous) < CLOCK_SKEW_RECORD_DELTA_MS) return
+        syncStore.update { it.copy(clockSkewMs = skewMs, childVersion = it.childVersion + 1) }
+        if (verdictFlipped) {
+            dev.walcott.debug.DebugLog.w(TAG, "clock skew now ${skewMs / 1000}s (tampered=${ClockGuard.isTampered(skewMs)})")
+            runCatching { publishSelf() }
+        }
+    }
+
     /**
      * Forget a device the parent no longer tracks (orphaned test devices, re-paired phones).
      * Purely local: if the device is still alive and paired it will re-appear on its next
@@ -478,6 +510,9 @@ class SyncManager(
                 lowBatteryNotified = s.lowBatteryNotified - deviceId,
                 networkLocationNotified = s.networkLocationNotified - deviceId,
                 pinAlertedTotal = s.pinAlertedTotal - deviceId,
+                selfTestNotified = s.selfTestNotified - deviceId,
+                clockTamperNotified = s.clockTamperNotified - deviceId,
+                diagReports = s.diagReports - deviceId,
             )
         }
     }
@@ -640,6 +675,8 @@ class SyncManager(
                     locationRequests = state.locationRequests,
                     commands = state.commands,
                     iconRequests = iconRequests,
+                    // The parent is the fleet's update canary: children only follow up to this.
+                    parentVersionCode = BuildConfig.VERSION_CODE,
                 )
                 transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, ParentKeystore.privateKey()))
             }
@@ -689,6 +726,8 @@ class SyncManager(
                     batteryPercent = batteryPercent(),
                     charging = batteryCharging(),
                     updateError = s.updateError,
+                    enforcementGaps = s.enforcementGaps,
+                    clockSkewMs = s.clockSkewMs,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -727,6 +766,39 @@ class SyncManager(
         transport.publish(SyncProtocol.encodeChildIcons(IconPayload(id.deviceId, packed), familyKey))
     }
 
+    /**
+     * Child: gather and publish the health report a [RemoteAction.DIAGNOSE] asked for. Its
+     * own message kind (like icons) so the log tail never bloats the regular snapshot;
+     * DiagFit trims the log to keep the message under the ntfy size cap.
+     */
+    suspend fun publishDiagnostics() {
+        val id = identityStore.current()
+        val transport = transport ?: return
+        val s = syncStore.current()
+        val locationManager = context.getSystemService(android.location.LocationManager::class.java)
+        val payload = DiagPayload(
+            deviceId = id.deviceId,
+            atMs = System.currentTimeMillis(),
+            enforcement = EnforcementBackends.status(context),
+            deviceOwner = dev.walcott.enforcement.Enforcer(context).isDeviceOwner(),
+            usageAccess = UsageAccess.granted(context),
+            gpsOn = runCatching {
+                locationManager?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true
+            }.getOrDefault(false),
+            networkLocationOn = LocationSampler(context).networkProviderEnabled(),
+            locationPermission = dev.walcott.location.LocationPolicy.hasFineLocation(context),
+            batteryPercent = batteryPercent(),
+            charging = batteryCharging(),
+            updateError = s.updateError,
+            suspendFailures = dev.walcott.enforcement.Enforcer.recentSuspendFailures,
+            appVersionCode = BuildConfig.VERSION_CODE,
+            appVersionName = BuildConfig.VERSION_NAME,
+            logLines = dev.walcott.debug.DebugLog.tail(DIAG_LOG_LINES),
+        )
+        val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
+        transport.publish(DiagFit.encode(payload, familyKey))
+    }
+
     /** Current battery percentage (0–100), or -1 if the platform won't say. */
     private fun batteryPercent(): Int =
         runCatching {
@@ -739,16 +811,30 @@ class SyncManager(
             context.getSystemService(android.os.BatteryManager::class.java)?.isCharging ?: false
         }.getOrDefault(false)
 
-    private suspend fun handleIncoming(raw: String, id: FamilyIdentity) {
+    private suspend fun handleIncoming(raw: String, id: FamilyIdentity, timeSec: Long) {
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         val parentPublic = FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(id.parentPublicKeyB64))
         val message = SyncProtocol.decode(raw, familyKey, parentPublic) ?: return
+
+        // Clock-tamper watch (child only): every message carries the server's clock. Only this
+        // device's own echo proves a forward-set clock; see ClockGuard for the replay caveat.
+        if (id.role == Role.CHILD && timeSec > 0) {
+            val ownEcho = message is IncomingMessage.FromChild && message.snapshot.deviceId == id.deviceId
+            ClockGuard.measuredSkew(ClockGuard.skewMs(System.currentTimeMillis(), timeSec), ownEcho)
+                ?.let { recordClockSkew(it) }
+        }
 
         when {
             id.role == Role.CHILD && message is IncomingMessage.FromParent -> applyParentSnapshot(message.snapshot)
             id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot)
             id.role == Role.PARENT && message is IncomingMessage.FromChildIcons -> applyIconPayload(message.payload)
+            id.role == Role.PARENT && message is IncomingMessage.FromChildDiag -> applyDiagPayload(message.payload)
         }
+    }
+
+    /** Parent: keep the latest health report per device, for the child-detail screen. */
+    private suspend fun applyDiagPayload(payload: DiagPayload) {
+        syncStore.update { it.copy(diagReports = it.diagReports + (payload.deviceId to payload)) }
     }
 
     /**
@@ -793,6 +879,14 @@ class SyncManager(
 
         val deviceId = id.deviceId
         val s = syncStore.current()
+
+        // Track the parent app's build for the update canary. Monotonic max, so a replayed
+        // older parent snapshot can't yank a child's already-allowed target back down.
+        if (snapshot.parentVersionCode > s.parentAppVersionCode) {
+            syncStore.update {
+                it.copy(parentAppVersionCode = maxOf(it.parentAppVersionCode, snapshot.parentVersionCode))
+            }
+        }
 
         // On-demand: answer a fresh "locate now" addressed to this device (one attempt each).
         val locReq = SyncEngine.freshLocationRequest(snapshot, deviceId, s.appliedLocationRequestMs)
@@ -896,7 +990,12 @@ class SyncManager(
      */
     private suspend fun applyCommands(snapshot: ParentSnapshot, deviceId: String) = commandMutex.withLock {
         val runner by lazy {
-            RemoteCommandRunner(context, repository, openInstallForPush = { pkg, id -> openInstallForPush(pkg, id) })
+            RemoteCommandRunner(
+                context,
+                repository,
+                openInstallForPush = { pkg, id -> openInstallForPush(pkg, id) },
+                publishDiagnostics = { publishDiagnostics() },
+            )
         }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
             // Re-check under the lock: a concurrent handler may have claimed it since.
@@ -976,6 +1075,30 @@ class SyncManager(
             syncStore.update { it.copy(lowBatteryNotified = it.lowBatteryNotified - snapshot.deviceId) }
         }
 
+        // Enforcement self-test gap: the child looked healthy but the OS wasn't actually
+        // suspending what the rules block. One alert per outage; clears when a later
+        // self-test passes so a relapse re-alerts.
+        val hasGap = snapshot.enforcementGaps.isNotEmpty()
+        if (hasGap && snapshot.deviceId !in before.selfTestNotified) {
+            SyncNotifications.notifyEnforcementGap(
+                context, snapshot.displayName, snapshot.enforcementGaps.size, snapshot.deviceId,
+            )
+            syncStore.update { it.copy(selfTestNotified = it.selfTestNotified + snapshot.deviceId) }
+        } else if (!hasGap && snapshot.deviceId in before.selfTestNotified) {
+            syncStore.update { it.copy(selfTestNotified = it.selfTestNotified - snapshot.deviceId) }
+        }
+
+        // Clock tamper: the child's clock disagrees with the sync server far beyond drift —
+        // the bedtime/budget bypass when the date-time restriction isn't on. One-shot with
+        // hysteresis (ClockGuard) so a skew hovering at the threshold can't flap.
+        val alreadyClockAlerted = snapshot.deviceId in before.clockTamperNotified
+        if (ClockGuard.shouldAlert(snapshot.clockSkewMs, alreadyClockAlerted)) {
+            SyncNotifications.notifyClockTamper(context, snapshot.displayName, snapshot.clockSkewMs, snapshot.deviceId)
+            syncStore.update { it.copy(clockTamperNotified = it.clockTamperNotified + snapshot.deviceId) }
+        } else if (alreadyClockAlerted && ClockGuard.clears(snapshot.clockSkewMs)) {
+            syncStore.update { it.copy(clockTamperNotified = it.clockTamperNotified - snapshot.deviceId) }
+        }
+
         // Network (Wi-Fi/cell) location off: indoor tracking silently stops. Alert once,
         // clear when it comes back. Defaults true, so legacy children never false-alarm.
         val netLocOff = !snapshot.networkLocationOn
@@ -1047,5 +1170,9 @@ class SyncManager(
         private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
         /** How many app icons a child renders+sends per parent request (the rest trickle next cycle). */
         private const val ICON_RENDER_LIMIT = 8
+        /** Ignore skew changes smaller than this (network-delay jitter) to spare DataStore. */
+        private const val CLOCK_SKEW_RECORD_DELTA_MS = 60_000L
+        /** Log lines offered to the diagnostics report before DiagFit trims to the size cap. */
+        private const val DIAG_LOG_LINES = 80
     }
 }

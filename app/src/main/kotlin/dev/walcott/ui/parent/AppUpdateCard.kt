@@ -136,6 +136,7 @@ private fun updateStatusText(state: UpdateUiState, deviceOwner: Boolean): String
     is UpdateUiState.UpToDate -> stringResource(R.string.update_state_up_to_date)
     is UpdateUiState.Downloading -> stringResource(R.string.update_state_downloading, state.target.versionName)
     is UpdateUiState.PendingConfirmation -> stringResource(R.string.update_state_pending)
+    is UpdateUiState.WaitingForParent -> stringResource(R.string.update_state_waiting_parent, state.target.versionName)
     is UpdateUiState.Failed -> stringResource(R.string.update_state_failed, state.step)
 }
 

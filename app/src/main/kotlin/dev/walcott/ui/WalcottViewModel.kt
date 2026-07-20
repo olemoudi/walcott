@@ -369,6 +369,19 @@ class WalcottViewModel(
             dev.walcott.sync.SyncEngine.pendingOps(s.commands, s.locationRequests, s.children, System.currentTimeMillis())
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Wall-clock ms of the last proof the family channel worked, once that's long enough ago
+     * to admit on the child home; null while healthy. On the 15s clock so it ages in/out.
+     */
+    val channelOfflineSince: StateFlow<Long?> =
+        combine(sync.state, clock) { s, _ ->
+            dev.walcott.sync.ChannelHealth.offlineSinceMs(s.lastChannelOkMs, System.currentTimeMillis())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Latest health report per child device (parent side), for the diagnostics card. */
+    val diagReports: StateFlow<Map<String, dev.walcott.sync.DiagPayload>> =
+        sync.state.map { it.diagReports }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** The idle-earn target category id (or "") so childState can attribute earned minutes. */
     private val settingsFlowForEarn: kotlinx.coroutines.flow.Flow<String> =
         repository.settingsFlow.map { it.idleEarn?.targetCategoryId ?: "" }

@@ -48,7 +48,18 @@ class Enforcer(context: Context) {
         if (!failed.isNullOrEmpty()) {
             val verb = if (suspend) "suspend" else "unsuspend"
             DebugLog.w(TAG, "could not $verb: ${failed.joinToString()}")
+            if (suspend) recentSuspendFailures = (recentSuspendFailures + failed).distinct().takeLast(8)
         }
+    }
+
+    /**
+     * The subset of [blocked] the system does NOT currently report suspended — the heartbeat
+     * self-test's gap. Empty when not Device Owner (suspension state isn't measurable then).
+     * A package the query throws on (just uninstalled) is not counted: it can't be used either.
+     */
+    fun unenforced(blocked: Set<String>): List<String> {
+        if (!isDeviceOwner()) return emptyList()
+        return blocked.filter { runCatching { !dpm.isPackageSuspended(admin, it) }.getOrDefault(false) }
     }
 
     /** Lifts all suspensions of [managed] (e.g. if enforcement is turned off). */
@@ -62,6 +73,14 @@ class Enforcer(context: Context) {
 
     companion object {
         private const val TAG = "WalcottEnforce"
+
+        /**
+         * Packages the OS recently refused to SUSPEND, kept process-wide for the remote
+         * diagnostics report. Best-effort by design (lost on process death — the debug log
+         * is the durable record); a bounded distinct list so it can't grow.
+         */
+        @Volatile var recentSuspendFailures: List<String> = emptyList()
+            private set
 
         /**
          * The suspend/unsuspend diff to make exactly [blocked] suspended among [managed], given

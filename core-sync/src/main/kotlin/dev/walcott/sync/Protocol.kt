@@ -121,6 +121,12 @@ object RemoteAction {
     const val INSTALL_APP = "install_app"
 
     /**
+     * Ask the child to publish a [DiagPayload] health report (its own message kind, so the
+     * log lines never ride in the regular snapshot). The ack only confirms it was sent.
+     */
+    const val DIAGNOSE = "diagnose"
+
+    /**
      * [CommandAck.detail] lifecycle of an [INSTALL_APP]: "opened" means the prompt reached the
      * child (nothing installed yet); a second ack with "installed" follows when the pushed
      * package actually lands. "already_installed" short-circuits both.
@@ -203,6 +209,19 @@ data class ChildSnapshot(
      * Makes a child stuck on an old build diagnosable without touching the phone.
      */
     val updateError: String = "",
+    /**
+     * Packages the heartbeat self-test found NOT actually suspended although the rules say
+     * they should be (capped — the child's debug log has the full list). Empty = the last
+     * self-test passed (or the backend can't measure suspension). Catches the scariest
+     * failure: everything looks healthy but the OS isn't blocking.
+     */
+    val enforcementGaps: List<String> = emptyList(),
+    /**
+     * Local clock minus the sync server's clock, in ms, as last measured by [ClockGuard].
+     * 0 = in sync / legacy child. A large skew means the child moved the device clock
+     * (walking past bedtime or daily budgets).
+     */
+    val clockSkewMs: Long = 0,
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */
@@ -233,6 +252,12 @@ data class ParentSnapshot(
      * Any child that has one of these answers with a [IconPayload]. See [IconSync].
      */
     val iconRequests: List<String> = emptyList(),
+    /**
+     * The parent app's own build ([versionCode]), making the parent the fleet's update canary:
+     * a child only self-updates up to the version the parent is already running, so one bad
+     * build can't take down every child at once. 0 = legacy parent (children don't wait).
+     */
+    val parentVersionCode: Int = 0,
 )
 
 /** One app icon, compressed small (WebP) and base64'd, sent child→parent on request. */
@@ -246,6 +271,35 @@ data class AppIconData(val packageName: String, val webpB64: String)
  */
 @Serializable
 data class IconPayload(val deviceId: String, val icons: List<AppIconData> = emptyList())
+
+/**
+ * A child's health report, sent on request ([RemoteAction.DIAGNOSE]) in its own message kind
+ * (like [IconPayload]) so the log lines never bloat the regular [ChildSnapshot]. Everything a
+ * parent needs to diagnose a misbehaving device without physically holding it.
+ */
+@Serializable
+data class DiagPayload(
+    val deviceId: String,
+    /** Wall-clock ms when the report was taken. */
+    val atMs: Long,
+    /** Active enforcement backend, one of [EnforcementStatus]. */
+    val enforcement: String = EnforcementStatus.UNKNOWN,
+    val deviceOwner: Boolean = false,
+    val usageAccess: Boolean = false,
+    val gpsOn: Boolean = false,
+    val networkLocationOn: Boolean = false,
+    val locationPermission: Boolean = false,
+    val batteryPercent: Int = -1,
+    val charging: Boolean = false,
+    /** Why the last self-update attempt failed; "" = clean. */
+    val updateError: String = "",
+    /** Packages the OS recently refused to suspend (a real enforcement gap). */
+    val suspendFailures: List<String> = emptyList(),
+    val appVersionCode: Int = 0,
+    val appVersionName: String = "",
+    /** Tail of the child's debug log, oldest first, trimmed to fit the message cap. */
+    val logLines: List<String> = emptyList(),
+)
 
 // --- Envelope on the wire ---
 
@@ -262,6 +316,7 @@ sealed interface IncomingMessage {
     data class FromParent(val snapshot: ParentSnapshot) : IncomingMessage
     data class FromChild(val snapshot: ChildSnapshot) : IncomingMessage
     data class FromChildIcons(val payload: IconPayload) : IncomingMessage
+    data class FromChildDiag(val payload: DiagPayload) : IncomingMessage
 }
 
 /**
@@ -290,6 +345,15 @@ object SyncProtocol {
         return json.encodeToString(
             Envelope.serializer(),
             Envelope("icons", payload.deviceId, 0, FamilyCrypto.toB64(ciphertext), null),
+        )
+    }
+
+    fun encodeChildDiag(payload: DiagPayload, familyKey: javax.crypto.SecretKey): String {
+        val bytes = gzip(json.encodeToString(DiagPayload.serializer(), payload).toByteArray())
+        val ciphertext = FamilyCrypto.encrypt(familyKey, bytes)
+        return json.encodeToString(
+            Envelope.serializer(),
+            Envelope("diag", payload.deviceId, 0, FamilyCrypto.toB64(ciphertext), null),
         )
     }
 
@@ -324,6 +388,9 @@ object SyncProtocol {
             }.getOrNull()
             "icons" -> runCatching {
                 IncomingMessage.FromChildIcons(json.decodeFromString(IconPayload.serializer(), text))
+            }.getOrNull()
+            "diag" -> runCatching {
+                IncomingMessage.FromChildDiag(json.decodeFromString(DiagPayload.serializer(), text))
             }.getOrNull()
             else -> null
         }

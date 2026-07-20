@@ -582,4 +582,52 @@
     <string name="earn_windows_title">¿Cuándo puede ganar?</string>
     <string name="earn_windows_hint">Activa un día para ganar solo en ese horario (p. ej. después de clase). Apagado = gana a cualquier hora ese día.</string>
     <string name="earn_window_all_day">Gana a cualquier hora</string>
+    <!-- Auto-test de bloqueo (el heartbeat verifica que el bloqueo funciona de verdad) -->
+    <string name="enforcement_gap_title">%1$s: el bloqueo no está funcionando</string>
+    <plurals name="enforcement_gap_text">
+        <item quantity="one">%d app que debería estar bloqueada no está realmente suspendida — Walcott lo está reaplicando</item>
+        <item quantity="other">%d apps que deberían estar bloqueadas no están realmente suspendidas — Walcott lo está reaplicando</item>
+    </plurals>
+    <plurals name="enforcement_gap_child">
+        <item quantity="one">Auto-test fallido: %d app que debería estar bloqueada no lo estaba realmente en el dispositivo. Walcott reaplica el bloqueo en cada check-in.</item>
+        <item quantity="other">Auto-test fallido: %d apps que deberían estar bloqueadas no lo estaban realmente en el dispositivo. Walcott reaplica el bloqueo en cada check-in.</item>
+    </plurals>
+    <!-- Detección de reloj manipulado -->
+    <string name="clock_tamper_title">El reloj de %1$s parece cambiado</string>
+    <string name="clock_tamper_text">El reloj del dispositivo va %1$s — puede que lo hayan cambiado para saltarse los límites</string>
+    <string name="clock_tamper_child">El reloj de este dispositivo va %1$s. Si el niño lo cambió para saltarse límites, activa la protección de fecha y hora.</string>
+    <string name="skew_hours_minutes">%1$d h %2$d min</string>
+    <string name="skew_behind">%1$s atrasado</string>
+    <string name="skew_ahead">%1$s adelantado</string>
+    <!-- Salud del canal (inicio del hijo) -->
+    <string name="channel_offline_title">Sin conexión con tu familia</string>
+    <string name="channel_offline_desc">No llega nada desde %1$s. Las reglas y peticiones se pondrán al día cuando vuelva la conexión.</string>
+    <!-- Diagnóstico remoto (informe de salud) -->
+    <string name="diag_section">Informe de salud</string>
+    <string name="diag_hint">Pide una foto del estado de este dispositivo, incluido su registro reciente</string>
+    <string name="diag_request">Pedir</string>
+    <string name="diag_refresh">Actualizar</string>
+    <string name="diag_taken_at">Informe del %1$s</string>
+    <string name="diag_enforcement">Bloqueo</string>
+    <string name="diag_enforcement_do">Completo (Device Owner)</string>
+    <string name="diag_enforcement_accessibility">Limitado (Accesibilidad)</string>
+    <string name="diag_enforcement_none">Inactivo</string>
+    <string name="diag_usage_access">Conteo de tiempo de pantalla</string>
+    <string name="diag_location_permission">Permiso de ubicación</string>
+    <string name="diag_gps">GPS</string>
+    <string name="diag_network_location">Ubicación por Wi-Fi/red</string>
+    <string name="diag_battery">Batería</string>
+    <string name="diag_battery_value">%1$d%%</string>
+    <string name="diag_battery_charging">%1$d%% (cargando)</string>
+    <string name="diag_version">Versión de la app</string>
+    <string name="diag_version_value">%1$s (%2$d)</string>
+    <string name="diag_update_error">Última actualización</string>
+    <string name="diag_suspend_failures">Rechazó bloquear</string>
+    <string name="diag_show_log">Ver registro (%1$d)</string>
+    <string name="diag_hide_log">Ocultar registro</string>
+    <string name="remote_result_diag_sent">informe de salud enviado</string>
+    <!-- Canario de actualizaciones (los hijos siguen la versión del padre) -->
+    <string name="update_state_waiting_parent">Ya está disponible %1$s — este dispositivo espera a que el móvil del padre la tenga</string>
+    <string name="child_update_waiting_parent">Se actualizará después de tu móvil — tu móvil es el canario de las versiones nuevas.</string>
+    <string name="remote_result_waiting_parent">esperando a que tu móvil se actualice primero</string>
 </resources>

@@ -73,6 +73,14 @@ data class SyncState(
     val lastCommandAck: CommandAck? = null,
     /** Why the last self-update attempt failed ("" = the last check was clean). */
     val updateError: String = "",
+    /** Blocked-but-not-suspended packages from the last heartbeat self-test (capped; [] = passed). */
+    val enforcementGaps: List<String> = emptyList(),
+    /** Local minus server clock in ms, as last measured by [ClockGuard]; 0 until measured. */
+    val clockSkewMs: Long = 0,
+    /** The parent app's build, from its snapshots; the child only self-updates up to it (canary). */
+    val parentAppVersionCode: Int = 0,
+    /** Wall-clock ms of the last message received over the channel (proof it works end to end). */
+    val lastChannelOkMs: Long = 0,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
@@ -98,6 +106,12 @@ data class SyncState(
     val lowBatteryNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for network location off (cleared when it recovers). */
     val networkLocationNotified: Set<String> = emptySet(),
+    /** deviceIds already alerted for a failed enforcement self-test (cleared when it passes). */
+    val selfTestNotified: Set<String> = emptySet(),
+    /** deviceIds already alerted for clock tampering (cleared once the skew is back to normal). */
+    val clockTamperNotified: Set<String> = emptySet(),
+    /** deviceId -> latest health report received from that child (see [DiagPayload]). */
+    val diagReports: Map<String, DiagPayload> = emptyMap(),
     /** Every app package ever seen across children, to notify only on genuinely new installs. */
     val seenAppPackages: Set<String> = emptySet(),
     /** True once [seenAppPackages] was seeded from existing data (prevents a first-run flood). */

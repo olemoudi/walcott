@@ -11,6 +11,8 @@ sealed interface UpdateUiState {
     data class Downloading(val target: UpdateInfo) : UpdateUiState
     /** Waiting for the user to accept the system install dialog (non-owner devices). */
     data class PendingConfirmation(val target: UpdateInfo?) : UpdateUiState
+    /** Canary gate: [target] exists but this child waits until the parent runs it. */
+    data class WaitingForParent(val target: UpdateInfo) : UpdateUiState
     data class Failed(val step: String) : UpdateUiState
 }
 

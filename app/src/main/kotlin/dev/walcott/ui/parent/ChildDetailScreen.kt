@@ -67,10 +67,13 @@ import dev.walcott.data.ChildEntry
 import dev.walcott.data.withBudget
 import dev.walcott.provisioning.DeviceOwnerProvisioning
 import dev.walcott.sync.ChildSnapshot
+import dev.walcott.sync.ClockGuard
+import dev.walcott.sync.DiagPayload
 import dev.walcott.sync.EnforcementStatus
 import dev.walcott.sync.PairingPayload
 import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Role
+import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.qr.rememberQrBitmap
@@ -99,6 +102,7 @@ fun ChildDetailScreen(
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
+    val diagReports by viewModel.diagReports.collectAsStateWithLifecycle()
 
     // Brief nulls are expected: right after "Add child" (store write in flight) or removal.
     val entry = settings.children.firstOrNull { it.childId == childId } ?: return
@@ -162,6 +166,16 @@ fun ChildDetailScreen(
                 item { UsageAccessWarningCard() }
             }
 
+            // --- Self-test gap ("looks healthy, isn't blocking") ---
+            if (snapshot != null && snapshot.enforcementGaps.isNotEmpty()) {
+                item { EnforcementGapCard(snapshot.enforcementGaps.size) }
+            }
+
+            // --- Clock tamper (device clock far off the sync server's) ---
+            if (snapshot != null && ClockGuard.isTampered(snapshot.clockSkewMs)) {
+                item { ClockTamperCard(snapshot.clockSkewMs) }
+            }
+
             // --- Wrong-PIN attempts (someone is trying to guess the parent PIN on the child) ---
             if (snapshot != null && snapshot.pinWrongTotal > 0) {
                 item { WrongPinCard(snapshot.pinWrongTotal, snapshot.lastWrongPinMs) }
@@ -181,6 +195,13 @@ fun ChildDetailScreen(
                     RemoteFixCard(
                         snapshot = snapshot,
                         onCommand = { action -> viewModel.sendRemoteCommand(snapshot.deviceId, action) },
+                    )
+                }
+                item {
+                    DiagnosticsCard(
+                        deviceId = snapshot.deviceId,
+                        report = diagReports[snapshot.deviceId],
+                        onRequest = { viewModel.sendRemoteCommand(snapshot.deviceId, RemoteAction.DIAGNOSE) },
                     )
                 }
             }
@@ -622,6 +643,51 @@ private fun UsageAccessWarningCard() {
     }
 }
 
+/** The self-test caught apps that should be suspended but aren't — the silent failure class. */
+@Composable
+private fun EnforcementGapCard(count: Int) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                pluralStringResource(R.plurals.enforcement_gap_child, count, count),
+                style = MaterialTheme.typography.bodyMedium,
+                color = color,
+            )
+        }
+    }
+}
+
+/** The child's clock disagrees with the sync server far beyond drift — a limits bypass. */
+@Composable
+private fun ClockTamperCard(skewMs: Long) {
+    val spacing = Tokens.spacing
+    val context = LocalContext.current
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                stringResource(R.string.clock_tamper_child, SyncNotifications.formatSkew(context, skewMs)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = color,
+            )
+        }
+    }
+}
+
 @Composable
 private fun WrongPinCard(total: Int, lastAttemptMs: Long) {
     val spacing = Tokens.spacing
@@ -675,6 +741,8 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, onCommand: (String) -> Unit) 
     var awaitingAck by remember(snapshot.deviceId) { mutableStateOf(false) }
     val outdated = snapshot.appVersionCode in 1 until BuildConfig.VERSION_CODE
     val needsPermissionNudge = !snapshot.usageAccessOn || !snapshot.networkLocationOn
+    // Deliberately waiting for the canary (this phone) is not a failure — don't paint it red.
+    val waitingForParent = snapshot.updateError == "waiting_parent"
 
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(spacing.lg)) {
@@ -688,9 +756,17 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, onCommand: (String) -> Unit) 
             // A child that couldn't self-update is the case "Update now" exists for; say why.
             if (snapshot.updateError.isNotBlank()) {
                 Text(
-                    stringResource(R.string.child_update_error, remoteResultLabel(context, snapshot.updateError)),
+                    if (waitingForParent) {
+                        stringResource(R.string.child_update_waiting_parent)
+                    } else {
+                        stringResource(R.string.child_update_error, remoteResultLabel(context, snapshot.updateError))
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (waitingForParent) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
                     modifier = Modifier.padding(top = spacing.sm),
                 )
             }
@@ -698,7 +774,7 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, onCommand: (String) -> Unit) 
             RemoteFixRow(
                 title = stringResource(R.string.remote_update_now),
                 description = stringResource(R.string.remote_update_desc),
-                emphasized = outdated || snapshot.updateError.isNotBlank(),
+                emphasized = outdated || (snapshot.updateError.isNotBlank() && !waitingForParent),
                 onClick = {
                     onCommand(RemoteAction.UPDATE_NOW)
                     sentAtMs = System.currentTimeMillis()
@@ -796,7 +872,167 @@ private fun remoteResultLabel(context: android.content.Context, detail: String):
     "installed" -> context.getString(R.string.remote_result_installed)
     "already_installed" -> context.getString(R.string.remote_result_already_installed)
     "no_package" -> context.getString(R.string.remote_result_no_package)
+    "waiting_parent" -> context.getString(R.string.remote_result_waiting_parent)
+    "diag_sent" -> context.getString(R.string.remote_result_diag_sent)
     else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail
+}
+
+/**
+ * Remote health report: request a diagnostics snapshot from the child (it arrives on the
+ * device's next check-in, as its own message) and render the latest one received. The
+ * "requested…" line clears itself when a report newer than the request lands.
+ */
+@Composable
+private fun DiagnosticsCard(deviceId: String, report: DiagPayload?, onRequest: () -> Unit) {
+    val spacing = Tokens.spacing
+    val context = LocalContext.current
+    var sentAtMs by remember(deviceId) { mutableStateOf(0L) }
+    var showLog by remember(deviceId) { mutableStateOf(false) }
+    val waiting = sentAtMs > 0 && (report == null || report.atMs < sentAtMs)
+
+    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(spacing.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.diag_section), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.diag_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(spacing.sm))
+                OutlinedButton(onClick = { onRequest(); sentAtMs = System.currentTimeMillis() }, enabled = !waiting) {
+                    Text(stringResource(if (report == null) R.string.diag_request else R.string.diag_refresh))
+                }
+            }
+            if (waiting) {
+                Text(
+                    stringResource(R.string.remote_command_sent),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
+            if (report != null) {
+                HorizontalDivider(Modifier.padding(vertical = spacing.sm))
+                val stamp = remember(report.atMs) {
+                    java.text.DateFormat
+                        .getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, Locale.getDefault())
+                        .format(java.util.Date(report.atMs))
+                }
+                Text(
+                    stringResource(R.string.diag_taken_at, stamp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                DiagRow(
+                    label = stringResource(R.string.diag_enforcement),
+                    value = stringResource(
+                        when (report.enforcement) {
+                            EnforcementStatus.DEVICE_OWNER -> R.string.diag_enforcement_do
+                            EnforcementStatus.ACCESSIBILITY -> R.string.diag_enforcement_accessibility
+                            else -> R.string.diag_enforcement_none
+                        },
+                    ),
+                    ok = report.enforcement == EnforcementStatus.DEVICE_OWNER,
+                )
+                DiagRow(
+                    label = stringResource(R.string.diag_usage_access),
+                    value = stringResource(if (report.usageAccess) R.string.summary_on else R.string.summary_off),
+                    ok = report.usageAccess,
+                )
+                DiagRow(
+                    label = stringResource(R.string.diag_location_permission),
+                    value = stringResource(if (report.locationPermission) R.string.summary_on else R.string.summary_off),
+                    ok = report.locationPermission,
+                )
+                DiagRow(
+                    label = stringResource(R.string.diag_gps),
+                    value = stringResource(if (report.gpsOn) R.string.summary_on else R.string.summary_off),
+                    ok = report.gpsOn,
+                )
+                DiagRow(
+                    label = stringResource(R.string.diag_network_location),
+                    value = stringResource(if (report.networkLocationOn) R.string.summary_on else R.string.summary_off),
+                    ok = report.networkLocationOn,
+                )
+                if (report.batteryPercent in 0..100) {
+                    DiagRow(
+                        label = stringResource(R.string.diag_battery),
+                        value = stringResource(
+                            if (report.charging) R.string.diag_battery_charging else R.string.diag_battery_value,
+                            report.batteryPercent,
+                        ),
+                        ok = report.charging || report.batteryPercent >= 20,
+                    )
+                }
+                if (report.appVersionCode > 0) {
+                    DiagRow(
+                        label = stringResource(R.string.diag_version),
+                        value = stringResource(R.string.diag_version_value, report.appVersionName, report.appVersionCode),
+                        ok = report.appVersionCode >= BuildConfig.VERSION_CODE,
+                    )
+                }
+                if (report.updateError.isNotBlank()) {
+                    DiagRow(
+                        label = stringResource(R.string.diag_update_error),
+                        value = remoteResultLabel(context, report.updateError),
+                        ok = report.updateError == "waiting_parent",
+                    )
+                }
+                if (report.suspendFailures.isNotEmpty()) {
+                    DiagRow(
+                        label = stringResource(R.string.diag_suspend_failures),
+                        value = report.suspendFailures.joinToString(),
+                        ok = false,
+                    )
+                }
+                if (report.logLines.isNotEmpty()) {
+                    TextButton(onClick = { showLog = !showLog }) {
+                        Text(
+                            if (showLog) {
+                                stringResource(R.string.diag_hide_log)
+                            } else {
+                                stringResource(R.string.diag_show_log, report.logLines.size)
+                            },
+                        )
+                    }
+                    if (showLog) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                report.logLines.joinToString("\n"),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                ),
+                                modifier = Modifier.padding(spacing.sm),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagRow(label: String, value: String, ok: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+        )
+    }
 }
 
 @Composable

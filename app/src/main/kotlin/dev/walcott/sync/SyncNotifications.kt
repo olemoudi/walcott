@@ -70,6 +70,33 @@ object SyncNotifications {
         notifId = "usage".hashCode() + deviceId.hashCode(),
     )
 
+    /** Alert when a child's self-test reports blocked apps that are NOT actually suspended. */
+    fun notifyEnforcementGap(context: Context, childName: String, count: Int, deviceId: String) = post(
+        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        title = context.getString(R.string.enforcement_gap_title, childName),
+        text = context.resources.getQuantityString(R.plurals.enforcement_gap_text, count, count),
+        notifId = "gap".hashCode() + deviceId.hashCode(),
+    )
+
+    /** Alert when a child's clock disagrees with the sync server far beyond drift (tamper). */
+    fun notifyClockTamper(context: Context, childName: String, skewMs: Long, deviceId: String) = post(
+        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        title = context.getString(R.string.clock_tamper_title, childName),
+        text = context.getString(R.string.clock_tamper_text, formatSkew(context, skewMs)),
+        notifId = "clock".hashCode() + deviceId.hashCode(),
+    )
+
+    /** "2 h 5 min behind" / "35 min ahead", for the clock-tamper alert and card. */
+    fun formatSkew(context: Context, skewMs: Long): String {
+        val minutes = kotlin.math.abs(skewMs) / 60_000
+        val amount = when {
+            minutes >= 60 && minutes % 60 == 0L -> context.getString(R.string.hours_fmt, minutes / 60)
+            minutes >= 60 -> context.getString(R.string.skew_hours_minutes, minutes / 60, minutes % 60)
+            else -> context.getString(R.string.minutes_fmt, minutes)
+        }
+        return context.getString(if (skewMs < 0) R.string.skew_behind else R.string.skew_ahead, amount)
+    }
+
     /** Alert when a child's reported locations include mock (spoofed) fixes. */
     fun notifyMockLocation(context: Context, childName: String, deviceId: String) = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,

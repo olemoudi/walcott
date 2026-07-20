@@ -61,7 +61,14 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     "parent" -> app.identityStore.save(app.identityStore.current().copy(mode = DeviceMode.PARENT))
                     "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
                 }
-                if (childApps != null) seedChild(app, childApps, intent.getIntExtra("child_battery", -1))
+                if (childApps != null) seedChild(app, childApps, intent)
+                // Optional: back-date the child-side channel-health stamp (--el channel_ok_ago_ms N)
+                // so the "no connection with your family" card can be exercised without cutting
+                // the network and waiting hours.
+                val channelAgo = intent.getLongExtra("channel_ok_ago_ms", -1)
+                if (channelAgo >= 0) {
+                    app.syncStore.update { it.copy(lastChannelOkMs = System.currentTimeMillis() - channelAgo) }
+                }
                 // Optional: render an installed app's icon and cache it under the fake apps'
                 // packages, so the parent app list exercises the remote-icon render path.
                 val iconFrom = intent.getStringExtra("child_icon_from")
@@ -75,8 +82,13 @@ class PolicySeedReceiver : BroadcastReceiver() {
         }
     }
 
-    /** Writes a fake child snapshot ("childId:Name:pkg|Label,...") into the parent's sync store. */
-    private suspend fun seedChild(app: WalcottApplication, spec: String, batteryLevel: Int) {
+    /**
+     * Writes a fake child snapshot ("childId:Name:pkg|Label,...") into the parent's sync store.
+     * Optional extras drive the reliability UI on a single emulator: `--es child_gaps a,b`
+     * (failed self-test), `--el child_skew_ms N` (clock tamper), `--es child_update_error e`
+     * (e.g. waiting_parent), `--ez child_diag true` (a synthesized health report).
+     */
+    private suspend fun seedChild(app: WalcottApplication, spec: String, intent: Intent) {
         val (childId, name, appsPart) = spec.split(":", limit = 3).let {
             Triple(it.getOrElse(0) { "c1" }, it.getOrElse(1) { "Device" }, it.getOrElse(2) { "" })
         }
@@ -91,13 +103,37 @@ class PolicySeedReceiver : BroadcastReceiver() {
             epochDay = java.time.LocalDate.now().toEpochDay(),
             childId = childId,
             apps = apps,
-            batteryPercent = batteryLevel,
+            batteryPercent = intent.getIntExtra("child_battery", -1),
+            enforcementGaps = intent.getStringExtra("child_gaps")?.split(",")?.filter { it.isNotBlank() }
+                ?: emptyList(),
+            clockSkewMs = intent.getLongExtra("child_skew_ms", 0),
+            updateError = intent.getStringExtra("child_update_error") ?: "",
         )
         app.syncStore.update { s ->
             s.copy(
                 children = s.children.filterNot { it.deviceId == snapshot.deviceId } + snapshot,
                 lastSeen = s.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
             )
+        }
+        if (intent.getBooleanExtra("child_diag", false)) {
+            val report = dev.walcott.sync.DiagPayload(
+                deviceId = snapshot.deviceId,
+                atMs = System.currentTimeMillis(),
+                enforcement = dev.walcott.sync.EnforcementStatus.DEVICE_OWNER,
+                deviceOwner = true,
+                usageAccess = false,
+                gpsOn = true,
+                networkLocationOn = false,
+                locationPermission = true,
+                batteryPercent = 37,
+                charging = false,
+                updateError = snapshot.updateError,
+                suspendFailures = snapshot.enforcementGaps,
+                appVersionCode = dev.walcott.BuildConfig.VERSION_CODE,
+                appVersionName = dev.walcott.BuildConfig.VERSION_NAME,
+                logLines = DebugLog.tail(20).ifEmpty { listOf("(empty log)") },
+            )
+            app.syncStore.update { it.copy(diagReports = it.diagReports + (snapshot.deviceId to report)) }
         }
     }
 

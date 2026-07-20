@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Settings
@@ -108,6 +109,7 @@ fun ChildStatusScreen(
 ) {
     val state by viewModel.childState.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
+    val channelOfflineSince by viewModel.channelOfflineSince.collectAsStateWithLifecycle()
     val pendingInstall by viewModel.pendingInstall.collectAsStateWithLifecycle()
     val myRequests by viewModel.myPendingRequests.collectAsStateWithLifecycle()
     val myAsks by viewModel.myPendingAsks.collectAsStateWithLifecycle()
@@ -189,6 +191,14 @@ fun ChildStatusScreen(
                 }
             }
             item { HeroCard(state) }
+            // Honest channel health: without this, a dead channel (server unreachable,
+            // network filtered) looks exactly like a dead app — to the child AND to the
+            // parent asking "did you get my extra time?".
+            if (identity.role == Role.CHILD) {
+                channelOfflineSince?.let { since ->
+                    item { ChannelOfflineCard(since) }
+                }
+            }
             // The parents' latest answer: approvals celebrate, denials are said out loud
             // (a request that just vanishes teaches the child to spam it), bonuses explain
             // where the surprise minutes came from. Stays until dismissed.
@@ -344,6 +354,36 @@ private fun openAppDetails(context: android.content.Context) {
         android.net.Uri.fromParts("package", context.packageName, null),
     ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { context.startActivity(intent) }
+}
+
+/** Honest line when the family channel hasn't worked for hours: "it's the connection, not you". */
+@Composable
+private fun ChannelOfflineCard(sinceMs: Long) {
+    val spacing = Tokens.spacing
+    val since = android.text.format.DateUtils.getRelativeTimeSpanString(sinceMs).toString()
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.CloudOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column {
+                Text(stringResource(R.string.channel_offline_title), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.channel_offline_desc, since),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 /** Heads-up on the child when location permission is missing (non-Device-Owner): check-ins won't run. */

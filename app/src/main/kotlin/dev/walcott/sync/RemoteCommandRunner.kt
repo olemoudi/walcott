@@ -28,6 +28,8 @@ class RemoteCommandRunner(
     private val repository: WalcottRepository,
     /** Opens the tight, self-closing install window for a parent-pushed install. */
     private val openInstallForPush: suspend (pkg: String, commandId: String) -> Unit = { _, _ -> },
+    /** Publishes the health report a [RemoteAction.DIAGNOSE] asks for. */
+    private val publishDiagnostics: suspend () -> Unit = {},
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -38,6 +40,7 @@ class RemoteCommandRunner(
                 RemoteAction.REAPPLY_POLICY -> reapplyPolicy()
                 RemoteAction.REQUEST_PERMISSIONS -> requestPermissions()
                 RemoteAction.INSTALL_APP -> installApp(command.arg, command.id)
+                RemoteAction.DIAGNOSE -> diagnose()
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -61,12 +64,14 @@ class RemoteCommandRunner(
      * is diagnosable from the parent's phone (network failure vs a rejected install).
      */
     private suspend fun updateNow(): Pair<Boolean, String> =
-        // force=true: a parent explicitly asking to update now overrides the Wi-Fi-only policy.
+        // force=true: a parent explicitly asking to update now overrides the Wi-Fi-only
+        // policy AND the canary gate (so WAITING_FOR_PARENT can't actually occur here).
         when (Updater(context).checkAndUpdate(force = true)) {
             UpdateCheckOutcome.UP_TO_DATE -> true to "up_to_date"
             UpdateCheckOutcome.INSTALL_STARTED -> true to "installing"
             UpdateCheckOutcome.TRANSIENT_FAILURE -> false to "download_failed"
             UpdateCheckOutcome.INSTALL_FAILURE -> false to "install_failed"
+            UpdateCheckOutcome.WAITING_FOR_PARENT -> true to "waiting_parent"
         }
 
     /**
@@ -98,6 +103,12 @@ class RemoteCommandRunner(
         openInstallForPush(pkg, commandId)
         InstallPromptNotifications.notify(context, pkg)
         return true to RemoteAction.DETAIL_INSTALL_OPENED
+    }
+
+    /** Publishes the health report; the report itself travels as its own message kind. */
+    private suspend fun diagnose(): Pair<Boolean, String> {
+        publishDiagnostics()
+        return true to "diag_sent"
     }
 
     /**

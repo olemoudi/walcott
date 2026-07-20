@@ -582,4 +582,52 @@
     <string name="earn_windows_title">When can they earn?</string>
     <string name="earn_windows_hint">Turn a day on to earn only during those hours (e.g. after school). Off = earns any time that day.</string>
     <string name="earn_window_all_day">Earns any time</string>
+    <!-- Enforcement self-test (heartbeat verifies blocking actually works) -->
+    <string name="enforcement_gap_title">%1$s: blocking isn\'t working</string>
+    <plurals name="enforcement_gap_text">
+        <item quantity="one">%d app that should be blocked isn\'t actually suspended — Walcott is re-applying it</item>
+        <item quantity="other">%d apps that should be blocked aren\'t actually suspended — Walcott is re-applying them</item>
+    </plurals>
+    <plurals name="enforcement_gap_child">
+        <item quantity="one">Self-test failed: %d app that should be blocked was not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
+        <item quantity="other">Self-test failed: %d apps that should be blocked were not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
+    </plurals>
+    <!-- Clock-tamper detection -->
+    <string name="clock_tamper_title">%1$s\'s clock looks changed</string>
+    <string name="clock_tamper_text">The device clock is %1$s — it may have been changed to dodge time limits</string>
+    <string name="clock_tamper_child">This device\'s clock is %1$s. If the child changed it to dodge limits, turn on the date &amp; time protection.</string>
+    <string name="skew_hours_minutes">%1$d h %2$d min</string>
+    <string name="skew_behind">%1$s behind</string>
+    <string name="skew_ahead">%1$s ahead</string>
+    <!-- Channel health (child home) -->
+    <string name="channel_offline_title">No connection with your family</string>
+    <string name="channel_offline_desc">Nothing has arrived since %1$s. Rules and requests will catch up when the connection comes back.</string>
+    <!-- Remote diagnostics (health report) -->
+    <string name="diag_section">Health report</string>
+    <string name="diag_hint">Fetch a status snapshot from this device, including its recent log</string>
+    <string name="diag_request">Request</string>
+    <string name="diag_refresh">Refresh</string>
+    <string name="diag_taken_at">Report from %1$s</string>
+    <string name="diag_enforcement">Blocking</string>
+    <string name="diag_enforcement_do">Full (Device Owner)</string>
+    <string name="diag_enforcement_accessibility">Limited (Accessibility)</string>
+    <string name="diag_enforcement_none">Inactive</string>
+    <string name="diag_usage_access">Screen-time counting</string>
+    <string name="diag_location_permission">Location permission</string>
+    <string name="diag_gps">GPS</string>
+    <string name="diag_network_location">Wi-Fi/network location</string>
+    <string name="diag_battery">Battery</string>
+    <string name="diag_battery_value">%1$d%%</string>
+    <string name="diag_battery_charging">%1$d%% (charging)</string>
+    <string name="diag_version">App version</string>
+    <string name="diag_version_value">%1$s (%2$d)</string>
+    <string name="diag_update_error">Last update</string>
+    <string name="diag_suspend_failures">Refused to block</string>
+    <string name="diag_show_log">Show log (%1$d)</string>
+    <string name="diag_hide_log">Hide log</string>
+    <string name="remote_result_diag_sent">health report sent</string>
+    <!-- Update canary (children follow the parent's version) -->
+    <string name="update_state_waiting_parent">%1$s is out — this device waits until the parent\'s phone runs it</string>
+    <string name="child_update_waiting_parent">Will update after your phone does — your phone is the canary for new versions.</string>
+    <string name="remote_result_waiting_parent">waiting for your phone to update first</string>
 </resources>

@@ -52,3 +52,20 @@ object SnapshotFit {
         )
     }
 }
+
+/**
+ * Same guarantee for the diagnostics report: the log tail is the only unbounded part, so it
+ * is halved (dropping the OLDEST lines) until the encoded message fits. The fixed fields are
+ * a few hundred bytes and always fit.
+ */
+object DiagFit {
+
+    fun encode(payload: DiagPayload, familyKey: SecretKey, maxBytes: Int = SnapshotFit.MAX_BYTES): String {
+        var lines = payload.logLines
+        while (true) {
+            val encoded = SyncProtocol.encodeChildDiag(payload.copy(logLines = lines), familyKey)
+            if (encoded.length <= maxBytes || lines.isEmpty()) return encoded
+            lines = lines.takeLast(lines.size / 2)
+        }
+    }
+}

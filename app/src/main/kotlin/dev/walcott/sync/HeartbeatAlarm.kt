@@ -66,6 +66,13 @@ object HeartbeatAlarm {
     internal suspend fun runCheckIn(context: Context) {
         val app = context.applicationContext as WalcottApplication
         if (!IdentityStore(context).current().enforcesLocally) return
+        // This alarm is the one wake path Doze reliably honours, so it doubles as the
+        // enforcement watchdog: make sure the service is up, then verify blocking actually
+        // works (the self-test re-asserts and records any gap for the publish below).
+        runCatching { dev.walcott.enforcement.EnforcementService.start(context) }
+            .onFailure { DebugLog.e(TAG, "enforcement service start failed", it) }
+        runCatching { dev.walcott.enforcement.EnforcementSelfTest.run(context) }
+            .onFailure { DebugLog.e(TAG, "enforcement self-test failed", it) }
         runCatching { app.syncManager.publishHeartbeatIfStale(PUBLISH_MIN_INTERVAL_MS) }
             .onFailure { DebugLog.e(TAG, "heartbeat publish failed", it) }
         // The radio is already awake: the update check rides along for almost nothing. The

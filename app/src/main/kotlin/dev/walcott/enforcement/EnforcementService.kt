@@ -151,6 +151,9 @@ class EnforcementService : LifecycleService() {
                             when (outcome) {
                                 UpdateCheckOutcome.TRANSIENT_FAILURE -> "download_failed"
                                 UpdateCheckOutcome.INSTALL_FAILURE -> "install_failed"
+                                // Not a failure, but the parent should see WHY the child is
+                                // behind: it is deliberately waiting for the canary.
+                                UpdateCheckOutcome.WAITING_FOR_PARENT -> "waiting_parent"
                                 else -> ""
                             },
                         )

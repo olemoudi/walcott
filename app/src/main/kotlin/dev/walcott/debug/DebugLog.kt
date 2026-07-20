@@ -92,6 +92,9 @@ object DebugLog {
     /** Whole buffer as text, for copy/share. */
     fun format(): String = LogFormat.format(mutable.value)
 
+    /** The newest [n] lines as display text, oldest first (remote diagnostics report). */
+    fun tail(n: Int): List<String> = mutable.value.takeLast(n).map { LogFormat.line(it) }
+
     fun clear() {
         mutable.value = emptyList()
         val f = file ?: return

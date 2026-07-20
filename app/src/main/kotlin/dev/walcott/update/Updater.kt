@@ -26,6 +26,8 @@ enum class UpdateCheckOutcome {
     TRANSIENT_FAILURE,
     /** The install session itself failed — retrying immediately won't help. */
     INSTALL_FAILURE,
+    /** Canary gate: a newer build exists but the parent isn't running it yet (see [waitsForParent]). */
+    WAITING_FOR_PARENT,
 }
 
 /**
@@ -62,10 +64,17 @@ class Updater(private val context: Context) {
             return UpdateCheckOutcome.UP_TO_DATE
         }
         try {
-            return doCheckAndUpdate()
+            return doCheckAndUpdate(force)
         } finally {
             updateMutex.unlock()
         }
+    }
+
+    /** True when this device is an enrolled child and the parent isn't on [info]'s build yet. */
+    private suspend fun childWaitsForParent(info: UpdateInfo): Boolean {
+        val app = context.applicationContext as? WalcottApplication ?: return false
+        if (app.identityStore.current().role != dev.walcott.sync.Role.CHILD) return false
+        return waitsForParent(info.versionCode, app.syncManager.parentAppVersionCode())
     }
 
     /** True when the policy restricts updates to Wi-Fi and the active connection is metered. */
@@ -78,7 +87,7 @@ class Updater(private val context: Context) {
         return runCatching { cm.isActiveNetworkMetered }.getOrDefault(false)
     }
 
-    private suspend fun doCheckAndUpdate(): UpdateCheckOutcome = withContext(Dispatchers.IO) {
+    private suspend fun doCheckAndUpdate(force: Boolean): UpdateCheckOutcome = withContext(Dispatchers.IO) {
         DebugLog.i(TAG, "checking for update")
         UpdateCenter.report(UpdateUiState.Checking)
         val info = runCatching { fetchInfo() }.onFailure { DebugLog.w(TAG, "fetch failed", it) }.getOrNull()
@@ -92,6 +101,14 @@ class Updater(private val context: Context) {
         if (!info.isNewerThan(current)) {
             UpdateCenter.report(UpdateUiState.UpToDate(current))
             return@withContext UpdateCheckOutcome.UP_TO_DATE
+        }
+        // Canary gate: a child follows the fleet only up to the build the parent already
+        // runs, so one bad release can't break every child at once. The parent's explicit
+        // "Update now" (force) still pushes through — the deliberate-override path.
+        if (!force && childWaitsForParent(info)) {
+            DebugLog.i(TAG, "update gated: waiting for the parent to run ${info.versionCode} first")
+            UpdateCenter.report(UpdateUiState.WaitingForParent(info))
+            return@withContext UpdateCheckOutcome.WAITING_FOR_PARENT
         }
         UpdateCenter.report(UpdateUiState.Downloading(info))
         val apk = runCatching { download(info.apk) }
