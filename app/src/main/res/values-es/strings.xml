@@ -562,7 +562,11 @@
     <string name="app_limit_blocked">Bloqueada</string>
     <string name="app_limit_timed">Con límite</string>
     <string name="app_own_window">Bloquear esta app en un horario</string>
-    <string name="app_window_toggle">Bloquear en el horario indicado</string>
+    <string name="app_windows_hint">La app se bloquea en estos horarios, todos los días. Añade tantos como necesites.</string>
+    <string name="all_apps_windows_title">Horarios sin pantalla</string>
+    <string name="all_apps_windows_hint">Todas las apps se bloquean en estos horarios, todos los días — comidas, deberes, tiempo en familia.</string>
+    <string name="window_add">Añadir horario</string>
+    <string name="window_delete">Quitar</string>
     <string name="app_web_filter">Filtro web</string>
     <string name="app_web_filter_link">Abrir reglas de filtro web</string>
     <!-- Tiempo ganado por idle (modelo de ventanas de tokens) -->

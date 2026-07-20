@@ -517,15 +517,25 @@ class WalcottViewModel(
         dto.copy(budgets = if (minutes == null) emptyMap() else DAY_TYPES.associate { it.name to minutes })
     }
 
-    /** Set (or clear, with null) this app's blocked window, applied to every day type. */
-    fun setAppWindow(pkg: String, window: dev.walcott.data.WindowDto?) = mutateAppPolicy(pkg) { dto ->
+    /** Set this app's own blocked windows (any number), applied to every day type. */
+    fun setAppWindows(pkg: String, windows: List<dev.walcott.data.WindowDto>) = mutateAppPolicy(pkg) { dto ->
         dto.copy(
-            blockedWindows = if (window == null) emptyMap() else DAY_TYPES.associate { it.name to listOf(window) },
+            blockedWindows = if (windows.isEmpty()) emptyMap() else DAY_TYPES.associate { it.name to windows },
         )
     }
 
     fun setBedtime(bedtime: Map<String, dev.walcott.data.WindowDto>) = viewModelScope.launch {
         repository.updateSettings { it.copy(bedtime = bedtime) }
+    }
+
+    /** Family-wide screen-free windows (they block ALL apps), applied to every day type. */
+    fun setAllAppsWindows(windows: List<dev.walcott.data.WindowDto>) = viewModelScope.launch {
+        repository.updateSettings {
+            it.copy(
+                allAppsBlockedWindows =
+                    if (windows.isEmpty()) emptyMap() else DAY_TYPES.associate { d -> d.name to windows },
+            )
+        }
     }
 
     fun grantExtra(categoryId: String, minutes: Long) =

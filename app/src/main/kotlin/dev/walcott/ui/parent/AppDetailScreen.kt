@@ -20,7 +20,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
-import dev.walcott.data.WindowDto
 import dev.walcott.rules.DayType
 import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.WalcottViewModel
@@ -43,14 +41,11 @@ import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.ComfortableChipPadding
 import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.components.MinutesPickerDialog
-import dev.walcott.ui.components.TimePickerDialog
 import dev.walcott.ui.components.WalcottTopBar
-import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.labelRes
 import dev.walcott.ui.theme.Tokens
 import java.time.Duration
-import java.time.LocalTime
 
 /**
  * Per-app settings, reached by tapping an app in "Apps & categories": its category, plus
@@ -121,9 +116,11 @@ fun AppDetailScreen(
 
             item { SectionTitle(stringResource(R.string.app_own_window)) }
             item {
-                AppWindowCard(
-                    window = appPolicy?.blockedWindows?.get(DayType.SCHOOL.name)?.firstOrNull(),
-                    onChange = { viewModel.setAppWindow(packageName, it) },
+                BlockedWindowsCard(
+                    title = null,
+                    hint = stringResource(R.string.app_windows_hint),
+                    windows = appPolicy?.blockedWindows?.get(DayType.SCHOOL.name).orEmpty(),
+                    onChange = { viewModel.setAppWindows(packageName, it) },
                 )
             }
 
@@ -296,53 +293,3 @@ private fun QuickChip(label: String, onClick: () -> Unit) {
     }
 }
 
-/** A single blocked window (start–end), applied to every day type, like the bedtime editor. */
-@Composable
-private fun AppWindowCard(window: WindowDto?, onChange: (WindowDto?) -> Unit) {
-    val spacing = Tokens.spacing
-    val enabled = window != null
-    val start = window?.let { LocalTime.ofSecondOfDay(it.startMinute * 60L) } ?: LocalTime.of(15, 0)
-    val end = window?.let { LocalTime.ofSecondOfDay(it.endMinute * 60L) } ?: LocalTime.of(17, 0)
-    var editing by remember { mutableStateOf<Int?>(null) } // 0 = start, 1 = end
-
-    fun toMin(t: LocalTime) = t.hour * 60 + t.minute
-    fun apply(s: LocalTime, e: LocalTime) = onChange(WindowDto(toMin(s), toMin(e)))
-
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(spacing.lg)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.app_window_toggle), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                Switch(checked = enabled, onCheckedChange = { on -> if (on) apply(start, end) else onChange(null) })
-            }
-            if (enabled) {
-                Spacer(Modifier.size(spacing.md))
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
-                    WindowTimeButton(stringResource(R.string.from), start.hhmm()) { editing = 0 }
-                    WindowTimeButton(stringResource(R.string.to), end.hhmm()) { editing = 1 }
-                }
-            }
-        }
-    }
-
-    editing?.let { which ->
-        TimePickerDialog(
-            initial = if (which == 0) start else end,
-            title = stringResource(if (which == 0) R.string.from else R.string.to),
-            onDismiss = { editing = null },
-            onConfirm = { picked ->
-                if (which == 0) apply(picked, end) else apply(start, picked)
-                editing = null
-            },
-        )
-    }
-}
-
-@Composable
-private fun WindowTimeButton(label: String, value: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleLarge)
-        }
-    }
-}

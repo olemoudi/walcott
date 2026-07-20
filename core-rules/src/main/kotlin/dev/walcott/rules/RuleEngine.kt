@@ -29,6 +29,12 @@ object RuleEngine {
         config.bedtime[dayType]?.let { window ->
             if (time in window) return Verdict.Blocked(BlockReason.BEDTIME)
         }
+        // Family-wide screen-free windows: like bedtime, a hard block on every non-essential
+        // app (before classification, so unclassified apps are inside too); extra time never
+        // lifts a window.
+        if (config.blockedWindows[dayType].orEmpty().any { time in it }) {
+            return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
+        }
 
         val categoryId = config.assignments[packageName]
             ?: return Verdict.Blocked(BlockReason.UNCLASSIFIED)

@@ -42,6 +42,20 @@ class PolicySettingsTest {
     }
 
     @Test
+    fun `toFamilyConfig maps family-wide screen-free windows`() {
+        val config = settings.copy(
+            allAppsBlockedWindows = mapOf(
+                "SCHOOL" to listOf(WindowDto(14 * 60, 15 * 60 + 30), WindowDto(17 * 60, 19 * 60)),
+            ),
+        ).toFamilyConfig(emptySet())
+        val windows = config.blockedWindows.getValue(DayType.SCHOOL)
+        assertEquals(2, windows.size)
+        assertTrue(windows[0].contains(java.time.LocalTime.of(14, 30)))
+        assertTrue(windows[1].contains(java.time.LocalTime.of(18, 0)))
+        assertNull(config.blockedWindows[DayType.WEEKEND])
+    }
+
+    @Test
     fun `toFamilyConfig maps holidays and carries assignments and essentials`() {
         val config = settings.copy(assignments = mapOf("com.game" to "games"))
             .toFamilyConfig(essentials = setOf("dev.walcott"))

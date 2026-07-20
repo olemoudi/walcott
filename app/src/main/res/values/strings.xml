@@ -561,8 +561,12 @@
     <string name="app_own_limit_hint">On top of its category. Block it on some days, cap it on others, or leave it to the category — whichever runs out first wins.</string>
     <string name="app_limit_blocked">Blocked</string>
     <string name="app_limit_timed">Limit</string>
-    <string name="app_own_window">Block this app during hours</string>
-    <string name="app_window_toggle">Block during set hours</string>
+    <string name="app_own_window">Block this app during set hours</string>
+    <string name="app_windows_hint">The app is blocked during these hours, every day. Add as many windows as you need.</string>
+    <string name="all_apps_windows_title">Screen-free times</string>
+    <string name="all_apps_windows_hint">Every app is blocked during these hours, every day — meals, homework, family time.</string>
+    <string name="window_add">Add hours</string>
+    <string name="window_delete">Remove</string>
     <string name="app_web_filter">Web filter</string>
     <string name="app_web_filter_link">Open web filter rules</string>
     <!-- Idle-earn (token-window model) -->

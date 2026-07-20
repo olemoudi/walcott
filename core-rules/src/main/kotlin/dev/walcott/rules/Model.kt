@@ -59,6 +59,11 @@ data class FamilyConfig(
     val perAppPolicies: Map<String, CategoryPolicy> = emptyMap(),
     /** Bedtime window per day type: blocks everything non-essential. */
     val bedtime: Map<DayType, TimeWindow> = emptyMap(),
+    /**
+     * Family-wide full-block windows per day type (homework, meals…): like bedtime they
+     * block every non-essential app, but there can be any number of them per day.
+     */
+    val blockedWindows: Map<DayType, List<TimeWindow>> = emptyMap(),
     /** Never blocked: phone, contacts, the app itself… */
     val essentialPackages: Set<String> = emptySet(),
     val calendar: SchoolCalendar = SchoolCalendar(),

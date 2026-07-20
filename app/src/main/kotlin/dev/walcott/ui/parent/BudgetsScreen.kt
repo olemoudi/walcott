@@ -34,6 +34,14 @@ fun BudgetsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
         ) {
             item { BedtimeCard(settings.bedtime, onChange = viewModel::setBedtime) }
             item {
+                BlockedWindowsCard(
+                    title = stringResource(R.string.all_apps_windows_title),
+                    hint = stringResource(R.string.all_apps_windows_hint),
+                    windows = settings.allAppsBlockedWindows[dev.walcott.rules.DayType.SCHOOL.name].orEmpty(),
+                    onChange = viewModel::setAllAppsWindows,
+                )
+            }
+            item {
                 Text(
                     stringResource(R.string.daily_budget_header),
                     style = MaterialTheme.typography.titleMedium,

@@ -42,6 +42,10 @@ fun RuleEngine.categoryStatus(
             return CategoryStatus(categoryId, CategoryState.BLOCKED, used, budget, null, BlockReason.BEDTIME)
         }
     }
+    // Family-wide screen-free windows block every category, same as in RuleEngine.evaluate.
+    if (config.blockedWindows[dayType].orEmpty().any { time in it }) {
+        return CategoryStatus(categoryId, CategoryState.BLOCKED, used, budget, null, BlockReason.BLOCKED_WINDOW)
+    }
     if (policy != null && policy.blockedWindows[dayType].orEmpty().any { time in it }) {
         return CategoryStatus(categoryId, CategoryState.BLOCKED, used, budget, null, BlockReason.BLOCKED_WINDOW)
     }

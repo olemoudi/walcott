@@ -154,6 +154,8 @@ data class PolicySettings(
     val blockedWindows: Map<String, Map<String, List<WindowDto>>> = emptyMap(),
     /** dayType -> bedtime window. */
     val bedtime: Map<String, WindowDto> = emptyMap(),
+    /** dayType -> family-wide screen-free windows (block ALL apps, like bedtime). */
+    val allAppsBlockedWindows: Map<String, List<WindowDto>> = emptyMap(),
     /** One-off holidays (epochDay). */
     val holidays: Set<Long> = emptySet(),
     /** Vacation ranges (inclusive). */
@@ -267,6 +269,9 @@ data class PolicySettings(
             policies = policies,
             perAppPolicies = perApp,
             bedtime = bedtime.mapKeys { DayType.valueOf(it.key) }.mapValues { it.value.toTimeWindow() },
+            blockedWindows = allAppsBlockedWindows
+                .mapKeys { DayType.valueOf(it.key) }
+                .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
             essentialPackages = essentials,
             calendar = SchoolCalendar(
                 holidays = holidays.map(LocalDate::ofEpochDay).toSet(),

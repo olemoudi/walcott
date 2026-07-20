@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -105,6 +108,95 @@ internal fun BedtimeCard(bedtime: Map<String, WindowDto>, onChange: (Map<String,
 private enum class BedtimeEdit { START, END }
 
 private fun LocalTime.toMinute() = hour * 60 + minute
+
+/**
+ * Multi-window block editor, shared by the family "screen-free times" card (all apps) and
+ * the per-app hours editor. Like bedtime, the same list applies to every day type; the
+ * caller maps the list into its per-day-type storage. [title] is null when the screen
+ * already provides a section header.
+ */
+@Composable
+internal fun BlockedWindowsCard(
+    title: String?,
+    hint: String,
+    windows: List<WindowDto>,
+    onChange: (List<WindowDto>) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    var editing by remember { mutableStateOf<WindowEdit?>(null) }
+
+    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(spacing.lg).animateContentSize()) {
+            if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            windows.forEachIndexed { index, window ->
+                if (index > 0) HorizontalDivider(Modifier.padding(vertical = spacing.sm))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = if (index == 0) spacing.md else 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                ) {
+                    val start = LocalTime.ofSecondOfDay(window.startMinute * 60L)
+                    val end = LocalTime.ofSecondOfDay(window.endMinute * 60L)
+                    TimeButton(stringResource(R.string.from), start.hhmm()) { editing = WindowEdit.Start(index) }
+                    TimeButton(stringResource(R.string.to), end.hhmm()) { editing = WindowEdit.End(index) }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { onChange(windows.filterIndexed { i, _ -> i != index }) }) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = stringResource(R.string.window_delete),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.size(spacing.md))
+            BudgetPreset(stringResource(R.string.window_add)) { editing = WindowEdit.NewStart }
+        }
+    }
+
+    when (val edit = editing) {
+        null -> {}
+        is WindowEdit.Start -> WindowTimePicker(windows[edit.index].startMinute, R.string.from) { picked ->
+            if (picked != null) {
+                onChange(windows.mapIndexed { i, w -> if (i == edit.index) w.copy(startMinute = picked.toMinute()) else w })
+            }
+            editing = null
+        }
+        is WindowEdit.End -> WindowTimePicker(windows[edit.index].endMinute, R.string.to) { picked ->
+            if (picked != null) {
+                onChange(windows.mapIndexed { i, w -> if (i == edit.index) w.copy(endMinute = picked.toMinute()) else w })
+            }
+            editing = null
+        }
+        // Adding chains two pickers: start first, then end, then the window lands at once.
+        WindowEdit.NewStart -> WindowTimePicker(15 * 60, R.string.from) { picked ->
+            editing = if (picked == null) null else WindowEdit.NewEnd(picked)
+        }
+        is WindowEdit.NewEnd -> WindowTimePicker(17 * 60, R.string.to) { picked ->
+            if (picked != null) onChange(windows + WindowDto(edit.start.toMinute(), picked.toMinute()))
+            editing = null
+        }
+    }
+}
+
+private sealed interface WindowEdit {
+    data class Start(val index: Int) : WindowEdit
+    data class End(val index: Int) : WindowEdit
+    data object NewStart : WindowEdit
+    data class NewEnd(val start: LocalTime) : WindowEdit
+}
+
+/** One time picker step; reports null on dismiss. */
+@Composable
+private fun WindowTimePicker(initialMinute: Int, titleRes: Int, onDone: (LocalTime?) -> Unit) {
+    TimePickerDialog(
+        initial = LocalTime.ofSecondOfDay(initialMinute * 60L),
+        title = stringResource(titleRes),
+        onDismiss = { onDone(null) },
+        onConfirm = { onDone(it) },
+    )
+}
 
 @Composable
 private fun TimeButton(label: String, value: String, onClick: () -> Unit) {
