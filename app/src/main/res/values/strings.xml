@@ -657,4 +657,10 @@
     <string name="restore_pass_title">Backup passphrase</string>
     <string name="restore_failed">Wrong passphrase or invalid backup file</string>
     <string name="restore_action">Restore</string>
+    <string name="backup_reminders_switch">Backup reminders</string>
+    <string name="backup_reminder_title_never">Your family has no backup</string>
+    <string name="backup_reminder_text_never">If this phone is lost, the family can\'t be recovered. It takes a minute — tap to set it up.</string>
+    <string name="backup_reminder_title_stale">Your family backup is out of date</string>
+    <string name="backup_reminder_text_stale">The rules have changed since the last backup. Tap to save a fresh one.</string>
+    <string name="backup_reminder_mute">Don\'t remind me again</string>
 </resources>

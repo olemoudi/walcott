@@ -21,6 +21,9 @@ object SyncNotifications {
     /** Intent extra + values used to deep-link a notification tap to a screen. */
     const val EXTRA_DEST = "walcott_dest"
     const val DEST_APPS = "apps"
+    const val DEST_APP_SETTINGS = "app_settings"
+
+    const val NOTIF_BACKUP_REMINDER = 4207
 
     /** Alert when a child device has been silent for a long time (see [Staleness]). */
     fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String) = post(
@@ -150,6 +153,27 @@ object SyncNotifications {
         notifId = NOTIF_ID,
     )
 
+    /** Nudge to create/refresh the family backup; its action mutes the reminders for good. */
+    fun notifyBackupReminder(context: Context, neverBackedUp: Boolean) {
+        val mute = PendingIntent.getBroadcast(
+            context, NOTIF_BACKUP_REMINDER,
+            Intent(context, BackupReminderReceiver::class.java).setAction(BackupReminderReceiver.ACTION_MUTE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        post(
+            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            title = context.getString(
+                if (neverBackedUp) R.string.backup_reminder_title_never else R.string.backup_reminder_title_stale,
+            ),
+            text = context.getString(
+                if (neverBackedUp) R.string.backup_reminder_text_never else R.string.backup_reminder_text_stale,
+            ),
+            notifId = NOTIF_BACKUP_REMINDER,
+            dest = DEST_APP_SETTINGS,
+            action = NotificationCompat.Action(0, context.getString(R.string.backup_reminder_mute), mute),
+        )
+    }
+
     private fun post(
         context: Context,
         channel: String,
@@ -158,6 +182,7 @@ object SyncNotifications {
         text: String,
         notifId: Int,
         dest: String? = null,
+        action: NotificationCompat.Action? = null,
     ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -180,6 +205,7 @@ object SyncNotifications {
             .setAutoCancel(true)
             .setContentIntent(tap)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .apply { if (action != null) addAction(action) }
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(notifId, notification) }
     }

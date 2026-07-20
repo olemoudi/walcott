@@ -63,6 +63,7 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
     val scope = rememberCoroutineScope()
     val lastBackupAtMs by viewModel.lastBackupAtMs.collectAsStateWithLifecycle()
     val autoBackup by viewModel.autoBackup.collectAsStateWithLifecycle()
+    val identity by viewModel.identity.collectAsStateWithLifecycle()
 
     // null = no dialog; SAVE/SHARE pick what happens after the passphrase is chosen.
     var dialogMode by remember { mutableStateOf<BackupMode?>(null) }
@@ -192,6 +193,22 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
                     )
                     Switch(checked = true, onCheckedChange = { viewModel.disableAutoBackup() })
                 }
+            }
+
+            // The nudge notifications; the notification's own action can also turn this off.
+            Row(
+                Modifier.fillMaxWidth().padding(top = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.backup_reminders_switch),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = identity.backupReminders,
+                    onCheckedChange = { viewModel.setBackupReminders(it) },
+                )
             }
 
             Spacer(Modifier.size(spacing.sm))

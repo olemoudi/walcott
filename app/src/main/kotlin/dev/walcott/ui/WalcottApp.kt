@@ -110,6 +110,10 @@ fun WalcottApp(
             screen = Screen.APPS
             onDestConsumed()
         }
+        if (startDest == SyncNotifications.DEST_APP_SETTINGS && parentMode) {
+            screen = Screen.APP_SETTINGS
+            onDestConsumed()
+        }
     }
 
     // Parent app lock: gate the whole app behind the PIN/biometrics on open and re-lock

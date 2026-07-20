@@ -114,6 +114,12 @@ data class SyncState(
     val diagReports: Map<String, DiagPayload> = emptyMap(),
     /** When the parent last saved a family backup file (0 = never), for the backup card. */
     val lastBackupAtMs: Long = 0,
+    /** When this device first ran as a parent (0 = not yet); anchors the backup reminders. */
+    val parentSetupAtMs: Long = 0,
+    /** Last policy edit on this parent — a backup older than this is stale (see BackupReminder). */
+    val lastPolicyEditAtMs: Long = 0,
+    /** Last backup reminder shown, so the escalation ladder doesn't repeat a step. */
+    val lastBackupReminderAtMs: Long = 0,
     /** SAF document the backup auto-refreshes into ("" = auto-backup off). */
     val autoBackupUri: String = "",
     /** KDF output + parameters cached so auto-refresh can re-seal WITHOUT storing the passphrase. */

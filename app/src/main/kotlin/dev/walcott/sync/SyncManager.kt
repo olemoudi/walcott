@@ -148,6 +148,9 @@ class SyncManager(
                 settingsStore.settings.drop(1).collect {
                     runCatching { publishConfigChanged() }
                         .onFailure { dev.walcott.debug.DebugLog.e(TAG, "publish on settings change failed", it) }
+                    // Stamp BEFORE the (debounced) auto-refresh: once that lands it re-stamps
+                    // lastBackupAtMs above this, which is what keeps the reminders silent.
+                    syncStore.update { s -> s.copy(lastPolicyEditAtMs = System.currentTimeMillis()) }
                     // Fire-and-forget backups: the same edits that republish also refresh the
                     // backup file, so it can never quietly go months stale.
                     scheduleAutoBackupRefresh()
@@ -217,6 +220,11 @@ class SyncManager(
         identityStore.save(identityStore.current().copy(appLockBiometric = enabled))
     }
 
+    /** Toggle the parent's backup-nudge notifications (see BackupReminder). */
+    suspend fun setBackupReminders(enabled: Boolean) {
+        identityStore.save(identityStore.current().copy(backupReminders = enabled))
+    }
+
     /** Unlink from the family and forget the mode choice; local policy and usage stay. */
     suspend fun resetDeviceMode() {
         transport?.close()
@@ -250,6 +258,8 @@ class SyncManager(
             parentPrivateKeyB64 = FamilyCrypto.toB64(signingPair.private.encoded),
         )
         identityStore.save(identity)
+        // Anchors the "you still have no backup" reminder ladder (see BackupReminder).
+        syncStore.update { it.copy(parentSetupAtMs = System.currentTimeMillis()) }
         settingsStore.update { it.copy(familyName = familyName) }
         repository.seedHardeningIfNeeded()
         connect(identity)
@@ -574,15 +584,11 @@ class SyncManager(
         val id = identityStore.current()
         check(id.role == Role.PARENT) { "only a parent device can create a family backup" }
         val (publicB64, privateB64, certB64) = if (id.parentPrivateKeyB64.isNotBlank()) {
-            Triple(id.parentPublicKeyB64, id.parentPrivateKeyB64, "")
+            // Software key. Any rotation cert rides along: a child that slept through a past
+            // restore still trusts the pre-rotation key and needs the hand-over proof.
+            Triple(id.parentPublicKeyB64, id.parentPrivateKeyB64, id.rotationCertB64)
         } else {
-            val recovery = FamilyCrypto.generateSigningKeyPair()
-            val cert = KeyRotation.create(recovery.public, ParentKeystore.privateKey())
-            Triple(
-                FamilyCrypto.toB64(recovery.public.encoded),
-                FamilyCrypto.toB64(recovery.private.encoded),
-                KeyRotation.encode(cert),
-            )
+            recoveryTrio(id)
         }
         val settings = settingsStore.current()
         return FamilyBackupPayload(
@@ -597,6 +603,33 @@ class SyncManager(
             parentVersion = syncStore.current().parentVersion,
             createdAtMs = System.currentTimeMillis(),
         )
+    }
+
+    /**
+     * Legacy family (Keystore signing key): the recovery keypair + cert embedded in backups,
+     * minted on the first backup and REUSED for every later one. If each backup minted its
+     * own pair, two old files would rotate children to different keys, and restoring from
+     * the second would orphan every child that had followed the first.
+     */
+    private suspend fun recoveryTrio(id: FamilyIdentity): Triple<String, String, String> {
+        if (id.recoveryPrivateKeyB64.isNotBlank()) {
+            return Triple(id.recoveryPublicKeyB64, id.recoveryPrivateKeyB64, id.recoveryCertB64)
+        }
+        val recovery = FamilyCrypto.generateSigningKeyPair()
+        val cert = KeyRotation.create(recovery.public, ParentKeystore.privateKey())
+        val trio = Triple(
+            FamilyCrypto.toB64(recovery.public.encoded),
+            FamilyCrypto.toB64(recovery.private.encoded),
+            KeyRotation.encode(cert),
+        )
+        identityStore.save(
+            identityStore.current().copy(
+                recoveryPublicKeyB64 = trio.first,
+                recoveryPrivateKeyB64 = trio.second,
+                recoveryCertB64 = trio.third,
+            ),
+        )
+        return trio
     }
 
     /** Call once the backup file actually reached its destination, so the card can say so. */
@@ -679,6 +712,16 @@ class SyncManager(
         // scheme/host. http stays allowed: self-hosted LAN ntfy servers are legitimate.
         val server = runCatching { java.net.URI(payload.ntfyServer) }.getOrNull()
         if (server?.scheme !in setOf("http", "https") || server?.host.isNullOrBlank()) return false
+        // The key material must actually parse before this device stakes its identity on it.
+        // Authenticated encryption rules out tampering, but not a buggy or future writer.
+        val materialOk = runCatching {
+            check(payload.topic.isNotBlank())
+            FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(payload.familyKeyB64))
+            FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(payload.signingPublicKeyB64))
+            FamilyCrypto.privateKeyFromBytes(FamilyCrypto.fromB64(payload.signingPrivateKeyB64))
+            if (payload.rotationCertB64.isNotBlank()) checkNotNull(KeyRotation.decode(payload.rotationCertB64))
+        }.isSuccess
+        if (!materialOk) return false
         val identity = FamilyIdentity(
             role = Role.PARENT,
             mode = DeviceMode.PARENT,
@@ -691,12 +734,18 @@ class SyncManager(
             ntfyServer = payload.ntfyServer,
         )
         settingsStore.update { policy }
-        // Resume far ABOVE the backed-up version: children gate rules on version
-        // monotonicity (SyncEngine.adoptsPolicy) and the lost phone may have published
-        // edits after this backup was taken. A same-key restore carries no rotation to
-        // rebase the children's counter, so the leap must dwarf any realistic edit count.
+        // A fresh slate for everything device-local: a stale auto-backup pointer would
+        // clobber a previous family's file with this one's data, and ghost children or
+        // reminder bookkeeping from a pre-restore life would mislead. Only the version
+        // counter carries over, leaping far ABOVE the backup's: children gate rules on
+        // version monotonicity (SyncEngine.adoptsPolicy) and the lost phone may have
+        // published edits after this backup was taken — a same-key restore carries no
+        // rotation to rebase their counter, so the leap must dwarf any realistic edit count.
         syncStore.update {
-            it.copy(parentVersion = maxOf(it.parentVersion, payload.parentVersion) + RESTORE_VERSION_LEAP)
+            SyncState(
+                parentVersion = maxOf(it.parentVersion, payload.parentVersion) + RESTORE_VERSION_LEAP,
+                parentSetupAtMs = System.currentTimeMillis(),
+            )
         }
         identityStore.save(identity)
         dev.walcott.debug.DebugLog.w(TAG, "family restored from backup (created ${payload.createdAtMs})")

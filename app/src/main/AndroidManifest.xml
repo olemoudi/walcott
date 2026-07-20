@@ -150,6 +150,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- "Don't remind me again" action on the backup-reminder notification. -->
+        <receiver
+            android:name=".sync.BackupReminderReceiver"
+            android:exported="false" />
+
         <!-- Hands the encrypted family backup to the share sheet (email-to-self and the like). -->
         <provider
             android:name="androidx.core.content.FileProvider"

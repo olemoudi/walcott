@@ -35,6 +35,17 @@ data class FamilyIdentity(
      * for the current one. Attached to every envelope so children adopt the restored key.
      */
     val rotationCertB64: String = "",
+    /**
+     * Parent only, legacy (Keystore) families: the recovery keypair + cert embedded in every
+     * backup, minted ONCE and persisted — if each backup minted its own, two old files would
+     * rotate children to different keys and the second restore would orphan whoever had
+     * followed the first. "" until the first backup is created.
+     */
+    val recoveryPublicKeyB64: String = "",
+    val recoveryPrivateKeyB64: String = "",
+    val recoveryCertB64: String = "",
+    /** Parent only: nudge notifications when the family backup is missing or stale. */
+    val backupReminders: Boolean = true,
     val ntfyServer: String = "https://ntfy.sh",
     /** Parent mode: require the PIN (or biometrics) on every app open / regain of focus. */
     val appLock: Boolean = false,

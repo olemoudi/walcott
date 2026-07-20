@@ -59,6 +59,12 @@ class FamilyBackupTest {
     }
 
     @Test
+    fun `a future format version is rejected, not misparsed`() {
+        val file = FamilyBackup.encrypt(payload(), "correct horse".toCharArray(), fastIterations)
+        assertNull(FamilyBackup.decrypt(file.replace("\"version\":1", "\"version\":2"), "correct horse".toCharArray()))
+    }
+
+    @Test
     fun `an absurd iteration count is rejected before any KDF work`() {
         // The header is unauthenticated; a crafted count must not pin a core for hours.
         val file = FamilyBackup.encrypt(payload(), "correct horse".toCharArray(), fastIterations)

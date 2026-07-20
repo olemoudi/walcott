@@ -410,6 +410,9 @@ class WalcottViewModel(
 
     fun disableAutoBackup() = viewModelScope.launch { sync.disableAutoBackup() }
 
+    /** Toggle the "your backup is missing/stale" nudge notifications. */
+    fun setBackupReminders(enabled: Boolean) = viewModelScope.launch { sync.setBackupReminders(enabled) }
+
     /** The idle-earn target category id (or "") so childState can attribute earned minutes. */
     private val settingsFlowForEarn: kotlinx.coroutines.flow.Flow<String> =
         repository.settingsFlow.map { it.idleEarn?.targetCategoryId ?: "" }

@@ -657,4 +657,10 @@
     <string name="restore_pass_title">Contraseña de la copia</string>
     <string name="restore_failed">Contraseña incorrecta o fichero de copia no válido</string>
     <string name="restore_action">Restaurar</string>
+    <string name="backup_reminders_switch">Recordatorios de copia de seguridad</string>
+    <string name="backup_reminder_title_never">Tu familia no tiene copia de seguridad</string>
+    <string name="backup_reminder_text_never">Si este móvil se pierde, la familia no se puede recuperar. Se hace en un minuto — toca para configurarla.</string>
+    <string name="backup_reminder_title_stale">La copia de seguridad de tu familia está desactualizada</string>
+    <string name="backup_reminder_text_stale">Las reglas han cambiado desde la última copia. Toca para guardar una nueva.</string>
+    <string name="backup_reminder_mute">No recordar más</string>
 </resources>

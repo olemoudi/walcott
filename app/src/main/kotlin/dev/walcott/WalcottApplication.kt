@@ -74,6 +74,9 @@ class WalcottApplication : Application() {
         // Parent-side watchdog for children that stop checking in (no-op on other modes).
         StaleChildWorker.schedule(this)
 
+        // Parent-side nudge when the family backup is missing or stale (no-op elsewhere).
+        dev.walcott.sync.BackupReminderWorker.schedule(this)
+
         // Parent-side catch-up poll so requests/alerts arrive while the app is closed.
         ParentPollWorker.schedule(this)
 
