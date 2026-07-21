@@ -183,9 +183,12 @@ class WalcottRepository(
     // --- Rule editing (parent mode) ---
 
     suspend fun updateSettings(transform: (PolicySettings) -> PolicySettings) {
-        // Every rule change bumps the version (relevant for Phase 2 sync).
+        // Every rule change bumps the version (relevant for Phase 2 sync). The holiday mirror
+        // keeps the wire's HOLIDAY slot equal to WEEKEND on every write — the UI only edits
+        // weekdays/weekends, and calendar special days behave like weekends (see
+        // withHolidayMirroringWeekend for why the key itself must keep travelling).
         settingsStore.update { current ->
-            transform(current).copy(version = current.version + 1)
+            transform(current).withHolidayMirroringWeekend().copy(version = current.version + 1)
         }
     }
 

@@ -23,22 +23,32 @@ object SyncNotifications {
     const val DEST_APPS = "apps"
     const val DEST_APP_SETTINGS = "app_settings"
 
+    /** Prefix + childId: a tap lands on that child's detail screen instead of the bare home. */
+    const val DEST_CHILD_PREFIX = "child:"
+
     const val NOTIF_BACKUP_REMINDER = 4207
 
+    /** Deep-link target for a per-child alert; legacy devices (blank childId) open the home. */
+    private fun childDest(childId: String): String? =
+        childId.takeIf { it.isNotBlank() }?.let { DEST_CHILD_PREFIX + it }
+
     /** Alert when a child device has been silent for a long time (see [Staleness]). */
-    fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String) = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
-        title = context.getString(R.string.stale_alert_title, childName),
-        text = context.getString(R.string.stale_alert_text, silence),
-        notifId = deviceId.hashCode(),
-    )
+    fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String, childId: String = "") =
+        post(
+            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            title = context.getString(R.string.stale_alert_title, childName),
+            text = context.getString(R.string.stale_alert_text, silence),
+            notifId = deviceId.hashCode(),
+            dest = childDest(childId),
+        )
 
     /** Alert when a child device reports that blocking is no longer active (tamper/lapse). */
-    fun notifyEnforcementInactive(context: Context, childName: String, deviceId: String) = post(
+    fun notifyEnforcementInactive(context: Context, childName: String, deviceId: String, childId: String = "") = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
         title = context.getString(R.string.enforcement_off_title, childName),
         text = context.getString(R.string.enforcement_off_text),
         notifId = "enf".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
     )
 
     /** Alert when a registered child device has never checked in (enrollment likely didn't finish). */
@@ -47,47 +57,55 @@ object SyncNotifications {
         title = context.getString(R.string.never_reported_title, childName),
         text = context.getString(R.string.never_reported_text),
         notifId = "never".hashCode() + childId.hashCode(),
+        dest = childDest(childId),
     )
 
     /** Alert when a child loses full (Device Owner) protection but a weaker backend remains. */
-    fun notifyEnforcementDegraded(context: Context, childName: String, deviceId: String) = post(
+    fun notifyEnforcementDegraded(context: Context, childName: String, deviceId: String, childId: String = "") = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
         title = context.getString(R.string.enforcement_degraded_title, childName),
         text = context.getString(R.string.enforcement_degraded_text),
         notifId = "deg".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
     )
 
     /** Alert when a child device reports wrong parent-PIN attempts (someone guessing the PIN). */
-    fun notifyWrongPin(context: Context, childName: String, total: Int, deviceId: String) = post(
+    fun notifyWrongPin(context: Context, childName: String, total: Int, deviceId: String, childId: String = "") = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
         title = context.getString(R.string.wrong_pin_title, childName),
         text = context.resources.getQuantityString(R.plurals.wrong_pin_text, total, total),
         notifId = "pin".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
     )
 
     /** Alert when usage access is off on a child: screen-time budgets silently stop counting. */
-    fun notifyUsageAccessLost(context: Context, childName: String, deviceId: String) = post(
+    fun notifyUsageAccessLost(context: Context, childName: String, deviceId: String, childId: String = "") = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
         title = context.getString(R.string.usage_access_off_title, childName),
         text = context.getString(R.string.usage_access_off_text),
         notifId = "usage".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
     )
 
     /** Alert when a child's self-test reports blocked apps that are NOT actually suspended. */
-    fun notifyEnforcementGap(context: Context, childName: String, count: Int, deviceId: String) = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
-        title = context.getString(R.string.enforcement_gap_title, childName),
-        text = context.resources.getQuantityString(R.plurals.enforcement_gap_text, count, count),
-        notifId = "gap".hashCode() + deviceId.hashCode(),
-    )
+    fun notifyEnforcementGap(context: Context, childName: String, count: Int, deviceId: String, childId: String = "") =
+        post(
+            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            title = context.getString(R.string.enforcement_gap_title, childName),
+            text = context.resources.getQuantityString(R.plurals.enforcement_gap_text, count, count),
+            notifId = "gap".hashCode() + deviceId.hashCode(),
+            dest = childDest(childId),
+        )
 
     /** Alert when a child's clock disagrees with the sync server far beyond drift (tamper). */
-    fun notifyClockTamper(context: Context, childName: String, skewMs: Long, deviceId: String) = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
-        title = context.getString(R.string.clock_tamper_title, childName),
-        text = context.getString(R.string.clock_tamper_text, formatSkew(context, skewMs)),
-        notifId = "clock".hashCode() + deviceId.hashCode(),
-    )
+    fun notifyClockTamper(context: Context, childName: String, skewMs: Long, deviceId: String, childId: String = "") =
+        post(
+            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            title = context.getString(R.string.clock_tamper_title, childName),
+            text = context.getString(R.string.clock_tamper_text, formatSkew(context, skewMs)),
+            notifId = "clock".hashCode() + deviceId.hashCode(),
+            dest = childDest(childId),
+        )
 
     /** "2 h 5 min behind" / "35 min ahead", for the clock-tamper alert and card. */
     fun formatSkew(context: Context, skewMs: Long): String {
@@ -101,27 +119,31 @@ object SyncNotifications {
     }
 
     /** Alert when a child's reported locations include mock (spoofed) fixes. */
-    fun notifyMockLocation(context: Context, childName: String, deviceId: String) = post(
+    fun notifyMockLocation(context: Context, childName: String, deviceId: String, childId: String = "") = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
         title = context.getString(R.string.mock_location_title, childName),
         text = context.getString(R.string.mock_location_text),
         notifId = "mock".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
     )
 
     /** Alert when a child device drops below the low-battery mark unplugged (it may die soon). */
-    fun notifyLowBattery(context: Context, childName: String, percent: Int, deviceId: String) = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
-        title = context.getString(R.string.low_battery_title, childName),
-        text = context.getString(R.string.low_battery_text, percent),
-        notifId = "batt".hashCode() + deviceId.hashCode(),
-    )
+    fun notifyLowBattery(context: Context, childName: String, percent: Int, deviceId: String, childId: String = "") =
+        post(
+            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            title = context.getString(R.string.low_battery_title, childName),
+            text = context.getString(R.string.low_battery_text, percent),
+            notifId = "batt".hashCode() + deviceId.hashCode(),
+            dest = childDest(childId),
+        )
 
     /** Alert when network (Wi-Fi/cell) location is off on a child: indoor tracking stops working. */
-    fun notifyNetworkLocationOff(context: Context, childName: String, deviceId: String) = post(
+    fun notifyNetworkLocationOff(context: Context, childName: String, deviceId: String, childId: String = "") = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,
         title = context.getString(R.string.net_location_off_title, childName),
         text = context.getString(R.string.net_location_off_text),
         notifId = "netloc".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
     )
 
     /** A child installed app(s) the family hasn't classified yet (blocked until classified). */

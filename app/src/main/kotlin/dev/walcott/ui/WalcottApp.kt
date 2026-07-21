@@ -105,7 +105,8 @@ fun WalcottApp(
 
     // A notification deep-link (e.g. "new app installed" -> Apps). Honored in parent mode only;
     // the child's settings live behind the PIN gate, so we never jump a child straight in.
-    LaunchedEffect(startDest, parentMode) {
+    // Keyed on settings too: a child-detail dest may arrive before the registry has loaded.
+    LaunchedEffect(startDest, parentMode, settings) {
         if (startDest == SyncNotifications.DEST_APPS && parentMode) {
             screen = Screen.APPS
             onDestConsumed()
@@ -113,6 +114,16 @@ fun WalcottApp(
         if (startDest == SyncNotifications.DEST_APP_SETTINGS && parentMode) {
             screen = Screen.APP_SETTINGS
             onDestConsumed()
+        }
+        // Health alerts land on the affected child, so the message behind the notification
+        // (and the matching feed entry) is right there instead of a bare home screen.
+        if (startDest?.startsWith(SyncNotifications.DEST_CHILD_PREFIX) == true && parentMode) {
+            val childId = startDest.removePrefix(SyncNotifications.DEST_CHILD_PREFIX)
+            if (settings.children.any { it.childId == childId }) {
+                childDetailId = childId
+                screen = Screen.CHILD_DETAIL
+                onDestConsumed()
+            }
         }
     }
 

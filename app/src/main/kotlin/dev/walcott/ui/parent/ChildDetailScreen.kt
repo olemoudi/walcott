@@ -103,6 +103,16 @@ fun ChildDetailScreen(
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
     val diagReports by viewModel.diagReports.collectAsStateWithLifecycle()
+    val events by viewModel.recentEvents.collectAsStateWithLifecycle()
+    val ledgers by viewModel.usageLedgers.collectAsStateWithLifecycle()
+
+    // Minute tick so the dashboard and feed ages stay fresh without new data arriving.
+    val nowMs by androidx.compose.runtime.produceState(System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            kotlinx.coroutines.delay(60_000)
+        }
+    }
 
     // Brief nulls are expected: right after "Add child" (store write in flight) or removal.
     val entry = settings.children.firstOrNull { it.childId == childId } ?: return
@@ -150,6 +160,40 @@ fun ChildDetailScreen(
                         snapshot,
                         rulesSyncing = snapshot.appliedPolicyVersion in 1 until parentVersion,
                         onShowCode = { showCode = true },
+                    )
+                }
+            }
+
+            // --- Dashboard: the child's day at a glance, plus their recent events ---
+            if (snapshot != null) {
+                item {
+                    val today = LocalDate.now().toEpochDay()
+                    val reportedToday = snapshot.epochDay == today
+                    val config = remember(settings, childId) {
+                        settings.resolveForChild(childId).toFamilyConfig(emptySet())
+                    }
+                    val usage = if (reportedToday) {
+                        snapshot.usage.associate { it.categoryId to Duration.ofSeconds(it.seconds) }
+                    } else {
+                        emptyMap()
+                    }
+                    val extra = if (reportedToday) {
+                        snapshot.extra.associate { it.categoryId to Duration.ofSeconds(it.seconds) }
+                    } else {
+                        emptyMap()
+                    }
+                    ChildDashboardCard(
+                        childName = entry.name,
+                        usedToday = Duration.ofSeconds(usage.values.sumOf { it.seconds }),
+                        average = dev.walcott.sync.UsageLedger.averageDaily(
+                            ledgers[dev.walcott.sync.UsageLedger.keyOf(snapshot.childId, snapshot.deviceId)].orEmpty(),
+                            today,
+                        ),
+                        remaining = dev.walcott.data.ChildStats.remainingToday(
+                            config, LocalDate.ofEpochDay(today), usage, extra,
+                        ),
+                        events = events.filter { it.childId == childId && eventRenderable(it) }.take(3),
+                        nowMs = nowMs,
                     )
                 }
             }
@@ -543,6 +587,63 @@ private fun LinkedCard(snapshot: ChildSnapshot, rulesSyncing: Boolean, onShowCod
                 }
             }
             TextButton(onClick = onShowCode) { Text(stringResource(R.string.child_detail_show_code)) }
+        }
+    }
+}
+
+/**
+ * The child's day at a glance: screen time so far, budget left, and the daily average from
+ * the parent-side ledger — plus this child's slice of the activity feed. Sits at the top of
+ * the detail so the answer to "how are they doing?" needs no scrolling.
+ */
+@Composable
+private fun ChildDashboardCard(
+    childName: String,
+    usedToday: Duration,
+    average: dev.walcott.sync.UsageLedger.Average?,
+    /** Budget left today across categories; null = nothing has a budget today ("no limit"). */
+    remaining: Duration?,
+    events: List<dev.walcott.sync.ParentEvent>,
+    nowMs: Long,
+) {
+    val spacing = Tokens.spacing
+    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(spacing.lg)) {
+            Row(Modifier.fillMaxWidth()) {
+                StatTile(
+                    value = usedToday.humanize(),
+                    label = stringResource(R.string.dashboard_used_today),
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    value = remaining?.humanize() ?: stringResource(R.string.no_limit),
+                    label = stringResource(R.string.dashboard_remaining),
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    value = average?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+                    label = stringResource(R.string.dashboard_avg),
+                    caption = average?.let {
+                        pluralStringResource(R.plurals.dashboard_avg_days, it.daysCounted, it.daysCounted)
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (events.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(vertical = spacing.md))
+                events.forEach { event -> EventLine(event, childName, nowMs) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatTile(value: String, label: String, modifier: Modifier = Modifier, caption: String? = null) {
+    Column(modifier) {
+        Text(value, style = MaterialTheme.typography.titleLarge)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (caption != null) {
+            Text(caption, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

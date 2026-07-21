@@ -123,7 +123,10 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * Writes a fake child snapshot ("childId:Name:pkg|Label,...") into the parent's sync store.
      * Optional extras drive the reliability UI on a single emulator: `--es child_gaps a,b`
      * (failed self-test), `--el child_skew_ms N` (clock tamper), `--es child_update_error e`
-     * (e.g. waiting_parent), `--ez child_diag true` (a synthesized health report).
+     * (e.g. waiting_parent), `--ez child_diag true` (a synthesized health report),
+     * `--es child_usage "games=1800,video=600"` (today's per-category seconds),
+     * `--ei child_history_days N` (a ledger of N past days, for the dashboard average),
+     * `--ez child_feed true` (a handful of activity-feed entries for the wall).
      */
     private suspend fun seedChild(app: WalcottApplication, spec: String, intent: Intent) {
         val (childId, name, appsPart) = spec.split(":", limit = 3).let {
@@ -133,13 +136,19 @@ class PolicySeedReceiver : BroadcastReceiver() {
             val (pkg, label) = it.split("=", limit = 2).let { p -> p[0] to p.getOrElse(1) { p[0] } }
             dev.walcott.sync.InstalledAppInfo(pkg, label)
         }
+        val usage = intent.getStringExtra("child_usage")?.split(",")?.filter { it.isNotBlank() }?.map {
+            val (cat, secs) = it.split("=", limit = 2).let { p -> p[0] to (p.getOrNull(1)?.toLongOrNull() ?: 0L) }
+            dev.walcott.sync.UsageEntry(cat, secs)
+        } ?: emptyList()
+        val today = java.time.LocalDate.now().toEpochDay()
         val snapshot = dev.walcott.sync.ChildSnapshot(
             deviceId = "dev-$childId",
             displayName = name,
             version = System.currentTimeMillis(),
-            epochDay = java.time.LocalDate.now().toEpochDay(),
+            epochDay = today,
             childId = childId,
             apps = apps,
+            usage = usage,
             batteryPercent = intent.getIntExtra("child_battery", -1),
             enforcementGaps = intent.getStringExtra("child_gaps")?.split(",")?.filter { it.isNotBlank() }
                 ?: emptyList(),
@@ -151,6 +160,42 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 children = s.children.filterNot { it.deviceId == snapshot.deviceId } + snapshot,
                 lastSeen = s.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
             )
+        }
+        val historyDays = intent.getIntExtra("child_history_days", 0)
+        if (historyDays > 0) {
+            // Route through the real merge so the seeded ledger is exactly what snapshots build.
+            val history = (1..historyDays).map { d ->
+                dev.walcott.sync.DayUsage(
+                    today - d,
+                    listOf(dev.walcott.sync.UsageEntry("games", 5400L + (d % 5) * 900L)),
+                )
+            }
+            val key = dev.walcott.sync.UsageLedger.keyOf(childId, snapshot.deviceId)
+            app.syncStore.update { s ->
+                s.copy(
+                    usageHistory = s.usageHistory + (
+                        key to dev.walcott.sync.UsageLedger.merge(
+                            s.usageHistory[key].orEmpty(), history, today, usage.sumOf { it.seconds },
+                        )
+                        ),
+                )
+            }
+        }
+        if (intent.getBooleanExtra("child_feed", false)) {
+            val now = System.currentTimeMillis()
+            fun entry(type: String, agoMs: Long, detail: String = "", count: Int = 0) = dev.walcott.sync.ParentEvent(
+                id = java.util.UUID.randomUUID().toString(),
+                atMs = now - agoMs, type = type, childId = childId, childName = name,
+                detail = detail, count = count,
+            )
+            val feed = listOf(
+                entry(dev.walcott.sync.ParentEvent.TYPE_BONUS, 3 * 24 * 3_600_000L, count = 15),
+                entry(dev.walcott.sync.ParentEvent.TYPE_ENFORCEMENT_GAP, 26 * 3_600_000L, count = 2),
+                entry(dev.walcott.sync.ParentEvent.TYPE_ENFORCEMENT_GAP_CLEARED, 25 * 3_600_000L),
+                entry(dev.walcott.sync.ParentEvent.TYPE_NEW_APP, 2 * 3_600_000L, detail = "Instagram"),
+                entry(dev.walcott.sync.ParentEvent.TYPE_TIME_REQUEST, 20 * 60_000L, count = 30),
+            )
+            app.syncStore.update { s -> feed.fold(s) { acc, e -> acc.plusEvent(e) } }
         }
         if (intent.getBooleanExtra("child_diag", false)) {
             val report = dev.walcott.sync.DiagPayload(

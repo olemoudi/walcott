@@ -104,6 +104,43 @@ fun Map<String, Map<String, Int>>.withBudget(
     return budgets
 }
 
+/** This day-typed map with the HOLIDAY slot mirroring WEEKEND (copied, or removed when absent). */
+private fun <V> Map<String, V>.mirrorHoliday(): Map<String, V> {
+    val weekend = this[DayType.WEEKEND.name]
+    return if (weekend == null) this - DayType.HOLIDAY.name else this + (DayType.HOLIDAY.name to weekend)
+}
+
+/**
+ * Collapses the school/holiday distinction the UI no longer offers: every day-typed map gets
+ * its HOLIDAY slot rewritten to mirror WEEKEND. The HOLIDAY key itself must keep travelling —
+ * already-deployed children resolve calendar special days to it (and their `toFamilyConfig`
+ * throws on unknown day-type keys), so the wire format is frozen; only the meaning changes:
+ * a special day now simply behaves like a weekend. Applied on every parent policy write.
+ */
+fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings = copy(
+    budgets = budgets.mapValues { it.value.mirrorHoliday() }.filterValues { it.isNotEmpty() },
+    blockedWindows = blockedWindows.mapValues { it.value.mirrorHoliday() }.filterValues { it.isNotEmpty() },
+    bedtime = bedtime.mirrorHoliday(),
+    allAppsBlockedWindows = allAppsBlockedWindows.mirrorHoliday(),
+    appPolicies = appPolicies
+        .mapValues { (_, dto) ->
+            dto.copy(budgets = dto.budgets.mirrorHoliday(), blockedWindows = dto.blockedWindows.mirrorHoliday())
+        }
+        .filterValues { !it.isEmpty },
+    idleEarn = idleEarn?.let { it.copy(earnWindows = it.earnWindows.mirrorHoliday()) },
+    children = children.map { child ->
+        child.copy(
+            overrides = child.overrides.copy(
+                budgets = child.overrides.budgets
+                    ?.mapValues { it.value.mirrorHoliday() }?.filterValues { it.isNotEmpty() },
+                blockedWindows = child.overrides.blockedWindows
+                    ?.mapValues { it.value.mirrorHoliday() }?.filterValues { it.isNotEmpty() },
+                bedtime = child.overrides.bedtime?.mirrorHoliday(),
+            ),
+        )
+    },
+)
+
 /**
  * Per-child policy overrides. A null field inherits the family value; a non-null field
  * replaces it wholesale (no deep merge, so "no limit for this child" is expressible).

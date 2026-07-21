@@ -22,21 +22,34 @@ object IconSync {
 
     /**
      * Packages the parent should request now: shown in the app list, not cached, de-duplicated
-     * and bounded. Stable order (by first appearance) so retries are deterministic.
+     * and bounded. Stable order (by first appearance) so retries are deterministic. When more
+     * icons are missing than fit one request, [rotation] slides the bounded window across
+     * publishes — otherwise a package no live child can serve (uninstalled, ghost device)
+     * would pin the same [MAX_REQUESTS] forever and starve everything after it.
      */
-    fun toRequest(shownPackages: List<String>, cached: Set<String>): List<String> =
-        shownPackages.asSequence().distinct().filter { it !in cached }.take(MAX_REQUESTS).toList()
+    fun toRequest(shownPackages: List<String>, cached: Set<String>, rotation: Int = 0): List<String> {
+        val missing = shownPackages.asSequence().distinct().filter { it !in cached }.toList()
+        if (missing.size <= MAX_REQUESTS) return missing
+        val offset = ((rotation % missing.size) + missing.size) % missing.size
+        return (missing.drop(offset) + missing.take(offset)).take(MAX_REQUESTS)
+    }
 
     /**
      * Greedily packs [candidates] (already-rendered icons the child can provide) under
-     * [budget], always emitting at least one so a single oversized icon still makes progress.
+     * [budget]. An icon that ALONE exceeds the budget can never be delivered — its message
+     * would be rejected by the server outright — so it is skipped rather than sent: sending
+     * it anyway used to jam the queue permanently (the parent kept requesting it, every
+     * answer was oversized and silently dropped, and no icon behind it ever arrived). The
+     * child's encoder bounds each icon well under the budget, so the skip is a last-resort
+     * guard, not the normal path.
      */
     fun pack(candidates: List<AppIconData>, budget: Int = MESSAGE_BUDGET): List<AppIconData> {
         val out = mutableListOf<AppIconData>()
         var size = 0
         for (icon in candidates) {
             val cost = icon.packageName.length + icon.webpB64.length + 8
-            if (out.isNotEmpty() && size + cost > budget) break
+            if (cost > budget) continue
+            if (size + cost > budget) break
             out += icon
             size += cost
         }

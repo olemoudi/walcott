@@ -27,13 +27,23 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val now = System.currentTimeMillis()
         val registry = SettingsStore(context).current().children
 
+        val events = mutableListOf<ParentEvent>()
+        fun feedEvent(type: String, childId: String, name: String, detail: String = "") {
+            events += ParentEvent(
+                id = java.util.UUID.randomUUID().toString(),
+                atMs = now, type = type, childId = childId, childName = name, detail = detail,
+            )
+        }
+
         val toAlert = Staleness.devicesToAlert(state.lastSeen, state.staleNotifiedLastSeen, now)
         for ((deviceId, seenMs) in toAlert) {
             val snapshot = state.children.firstOrNull { it.deviceId == deviceId }
             val name = registry.firstOrNull { it.childId == snapshot?.childId && it.childId.isNotBlank() }?.name
                 ?: snapshot?.displayName
                 ?: deviceId
-            SyncNotifications.notifyStaleChild(context, name, Duration.ofMillis(now - seenMs).humanize(), deviceId)
+            val silence = Duration.ofMillis(now - seenMs)
+            SyncNotifications.notifyStaleChild(context, name, silence.humanize(), deviceId, snapshot?.childId.orEmpty())
+            feedEvent(ParentEvent.TYPE_STALE, snapshot?.childId.orEmpty(), name, detail = silence.toMillis().toString())
         }
 
         // A registered child that never checked in at all (botched enrollment) used to be invisible.
@@ -47,14 +57,17 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
         for (childId in neverReported) {
             val name = registry.firstOrNull { it.childId == childId }?.name ?: childId
             SyncNotifications.notifyNeverReported(context, name, childId)
+            feedEvent(ParentEvent.TYPE_NEVER_REPORTED, childId, name)
         }
 
         if (toAlert.isEmpty() && neverReported.isEmpty()) return Result.success()
         syncStore.update {
-            it.copy(
-                staleNotifiedLastSeen = it.staleNotifiedLastSeen + toAlert +
-                    neverReported.associateWith { Staleness.NEVER },
-            )
+            events.fold(
+                it.copy(
+                    staleNotifiedLastSeen = it.staleNotifiedLastSeen + toAlert +
+                        neverReported.associateWith { Staleness.NEVER },
+                ),
+            ) { state, event -> state.plusEvent(event) }
         }
         return Result.success()
     }

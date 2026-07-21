@@ -32,6 +32,49 @@ data class NoticeEntry(
     val atMs: Long,
 )
 
+/**
+ * One entry of the parent's activity feed — the durable record behind every alert that
+ * otherwise only exists as a dismissable notification. Raw data only (no localized text):
+ * the UI renders each [type] in the device's current locale.
+ */
+@Serializable
+data class ParentEvent(
+    /** Unique id for list keys and dedup ("" on legacy entries). */
+    val id: String = "",
+    val atMs: Long,
+    /** One of the TYPE_* constants; the UI skips types it doesn't know (forward compat). */
+    val type: String,
+    val childId: String = "",
+    /** Display name at record time; the UI prefers the current registry name by [childId]. */
+    val childName: String = "",
+    /** Type-specific payload (app label, ask text, command action, skew/silence ms…). */
+    val detail: String = "",
+    /** Type-specific number (gap count, minutes, battery percent…). */
+    val count: Int = 0,
+) {
+    companion object {
+        const val TYPE_UNPROTECTED = "unprotected"
+        const val TYPE_PROTECTION_DEGRADED = "protection_degraded"
+        const val TYPE_USAGE_ACCESS_OFF = "usage_access_off"
+        const val TYPE_MOCK_LOCATION = "mock_location"
+        const val TYPE_LOW_BATTERY = "low_battery"
+        const val TYPE_ENFORCEMENT_GAP = "enforcement_gap"
+        const val TYPE_ENFORCEMENT_GAP_CLEARED = "enforcement_gap_cleared"
+        const val TYPE_CLOCK_TAMPER = "clock_tamper"
+        const val TYPE_INDOOR_LOCATION_OFF = "indoor_location_off"
+        const val TYPE_NEW_APP = "new_app"
+        const val TYPE_WRONG_PIN = "wrong_pin"
+        const val TYPE_STALE = "stale"
+        const val TYPE_NEVER_REPORTED = "never_reported"
+        const val TYPE_TIME_REQUEST = "time_request"
+        const val TYPE_ASK = "ask"
+        const val TYPE_REQUEST_APPROVED = "request_approved"
+        const val TYPE_REQUEST_DENIED = "request_denied"
+        const val TYPE_BONUS = "bonus"
+        const val TYPE_REMOTE_DONE = "remote_done"
+    }
+}
+
 /** Persistent sync bookkeeping, separate from the rules ([dev.walcott.data.PolicySettings]). */
 @Serializable
 data class SyncState(
@@ -132,6 +175,14 @@ data class SyncState(
     val seenAppPackages: Set<String> = emptySet(),
     /** True once [seenAppPackages] was seeded from existing data (prevents a first-run flood). */
     val seenAppsSeeded: Boolean = false,
+    /** The activity feed, oldest first, capped at [EVENT_LOG_MAX] (see [ParentEvent]). */
+    val events: List<ParentEvent> = emptyList(),
+    /**
+     * Per-child daily screen-time totals (childId, or deviceId for legacy devices ->
+     * epochDay -> seconds), accumulated from snapshots. A snapshot only carries a 7-day
+     * window, so this ledger is what makes longer averages possible on the parent.
+     */
+    val usageHistory: Map<String, Map<Long, Long>> = emptyMap(),
     // Both sides
     /**
      * ntfy `time` (unix seconds) of the newest message this device has processed. Used as the
@@ -139,7 +190,15 @@ data class SyncState(
      * instead of losing them.
      */
     val ntfySinceSec: Long = 0,
-)
+) {
+    /** The feed with [event] appended, oldest entries dropped past the cap. */
+    fun plusEvent(event: ParentEvent): SyncState = copy(events = (events + event).takeLast(EVENT_LOG_MAX))
+
+    companion object {
+        /** Feed cap: enough for weeks of family activity, bounded so DataStore stays small. */
+        const val EVENT_LOG_MAX = 120
+    }
+}
 
 private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_sync")
 

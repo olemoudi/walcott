@@ -29,19 +29,34 @@ class IconStore(context: Context) {
 
     fun read(pkg: String): ByteArray? = fileFor(pkg).takeIf { it.exists() }?.readBytes()
 
-    /** Stores a received icon (decoded from its base64 WebP). Best-effort. */
-    fun store(pkg: String, webpBytes: ByteArray) {
-        runCatching { fileFor(pkg).writeBytes(webpBytes) }
-    }
+    /** Stores a received icon (decoded from its base64 WebP). True when it actually landed on disk. */
+    fun store(pkg: String, webpBytes: ByteArray): Boolean =
+        runCatching { fileFor(pkg).writeBytes(webpBytes) }.isSuccess
 
     companion object {
-        /** Small enough to keep each icon ~1–2 KB after base64, big enough to look crisp in a list. */
-        private const val ICON_PX = 96
-        private const val QUALITY = 72
+        /**
+         * Render attempts, tried in order: (pixels, WebP quality). Most icons fit at full size;
+         * busy photographic ones — the kind whose oversized message used to jam the icon queue
+         * permanently — fall through to smaller renditions until the base64 fits the cap.
+         */
+        private val RENDER_LADDER = listOf(96 to 72, 72 to 60, 48 to 40)
 
-        /** Renders [drawable] into the compact base64 WebP that crosses the wire, or null on failure. */
-        fun encode(drawable: Drawable): String? = runCatching {
-            val bmp = drawable.toBitmap(ICON_PX, ICON_PX)
+        /**
+         * Per-icon cap on the base64 payload, chosen so even a single-icon message stays well
+         * under the ntfy size cap after envelope overhead (gzip + AES-GCM + base64 + JSON).
+         */
+        const val MAX_B64_LENGTH = 2400
+
+        /**
+         * Renders [drawable] into a compact base64 WebP bounded by [MAX_B64_LENGTH], or null
+         * when even the smallest rendition doesn't fit (never delivered rather than jamming).
+         */
+        fun encode(drawable: Drawable): String? = RENDER_LADDER.firstNotNullOfOrNull { (px, quality) ->
+            encodeAt(drawable, px, quality)?.takeIf { it.length <= MAX_B64_LENGTH }
+        }
+
+        private fun encodeAt(drawable: Drawable, px: Int, quality: Int): String? = runCatching {
+            val bmp = drawable.toBitmap(px, px)
             val out = java.io.ByteArrayOutputStream()
             @Suppress("DEPRECATION")
             val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -49,7 +64,7 @@ class IconStore(context: Context) {
             } else {
                 Bitmap.CompressFormat.WEBP
             }
-            bmp.compress(format, QUALITY, out)
+            bmp.compress(format, quality, out)
             Base64.getEncoder().encodeToString(out.toByteArray())
         }.getOrNull()
 

@@ -84,9 +84,9 @@
         <item quantity="one">%d día con límite</item>
         <item quantity="other">%d días con límite</item>
     </plurals>
-    <string name="daytype_school">Lectivo</string>
+    <string name="daytype_school">Entre semana</string>
     <string name="daytype_weekend">Finde</string>
-    <string name="daytype_holiday">Vacaciones</string>
+    <string name="daytype_holiday">Día especial</string>
 
     <!-- Stepper -->
     <string name="decrement">Menos</string>
@@ -165,8 +165,8 @@
     <string name="earned_bonus">🎁 +%1$s ganado</string>
     <string name="nav_earn_title">Tiempo ganado</string>
     <string name="nav_earn_subtitle">Convierte tiempo de estudio en tiempo de ocio</string>
-    <string name="nav_calendar_title">Calendario escolar</string>
-    <string name="nav_calendar_subtitle">Marca festivos y vacaciones</string>
+    <string name="nav_calendar_title">Días especiales</string>
+    <string name="nav_calendar_subtitle">Marca festivos o días libres: siguen las reglas del finde</string>
     <string name="nav_report_title">Informe semanal</string>
     <string name="nav_report_subtitle">Uso de los últimos 7 días</string>
     <string name="earn_add_rule">Añadir regla</string>
@@ -180,11 +180,11 @@
     <string name="earn_daily_cap">Tope diario (min)</string>
     <string name="action_save">Guardar</string>
     <string name="action_delete">Eliminar</string>
-    <string name="calendar_holidays">Festivos</string>
-    <string name="calendar_vacations">Vacaciones</string>
-    <string name="calendar_add_holiday">Añadir festivo</string>
-    <string name="calendar_add_vacation">Añadir rango de vacaciones</string>
-    <string name="calendar_empty">Nada configurado. Los findes ya cuentan como días no lectivos.</string>
+    <string name="calendar_holidays">Días especiales</string>
+    <string name="calendar_vacations">Periodos</string>
+    <string name="calendar_add_holiday">Añadir día especial</string>
+    <string name="calendar_add_vacation">Añadir periodo</string>
+    <string name="calendar_empty">Nada configurado. Un día especial sigue las reglas del finde: añade uno para un festivo o un día libre.</string>
     <string name="report_no_data">Aún no hay uso registrado esta semana.</string>
     <string name="give_bonus">Dar tiempo extra</string>
     <string name="bonus_granted">Extra añadido</string>
@@ -667,4 +667,36 @@
     <string name="backup_reminder_title_stale">La copia de seguridad de tu familia está desactualizada</string>
     <string name="backup_reminder_text_stale">Las reglas han cambiado desde la última copia. Toca para guardar una nueva.</string>
     <string name="backup_reminder_mute">No recordar más</string>
+    <!-- Muro de actividad (home del padre + dashboard del hijo) -->
+    <string name="timeline_title">Actividad reciente</string>
+    <plurals name="event_enforcement_gap">
+        <item quantity="one">%1$s: %2$d app no está realmente bloqueada, se está reaplicando</item>
+        <item quantity="other">%1$s: %2$d apps no están realmente bloqueadas, se está reaplicando</item>
+    </plurals>
+    <string name="event_enforcement_gap_cleared">%1$s: el bloqueo vuelve a funcionar</string>
+    <string name="event_clock_tamper">El reloj de %1$s parece cambiado (%2$s)</string>
+    <string name="event_low_battery">La batería de %1$s está al %2$d%%</string>
+    <string name="event_new_app">Nueva app en el móvil de %1$s: %2$s</string>
+    <string name="event_new_app_more">Nuevas apps en el móvil de %1$s: %2$s y %3$d más</string>
+    <plurals name="event_wrong_pin">
+        <item quantity="one">%1$s: %2$d intento fallido de PIN</item>
+        <item quantity="other">%1$s: %2$d intentos fallidos de PIN</item>
+    </plurals>
+    <string name="event_stale">El móvil de %1$s lleva %2$s sin señal</string>
+    <string name="event_time_request">%1$s pidió %2$d min</string>
+    <string name="event_ask">%1$s pide: %2$s</string>
+    <string name="event_request_approved">Aprobados %2$d min para %1$s</string>
+    <string name="event_request_approved_ask">Aprobada la petición de %1$s</string>
+    <string name="event_request_denied">Denegada la petición de %1$s</string>
+    <string name="event_bonus">Bonus para %1$s: +%2$d min</string>
+    <string name="event_remote_ok">%1$s: hecho — %2$s</string>
+    <string name="event_remote_failed">%1$s: falló — %2$s</string>
+    <!-- Dashboard del hijo (arriba del detalle) -->
+    <string name="dashboard_used_today">Usado hoy</string>
+    <string name="dashboard_remaining">Queda hoy</string>
+    <string name="dashboard_avg">Media diaria</string>
+    <plurals name="dashboard_avg_days">
+        <item quantity="one">último %d día</item>
+        <item quantity="other">últimos %d días</item>
+    </plurals>
 </resources>

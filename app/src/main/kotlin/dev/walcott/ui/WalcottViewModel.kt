@@ -382,6 +382,16 @@ class WalcottViewModel(
     val diagReports: StateFlow<Map<String, dev.walcott.sync.DiagPayload>> =
         sync.state.map { it.diagReports }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /** The activity feed, newest first (parent side), for the home wall and child dashboards. */
+    val recentEvents: StateFlow<List<dev.walcott.sync.ParentEvent>> =
+        sync.state.map { it.events.asReversed() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Per-child daily usage ledger (see [dev.walcott.sync.UsageLedger]), for the dashboard average. */
+    val usageLedgers: StateFlow<Map<String, Map<Long, Long>>> =
+        sync.state.map { it.usageHistory }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     // --- Family backup / restore ---
 
     /** When the parent last saved a family backup (0 = never), for the backup card. */

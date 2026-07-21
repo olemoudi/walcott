@@ -112,6 +112,7 @@ fun FamiliesScreen(
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
+    val events by viewModel.recentEvents.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
 
@@ -253,6 +254,27 @@ fun FamiliesScreen(
                             }
                         },
                     )
+                }
+            }
+        }
+
+        // The wall: recent relevant events, newest first. A notification can be swiped away
+        // and lost; its message survives here, and tapping lands on the affected child.
+        val wall = events.filter(::eventRenderable).take(HOME_FEED_COUNT)
+        if (wall.isNotEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.timeline_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
+            items(wall, key = { "ev-" + it.id.ifBlank { "${it.atMs}-${it.type}-${it.childId}" } }) { event ->
+                val name = settings.children.firstOrNull { it.childId == event.childId }?.name
+                    ?: event.childName.ifBlank { stringResource(R.string.family_default_name) }
+                val target = event.childId.takeIf { id -> settings.children.any { it.childId == id } }
+                Box(Modifier.animateItem()) {
+                    EventRow(event, name, nowMs, onClick = target?.let { id -> { onOpenChild(id) } })
                 }
             }
         }
@@ -664,6 +686,9 @@ private fun LegacyDeviceRow(device: ChildSnapshot, onRemove: () -> Unit) {
         }
     }
 }
+
+/** How many wall entries the home shows (the full capped feed stays in the store). */
+private const val HOME_FEED_COUNT = 8
 
 /** The registry name for a device, falling back to what the device calls itself. */
 private fun childNameFor(deviceId: String, children: List<ChildEntry>, snapshots: List<ChildSnapshot>): String {

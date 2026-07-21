@@ -54,6 +54,26 @@ object SnapshotFit {
 }
 
 /**
+ * Same guarantee for the icon trickle. [IconSync.pack] budgets the raw base64, but the wire
+ * size is only known after gzip + AES-GCM + base64 + envelope, so this drops icons off the
+ * tail until the encoded message actually fits. Returns null when even a single icon doesn't
+ * fit: unlike the snapshot, an icon message is optional, so "send nothing and let the parent
+ * re-ask" beats publishing a message the server will reject (HTTP 413) every single cycle.
+ */
+object IconFit {
+
+    fun encode(payload: IconPayload, familyKey: SecretKey, maxBytes: Int = SnapshotFit.MAX_BYTES): String? {
+        var icons = payload.icons
+        while (icons.isNotEmpty()) {
+            val encoded = SyncProtocol.encodeChildIcons(payload.copy(icons = icons), familyKey)
+            if (encoded.length <= maxBytes) return encoded
+            icons = icons.dropLast(1)
+        }
+        return null
+    }
+}
+
+/**
  * Same guarantee for the diagnostics report: the log tail is the only unbounded part, so it
  * is halved (dropping the OLDEST lines) until the encoded message fits. The fixed fields are
  * a few hundred bytes and always fit.

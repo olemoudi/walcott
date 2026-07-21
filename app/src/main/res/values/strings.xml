@@ -84,9 +84,9 @@
         <item quantity="one">%d day with a limit</item>
         <item quantity="other">%d days with a limit</item>
     </plurals>
-    <string name="daytype_school">School day</string>
+    <string name="daytype_school">Weekdays</string>
     <string name="daytype_weekend">Weekend</string>
-    <string name="daytype_holiday">Holiday</string>
+    <string name="daytype_holiday">Special day</string>
 
     <!-- Stepper -->
     <string name="decrement">Less</string>
@@ -165,8 +165,8 @@
     <string name="earned_bonus">🎁 +%1$s earned</string>
     <string name="nav_earn_title">Earned time</string>
     <string name="nav_earn_subtitle">Turn learning time into extra playtime</string>
-    <string name="nav_calendar_title">School calendar</string>
-    <string name="nav_calendar_subtitle">Mark holidays and vacations</string>
+    <string name="nav_calendar_title">Special days</string>
+    <string name="nav_calendar_subtitle">Mark holidays or days off — they follow the weekend rules</string>
     <string name="nav_report_title">Weekly report</string>
     <string name="nav_report_subtitle">Usage over the last 7 days</string>
     <string name="earn_add_rule">Add rule</string>
@@ -180,11 +180,11 @@
     <string name="earn_daily_cap">Daily cap (min)</string>
     <string name="action_save">Save</string>
     <string name="action_delete">Delete</string>
-    <string name="calendar_holidays">Holidays</string>
-    <string name="calendar_vacations">Vacations</string>
-    <string name="calendar_add_holiday">Add holiday</string>
-    <string name="calendar_add_vacation">Add vacation range</string>
-    <string name="calendar_empty">Nothing set. Weekends already count as non-school days.</string>
+    <string name="calendar_holidays">Special days</string>
+    <string name="calendar_vacations">Longer breaks</string>
+    <string name="calendar_add_holiday">Add special day</string>
+    <string name="calendar_add_vacation">Add a range</string>
+    <string name="calendar_empty">Nothing set. A special day follows the weekend rules — add one for a holiday or a day off.</string>
     <string name="report_no_data">No usage recorded yet this week.</string>
     <string name="give_bonus">Give bonus time</string>
     <string name="bonus_granted">Bonus added</string>
@@ -667,4 +667,36 @@
     <string name="backup_reminder_title_stale">Your family backup is out of date</string>
     <string name="backup_reminder_text_stale">The rules have changed since the last backup. Tap to save a fresh one.</string>
     <string name="backup_reminder_mute">Don\'t remind me again</string>
+    <!-- Activity feed (the parent home wall + child dashboard) -->
+    <string name="timeline_title">Recent activity</string>
+    <plurals name="event_enforcement_gap">
+        <item quantity="one">%1$s: %2$d app isn\'t actually blocked — re-applying</item>
+        <item quantity="other">%1$s: %2$d apps aren\'t actually blocked — re-applying</item>
+    </plurals>
+    <string name="event_enforcement_gap_cleared">%1$s: blocking works again</string>
+    <string name="event_clock_tamper">%1$s\'s clock looks changed (%2$s)</string>
+    <string name="event_low_battery">%1$s\'s battery is at %2$d%%</string>
+    <string name="event_new_app">New on %1$s\'s device: %2$s</string>
+    <string name="event_new_app_more">New on %1$s\'s device: %2$s and %3$d more</string>
+    <plurals name="event_wrong_pin">
+        <item quantity="one">%1$s: %2$d wrong PIN attempt so far</item>
+        <item quantity="other">%1$s: %2$d wrong PIN attempts so far</item>
+    </plurals>
+    <string name="event_stale">%1$s\'s device has been silent for %2$s</string>
+    <string name="event_time_request">%1$s asked for %2$d min</string>
+    <string name="event_ask">%1$s asks: %2$s</string>
+    <string name="event_request_approved">Approved: %2$d min for %1$s</string>
+    <string name="event_request_approved_ask">Approved %1$s\'s request</string>
+    <string name="event_request_denied">Denied %1$s\'s request</string>
+    <string name="event_bonus">Bonus for %1$s: +%2$d min</string>
+    <string name="event_remote_ok">%1$s: done — %2$s</string>
+    <string name="event_remote_failed">%1$s: failed — %2$s</string>
+    <!-- Child dashboard (top of the child detail) -->
+    <string name="dashboard_used_today">Used today</string>
+    <string name="dashboard_remaining">Left today</string>
+    <string name="dashboard_avg">Daily average</string>
+    <plurals name="dashboard_avg_days">
+        <item quantity="one">last %d day</item>
+        <item quantity="other">last %d days</item>
+    </plurals>
 </resources>
