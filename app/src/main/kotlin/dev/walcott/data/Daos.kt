@@ -58,6 +58,13 @@ interface UsageDao {
         """,
     )
     suspend fun addExtraSeconds(categoryId: String, epochDay: Long, seconds: Long)
+
+    /** Drops counters older than [cutoffDay]; nothing reads past the weekly report. */
+    @Query("DELETE FROM usage_counter WHERE epochDay < :cutoffDay")
+    suspend fun deleteUsageBefore(cutoffDay: Long)
+
+    @Query("DELETE FROM extra_time WHERE epochDay < :cutoffDay")
+    suspend fun deleteExtraBefore(cutoffDay: Long)
 }
 
 @Dao

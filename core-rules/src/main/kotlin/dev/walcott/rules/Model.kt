@@ -79,4 +79,16 @@ sealed interface Verdict {
     data class Blocked(val reason: BlockReason) : Verdict
 }
 
-enum class BlockReason { UNCLASSIFIED, BEDTIME, BLOCKED_WINDOW, BUDGET_EXHAUSTED }
+enum class BlockReason {
+    UNCLASSIFIED,
+    BEDTIME,
+    BLOCKED_WINDOW,
+    BUDGET_EXHAUSTED,
+
+    /**
+     * Blocked because the device can't be trusted to apply the rules right now — the usage
+     * counter is unavailable, or the clock is provably wrong. See
+     * [RuleEngine.blockedPackages]'s fail-closed branches.
+     */
+    FAIL_CLOSED,
+}

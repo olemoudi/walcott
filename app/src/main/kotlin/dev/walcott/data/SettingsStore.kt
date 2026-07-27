@@ -20,8 +20,33 @@ class SettingsStore(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = PolicySettings.serializer()
 
-    private fun decode(raw: String?): PolicySettings =
-        raw?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() } ?: PolicySettings()
+    /**
+     * Set when a stored blob was present but wouldn't decode. That case is quietly disastrous
+     * on a child: the empty fallback classifies every app as unknown, so everything gets
+     * blocked, and the parent's periodic re-emit can't repair it — re-emits reuse the same
+     * version, which the replay gate rejects. [dev.walcott.sync.SyncManager] consumes this to
+     * force the next parent snapshot to be adopted. Re-set on every read while it lasts, so
+     * losing the flag can't strand the device.
+     */
+    @Volatile
+    var corruptionSeen: Boolean = false
+        private set
+
+    /** Reads and clears the flag (see [corruptionSeen]). */
+    fun consumeCorruption(): Boolean {
+        val seen = corruptionSeen
+        corruptionSeen = false
+        return seen
+    }
+
+    private fun decode(raw: String?): PolicySettings {
+        if (raw == null) return PolicySettings() // fresh install, nothing stored yet
+        return runCatching { json.decodeFromString(serializer, raw) }.getOrElse {
+            corruptionSeen = true
+            dev.walcott.debug.DebugLog.e(TAG, "stored policy is unreadable; falling back to empty", it)
+            PolicySettings()
+        }
+    }
 
     val settings: Flow<PolicySettings> = context.dataStore.data.map { prefs -> decode(prefs[key]) }
 
@@ -31,5 +56,9 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[key] = json.encodeToString(serializer, transform(decode(prefs[key])))
         }
+    }
+
+    private companion object {
+        const val TAG = "WalcottPolicy"
     }
 }

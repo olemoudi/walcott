@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -118,6 +119,7 @@ fun ChildStatusScreen(
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     val installExemption by viewModel.installExemption.collectAsStateWithLifecycle()
     val panicStatus by viewModel.panicStatus.collectAsStateWithLifecycle()
+    val clockTampered by viewModel.clockTampered.collectAsStateWithLifecycle()
     val spacing = Tokens.spacing
     val scope = rememberCoroutineScope()
 
@@ -233,6 +235,20 @@ fun ChildStatusScreen(
                             }
                         },
                     )
+                }
+            }
+            // Everything is blocked because the clock can't be trusted — say so, and say what
+            // fixes it. Without this the child just sees every app dead for no stated reason.
+            if (clockTampered) {
+                item {
+                    ClockWrongCard(onFix = {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_DATE_SETTINGS)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    })
                 }
             }
             if (!usageAccessOn) {
@@ -436,6 +452,32 @@ private fun PanicProgressRow(request: dev.walcott.sync.PanicRequest, onOpen: () 
                     style = MaterialTheme.typography.bodySmall,
                     color = color,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * The device clock disagrees with the family's server far beyond drift, so the rules fail
+ * closed (see [dev.walcott.rules.RuleEngine.blockedPackages]) — every managed app is blocked
+ * until it is right again. Explains the lock and points at the setting that fixes it.
+ */
+@Composable
+private fun ClockWrongCard(onFix: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        onClick = onFix,
+        shape = RoundedCornerShape(22.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Schedule, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.clock_wrong_title), style = MaterialTheme.typography.titleMedium, color = color)
+                Text(stringResource(R.string.clock_wrong_desc), style = MaterialTheme.typography.bodySmall, color = color)
             }
         }
     }
@@ -1170,5 +1212,6 @@ private fun blockedReasonText(reason: BlockReason?): String = when (reason) {
     BlockReason.BLOCKED_WINDOW -> stringResource(R.string.reason_blocked_window)
     BlockReason.BUDGET_EXHAUSTED -> stringResource(R.string.reason_budget_exhausted)
     BlockReason.UNCLASSIFIED -> stringResource(R.string.reason_unclassified)
+    BlockReason.FAIL_CLOSED -> stringResource(R.string.reason_fail_closed)
     null -> ""
 }

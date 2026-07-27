@@ -30,6 +30,7 @@
     <string name="reason_blocked_window">No disponible en este horario</string>
     <string name="reason_budget_exhausted">Se acabó el tiempo de hoy</string>
     <string name="reason_unclassified">Pendiente de configurar</string>
+    <string name="reason_fail_closed">Bloqueado hasta arreglar este móvil</string>
     <string name="request_more_time">Pedir más tiempo</string>
 
     <!-- Diálogo de tiempo extra -->
@@ -668,6 +669,8 @@
     <string name="backup_reminder_text_stale">Las reglas han cambiado desde la última copia. Toca para guardar una nueva.</string>
     <string name="backup_reminder_mute">No recordar más</string>
     <!-- Muro de actividad (home del padre + dashboard del hijo) -->
+    <string name="clock_wrong_title">La hora de este móvil está mal</string>
+    <string name="clock_wrong_desc">Las apps siguen bloqueadas hasta que la fecha y la hora sean correctas. Conéctate al Wi-Fi y se arreglarán solas, o toca aquí para ajustarlas.</string>
     <string name="timeline_title">Actividad reciente</string>
     <string name="timeline_see_all">Ver toda la actividad</string>
     <string name="timeline_window">Los últimos 7 días.</string>

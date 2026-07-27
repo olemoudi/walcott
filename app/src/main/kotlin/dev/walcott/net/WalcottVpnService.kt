@@ -8,6 +8,7 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.system.OsConstants
 import dev.walcott.WalcottApplication
+import dev.walcott.debug.DebugLog
 import dev.walcott.rules.DomainAppRule
 import dev.walcott.rules.DomainFilter
 import kotlinx.coroutines.CoroutineScope
@@ -84,10 +85,19 @@ class WalcottVpnService : VpnService() {
         val packet = ByteArray(MAX_PACKET)
         while (running) {
             val length = runCatching { input.read(packet) }.getOrDefault(-1)
-            if (length <= 0) continue
+            // End of stream means the tun is gone — revoked by the user, replaced by another
+            // VPN app, or torn down by the system. Reading a dead descriptor returns instantly,
+            // so continuing here spun this thread at 100% CPU on the child's phone until the
+            // process died. Stand down instead; the watchdog re-establishes the filter.
+            if (length < 0) {
+                DebugLog.w(TAG, "tunnel closed underneath us; stopping the filter")
+                break
+            }
+            if (length == 0) continue
             val copy = packet.copyOf(length)
             scope.launch { runCatching { handleDnsPacket(copy, output) } }
         }
+        stopTunnel()
         runCatching { input.close() }
         runCatching { output.close() }
     }
@@ -218,6 +228,17 @@ class WalcottVpnService : VpnService() {
         tunnel = null
     }
 
+    /**
+     * The system revoked our tun (another VPN took over, or the user withdrew consent). Without
+     * this the service kept "running" over a dead descriptor; [runLoop] would spin and the
+     * filter would look alive while filtering nothing.
+     */
+    override fun onRevoke() {
+        DebugLog.w(TAG, "VPN consent revoked")
+        stopTunnel()
+        super.onRevoke()
+    }
+
     override fun onDestroy() {
         stopTunnel()
         scope.cancel()
@@ -231,6 +252,7 @@ class WalcottVpnService : VpnService() {
         private const val UPSTREAM_TIMEOUT_MS = 5000
         private const val MAX_PACKET = 32767
         private const val ACTION_STOP = "dev.walcott.net.STOP"
+        private const val TAG = "WalcottVpn"
 
         fun start(context: Context) {
             context.startService(Intent(context, WalcottVpnService::class.java))

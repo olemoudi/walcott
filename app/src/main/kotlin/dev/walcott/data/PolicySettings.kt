@@ -13,6 +13,16 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
 
+/**
+ * Day-typed map with its string keys resolved to [DayType], SKIPPING any key this build
+ * doesn't know. The rules arrive from the parent, which may be running a newer version: a
+ * strict `DayType.valueOf` throws there, and it throws inside the enforcement loop — an old
+ * child would crash-restart every few seconds, forever, enforcing nothing. Ignoring the
+ * unknown slot degrades one rule instead of the whole device, and lets the wire format grow.
+ */
+internal fun <V> Map<String, V>.byDayType(): Map<DayType, V> =
+    mapNotNull { (key, value) -> runCatching { DayType.valueOf(key) }.getOrNull()?.let { it to value } }.toMap()
+
 /** Persistable time window: minutes since midnight. */
 @Serializable
 data class WindowDto(val startMinute: Int, val endMinute: Int) {
@@ -60,7 +70,7 @@ data class IdleEarnDto(
         windowHours = windowHours,
         windowCapMinutes = windowCapMinutes,
         weeklyCapMinutes = weeklyCapMinutes,
-        earnWindows = earnWindows.mapKeys { DayType.valueOf(it.key) }
+        earnWindows = earnWindows.byDayType()
             .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
     )
 }
@@ -281,10 +291,10 @@ data class PolicySettings(
         val policies = categoryIds.associateWith { categoryId ->
             CategoryPolicy(
                 dailyBudget = budgets[categoryId].orEmpty()
-                    .mapKeys { DayType.valueOf(it.key) }
+                    .byDayType()
                     .mapValues { Duration.ofMinutes(it.value.toLong()) },
                 blockedWindows = blockedWindows[categoryId].orEmpty()
-                    .mapKeys { DayType.valueOf(it.key) }
+                    .byDayType()
                     .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
             )
         }
@@ -293,10 +303,10 @@ data class PolicySettings(
             .mapValues { (_, dto) ->
                 CategoryPolicy(
                     dailyBudget = dto.budgets
-                        .mapKeys { DayType.valueOf(it.key) }
+                        .byDayType()
                         .mapValues { Duration.ofMinutes(it.value.toLong()) },
                     blockedWindows = dto.blockedWindows
-                        .mapKeys { DayType.valueOf(it.key) }
+                        .byDayType()
                         .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
                 )
             }
@@ -305,9 +315,9 @@ data class PolicySettings(
             assignments = assignments,
             policies = policies,
             perAppPolicies = perApp,
-            bedtime = bedtime.mapKeys { DayType.valueOf(it.key) }.mapValues { it.value.toTimeWindow() },
+            bedtime = bedtime.byDayType().mapValues { it.value.toTimeWindow() },
             blockedWindows = allAppsBlockedWindows
-                .mapKeys { DayType.valueOf(it.key) }
+                .byDayType()
                 .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
             essentialPackages = essentials,
             calendar = SchoolCalendar(

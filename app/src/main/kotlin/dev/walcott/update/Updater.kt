@@ -110,6 +110,16 @@ class Updater(private val context: Context) {
             UpdateCenter.report(UpdateUiState.WaitingForParent(info))
             return@withContext UpdateCheckOutcome.WAITING_FOR_PARENT
         }
+        if (!trustedApkUrl(info.apk)) {
+            DebugLog.e(TAG, "refusing an APK url outside the release host: ${info.apk}")
+            UpdateCenter.report(UpdateUiState.Failed("untrusted url"))
+            return@withContext UpdateCheckOutcome.INSTALL_FAILURE
+        }
+        if (context.cacheDir.usableSpace < REQUIRED_FREE_BYTES) {
+            DebugLog.w(TAG, "not enough free space for the update (${context.cacheDir.usableSpace} bytes)")
+            UpdateCenter.report(UpdateUiState.Failed("no space"))
+            return@withContext UpdateCheckOutcome.TRANSIENT_FAILURE
+        }
         UpdateCenter.report(UpdateUiState.Downloading(info))
         val apk = runCatching { download(info.apk) }
             .onFailure { DebugLog.w(TAG, "download failed", it) }
@@ -121,10 +131,12 @@ class Updater(private val context: Context) {
         DebugLog.i(TAG, "downloaded ${apk.length()} bytes, installing")
         // As a Device Owner child, Walcott blocks app installs on itself (DISALLOW_INSTALL_APPS);
         // lift that around our own install, or commit() throws SecurityException synchronously.
-        liftInstallBlockIfNeeded()
+        val lifted = liftInstallBlockIfNeeded()
         val installError = runCatching { install(apk) }
             .onFailure { DebugLog.e(TAG, "install failed", it) }
             .exceptionOrNull()
+        // Whatever happened, close the window now rather than letting it time out.
+        if (lifted) reArmInstallBlock()
         if (installError != null) {
             UpdateCenter.report(UpdateUiState.Failed("install: ${installError.javaClass.simpleName}"))
             return@withContext UpdateCheckOutcome.INSTALL_FAILURE
@@ -134,22 +146,36 @@ class Updater(private val context: Context) {
     }
 
     /**
-     * If we're a Device Owner enforcing DISALLOW_INSTALL_APPS, open the same PIN-gated install
-     * exemption the manual "Allow installs" button uses and apply it right now, so our own
-     * install session can commit. [dev.walcott.enforcement.EnforcementService] re-arms the block
-     * automatically when the exemption window closes.
+     * If we're a Device Owner enforcing DISALLOW_INSTALL_APPS, lift it just long enough for our
+     * own session to commit, and put it straight back ([reArmInstallBlock]).
+     *
+     * This used to open the shared 15-minute "Allow installs" exemption — a quarter of an hour,
+     * unannounced, during which the child could sideload anything. The lift here is local: it
+     * only passes a near-future timestamp to [DeviceRestrictions.apply] and never touches the
+     * stored exemption, so it can't be observed as an open window and can't cut short a
+     * legitimate one the parent or child opened.
      */
-    private suspend fun liftInstallBlockIfNeeded() {
-        if (!isDeviceOwner()) return
+    private suspend fun liftInstallBlockIfNeeded(): Boolean {
+        if (!isDeviceOwner()) return false
+        val app = context.applicationContext as? WalcottApplication ?: return false
+        val keys = runCatching { app.repository.settingsFlow.first().deviceRestrictions }.getOrNull() ?: return false
+        if (DeviceRestrictions.KEY_INSTALLS !in keys) return false
+        DebugLog.i(TAG, "install blocked by DISALLOW_INSTALL_APPS; lifting it for this commit")
+        return runCatching {
+            DeviceRestrictions.apply(context, keys, System.currentTimeMillis() + COMMIT_WINDOW_MS)
+        }.onFailure { DebugLog.e(TAG, "failed to lift install block", it) }.isSuccess
+    }
+
+    /**
+     * Puts DISALLOW_INSTALL_APPS back the moment the session is committed, honouring any
+     * exemption the family actually asked for (the PIN-gated button, an approved app request).
+     */
+    private suspend fun reArmInstallBlock() {
         val app = context.applicationContext as? WalcottApplication ?: return
-        val keys = runCatching { app.repository.settingsFlow.first().deviceRestrictions }.getOrNull() ?: return
-        if (DeviceRestrictions.KEY_INSTALLS !in keys) return
-        DebugLog.w(TAG, "install blocked by DISALLOW_INSTALL_APPS; opening temporary exemption")
         runCatching {
-            app.syncManager.allowInstallsTemporarily()
-            val exemptUntil = System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS
-            DeviceRestrictions.apply(context, keys, exemptUntil)
-        }.onFailure { DebugLog.e(TAG, "failed to lift install block", it) }
+            val keys = app.repository.settingsFlow.first().deviceRestrictions
+            DeviceRestrictions.apply(context, keys, app.syncManager.installExemption.value)
+        }.onFailure { DebugLog.e(TAG, "failed to re-arm the install block", it) }
     }
 
     private fun currentVersionCode(): Int {
@@ -166,7 +192,7 @@ class Updater(private val context: Context) {
     }
 
     private fun download(url: String): File {
-        val target = File(context.cacheDir, "update.apk")
+        val target = File(context.cacheDir, APK_FILE)
         client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             require(resp.isSuccessful) { "download failed: ${resp.code}" }
             resp.body!!.byteStream().use { input -> target.outputStream().use { input.copyTo(it) } }
@@ -219,5 +245,28 @@ class Updater(private val context: Context) {
         private const val TAG = "WalcottUpdater"
         /** Process-wide: Updater is instantiated per check, so the lock must be shared. */
         private val updateMutex = kotlinx.coroutines.sync.Mutex()
+
+        /**
+         * How long the install block is lifted around our own commit. Only a ceiling: the
+         * block goes back on as soon as the session is committed (see [reArmInstallBlock]).
+         */
+        private const val COMMIT_WINDOW_MS = 60_000L
+
+        /** Downloaded APK, deleted once the install reaches a terminal state (see InstallReceiver). */
+        const val APK_FILE = "update.apk"
+
+        /** Free space required before downloading, so a full phone fails fast instead of mid-write. */
+        private const val REQUIRED_FREE_BYTES = 200L * 1024 * 1024
+
+        /** Where the APK must come from. See [trustedApkUrl]. */
+        private const val APK_HOST_PREFIX = "https://github.com/olemoudi/walcott/"
+
+        /**
+         * Whether an APK url from version.json may be downloaded. The OS already refuses to
+         * install anything not signed with our key, so this is belt-and-braces — but pointing
+         * a child's downloader at an arbitrary host is not something version.json should be
+         * able to do.
+         */
+        fun trustedApkUrl(url: String): Boolean = url.startsWith(APK_HOST_PREFIX)
     }
 }

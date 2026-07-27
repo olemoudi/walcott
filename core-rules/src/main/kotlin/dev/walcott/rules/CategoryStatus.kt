@@ -30,12 +30,23 @@ fun RuleEngine.categoryStatus(
     now: LocalDateTime,
     usageToday: Map<String, Duration> = emptyMap(),
     extraTime: Map<String, Duration> = emptyMap(),
+    /**
+     * Mirrors [RuleEngine.blockedPackages]'s fail-closed branches (no usage counter, or a
+     * clock we can't trust). The screen has to agree with what the device is actually doing:
+     * a card reading "Available · 2h remaining" over an app that won't open is worse than a
+     * block, because the child can't tell whether the phone is broken or the rules are.
+     */
+    failClosed: Boolean = false,
 ): CategoryStatus {
     val dayType = config.calendar.dayTypeOf(now.toLocalDate())
     val time = now.toLocalTime()
     val used = usageToday[categoryId] ?: Duration.ZERO
     val policy = config.policies[categoryId]
     val budget = policy?.dailyBudget?.get(dayType)
+
+    if (failClosed) {
+        return CategoryStatus(categoryId, CategoryState.BLOCKED, used, budget, null, BlockReason.FAIL_CLOSED)
+    }
 
     config.bedtime[dayType]?.let { window ->
         if (time in window) {

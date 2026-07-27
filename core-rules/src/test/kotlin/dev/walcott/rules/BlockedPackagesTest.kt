@@ -83,4 +83,47 @@ class BlockedPackagesTest {
         val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
         assertTrue(RuleEngine.blockedPackages(cfg, emptySet(), monday, usageCountingAvailable = false).isEmpty())
     }
+
+    // --- Fail-closed: the clock ---
+
+    @Test
+    fun `an untrusted clock with time rules blocks everything managed`() {
+        // Every rule here is a rule about *when*, so a clock the child moved forward walks
+        // past bedtime and hands back a fresh budget. Failing closed makes that pointless.
+        val cfg = config(bedtime = mapOf(DayType.SCHOOL to TimeWindow(LocalTime.of(22, 0), LocalTime.of(7, 0))))
+        assertTrue(RuleEngine.blockedPackages(cfg, managed, monday).isEmpty()) // 15:00, outside bedtime
+        assertEquals(managed, RuleEngine.blockedPackages(cfg, managed, monday, clockTrusted = false))
+    }
+
+    @Test
+    fun `an untrusted clock with a budget blocks everything managed`() {
+        val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
+        assertEquals(managed, RuleEngine.blockedPackages(cfg, managed, monday, clockTrusted = false))
+    }
+
+    @Test
+    fun `an untrusted clock changes nothing when no rule depends on time`() {
+        // A family with no budgets, windows or bedtime can't be cheated by moving the clock,
+        // so a wrong clock must not lock a child out of a device nobody was limiting.
+        val cfg = config()
+        assertTrue(RuleEngine.blockedPackages(cfg, managed, monday, clockTrusted = false).isEmpty())
+    }
+
+    @Test
+    fun `requiresTrustedClock spots every kind of time rule`() {
+        assertTrue(!RuleEngine.requiresTrustedClock(config()))
+        assertTrue(RuleEngine.requiresTrustedClock(config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(1))))))
+        assertTrue(
+            RuleEngine.requiresTrustedClock(
+                config(bedtime = mapOf(DayType.SCHOOL to TimeWindow(LocalTime.of(22, 0), LocalTime.of(7, 0)))),
+            ),
+        )
+        val windowed = FamilyConfig(
+            version = 1,
+            assignments = mapOf(game to "games"),
+            policies = emptyMap(),
+            blockedWindows = mapOf(DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(9, 0), LocalTime.of(14, 0)))),
+        )
+        assertTrue(RuleEngine.requiresTrustedClock(windowed))
+    }
 }

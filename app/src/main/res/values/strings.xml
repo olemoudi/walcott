@@ -30,6 +30,7 @@
     <string name="reason_blocked_window">Not available at this time</string>
     <string name="reason_budget_exhausted">Out of time for today</string>
     <string name="reason_unclassified">Not set up yet</string>
+    <string name="reason_fail_closed">Locked until this phone is fixed</string>
     <string name="request_more_time">Ask for more time</string>
 
     <!-- Extra-time dialog -->
@@ -668,6 +669,8 @@
     <string name="backup_reminder_text_stale">The rules have changed since the last backup. Tap to save a fresh one.</string>
     <string name="backup_reminder_mute">Don\'t remind me again</string>
     <!-- Activity feed (the parent home wall + child dashboard) -->
+    <string name="clock_wrong_title">This phone\'s clock is wrong</string>
+    <string name="clock_wrong_desc">Apps stay locked until the date and time are right. Connect to Wi-Fi and they\'ll fix themselves, or tap here to set them.</string>
     <string name="timeline_title">Recent activity</string>
     <string name="timeline_see_all">See all activity</string>
     <string name="timeline_window">The last 7 days.</string>

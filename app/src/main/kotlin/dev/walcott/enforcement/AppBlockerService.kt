@@ -45,6 +45,8 @@ class AppBlockerService : AccessibilityService() {
      * wiped policy would classify every app as unknown, i.e. block everything.
      */
     @Volatile private var enforcing: Boolean = true
+    /** False once the clock is provably wrong (see [dev.walcott.sync.ClockGuard]). */
+    @Volatile private var clockTrusted: Boolean = true
     @Volatile private var usage: Map<String, Duration> = emptyMap()
     @Volatile private var extra: Map<String, Duration> = emptyMap()
 
@@ -71,6 +73,11 @@ class AppBlockerService : AccessibilityService() {
             }
         }
         scope.launch { app.identityStore.identity.collectLatest { enforcing = it.enforcesLocally } }
+        scope.launch {
+            app.syncManager.state.collectLatest {
+                clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(it.clockSkewMs)
+            }
+        }
         scope.launch { app.repository.usageTodayFlow.collectLatest { usage = it } }
         scope.launch { app.repository.effectiveExtraTodayFlow.collectLatest { extra = it } }
         ContextCompat.registerReceiver(
@@ -100,7 +107,15 @@ class AppBlockerService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         val cfg = config ?: return
         if (pkg == packageName || pkg !in managed) return
-        val verdict = RuleEngine.evaluate(cfg, pkg, LocalDateTime.now(), usage, extra)
+        // Mirror the Device Owner path's fail-closed rules: without the usage counter or with a
+        // clock we can't trust, every managed app is blocked (see RuleEngine.blockedPackages).
+        val failClosed = (!UsageAccess.grantedForEnforcement(this) && RuleEngine.requiresUsageCounting(cfg)) ||
+            (!clockTrusted && RuleEngine.requiresTrustedClock(cfg))
+        val verdict = if (failClosed) {
+            Verdict.Blocked(dev.walcott.rules.BlockReason.FAIL_CLOSED)
+        } else {
+            RuleEngine.evaluate(cfg, pkg, LocalDateTime.now(), usage, extra)
+        }
         if (verdict is Verdict.Blocked) {
             performGlobalAction(GLOBAL_ACTION_HOME)
             notifyBlocked(pkg)

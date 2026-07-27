@@ -37,6 +37,23 @@ bypass it; robust blocking of those needs SNI/full-tunnel inspection (not implem
 Per-app attribution is best-effort (`getConnectionOwnerUid`); when a query can't be
 attributed, "allow-only-from-app" rules fail closed. IPv4 DNS only for now.
 
+## Fail-closed by design
+
+Two things the rules depend on can be taken away on the child's phone, and both are answered
+the same way — by blocking everything managed until they come back, so tampering costs the
+child time instead of buying it:
+
+- **Usage access**, without which budgets never count down.
+- **The clock**: every rule is a rule about *when*, so a clock moved forward walks past
+  bedtime and hands back a fresh day. Drift is measured against the sync server's timestamps
+  ([`ClockGuard`](core-sync/src/main/kotlin/dev/walcott/sync/ClockGuard.kt)), not trusted from
+  the device, and beyond 15 minutes the rules fail closed. The child's home says so and points
+  at the setting; with automatic time on (a recommended default) it corrects itself as soon as
+  there's a network.
+
+A family with no budgets, windows or bedtime can't be cheated this way, so neither rule locks
+anything on a device nobody was limiting.
+
 ## Emergency release (getting a device back)
 
 Device Owner is deliberately hard to undo, which raises an obvious question: what happens to

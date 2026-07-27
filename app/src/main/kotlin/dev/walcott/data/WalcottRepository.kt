@@ -192,6 +192,13 @@ class WalcottRepository(
         }
     }
 
+    /** Drops usage/extra counters older than [USAGE_RETENTION_DAYS] (see [WatchdogWorker]). */
+    suspend fun pruneOldUsage() {
+        val cutoff = today() - USAGE_RETENTION_DAYS
+        db.usage().deleteUsageBefore(cutoff)
+        db.usage().deleteExtraBefore(cutoff)
+    }
+
     /**
      * Emergency release ([dev.walcott.enforcement.PanicRelease]): forgets the rules and every
      * local record they produced (usage, extra time, location trail), so what's left looks
@@ -212,5 +219,12 @@ class WalcottRepository(
         const val LOCATION_RETENTION_MS = dev.walcott.sync.LocationTrail.WINDOW_MS
         /** How often the "today" flows re-check the date (cheap; rollover lands within a minute). */
         private const val DAY_CHECK_MILLIS = 60_000L
+
+        /**
+         * How many days of per-day counters to keep. The weekly report reads 7; the rest is
+         * kept as slack for a device whose clock jumped around, and pruned so an enrollment
+         * that lasts years doesn't grow a row per app per day without end.
+         */
+        private const val USAGE_RETENTION_DAYS = 90L
     }
 }

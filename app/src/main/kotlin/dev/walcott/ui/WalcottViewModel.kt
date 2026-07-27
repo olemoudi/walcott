@@ -378,6 +378,14 @@ class WalcottViewModel(
             dev.walcott.sync.ChannelHealth.offlineSinceMs(s.lastChannelOkMs, System.currentTimeMillis())
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * True on a child whose clock is provably wrong (see [dev.walcott.sync.ClockGuard]). The
+     * rules fail closed then, so the child home has to say why everything went quiet.
+     */
+    val clockTampered: StateFlow<Boolean> =
+        sync.state.map { dev.walcott.sync.ClockGuard.isTampered(it.clockSkewMs) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     /** Latest health report per child device (parent side), for the diagnostics card. */
     val diagReports: StateFlow<Map<String, dev.walcott.sync.DiagPayload>> =
         sync.state.map { it.diagReports }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
@@ -447,10 +455,12 @@ class WalcottViewModel(
         repository.usageTodayFlow,
         repository.effectiveExtraTodayFlow,
         combine(sync.earnedTodayMinutes, settingsFlowForEarn) { minutes, target -> Pair(minutes, target) },
-        clock,
-    ) { config, usage, effectiveExtra, earnedPair, now ->
+        combine(clock, clockTampered) { now, tampered -> Pair(now, tampered) },
+    ) { config, usage, effectiveExtra, earnedPair, clockPair ->
         val earnedMinutes = earnedPair.first
         val earnTarget = earnedPair.second
+        val now = clockPair.first
+        val clockTampered = clockPair.second
         val dayType = config.calendar.dayTypeOf(now.toLocalDate())
         val bedtimeTonight = config.bedtime[dayType]
         val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
@@ -468,7 +478,12 @@ class WalcottViewModel(
             .map { (category, id) ->
                 CategoryStatusUi(
                     category = category,
-                    status = RuleEngine.categoryStatus(config, id, now, usage, effectiveExtra),
+                    status = RuleEngine.categoryStatus(
+                        config, id, now, usage, effectiveExtra,
+                        // Same fail-closed the enforcement loop applies, so the cards can't
+                        // promise time the device is refusing to hand out.
+                        failClosed = clockTampered && RuleEngine.requiresTrustedClock(config),
+                    ),
                     // Idle-earned time all lands in the target category.
                     earned = if (id == earnTarget) Duration.ofMinutes(earnedMinutes.toLong()) else Duration.ZERO,
                 )

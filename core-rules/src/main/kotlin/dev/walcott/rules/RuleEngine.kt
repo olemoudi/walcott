@@ -81,6 +81,17 @@ object RuleEngine {
         config.policies.values.any { it.dailyBudget.isNotEmpty() }
 
     /**
+     * Whether this config depends on the device clock being right. Every rule this engine
+     * applies is a rule about *when*: bedtime, blocked windows, and budgets that reset at
+     * midnight. A config with none of them can't be walked past by moving the clock.
+     */
+    fun requiresTrustedClock(config: FamilyConfig): Boolean =
+        config.bedtime.isNotEmpty() ||
+            config.blockedWindows.values.any { it.isNotEmpty() } ||
+            config.policies.values.any { it.dailyBudget.isNotEmpty() || it.blockedWindows.isNotEmpty() } ||
+            config.perAppPolicies.values.any { it.dailyBudget.isNotEmpty() || it.blockedWindows.isNotEmpty() }
+
+    /**
      * The set of [managed] packages that must be suspended right now — the single decision the
      * enforcement loop acts on. Fails CLOSED: when the usage counter is unavailable
      * ([usageCountingAvailable] = false) and the config relies on budgets, every managed app is
@@ -94,8 +105,17 @@ object RuleEngine {
         usageToday: Map<String, Duration> = emptyMap(),
         extraTime: Map<String, Duration> = emptyMap(),
         usageCountingAvailable: Boolean = true,
+        /**
+         * False when the device clock is provably wrong (see [dev.walcott.sync.ClockGuard]).
+         * Every rule here is a rule about *when*, so a clock moved forward walks straight past
+         * bedtime and resets the day's budget — the same shape of bypass as revoking usage
+         * access, and answered the same way: fail closed until the clock is right again, which
+         * makes moving it self-defeating instead of profitable.
+         */
+        clockTrusted: Boolean = true,
     ): Set<String> {
         if (!usageCountingAvailable && requiresUsageCounting(config)) return managed.toSet()
+        if (!clockTrusted && requiresTrustedClock(config)) return managed.toSet()
         return managed.filterTo(mutableSetOf()) {
             evaluate(config, it, now, usageToday, extraTime) is Verdict.Blocked
         }

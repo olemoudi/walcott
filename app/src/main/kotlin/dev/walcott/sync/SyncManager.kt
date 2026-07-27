@@ -1331,7 +1331,15 @@ class SyncManager(
         // come from the version counter (see SyncEngine.adoptsPolicy). Everything below the
         // rules — commands, resolutions, bonuses, icon/locate requests — stays idempotent by
         // its own ids and keeps processing regardless, since re-emits reuse a version.
-        val newRulesAdopted = SyncEngine.adoptsPolicy(
+        // A policy this device couldn't read is an emergency: everything is unclassified, so
+        // everything is blocked, and the version gate would reject every re-emit (they reuse
+        // the version) until the parent happened to edit a rule. Adopt the next snapshot
+        // whatever its version — the parent's copy is the truth we lost.
+        val recoveringPolicy = settingsStore.consumeCorruption()
+        if (recoveringPolicy) {
+            dev.walcott.debug.DebugLog.w(TAG, "local policy was unreadable; re-adopting the parent's")
+        }
+        val newRulesAdopted = recoveringPolicy || SyncEngine.adoptsPolicy(
             snapshot.version, syncStore.current().appliedParentVersion, rotationAdopted,
         )
         // Adopt the parent's rules, flattened to this child's slice. Prefer the parent's

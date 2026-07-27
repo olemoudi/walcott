@@ -33,13 +33,24 @@ class InstallReceiver : BroadcastReceiver() {
                 // Self-update: the process is normally restarted before this runs; tidy up if not.
                 UpdateNotifications.cancel(context)
                 UpdateCenter.report(UpdateUiState.Idle)
+                discardApk(context)
             }
             else -> {
                 UpdateNotifications.cancel(context)
                 val detail = message?.let { ": $it" } ?: ""
                 UpdateCenter.report(UpdateUiState.Failed("install status $status$detail"))
+                discardApk(context)
             }
         }
+    }
+
+    /**
+     * Drops the downloaded APK once the install reached a terminal state. It is ~50 MB sitting
+     * in the cache of a child's phone, which is exactly the device least likely to have room
+     * to spare — and the next check downloads it again anyway.
+     */
+    private fun discardApk(context: Context) {
+        runCatching { java.io.File(context.cacheDir, Updater.APK_FILE).delete() }
     }
 
     companion object {

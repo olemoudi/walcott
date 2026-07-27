@@ -106,6 +106,13 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (channelAgo >= 0) {
                     app.syncStore.update { it.copy(lastChannelOkMs = System.currentTimeMillis() - channelAgo) }
                 }
+                // `--el self_skew_ms N` fakes THIS device's measured clock drift, so the
+                // fail-closed-on-a-wrong-clock path (and the child's card for it) can be driven
+                // without actually moving the clock and waiting for a server timestamp.
+                val selfSkew = intent.getLongExtra("self_skew_ms", Long.MIN_VALUE)
+                if (selfSkew != Long.MIN_VALUE) {
+                    app.syncStore.update { it.copy(clockSkewMs = selfSkew) }
+                }
                 // Emergency-release hooks (see PanicProtocol). `--ei panic_self N` puts THIS
                 // device N checkpoints into a request, with the gates satisfied (fresh channel
                 // proof, a server clock, a parent new enough), so the child screens and the

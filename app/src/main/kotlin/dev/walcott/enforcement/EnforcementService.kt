@@ -274,6 +274,7 @@ class EnforcementService : LifecycleService() {
         var lastTick = SystemClock.elapsedRealtime()
         var lastForeground: String? = null
         var lastUsageAccess: Boolean? = null
+        var lastClockTrusted: Boolean? = null
         // Managed-set cache: enumerating PackageManager (launchable apps + labels) on every
         // 2s tick was pure binder churn — the set only changes on (un)installs and
         // classification edits, both of which invalidate it explicitly below.
@@ -370,7 +371,7 @@ class EnforcementService : LifecycleService() {
             // the apps come back the moment the permission does. A Device Owner can't grant or
             // pin usage access (it's an AppOp, out of setPermissionGrantState's reach), so this
             // is the strongest enforcement available.
-            val usageAccessOk = UsageAccess.granted(this)
+            val usageAccessOk = UsageAccess.grantedForEnforcement(this)
             if (usageAccessOk != lastUsageAccess) {
                 if (lastUsageAccess != null) {
                     DebugLog.w(TAG, "usage access changed: granted=$usageAccessOk")
@@ -380,8 +381,20 @@ class EnforcementService : LifecycleService() {
                 lastUsageAccess = usageAccessOk
             }
 
+            // Every rule here is a rule about *when*, so a clock the child moved is as good as
+            // no rules at all. ClockGuard measures the drift against the sync server's stamps;
+            // beyond its threshold the engine fails closed, exactly like a revoked usage access.
+            val clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(app.syncManager.state.value.clockSkewMs)
+            if (clockTrusted != lastClockTrusted) {
+                if (lastClockTrusted != null) DebugLog.w(TAG, "clock trusted=$clockTrusted")
+                lastClockTrusted = clockTrusted
+            }
             // The single control decision (fail-closed included) lives in the tested rule engine.
-            val blocked = RuleEngine.blockedPackages(config, managed, now, usage, extra, usageCountingAvailable = usageAccessOk)
+            val blocked = RuleEngine.blockedPackages(
+                config, managed, now, usage, extra,
+                usageCountingAvailable = usageAccessOk,
+                clockTrusted = clockTrusted,
+            )
             // Re-assert on change, plus periodically so external state drift self-heals.
             if (blocked != lastAppliedBlocked || managed != lastAppliedManaged ||
                 nowClock - lastApplyAt > REASSERT_MILLIS
