@@ -30,6 +30,8 @@ class RemoteCommandRunner(
     private val openInstallForPush: suspend (pkg: String, commandId: String) -> Unit = { _, _ -> },
     /** Publishes the health report a [RemoteAction.DIAGNOSE] asks for. */
     private val publishDiagnostics: suspend () -> Unit = {},
+    /** Refuses the child's pending emergency release (see [RemoteAction.DENY_PANIC]). */
+    private val denyPanic: suspend (requestId: String) -> Pair<Boolean, String> = { false to "unsupported" },
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -41,6 +43,7 @@ class RemoteCommandRunner(
                 RemoteAction.REQUEST_PERMISSIONS -> requestPermissions()
                 RemoteAction.INSTALL_APP -> installApp(command.arg, command.id)
                 RemoteAction.DIAGNOSE -> diagnose()
+                RemoteAction.DENY_PANIC -> denyPanic(command.arg)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }

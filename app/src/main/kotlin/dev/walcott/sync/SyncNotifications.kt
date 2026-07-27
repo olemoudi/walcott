@@ -146,6 +146,55 @@ object SyncNotifications {
         dest = childDest(childId),
     )
 
+    /** Notification id of a child's emergency-release alert (also cancelled by the deny action). */
+    fun panicNotifId(deviceId: String): Int = "panic".hashCode() + deviceId.hashCode()
+
+    /**
+     * A child asked to be released from Walcott (see [PanicProtocol]). Posted on the request and
+     * again on every two-hourly notice — the drum-beat is what makes the release refusable — and
+     * carries a one-tap refusal, since the alert may well arrive at 3 a.m. and the parent
+     * shouldn't have to open the app to stop it.
+     */
+    fun notifyPanicRequest(
+        context: Context,
+        childName: String,
+        request: PanicRequest,
+        deviceId: String,
+        childId: String = "",
+    ) {
+        val released = request.checkpoints >= PanicProtocol.REQUIRED_CHECKPOINTS
+        val remaining = PanicProtocol.remainingCheckpoints(request)
+        val hoursLeft = (remaining * PanicProtocol.CHECKPOINT_INTERVAL_SEC / 3600).toInt()
+        val notifId = panicNotifId(deviceId)
+        val deny = PendingIntent.getBroadcast(
+            context, notifId,
+            Intent(context, PanicDenyReceiver::class.java)
+                .setAction(PanicDenyReceiver.ACTION_DENY)
+                .putExtra(PanicDenyReceiver.EXTRA_DEVICE_ID, deviceId)
+                .putExtra(PanicDenyReceiver.EXTRA_REQUEST_ID, request.id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        post(
+            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            title = context.getString(
+                if (released) R.string.panic_released_title else R.string.panic_alert_title,
+                childName,
+            ),
+            text = if (released) {
+                context.getString(R.string.panic_released_text)
+            } else {
+                context.resources.getQuantityString(R.plurals.panic_alert_text, hoursLeft, hoursLeft)
+            },
+            notifId = notifId,
+            dest = childDest(childId),
+            action = if (released) {
+                null
+            } else {
+                NotificationCompat.Action(0, context.getString(R.string.panic_deny_action), deny)
+            },
+        )
+    }
+
     /** A child installed app(s) the family hasn't classified yet (blocked until classified). */
     fun notifyNewApp(context: Context, childName: String, label: String, extraCount: Int, deviceId: String) = post(
         context, ALERT_CHANNEL, R.string.stale_channel_name,

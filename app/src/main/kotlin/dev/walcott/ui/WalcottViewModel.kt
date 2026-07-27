@@ -423,6 +423,21 @@ class WalcottViewModel(
     /** Toggle the "your backup is missing/stale" nudge notifications. */
     fun setBackupReminders(enabled: Boolean) = viewModelScope.launch { sync.setBackupReminders(enabled) }
 
+    // --- Emergency release (see dev.walcott.sync.PanicProtocol) ---
+
+    /** This device's own release request and the gates around it (child mode). */
+    val panicStatus: StateFlow<SyncManager.PanicStatus> = sync.panicStatus
+
+    /** Starts the 24-hour request. False when a gate refuses it (the UI mirrors the same gates). */
+    suspend fun startPanic(): Boolean = sync.startPanic()
+
+    /** The child withdraws their own request. */
+    fun cancelPanic() = viewModelScope.launch { sync.cancelPanic() }
+
+    /** Parent refuses a child's request: it dies and the child is locked out for three days. */
+    fun denyPanic(deviceId: String, requestId: String) =
+        viewModelScope.launch { sync.denyPanicRequest(deviceId, requestId) }
+
     /** The idle-earn target category id (or "") so childState can attribute earned minutes. */
     private val settingsFlowForEarn: kotlinx.coroutines.flow.Flow<String> =
         repository.settingsFlow.map { it.idleEarn?.targetCategoryId ?: "" }

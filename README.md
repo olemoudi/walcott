@@ -37,6 +37,26 @@ bypass it; robust blocking of those needs SNI/full-tunnel inspection (not implem
 Per-app attribution is best-effort (`getConnectionOwnerUid`); when a query can't be
 attributed, "allow-only-from-app" rules fail closed. IPv4 DNS only for now.
 
+## Emergency release (getting a device back)
+
+Device Owner is deliberately hard to undo, which raises an obvious question: what happens to
+the child's phone if the parent device dies and the backup is gone with it? Two ways out,
+both of them on the child's phone:
+
+- **With the parent PIN** — device settings → *Remove Walcott from this device*. Unblocks
+  every app, gives back every device setting, erases the rules and history, drops Device
+  Owner and offers to uninstall. Nothing is left to suggest the device was ever enrolled.
+- **Without the PIN** — the child can request the same release from the bottom of their home
+  screen, and it takes 24 hours of being *loud*: the parents are notified immediately and
+  again every two hours, each alert carrying a one-tap refusal. The phone must keep reaching
+  the family channel the whole time (a connectivity failure when a notice is due cancels it),
+  and the countdown runs on the sync server's clock, so moving the device clock does nothing.
+  A refusal ends the request and blocks new ones for three days.
+
+The child's route is a deliberate trade-off: a determined child can free their phone in 24
+hours, but only by telling their parents a dozen times first — and a factory reset, which
+Walcott deliberately does not block, was always the faster way out anyway.
+
 ## Language & localization
 
 All code and comments are in English. All user-facing text is localized: English is the

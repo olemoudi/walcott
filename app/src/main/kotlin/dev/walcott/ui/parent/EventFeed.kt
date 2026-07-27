@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.LocationOff
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Redeem
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Timer
@@ -36,6 +37,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
+import dev.walcott.sync.PanicProtocol
 import dev.walcott.sync.ParentEvent
 import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.SyncNotifications
@@ -59,6 +61,8 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_NEW_APP, ParentEvent.TYPE_WRONG_PIN, ParentEvent.TYPE_STALE, ParentEvent.TYPE_NEVER_REPORTED,
     ParentEvent.TYPE_TIME_REQUEST, ParentEvent.TYPE_ASK, ParentEvent.TYPE_REQUEST_APPROVED,
     ParentEvent.TYPE_REQUEST_DENIED, ParentEvent.TYPE_BONUS, ParentEvent.TYPE_REMOTE_DONE,
+    ParentEvent.TYPE_PANIC_REQUEST, ParentEvent.TYPE_PANIC_RELEASED, ParentEvent.TYPE_PANIC_DENIED,
+    ParentEvent.TYPE_PANIC_CANCELLED,
 )
 
 @Composable
@@ -140,6 +144,10 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_REQUEST_APPROVED -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_REQUEST_DENIED -> Icons.Filled.CheckCircle to MaterialTheme.colorScheme.onSurfaceVariant
         ParentEvent.TYPE_BONUS -> Icons.Outlined.Redeem to good
+        ParentEvent.TYPE_PANIC_REQUEST -> Icons.Outlined.LockOpen to error
+        ParentEvent.TYPE_PANIC_RELEASED -> Icons.Outlined.LockOpen to error
+        ParentEvent.TYPE_PANIC_DENIED -> Icons.Filled.CheckCircle to good
+        ParentEvent.TYPE_PANIC_CANCELLED -> Icons.Filled.CheckCircle to good
         else -> Icons.Outlined.Build to neutral
     }
 }
@@ -181,6 +189,14 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
         }
     ParentEvent.TYPE_REQUEST_DENIED -> stringResource(R.string.event_request_denied, name)
     ParentEvent.TYPE_BONUS -> stringResource(R.string.event_bonus, name, event.count)
+    // count = notices still to come, so the feed line ages honestly as the countdown runs.
+    ParentEvent.TYPE_PANIC_REQUEST -> stringResource(
+        R.string.event_panic_request, name,
+        (event.count * PanicProtocol.CHECKPOINT_INTERVAL_SEC / 3600).toInt(),
+    )
+    ParentEvent.TYPE_PANIC_RELEASED -> stringResource(R.string.event_panic_released, name)
+    ParentEvent.TYPE_PANIC_DENIED -> stringResource(R.string.event_panic_denied, name)
+    ParentEvent.TYPE_PANIC_CANCELLED -> stringResource(R.string.event_panic_cancelled, name)
     ParentEvent.TYPE_REMOTE_DONE -> stringResource(
         if (event.count > 0) R.string.event_remote_ok else R.string.event_remote_failed,
         name, remoteActionLabel(event.detail),

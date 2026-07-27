@@ -669,6 +669,9 @@
     <string name="backup_reminder_mute">Don\'t remind me again</string>
     <!-- Activity feed (the parent home wall + child dashboard) -->
     <string name="timeline_title">Recent activity</string>
+    <string name="timeline_see_all">See all activity</string>
+    <string name="timeline_window">The last 7 days.</string>
+    <string name="timeline_empty">Nothing has happened yet.</string>
     <plurals name="event_enforcement_gap">
         <item quantity="one">%1$s: %2$d app isn\'t actually blocked — re-applying</item>
         <item quantity="other">%1$s: %2$d apps aren\'t actually blocked — re-applying</item>
@@ -699,4 +702,72 @@
         <item quantity="one">last %d day</item>
         <item quantity="other">last %d days</item>
     </plurals>
+    <!-- Emergency release: the parent-PIN one (device settings, child device) -->
+    <string name="action_close">Close</string>
+    <string name="release_device_title">Remove Walcott from this device</string>
+    <string name="release_device_subtitle">Unblocks every app, gives back all device settings and erases the rules. For when the parent phone is gone for good.</string>
+    <string name="release_device_confirm">This device stops being managed: apps are unblocked, settings are given back, and the rules and history are erased. It can\'t be undone from here — you\'d have to enroll the device again.</string>
+    <string name="release_device_confirm_button">Remove Walcott</string>
+    <string name="release_done_title">Device released</string>
+    <string name="release_done_text">Walcott no longer manages this device. You can uninstall it now if you want no trace left.</string>
+    <string name="release_uninstall_action">Uninstall</string>
+    <!-- Emergency release: the child-initiated one (24 h, see PanicProtocol) -->
+    <string name="panic_entry">Emergency: release this device</string>
+    <string name="panic_title">Emergency release</string>
+    <string name="panic_intro_title">Only for a real emergency</string>
+    <string name="panic_intro_text">Use this if your parents lost their phone and can\'t unlock this device any more.</string>
+    <string name="panic_how_title">How it works</string>
+    <string name="panic_how_1">1. Your parents are told right away, and again every 2 hours.</string>
+    <string name="panic_how_2">2. This phone must stay connected for 24 hours. If there is no connection when a notice is due, the request is cancelled.</string>
+    <string name="panic_how_3">3. Your parents can refuse it from their phone. If they do, you can\'t ask again for 3 days.</string>
+    <string name="panic_how_4">4. After 24 hours Walcott stops managing this device and erases itself.</string>
+    <string name="panic_start_action">Request release</string>
+    <string name="panic_cancel_action">Cancel my request</string>
+    <string name="panic_confirm_title">Request the release?</string>
+    <string name="panic_confirm_text">Your parents will be told immediately, and every 2 hours for the next 24 hours. They can refuse it.</string>
+    <string name="panic_confirm_button">Yes, request it</string>
+    <string name="panic_blocked_offline">No connection with your family right now. This needs the family channel to work.</string>
+    <string name="panic_blocked_denied">Your parents refused the last request. You can ask again in %1$s.</string>
+    <string name="panic_blocked_old_parent">Your parents\' app is too old to receive this request.</string>
+    <string name="panic_pin_hint">If your parents remember their PIN, they can release this device instantly from the settings.</string>
+    <string name="panic_active_title">Emergency release in progress</string>
+    <string name="panic_active_notices">%1$d of %2$d notices sent</string>
+    <string name="panic_active_next">Next notice in %1$s</string>
+    <plurals name="panic_active_left">
+        <item quantity="one">About %d hour left</item>
+        <item quantity="other">About %d hours left</item>
+    </plurals>
+    <string name="panic_channel_name">Emergency release</string>
+    <string name="panic_child_progress_title">Notice sent to your parents</string>
+    <plurals name="panic_child_progress_text">
+        <item quantity="one">%d notice to go before this device is released.</item>
+        <item quantity="other">%d notices to go before this device is released.</item>
+    </plurals>
+    <string name="panic_child_denied_title">Your parents refused the release</string>
+    <string name="panic_child_denied_text">The request was cancelled. You can ask again in 3 days.</string>
+    <string name="panic_child_expired_title">Release cancelled</string>
+    <string name="panic_child_expired_text">There was no connection when a notice was due, so the request ended. You can start again.</string>
+    <string name="panic_child_released_title">Device released</string>
+    <string name="panic_child_released_text">Walcott no longer manages this device.</string>
+    <string name="panic_alert_title">%1$s asked to remove Walcott</string>
+    <plurals name="panic_alert_text">
+        <item quantity="one">The device releases itself in %d hour unless you refuse.</item>
+        <item quantity="other">The device releases itself in %d hours unless you refuse.</item>
+    </plurals>
+    <string name="panic_released_title">%1$s\'s device released itself</string>
+    <string name="panic_released_text">The 24-hour emergency request completed. Walcott no longer manages that device.</string>
+    <string name="panic_deny_action">Refuse</string>
+    <string name="panic_deny_confirm">The request ends and this child can\'t ask again for 3 days. The refusal reaches the device on its next check-in.</string>
+    <string name="panic_deny_confirm_button">Refuse the request</string>
+    <string name="panic_card_title">Emergency release requested</string>
+    <plurals name="panic_card_left">
+        <item quantity="one">%d hour left before the device releases itself</item>
+        <item quantity="other">%d hours left before the device releases itself</item>
+    </plurals>
+    <string name="panic_card_done">The device completed the 24 hours and released itself.</string>
+    <string name="panic_card_explain">It only continues while that phone keeps reaching the family channel. Refusing it also blocks new requests for 3 days.</string>
+    <string name="event_panic_request">%1$s asked to remove Walcott (%2$d h left)</string>
+    <string name="event_panic_released">%1$s\'s device released itself</string>
+    <string name="event_panic_denied">Refused %1$s\'s release request</string>
+    <string name="event_panic_cancelled">%1$s\'s release request ended</string>
 </resources>

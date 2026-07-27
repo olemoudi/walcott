@@ -70,6 +70,22 @@ data class DayUsage(val epochDay: Long, val usage: List<UsageEntry> = emptyList(
 @Serializable
 data class InstalledAppInfo(val packageName: String, val label: String)
 
+/**
+ * A child's pending emergency-release request (see [PanicProtocol]). Travels in every
+ * [ChildSnapshot] while it is alive, so the parent sees it on any check-in — not only on the
+ * two-hourly notice — and can refuse it with [RemoteAction.DENY_PANIC].
+ */
+@Serializable
+data class PanicRequest(
+    val id: String,
+    /** Server second when the child started it (the local clock is never trusted here). */
+    val startedAtSec: Long,
+    /** Server second of the last proven connectivity checkpoint. */
+    val lastCheckpointSec: Long,
+    /** Checkpoints proven so far; [PanicProtocol.REQUIRED_CHECKPOINTS] releases the device. */
+    val checkpoints: Int = 0,
+)
+
 /** A GPS fix reported by a child device (WGS84). */
 @Serializable
 data class LocationPoint(
@@ -125,6 +141,14 @@ object RemoteAction {
      * log lines never ride in the regular snapshot). The ack only confirms it was sent.
      */
     const val DIAGNOSE = "diagnose"
+
+    /**
+     * Refuse the child's pending emergency release ([ChildSnapshot.panic]): the request dies
+     * and the child can't ask again for [PanicProtocol.DENIAL_COOLDOWN_SEC]. [RemoteCommand.arg]
+     * carries the [PanicRequest.id] being refused, so a command that arrives after the child
+     * already cancelled can't silently punish the next, unrelated request.
+     */
+    const val DENY_PANIC = "deny_panic"
 
     /**
      * [CommandAck.detail] lifecycle of an [INSTALL_APP]: "opened" means the prompt reached the
@@ -222,6 +246,11 @@ data class ChildSnapshot(
      * (walking past bedtime or daily budgets).
      */
     val clockSkewMs: Long = 0,
+    /**
+     * The child's pending emergency-release request, or null when there is none. Null on every
+     * legacy child, so an old device can never look like it is asking for one.
+     */
+    val panic: PanicRequest? = null,
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */

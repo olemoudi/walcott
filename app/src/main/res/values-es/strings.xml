@@ -669,6 +669,9 @@
     <string name="backup_reminder_mute">No recordar más</string>
     <!-- Muro de actividad (home del padre + dashboard del hijo) -->
     <string name="timeline_title">Actividad reciente</string>
+    <string name="timeline_see_all">Ver toda la actividad</string>
+    <string name="timeline_window">Los últimos 7 días.</string>
+    <string name="timeline_empty">Aún no ha pasado nada.</string>
     <plurals name="event_enforcement_gap">
         <item quantity="one">%1$s: %2$d app no está realmente bloqueada, se está reaplicando</item>
         <item quantity="other">%1$s: %2$d apps no están realmente bloqueadas, se está reaplicando</item>
@@ -699,4 +702,72 @@
         <item quantity="one">último %d día</item>
         <item quantity="other">últimos %d días</item>
     </plurals>
+    <!-- Desactivación de emergencia con PIN (ajustes del dispositivo, móvil del hijo) -->
+    <string name="action_close">Cerrar</string>
+    <string name="release_device_title">Quitar Walcott de este dispositivo</string>
+    <string name="release_device_subtitle">Desbloquea todas las apps, devuelve los ajustes del dispositivo y borra las reglas. Para cuando el móvil del padre se ha perdido definitivamente.</string>
+    <string name="release_device_confirm">Este dispositivo deja de estar gestionado: se desbloquean las apps, se devuelven los ajustes y se borran las reglas y el historial. No se puede deshacer desde aquí: habría que volver a enrolar el dispositivo.</string>
+    <string name="release_device_confirm_button">Quitar Walcott</string>
+    <string name="release_done_title">Dispositivo liberado</string>
+    <string name="release_done_text">Walcott ya no gestiona este dispositivo. Puedes desinstalarlo ahora si no quieres que quede rastro.</string>
+    <string name="release_uninstall_action">Desinstalar</string>
+    <!-- Desactivación de emergencia pedida por el hijo (24 h, ver PanicProtocol) -->
+    <string name="panic_entry">Emergencia: liberar este dispositivo</string>
+    <string name="panic_title">Liberación de emergencia</string>
+    <string name="panic_intro_title">Solo para una emergencia real</string>
+    <string name="panic_intro_text">Úsalo si tus padres han perdido su móvil y ya no pueden desbloquear este dispositivo.</string>
+    <string name="panic_how_title">Cómo funciona</string>
+    <string name="panic_how_1">1. Tus padres reciben un aviso ahora mismo, y otro cada 2 horas.</string>
+    <string name="panic_how_2">2. Este móvil debe seguir conectado 24 horas. Si no hay conexión cuando toca un aviso, la solicitud se cancela.</string>
+    <string name="panic_how_3">3. Tus padres pueden rechazarla desde su móvil. Si lo hacen, no podrás volver a pedirlo en 3 días.</string>
+    <string name="panic_how_4">4. Pasadas las 24 horas, Walcott deja de gestionar este dispositivo y se borra.</string>
+    <string name="panic_start_action">Solicitar la liberación</string>
+    <string name="panic_cancel_action">Cancelar mi solicitud</string>
+    <string name="panic_confirm_title">¿Solicitar la liberación?</string>
+    <string name="panic_confirm_text">Tus padres recibirán un aviso inmediatamente, y otro cada 2 horas durante las próximas 24 horas. Pueden rechazarla.</string>
+    <string name="panic_confirm_button">Sí, solicitarla</string>
+    <string name="panic_blocked_offline">Ahora mismo no hay conexión con tu familia. Esto necesita que funcione el canal familiar.</string>
+    <string name="panic_blocked_denied">Tus padres rechazaron la última solicitud. Podrás volver a pedirlo dentro de %1$s.</string>
+    <string name="panic_blocked_old_parent">La app de tus padres es demasiado antigua para recibir esta solicitud.</string>
+    <string name="panic_pin_hint">Si tus padres recuerdan su PIN, pueden liberar este dispositivo al instante desde los ajustes.</string>
+    <string name="panic_active_title">Liberación de emergencia en curso</string>
+    <string name="panic_active_notices">%1$d de %2$d avisos enviados</string>
+    <string name="panic_active_next">Siguiente aviso en %1$s</string>
+    <plurals name="panic_active_left">
+        <item quantity="one">Queda %d hora aproximadamente</item>
+        <item quantity="other">Quedan %d horas aproximadamente</item>
+    </plurals>
+    <string name="panic_channel_name">Liberación de emergencia</string>
+    <string name="panic_child_progress_title">Aviso enviado a tus padres</string>
+    <plurals name="panic_child_progress_text">
+        <item quantity="one">Queda %d aviso para que se libere este dispositivo.</item>
+        <item quantity="other">Quedan %d avisos para que se libere este dispositivo.</item>
+    </plurals>
+    <string name="panic_child_denied_title">Tus padres han rechazado la liberación</string>
+    <string name="panic_child_denied_text">La solicitud se ha cancelado. Podrás volver a pedirlo dentro de 3 días.</string>
+    <string name="panic_child_expired_title">Liberación cancelada</string>
+    <string name="panic_child_expired_text">No había conexión cuando tocaba un aviso, así que la solicitud ha terminado. Puedes empezar de nuevo.</string>
+    <string name="panic_child_released_title">Dispositivo liberado</string>
+    <string name="panic_child_released_text">Walcott ya no gestiona este dispositivo.</string>
+    <string name="panic_alert_title">%1$s ha pedido quitar Walcott</string>
+    <plurals name="panic_alert_text">
+        <item quantity="one">El dispositivo se liberará solo en %d hora si no lo rechazas.</item>
+        <item quantity="other">El dispositivo se liberará solo en %d horas si no lo rechazas.</item>
+    </plurals>
+    <string name="panic_released_title">El dispositivo de %1$s se ha liberado</string>
+    <string name="panic_released_text">La solicitud de emergencia ha completado sus 24 horas. Walcott ya no gestiona ese dispositivo.</string>
+    <string name="panic_deny_action">Rechazar</string>
+    <string name="panic_deny_confirm">La solicitud termina y este hijo no podrá volver a pedirlo en 3 días. El rechazo llega al dispositivo en su siguiente conexión.</string>
+    <string name="panic_deny_confirm_button">Rechazar la solicitud</string>
+    <string name="panic_card_title">Liberación de emergencia solicitada</string>
+    <plurals name="panic_card_left">
+        <item quantity="one">Queda %d hora para que el dispositivo se libere solo</item>
+        <item quantity="other">Quedan %d horas para que el dispositivo se libere solo</item>
+    </plurals>
+    <string name="panic_card_done">El dispositivo ha completado las 24 horas y se ha liberado.</string>
+    <string name="panic_card_explain">Solo continúa mientras ese móvil siga alcanzando el canal familiar. Rechazarla también bloquea nuevas solicitudes durante 3 días.</string>
+    <string name="event_panic_request">%1$s ha pedido quitar Walcott (quedan %2$d h)</string>
+    <string name="event_panic_released">El dispositivo de %1$s se ha liberado</string>
+    <string name="event_panic_denied">Rechazada la solicitud de liberación de %1$s</string>
+    <string name="event_panic_cancelled">La solicitud de liberación de %1$s ha terminado</string>
 </resources>

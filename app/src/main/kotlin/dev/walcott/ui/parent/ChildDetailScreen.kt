@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -71,6 +72,8 @@ import dev.walcott.sync.ClockGuard
 import dev.walcott.sync.DiagPayload
 import dev.walcott.sync.EnforcementStatus
 import dev.walcott.sync.PairingPayload
+import dev.walcott.sync.PanicProtocol
+import dev.walcott.sync.PanicRequest
 import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Role
 import dev.walcott.sync.SyncNotifications
@@ -194,6 +197,18 @@ fun ChildDetailScreen(
                         ),
                         events = events.filter { it.childId == childId && eventRenderable(it) }.take(3),
                         nowMs = nowMs,
+                    )
+                }
+            }
+
+            // --- Emergency release: the child is asking to be let go (see PanicProtocol) ---
+            // Above every other warning on purpose: it ends with the device leaving the family,
+            // and the parent's refusal is only possible while the countdown is running.
+            snapshot?.panic?.let { request ->
+                item {
+                    PanicRequestCard(
+                        request = request,
+                        onDeny = { viewModel.denyPanic(snapshot.deviceId, request.id) },
                     )
                 }
             }
@@ -763,6 +778,75 @@ private fun EnforcementGapCard(count: Int) {
                 color = color,
             )
         }
+    }
+}
+
+/**
+ * The child started an emergency release: unless the parent refuses, the device frees itself
+ * once the countdown completes. Shows how much is left and what refusing costs the child, so
+ * the decision is made with the facts (see [dev.walcott.sync.PanicProtocol]).
+ */
+@Composable
+private fun PanicRequestCard(request: PanicRequest, onDeny: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    val remaining = PanicProtocol.remainingCheckpoints(request)
+    val hoursLeft = (remaining * PanicProtocol.CHECKPOINT_INTERVAL_SEC / 3600).toInt()
+    var confirming by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(spacing.md))
+                Text(
+                    stringResource(R.string.panic_card_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = color,
+                )
+            }
+            Text(
+                if (hoursLeft > 0) {
+                    pluralStringResource(R.plurals.panic_card_left, hoursLeft, hoursLeft)
+                } else {
+                    stringResource(R.string.panic_card_done)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = color,
+            )
+            Text(
+                stringResource(R.string.panic_card_explain),
+                style = MaterialTheme.typography.bodySmall,
+                color = color,
+            )
+            if (hoursLeft > 0) {
+                Button(
+                    onClick = { confirming = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = color),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.panic_deny_action)) }
+            }
+        }
+    }
+
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text(stringResource(R.string.panic_deny_action)) },
+            text = { Text(stringResource(R.string.panic_deny_confirm)) },
+            confirmButton = {
+                TextButton(onClick = { confirming = false; onDeny() }) {
+                    Text(stringResource(R.string.panic_deny_confirm_button))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
     }
 }
 

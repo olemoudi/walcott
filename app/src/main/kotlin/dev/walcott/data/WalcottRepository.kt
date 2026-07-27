@@ -192,6 +192,18 @@ class WalcottRepository(
         }
     }
 
+    /**
+     * Emergency release ([dev.walcott.enforcement.PanicRelease]): forgets the rules and every
+     * local record they produced (usage, extra time, location trail), so what's left looks
+     * like a fresh install rather than a device that was once enrolled.
+     */
+    suspend fun wipeLocalData() {
+        settingsStore.update { PolicySettings() }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            db.clearAllTables()
+        }
+    }
+
     companion object {
         /**
          * Location history retention shown on the parent map. Matches the trail window the

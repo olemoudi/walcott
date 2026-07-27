@@ -1,0 +1,131 @@
+package dev.walcott.sync
+
+import dev.walcott.sync.PanicProtocol.Step
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class PanicProtocolTest {
+
+    private val start = 1_700_000_000L
+    private val twoHours = PanicProtocol.CHECKPOINT_INTERVAL_SEC
+    private val grace = PanicProtocol.CHECKPOINT_GRACE_SEC
+
+    private fun request(checkpoints: Int = 0, lastCheckpointSec: Long = start) =
+        PanicRequest("req", startedAtSec = start, lastCheckpointSec = lastCheckpointSec, checkpoints = checkpoints)
+
+    @Test
+    fun `nothing is due before the two-hour mark`() {
+        assertEquals(Step.WAIT, PanicProtocol.evaluate(request(), start))
+        assertEquals(Step.WAIT, PanicProtocol.evaluate(request(), start + twoHours - 1))
+    }
+
+    @Test
+    fun `a notice is due at two hours`() {
+        assertEquals(Step.CHECKPOINT, PanicProtocol.evaluate(request(), start + twoHours))
+    }
+
+    @Test
+    fun `a late-but-within-grace notice still counts`() {
+        assertEquals(Step.CHECKPOINT, PanicProtocol.evaluate(request(), start + twoHours + grace))
+    }
+
+    @Test
+    fun `a notice past the grace window voids the request`() {
+        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(request(), start + twoHours + grace + 1))
+    }
+
+    @Test
+    fun `the request expires even when the twelfth notice is the late one`() {
+        // Reaching the end doesn't excuse a connectivity failure: the last notice must land too.
+        val last = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)
+        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(last, start + twoHours + grace + 1))
+    }
+
+    @Test
+    fun `the twelfth checkpoint releases the device`() {
+        val eleven = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)
+        assertEquals(Step.RELEASE, PanicProtocol.evaluate(eleven, start + twoHours))
+    }
+
+    @Test
+    fun `twelve checkpoints span twenty-four hours of proven connectivity`() {
+        var current = request()
+        var now = start
+        var steps = 0
+        while (true) {
+            now += twoHours
+            val step = PanicProtocol.evaluate(current, now)
+            if (step == Step.RELEASE) break
+            assertEquals(Step.CHECKPOINT, step)
+            current = PanicProtocol.withCheckpoint(current, now)
+            steps++
+        }
+        assertEquals(PanicProtocol.REQUIRED_CHECKPOINTS - 1, steps)
+        assertEquals(24 * 60 * 60L, now - start)
+    }
+
+    @Test
+    fun `a checkpoint advances the clock and the count`() {
+        val next = PanicProtocol.withCheckpoint(request(), start + twoHours)
+        assertEquals(1, next.checkpoints)
+        assertEquals(start + twoHours, next.lastCheckpointSec)
+        // The countdown re-anchors on the notice that was actually sent, not on a fixed grid.
+        assertEquals(start + 2 * twoHours, PanicProtocol.dueSec(next))
+    }
+
+    @Test
+    fun `going silent past a due notice voids the request on the local clock too`() {
+        assertFalse(PanicProtocol.expiredOffline((twoHours + grace) * 1000))
+        assertTrue(PanicProtocol.expiredOffline((twoHours + grace) * 1000 + 1))
+    }
+
+    @Test
+    fun `only a live message proves the channel`() {
+        val nowMs = 1_700_000_000_000L
+        // The device's own echo, seconds old: proof.
+        assertTrue(PanicProtocol.provesChannel(nowMs, nowMs / 1000))
+        assertTrue(PanicProtocol.provesChannel(nowMs, nowMs / 1000 - 60))
+        // A message replayed after a reconnect carries an old server timestamp: it says nothing
+        // about connectivity now, and must never pay for a notice the device failed to send.
+        assertFalse(PanicProtocol.provesChannel(nowMs, nowMs / 1000 - 3 * 60 * 60))
+        // Nor a timestamp from a server that is somehow ahead of us, or a missing one.
+        assertFalse(PanicProtocol.provesChannel(nowMs, nowMs / 1000 + 3 * 60 * 60))
+        assertFalse(PanicProtocol.provesChannel(nowMs, 0))
+    }
+
+    @Test
+    fun `an offline stretch cannot be paid for by the replay that follows it`() {
+        // Six hours offline: the replayed backlog is stale, so nothing advances; the first live
+        // message (the child's own publish on reconnect) lands past the deadline and voids it.
+        val request = request()
+        val reconnectSec = start + 6 * 60 * 60
+        assertFalse(PanicProtocol.provesChannel(reconnectSec * 1000, start + 60 * 60))
+        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(request, reconnectSec))
+    }
+
+    @Test
+    fun `a denial blocks new requests for three days`() {
+        val until = PanicProtocol.cooldownUntilSec(start)
+        assertEquals(3 * 24 * 60 * 60L, until - start)
+        assertFalse(PanicProtocol.canStart(until, start))
+        assertFalse(PanicProtocol.canStart(until, until - 1))
+        assertTrue(PanicProtocol.canStart(until, until))
+    }
+
+    @Test
+    fun `no standing denial means the child may ask`() {
+        assertTrue(PanicProtocol.canStart(blockedUntilSec = 0, serverNowSec = start))
+    }
+
+    @Test
+    fun `progress and remaining notices follow the proven checkpoints`() {
+        assertEquals(0f, PanicProtocol.progress(request()))
+        assertEquals(12, PanicProtocol.remainingCheckpoints(request()))
+        assertEquals(0.5f, PanicProtocol.progress(request(checkpoints = 6)))
+        assertEquals(6, PanicProtocol.remainingCheckpoints(request(checkpoints = 6)))
+        assertEquals(1f, PanicProtocol.progress(request(checkpoints = 99)))
+        assertEquals(0, PanicProtocol.remainingCheckpoints(request(checkpoints = 99)))
+    }
+}

@@ -106,6 +106,45 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (channelAgo >= 0) {
                     app.syncStore.update { it.copy(lastChannelOkMs = System.currentTimeMillis() - channelAgo) }
                 }
+                // Emergency-release hooks (see PanicProtocol). `--ei panic_self N` puts THIS
+                // device N checkpoints into a request, with the gates satisfied (fresh channel
+                // proof, a server clock, a parent new enough), so the child screens and the
+                // 2 h checkpoint can be driven without waiting a day. `--el panic_due_ago_sec S`
+                // back-dates the last checkpoint so the next incoming message lands a notice
+                // (or, past the grace, cancels the request).
+                val panicSelf = intent.getIntExtra("panic_self", -1)
+                if (panicSelf >= 0) {
+                    val nowSec = System.currentTimeMillis() / 1000
+                    val dueAgo = intent.getLongExtra("panic_due_ago_sec", 0)
+                    app.syncStore.update {
+                        it.copy(
+                            panic = dev.walcott.sync.PanicRequest(
+                                id = "debug-panic",
+                                startedAtSec = nowSec - panicSelf * dev.walcott.sync.PanicProtocol.CHECKPOINT_INTERVAL_SEC,
+                                lastCheckpointSec = nowSec - dueAgo,
+                                checkpoints = panicSelf,
+                            ),
+                            ntfySinceSec = nowSec,
+                            lastChannelOkMs = System.currentTimeMillis(),
+                            parentAppVersionCode = dev.walcott.BuildConfig.VERSION_CODE,
+                        )
+                    }
+                }
+                // `--ez panic_clear true` drops a seeded request and any standing lockout.
+                if (intent.getBooleanExtra("panic_clear", false)) {
+                    app.syncStore.update { it.copy(panic = null, panicBlockedUntilSec = 0) }
+                }
+                // `--ez panic_ready true` just satisfies the start gates (channel + parent build),
+                // for exercising the child's "Request release" button itself.
+                if (intent.getBooleanExtra("panic_ready", false)) {
+                    app.syncStore.update {
+                        it.copy(
+                            ntfySinceSec = System.currentTimeMillis() / 1000,
+                            lastChannelOkMs = System.currentTimeMillis(),
+                            parentAppVersionCode = dev.walcott.BuildConfig.VERSION_CODE,
+                        )
+                    }
+                }
                 // Optional: render an installed app's icon and cache it under the fake apps'
                 // packages, so the parent app list exercises the remote-icon render path.
                 val iconFrom = intent.getStringExtra("child_icon_from")
@@ -154,6 +193,17 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 ?: emptyList(),
             clockSkewMs = intent.getLongExtra("child_skew_ms", 0),
             updateError = intent.getStringExtra("child_update_error") ?: "",
+            // `--ei child_panic N`: this fake child is N checkpoints into an emergency release,
+            // so the parent's alert card, home banner and refusal can be driven on one emulator.
+            panic = intent.getIntExtra("child_panic", -1).takeIf { it >= 0 }?.let { checkpoints ->
+                val nowSec = System.currentTimeMillis() / 1000
+                dev.walcott.sync.PanicRequest(
+                    id = "debug-panic",
+                    startedAtSec = nowSec - checkpoints * dev.walcott.sync.PanicProtocol.CHECKPOINT_INTERVAL_SEC,
+                    lastCheckpointSec = nowSec,
+                    checkpoints = checkpoints,
+                )
+            },
         )
         app.syncStore.update { s ->
             s.copy(

@@ -57,6 +57,8 @@ class SyncManager(
     @Volatile private var lastPublishAtMs: Long = 0
     /** Serializes remote-command execution across concurrently handled parent snapshots. */
     private val commandMutex = Mutex()
+    /** Same, for the emergency-release checkpoints (see [evaluatePanic]). */
+    private val panicMutex = Mutex()
     /** In-flight debounced auto-backup rewrite; replaced on every new trigger. */
     private var autoBackupJob: Job? = null
 
@@ -226,14 +228,32 @@ class SyncManager(
     }
 
     /** Unlink from the family and forget the mode choice; local policy and usage stay. */
-    suspend fun resetDeviceMode() {
+    suspend fun resetDeviceMode() = unlink(FamilyIdentity())
+
+    /**
+     * Emergency release ([dev.walcott.enforcement.PanicRelease]): unlink AND remember that this
+     * device must not enforce again, since the wiped identity alone would look like a fresh
+     * install and start enforcing an empty policy.
+     */
+    suspend fun markReleased() = unlink(FamilyIdentity(released = true))
+
+    /**
+     * Forgets everything the sync layer recorded (emergency release): requests, notices,
+     * the activity feed, per-child history. Separate from [markReleased] so the identity is
+     * dropped — and the transport closed — before the record is erased.
+     */
+    suspend fun wipeSyncState() {
+        syncStore.update { SyncState() }
+    }
+
+    private suspend fun unlink(identity: FamilyIdentity) {
         transport?.close()
         transport = null
         reEmitJob?.cancel()
         reEmitJob = null
         settingsWatchJob?.cancel()
         settingsWatchJob = null
-        identityStore.save(FamilyIdentity())
+        identityStore.save(identity)
     }
 
     /**
@@ -311,6 +331,158 @@ class SyncManager(
             )
         }
         publishSelf()
+    }
+
+    // --- Emergency release, child-initiated (see PanicProtocol) ---
+
+    /** Everything the child's emergency-release screen needs, in one reactive shape. */
+    data class PanicStatus(
+        val request: PanicRequest? = null,
+        /** Newest server second this device has seen — the clock the request runs on. */
+        val serverNowSec: Long = 0,
+        /** Server second until which a parent's refusal blocks a new request. */
+        val blockedUntilSec: Long = 0,
+        /** Wall-clock ms of the last proof the channel works. */
+        val lastChannelOkMs: Long = 0,
+        /**
+         * Whether the parent's build understands the request. An older parent silently ignores
+         * the field, which would turn a loud, refusable request into a quiet escape hatch —
+         * so the child isn't allowed to start one at all.
+         */
+        val parentSupported: Boolean = false,
+    ) {
+        fun channelProven(nowMs: Long): Boolean = PanicProtocol.channelProven(nowMs - lastChannelOkMs)
+
+        /** Whether the child may start a request right now. */
+        fun canStart(nowMs: Long): Boolean = request == null && parentSupported && channelProven(nowMs) &&
+            PanicProtocol.canStart(blockedUntilSec, serverNowSec)
+
+        /** Seconds of lockout left after a refusal (0 = none), for the "try again in…" line. */
+        val cooldownRemainingSec: Long get() = (blockedUntilSec - serverNowSec).coerceAtLeast(0)
+    }
+
+    val panicStatus: StateFlow<PanicStatus> = syncStore.state.map { s ->
+        PanicStatus(
+            request = s.panic,
+            serverNowSec = s.ntfySinceSec,
+            blockedUntilSec = s.panicBlockedUntilSec,
+            lastChannelOkMs = s.lastChannelOkMs,
+            parentSupported = s.parentAppVersionCode >= PANIC_MIN_PARENT_VERSION,
+        )
+    }.stateIn(scope, SharingStarted.Eagerly, PanicStatus())
+
+    /**
+     * Starts the 24-hour emergency release. Returns false when the gates say no (no channel,
+     * a standing refusal, a parent that couldn't be told, or a request already running) —
+     * re-checked here and not only in the UI, since this is the one door out of enforcement.
+     */
+    suspend fun startPanic(): Boolean {
+        val status = panicStatus.value
+        if (!status.canStart(System.currentTimeMillis())) return false
+        val anchor = status.serverNowSec
+        syncStore.update {
+            it.copy(
+                panic = PanicRequest(
+                    id = UUID.randomUUID().toString(),
+                    startedAtSec = anchor,
+                    lastCheckpointSec = anchor,
+                ),
+                childVersion = it.childVersion + 1,
+            )
+        }
+        dev.walcott.debug.DebugLog.w(TAG, "emergency release requested by the child")
+        publishSelf()
+        return true
+    }
+
+    /** The child withdraws their own request (starting again restarts the 24 hours). */
+    suspend fun cancelPanic() {
+        if (syncStore.current().panic == null) return
+        syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
+        dev.walcott.debug.DebugLog.w(TAG, "emergency release withdrawn by the child")
+        publishSelf()
+    }
+
+    /**
+     * The parent refuses the pending request ([RemoteAction.DENY_PANIC]): it dies and the child
+     * can't ask again for three days. [requestId] must match the live request — a refusal that
+     * arrives after the child already withdrew must not punish a later, unrelated one.
+     */
+    private suspend fun denyPanic(requestId: String): Pair<Boolean, String> = panicMutex.withLock {
+        // Under the same lock as the checkpoints: a refusal landing at the same moment as the
+        // final notice must not lose the race to the release it is trying to prevent.
+        val s = syncStore.current()
+        val request = s.panic ?: return@withLock false to "no_request"
+        if (requestId.isNotBlank() && requestId != request.id) return@withLock false to "stale_request"
+        syncStore.update {
+            it.copy(
+                panic = null,
+                panicBlockedUntilSec = PanicProtocol.cooldownUntilSec(it.ntfySinceSec),
+                childVersion = it.childVersion + 1,
+            )
+        }
+        dev.walcott.debug.DebugLog.w(TAG, "emergency release refused by the parent")
+        PanicNotifications.notifyDenied(context)
+        publishSelf()
+        true to "denied"
+    }
+
+    /**
+     * Moves an active request forward against [serverNowSec] — the timestamp of a live message,
+     * which is itself the proof that the channel works. Called on every incoming message, so the
+     * two-hourly notice rides on traffic that happens anyway.
+     *
+     * Serialized like [applyCommands], and for the same reason: every message is handled in its
+     * own coroutine, so a burst (our own echo landing beside a parent snapshot) would otherwise
+     * read the same request twice and bank the same notice twice.
+     */
+    private suspend fun evaluatePanic(serverNowSec: Long) = panicMutex.withLock {
+        val request = syncStore.current().panic ?: return@withLock
+        when (PanicProtocol.evaluate(request, serverNowSec)) {
+            PanicProtocol.Step.WAIT -> return@withLock
+            PanicProtocol.Step.CHECKPOINT -> {
+                val next = PanicProtocol.withCheckpoint(request, serverNowSec)
+                syncStore.update { it.copy(panic = next, childVersion = it.childVersion + 1) }
+                dev.walcott.debug.DebugLog.i(
+                    TAG, "emergency release notice ${next.checkpoints}/${PanicProtocol.REQUIRED_CHECKPOINTS}",
+                )
+                PanicNotifications.notifyProgress(context, PanicProtocol.remainingCheckpoints(next))
+                publishSelf()
+            }
+            PanicProtocol.Step.RELEASE -> {
+                // Publish the completed request first: it is the parent's only record that the
+                // device let itself go, and a moment later there is no channel left to say so.
+                syncStore.update {
+                    it.copy(
+                        panic = PanicProtocol.withCheckpoint(request, serverNowSec),
+                        childVersion = it.childVersion + 1,
+                    )
+                }
+                publishSelf()
+                PanicNotifications.notifyReleased(context)
+                dev.walcott.enforcement.PanicRelease.releaseDevice(context)
+            }
+            PanicProtocol.Step.EXPIRED -> expirePanic()
+        }
+    }
+
+    /**
+     * Ends a request whose device went quiet when a notice was due. Also called from the
+     * heartbeat: while the channel is down no message arrives to notice it, and a request
+     * that survived an offline stretch would be exactly the connectivity gap this must catch.
+     */
+    suspend fun expirePanicIfOffline() = panicMutex.withLock {
+        val s = syncStore.current()
+        if (s.panic == null) return@withLock
+        if (!PanicProtocol.expiredOffline(System.currentTimeMillis() - s.lastChannelOkMs)) return@withLock
+        expirePanic()
+    }
+
+    private suspend fun expirePanic() {
+        syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
+        dev.walcott.debug.DebugLog.w(TAG, "emergency release cancelled: the channel failed when a notice was due")
+        PanicNotifications.notifyExpired(context)
+        runCatching { publishSelf() }
     }
 
     /** PIN-gated manual exemption: allow installs on this device for a while (blanket). */
@@ -491,6 +663,18 @@ class SyncManager(
             )
         }
         publishSelf()
+    }
+
+    /**
+     * Parent refuses a child's emergency release: queues the refusal and records it on the feed
+     * right away, so the wall shows the decision even before the child acknowledges it.
+     */
+    suspend fun denyPanicRequest(targetDeviceId: String, requestId: String) {
+        val target = syncStore.current().children.firstOrNull { it.deviceId == targetDeviceId }
+        sendCommand(targetDeviceId, RemoteAction.DENY_PANIC, arg = requestId)
+        if (target != null) {
+            syncStore.update { it.plusEvent(event(ParentEvent.TYPE_PANIC_DENIED, target, detail = requestId)) }
+        }
     }
 
     /** Withdraws a pending "locate now" for a device. Best-effort, like [cancelCommand]. */
@@ -970,6 +1154,7 @@ class SyncManager(
                     updateError = s.updateError,
                     enforcementGaps = s.enforcementGaps,
                     clockSkewMs = s.clockSkewMs,
+                    panic = s.panic,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -1097,6 +1282,14 @@ class SyncManager(
             id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot)
             id.role == Role.PARENT && message is IncomingMessage.FromChildIcons -> applyIconPayload(message.payload)
             id.role == Role.PARENT && message is IncomingMessage.FromChildDiag -> applyDiagPayload(message.payload)
+        }
+
+        // The emergency release runs on the server's clock, and a LIVE message proves both that
+        // the channel works and what time the server thinks it is (see PanicProtocol.provesChannel
+        // for why a replayed one proves neither). Deliberately AFTER the parent snapshot above: a
+        // refusal arriving in the same message must beat the notice — or the release — it refuses.
+        if (id.role == Role.CHILD && PanicProtocol.provesChannel(System.currentTimeMillis(), timeSec)) {
+            evaluatePanic(maxOf(timeSec, syncStore.current().ntfySinceSec))
         }
     }
 
@@ -1278,6 +1471,7 @@ class SyncManager(
                 repository,
                 openInstallForPush = { pkg, id -> openInstallForPush(pkg, id) },
                 publishDiagnostics = { publishDiagnostics() },
+                denyPanic = { requestId -> denyPanic(requestId) },
             )
         }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
@@ -1365,6 +1559,36 @@ class SyncManager(
         ) {
             SyncNotifications.notifyEnforcementDegraded(context, snapshot.displayName, snapshot.deviceId, snapshot.childId)
             syncStore.update { it.plusEvent(event(ParentEvent.TYPE_PROTECTION_DEGRADED, snapshot)) }
+        }
+
+        // The child asked to be released from Walcott (see PanicProtocol). The loudest thing a
+        // family can be told: one alert per two-hourly notice — that drum-beat IS the protocol's
+        // guarantee that a living parent finds out — each carrying a one-tap refusal. Keyed by
+        // request id AND checkpoint so a re-started request alerts again and a re-emitted
+        // snapshot doesn't.
+        val panic = snapshot.panic
+        val panicKey = panic?.let { "${it.id}@${it.checkpoints}" }
+        if (panic != null && before.panicAlerted[snapshot.deviceId] != panicKey) {
+            val released = panic.checkpoints >= PanicProtocol.REQUIRED_CHECKPOINTS
+            SyncNotifications.notifyPanicRequest(
+                context, snapshot.displayName, panic, snapshot.deviceId, snapshot.childId,
+            )
+            syncStore.update {
+                it.copy(panicAlerted = it.panicAlerted + (snapshot.deviceId to panicKey!!))
+                    .plusEvent(
+                        event(
+                            if (released) ParentEvent.TYPE_PANIC_RELEASED else ParentEvent.TYPE_PANIC_REQUEST,
+                            snapshot, detail = panic.id, count = PanicProtocol.remainingCheckpoints(panic),
+                        ),
+                    )
+            }
+        } else if (panic == null && snapshot.deviceId in before.panicAlerted) {
+            // Withdrawn by the child, refused, or killed by the connectivity rule. Either way
+            // the parent deserves the closing line as much as the alarm.
+            syncStore.update {
+                it.copy(panicAlerted = it.panicAlerted - snapshot.deviceId)
+                    .plusEvent(event(ParentEvent.TYPE_PANIC_CANCELLED, snapshot))
+            }
         }
 
         // Alert once when usage access is off (budgets silently stop counting); re-alert on relapse.
@@ -1542,5 +1766,14 @@ class SyncManager(
         private const val AUTO_BACKUP_DEBOUNCE_MS = 15_000L
         /** How far a restore jumps the version counter past the backup's (see restoreBackup). */
         private const val RESTORE_VERSION_LEAP = 1_000_000L
+
+        /**
+         * The first build whose parent side understands an emergency release. A child refuses
+         * to start one against an older parent: that parent would ignore the field entirely,
+         * turning a request the family is supposed to see and be able to refuse into a silent
+         * 24-hour countdown. Children only self-update up to the parent's build (the canary),
+         * so in practice a child new enough to offer this already has a parent new enough.
+         */
+        const val PANIC_MIN_PARENT_VERSION = 53
     }
 }

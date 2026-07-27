@@ -40,6 +40,17 @@ class FamilyIdentityTest {
     }
 
     @Test
+    fun `a released device never enforces again`() {
+        // The emergency release wipes the identity, and a wiped identity is UNSET — which
+        // enforces. Without this flag the boot receiver and watchdog would start enforcing an
+        // empty policy, i.e. block every app on a device that was just handed back.
+        assertEquals(false, FamilyIdentity(released = true).enforcesLocally)
+        assertEquals(false, FamilyIdentity(mode = DeviceMode.CHILD, released = true).enforcesLocally)
+        // Pairing again builds a fresh identity, so the flag can't outlive a re-enrollment.
+        assertEquals(true, FamilyIdentity(mode = DeviceMode.CHILD).enforcesLocally)
+    }
+
+    @Test
     fun `serialization round-trips with new fields`() {
         val json = Json { encodeDefaults = true }
         val identity = FamilyIdentity(

@@ -72,6 +72,10 @@ data class ParentEvent(
         const val TYPE_REQUEST_DENIED = "request_denied"
         const val TYPE_BONUS = "bonus"
         const val TYPE_REMOTE_DONE = "remote_done"
+        const val TYPE_PANIC_REQUEST = "panic_request"
+        const val TYPE_PANIC_RELEASED = "panic_released"
+        const val TYPE_PANIC_DENIED = "panic_denied"
+        const val TYPE_PANIC_CANCELLED = "panic_cancelled"
     }
 }
 
@@ -124,6 +128,13 @@ data class SyncState(
     val parentAppVersionCode: Int = 0,
     /** Wall-clock ms of the last message received over the channel (proof it works end to end). */
     val lastChannelOkMs: Long = 0,
+    /** This device's pending emergency-release request (see [PanicProtocol]); null = none. */
+    val panic: PanicRequest? = null,
+    /**
+     * Server second until which a parent's refusal blocks a new request. Counted in server
+     * time, like the request itself, so moving the device clock can't wait out the lockout.
+     */
+    val panicBlockedUntilSec: Long = 0,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
@@ -155,6 +166,11 @@ data class SyncState(
     val clockTamperNotified: Set<String> = emptySet(),
     /** deviceId -> latest health report received from that child (see [DiagPayload]). */
     val diagReports: Map<String, DiagPayload> = emptyMap(),
+    /**
+     * deviceId -> "requestId@checkpoints" of the emergency release already alerted about, so
+     * each two-hourly notice raises exactly one alert and a re-started request alerts again.
+     */
+    val panicAlerted: Map<String, String> = emptyMap(),
     /** When the parent last saved a family backup file (0 = never), for the backup card. */
     val lastBackupAtMs: Long = 0,
     /** When this device first ran as a parent (0 = not yet); anchors the backup reminders. */
@@ -191,12 +207,22 @@ data class SyncState(
      */
     val ntfySinceSec: Long = 0,
 ) {
-    /** The feed with [event] appended, oldest entries dropped past the cap. */
-    fun plusEvent(event: ParentEvent): SyncState = copy(events = (events + event).takeLast(EVENT_LOG_MAX))
+    /** The feed with [event] appended, dropping whatever fell out of the retention window. */
+    fun plusEvent(event: ParentEvent): SyncState = copy(events = pruneEvents(events + event, event.atMs))
 
     companion object {
-        /** Feed cap: enough for weeks of family activity, bounded so DataStore stays small. */
+        /** Feed cap: bounded so DataStore stays small however busy the family is. */
         const val EVENT_LOG_MAX = 120
+
+        /**
+         * How far back the feed goes. "Recent activity" that shows something from three weeks
+         * ago isn't recent, and on a quiet family the count cap alone would never bite.
+         */
+        const val EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000L
+
+        /** Events worth keeping at [nowMs]: inside the window, and at most [EVENT_LOG_MAX]. */
+        fun pruneEvents(events: List<ParentEvent>, nowMs: Long): List<ParentEvent> =
+            events.filter { nowMs - it.atMs <= EVENT_RETENTION_MS }.takeLast(EVENT_LOG_MAX)
     }
 }
 

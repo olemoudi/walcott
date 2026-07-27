@@ -97,6 +97,19 @@ class WalcottApplication : Application() {
     }
 
     /**
+     * Emergency release of this device (see [dev.walcott.enforcement.PanicRelease]), run on the
+     * app scope: it unsuspends apps, drops Device Owner and wipes the local data, and a screen
+     * disappearing mid-way — which is exactly what the identity reset causes — must not leave
+     * the device half-freed. [onDone] is called on the main thread when it has finished.
+     */
+    fun releaseDevice(onDone: () -> Unit = {}) {
+        appScope.launch {
+            runCatching { dev.walcott.enforcement.PanicRelease.releaseDevice(this@WalcottApplication) }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { onDone() }
+        }
+    }
+
+    /**
      * Pushes an assisted app install to a child from the share-sheet flow. Runs on the app
      * scope (not the launching activity's) so it survives the activity finishing immediately.
      * Classifies the app first, when a category was chosen, so it isn't blocked on install.

@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Lets the emergency release (PanicRelease) offer the system uninstall prompt for
+         Walcott itself; without it the prompt is refused and the button does nothing. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- osmdroid can pull this in via manifest merge; we cache tiles in app-private storage,
          so strip it to keep the permission set minimal (no-op if no library declares it). -->
@@ -153,6 +156,11 @@
         <!-- "Don't remind me again" action on the backup-reminder notification. -->
         <receiver
             android:name=".sync.BackupReminderReceiver"
+            android:exported="false" />
+
+        <!-- "Refuse" action on the child's emergency-release alert (see PanicProtocol). -->
+        <receiver
+            android:name=".sync.PanicDenyReceiver"
             android:exported="false" />
 
         <!-- Hands the encrypted family backup to the share sheet (email-to-self and the like). -->

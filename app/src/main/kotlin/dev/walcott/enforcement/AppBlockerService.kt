@@ -39,6 +39,12 @@ class AppBlockerService : AccessibilityService() {
 
     @Volatile private var config: FamilyConfig? = null
     @Volatile private var managed: Set<String> = emptySet()
+    /**
+     * Whether this device enforces at all. A parent phone — and a device freed by an emergency
+     * release ([PanicRelease]) — must never be kicked out of apps, and after a release the
+     * wiped policy would classify every app as unknown, i.e. block everything.
+     */
+    @Volatile private var enforcing: Boolean = true
     @Volatile private var usage: Map<String, Duration> = emptyMap()
     @Volatile private var extra: Map<String, Duration> = emptyMap()
 
@@ -64,6 +70,7 @@ class AppBlockerService : AccessibilityService() {
                 managed = app.repository.managedPackagesNow()
             }
         }
+        scope.launch { app.identityStore.identity.collectLatest { enforcing = it.enforcesLocally } }
         scope.launch { app.repository.usageTodayFlow.collectLatest { usage = it } }
         scope.launch { app.repository.effectiveExtraTodayFlow.collectLatest { extra = it } }
         ContextCompat.registerReceiver(
@@ -89,6 +96,7 @@ class AppBlockerService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (!enforcing) return
         val pkg = event.packageName?.toString() ?: return
         val cfg = config ?: return
         if (pkg == packageName || pkg !in managed) return

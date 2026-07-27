@@ -74,6 +74,8 @@ import dev.walcott.data.ChildEntry
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.EnforcementStatus
+import dev.walcott.sync.PanicProtocol
+import dev.walcott.sync.PanicRequest
 import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Staleness
 import dev.walcott.sync.SyncEngine
@@ -102,6 +104,7 @@ fun FamiliesScreen(
     onOpenApps: () -> Unit,
     onOpenBudgets: () -> Unit,
     onOpenGuidedSetup: () -> Unit,
+    onOpenActivity: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
@@ -184,6 +187,16 @@ fun FamiliesScreen(
             }
         }
 
+        // A child asking to be released outranks everything else on this screen: ignore it for
+        // 24 hours and the device leaves the family (see PanicProtocol).
+        items(snapshots.filter { it.panic != null }, key = { "panic-${it.deviceId}" }) { child ->
+            PanicHomeRow(
+                childName = childNameFor(child.deviceId, settings.children, snapshots),
+                request = child.panic!!,
+                onOpen = { if (child.childId in registryIds) onOpenChild(child.childId) },
+            )
+        }
+
         item {
             FamilyCard(
                 name = settings.familyName.ifBlank { stringResource(R.string.family_default_name) },
@@ -258,24 +271,20 @@ fun FamiliesScreen(
             }
         }
 
-        // The wall: recent relevant events, newest first. A notification can be swiped away
-        // and lost; its message survives here, and tapping lands on the affected child.
-        val wall = events.filter(::eventRenderable).take(HOME_FEED_COUNT)
-        if (wall.isNotEmpty()) {
+        // The wall, in digest form: the last few lines in one compact card, with the full feed
+        // one tap away. A notification can be swiped away and lost; its message survives there.
+        val renderable = events.filter(::eventRenderable)
+        if (renderable.isNotEmpty()) {
             item {
-                Text(
-                    stringResource(R.string.timeline_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = spacing.sm),
+                RecentActivityCard(
+                    events = renderable.take(HOME_FEED_COUNT),
+                    childName = { event ->
+                        settings.children.firstOrNull { it.childId == event.childId }?.name
+                            ?: event.childName.ifBlank { stringResource(R.string.family_default_name) }
+                    },
+                    nowMs = nowMs,
+                    onSeeAll = onOpenActivity,
                 )
-            }
-            items(wall, key = { "ev-" + it.id.ifBlank { "${it.atMs}-${it.type}-${it.childId}" } }) { event ->
-                val name = settings.children.firstOrNull { it.childId == event.childId }?.name
-                    ?: event.childName.ifBlank { stringResource(R.string.family_default_name) }
-                val target = event.childId.takeIf { id -> settings.children.any { it.childId == id } }
-                Box(Modifier.animateItem()) {
-                    EventRow(event, name, nowMs, onClick = target?.let { id -> { onOpenChild(id) } })
-                }
             }
         }
 
@@ -499,6 +508,74 @@ private fun ChildRow(
     }
 }
 
+/**
+ * The home's activity digest: the newest few lines, compact, in one card. The wall used to be
+ * eight full-size rows and dominated the screen — the family, not the log, is what the home is
+ * for. Everything else lives behind "see all" ([ActivityScreen]).
+ */
+@Composable
+private fun RecentActivityCard(
+    events: List<dev.walcott.sync.ParentEvent>,
+    childName: @Composable (dev.walcott.sync.ParentEvent) -> String,
+    nowMs: Long,
+    onSeeAll: () -> Unit,
+) {
+    val spacing = Tokens.spacing
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth().padding(top = spacing.sm),
+    ) {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(stringResource(R.string.timeline_title), style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(spacing.sm))
+            events.forEach { event -> EventLine(event, childName(event), nowMs) }
+            TextButton(
+                onClick = onSeeAll,
+                modifier = Modifier.align(Alignment.End).padding(top = spacing.xs),
+            ) { Text(stringResource(R.string.timeline_see_all)) }
+        }
+    }
+}
+
+/**
+ * A child's pending emergency release, at the very top of the parent's home. The child detail
+ * screen holds the actual refusal button; this is the "you cannot miss this" line.
+ */
+@Composable
+private fun PanicHomeRow(childName: String, request: PanicRequest, onOpen: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    val hoursLeft = (PanicProtocol.remainingCheckpoints(request) * PanicProtocol.CHECKPOINT_INTERVAL_SEC / 3600).toInt()
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(22.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.panic_alert_title, childName),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = color,
+                )
+                Text(
+                    if (hoursLeft > 0) {
+                        pluralStringResource(R.plurals.panic_card_left, hoursLeft, hoursLeft)
+                    } else {
+                        stringResource(R.string.panic_card_done)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = color,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun GuidedSetupCard(onClick: () -> Unit) {
     val spacing = Tokens.spacing
@@ -688,7 +765,7 @@ private fun LegacyDeviceRow(device: ChildSnapshot, onRemove: () -> Unit) {
 }
 
 /** How many wall entries the home shows (the full capped feed stays in the store). */
-private const val HOME_FEED_COUNT = 8
+private const val HOME_FEED_COUNT = 4
 
 /** The registry name for a device, falling back to what the device calls itself. */
 private fun childNameFor(deviceId: String, children: List<ChildEntry>, snapshots: List<ChildSnapshot>): String {

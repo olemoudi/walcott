@@ -30,9 +30,11 @@ import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.child.ChildStatusScreen
+import dev.walcott.ui.child.PanicScreen
 import dev.walcott.data.PolicySettings
 import dev.walcott.ui.parent.AppAssignScreen
 import dev.walcott.ui.parent.AppDetailScreen
+import dev.walcott.ui.parent.ActivityScreen
 import dev.walcott.ui.parent.AppSettingsScreen
 import dev.walcott.ui.parent.LocationSettingsScreen
 import dev.walcott.ui.parent.BudgetsScreen
@@ -59,7 +61,7 @@ private fun overrideChildName(settings: PolicySettings, childId: String?): Strin
 private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, SETUP_PRESETS, SETUP_WIZARD, FAMILY, CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
-    APP_SETTINGS, DEBUG_LOGS,
+    APP_SETTINGS, DEBUG_LOGS, PANIC, ACTIVITY,
 }
 
 @Composable
@@ -150,8 +152,10 @@ fun WalcottApp(
     val childDevice = identity.effectiveMode == DeviceMode.CHILD
     DisposableEffect(lifecycleOwner, childDevice) {
         val observer = LifecycleEventObserver { _, event ->
+            // PANIC is exempt: it is the one child screen that is NOT behind the PIN, so
+            // there is nothing to protect by kicking the child out of it.
             if (event == Lifecycle.Event.ON_STOP && childDevice &&
-                screen != Screen.CHILD && screen != Screen.MODE_SELECT
+                screen != Screen.CHILD && screen != Screen.MODE_SELECT && screen != Screen.PANIC
             ) {
                 screen = Screen.CHILD
             }
@@ -189,6 +193,8 @@ fun WalcottApp(
             Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
+            Screen.PANIC -> Screen.CHILD
+            Screen.ACTIVITY -> Screen.FAMILIES
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
             else -> screen
         }
@@ -219,7 +225,11 @@ fun WalcottApp(
                         viewModel,
                         deviceOwner = deviceOwner,
                         onOpenParent = { gateAllowCreate = false; screen = Screen.GATE },
+                        onOpenPanic = { screen = Screen.PANIC },
                     )
+                    // Reachable without the PIN on purpose: it exists for the family that lost
+                    // both the parent phone and the PIN (see PanicProtocol).
+                    Screen.PANIC -> PanicScreen(viewModel, onBack = { screen = Screen.CHILD })
                     Screen.GATE -> PinGateScreen(
                         viewModel,
                         onUnlocked = {
@@ -244,6 +254,15 @@ fun WalcottApp(
                         onOpenApps = { screen = Screen.APPS },
                         onOpenBudgets = { screen = Screen.BUDGETS },
                         onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
+                        onOpenActivity = { screen = Screen.ACTIVITY },
+                    )
+                    Screen.ACTIVITY -> ActivityScreen(
+                        viewModel,
+                        onOpenChild = { childId ->
+                            childDetailId = childId
+                            screen = Screen.CHILD_DETAIL
+                        },
+                        onBack = ::back,
                     )
                     Screen.SETUP_PRESETS -> SetupPresetChooserScreen(
                         onPick = { preset ->
@@ -337,6 +356,7 @@ fun WalcottApp(
                             viewModel.resetDeviceMode()
                             screen = Screen.MODE_SELECT
                         },
+                        onReleased = { screen = Screen.MODE_SELECT },
                         onBack = ::back,
                     )
                     Screen.DEBUG_LOGS -> DebugLogScreen(onBack = ::back)

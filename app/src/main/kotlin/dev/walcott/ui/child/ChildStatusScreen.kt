@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -106,6 +107,7 @@ fun ChildStatusScreen(
     viewModel: WalcottViewModel,
     deviceOwner: Boolean,
     onOpenParent: () -> Unit,
+    onOpenPanic: () -> Unit,
 ) {
     val state by viewModel.childState.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
@@ -115,6 +117,7 @@ fun ChildStatusScreen(
     val myAsks by viewModel.myPendingAsks.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     val installExemption by viewModel.installExemption.collectAsStateWithLifecycle()
+    val panicStatus by viewModel.panicStatus.collectAsStateWithLifecycle()
     val spacing = Tokens.spacing
     val scope = rememberCoroutineScope()
 
@@ -198,6 +201,11 @@ fun ChildStatusScreen(
                 channelOfflineSince?.let { since ->
                     item { ChannelOfflineCard(since) }
                 }
+                // A running emergency release is the most important thing on this phone: it
+                // ends with Walcott gone, and it dies if the channel does. Never buried.
+                panicStatus.request?.let { request ->
+                    item { PanicProgressRow(request, onOpen = onOpenPanic) }
+                }
             }
             // The parents' latest answer: approvals celebrate, denials are said out loud
             // (a request that just vanishes teaches the child to spam it), bonuses explain
@@ -272,6 +280,23 @@ fun ChildStatusScreen(
                 }
                 item { AskCard(onClick = { showAsk = true }) }
             }
+            // The way out when the parents lost their phone AND the PIN: deliberately a plain
+            // line at the very bottom, not a card. It has to be findable in a real emergency
+            // without being an inviting button to poke at. An active request is loud, though —
+            // it belongs at the top of the screen (see PanicStatusCard above).
+            if (identity.role == Role.CHILD) {
+                item {
+                    Text(
+                        stringResource(R.string.panic_entry),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable(onClick = onOpenPanic)
+                            .padding(top = spacing.xl, bottom = spacing.sm),
+                    )
+                }
+            }
             // Version visible on the child home without unlocking settings (self-updates are
             // silent, so this is the only easy way to confirm a device is on the latest build).
             item {
@@ -280,7 +305,7 @@ fun ChildStatusScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = spacing.xl),
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = spacing.xl),
                 )
             }
         }
@@ -380,6 +405,36 @@ private fun ChannelOfflineCard(sinceMs: Long) {
                     stringResource(R.string.channel_offline_desc, since),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** Compact live status of an emergency release; tapping opens the full screen. */
+@Composable
+private fun PanicProgressRow(request: dev.walcott.sync.PanicRequest, onOpen: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(22.dp),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.LockOpen, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.panic_active_title), style = MaterialTheme.typography.titleMedium, color = color)
+                Text(
+                    stringResource(
+                        R.string.panic_active_notices,
+                        request.checkpoints,
+                        dev.walcott.sync.PanicProtocol.REQUIRED_CHECKPOINTS,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = color,
                 )
             }
         }

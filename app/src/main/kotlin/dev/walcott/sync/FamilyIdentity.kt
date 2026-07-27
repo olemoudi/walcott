@@ -51,6 +51,14 @@ data class FamilyIdentity(
     val appLock: Boolean = false,
     /** Whether device biometrics may be used to satisfy [appLock]. */
     val appLockBiometric: Boolean = false,
+    /**
+     * Set by an emergency release (see [dev.walcott.enforcement.PanicRelease]): this device was
+     * freed and must never enforce again. Everything else about the enrollment is wiped, and
+     * the wiped identity is UNSET — which enforces by default (see [enforcesLocally]) — so this
+     * one bit is what keeps the boot receiver, the watchdog and the heartbeat standing down
+     * until someone deliberately pairs the device again.
+     */
+    val released: Boolean = false,
 ) {
     val isPaired: Boolean get() = role != Role.UNPAIRED
 
@@ -65,7 +73,8 @@ data class FamilyIdentity(
 
     /**
      * Whether this device runs the enforcement service. Parent phones don't enforce
-     * anything on themselves; UNSET keeps enforcing so local-fallback installs stay safe.
+     * anything on themselves; UNSET keeps enforcing so local-fallback installs stay safe —
+     * except after a [released] emergency teardown, which must stay released.
      */
-    val enforcesLocally: Boolean get() = effectiveMode != DeviceMode.PARENT
+    val enforcesLocally: Boolean get() = !released && effectiveMode != DeviceMode.PARENT
 }

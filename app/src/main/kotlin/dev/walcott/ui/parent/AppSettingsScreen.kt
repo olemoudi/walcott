@@ -61,10 +61,15 @@ fun AppSettingsScreen(
     onAllowInstalls: () -> Unit,
     onOpenDebugLogs: () -> Unit,
     onChangeMode: () -> Unit,
+    onReleased: () -> Unit,
     onBack: () -> Unit,
 ) {
     val spacing = Tokens.spacing
+    val context = androidx.compose.ui.platform.LocalContext.current
     var confirmChangeMode by remember { mutableStateOf(false) }
+    var confirmRelease by remember { mutableStateOf(false) }
+    var releasing by remember { mutableStateOf(false) }
+    var released by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.app_settings_title), onBack)
@@ -116,55 +121,152 @@ fun AppSettingsScreen(
                     stringResource(R.string.change_device_mode_subtitle),
                     onClick = { confirmChangeMode = true },
                 )
+                // The parent-PIN way out: for the family whose parent phone (and backup) is
+                // gone but who still knows the PIN. Unlike "change mode", which only unlinks,
+                // this hands the whole device back — see PanicRelease.
+                DangerCard(
+                    title = stringResource(R.string.release_device_title),
+                    description = stringResource(R.string.release_device_subtitle),
+                    onClick = { confirmRelease = true },
+                )
             }
         }
     }
 
     if (confirmChangeMode) {
         // Re-verify the PIN before leaving child mode (which would drop enforcement).
-        val scope = rememberCoroutineScope()
-        var pin by remember { mutableStateOf("") }
-        var pinError by remember { mutableStateOf<String?>(null) }
-        val wrongPin = stringResource(R.string.pin_incorrect)
-        val lockedFmt = stringResource(R.string.pin_locked)
-        AlertDialog(
-            onDismissRequest = { confirmChangeMode = false },
-            title = { Text(stringResource(R.string.change_device_mode)) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.change_mode_confirm))
-                    OutlinedTextField(
-                        value = pin,
-                        onValueChange = { pin = it.filter(Char::isDigit).take(8); pinError = null },
-                        label = { Text(stringResource(R.string.pin_label)) },
-                        singleLine = true,
-                        isError = pinError != null,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
-                    )
-                    pinError?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
+        PinConfirmDialog(
+            viewModel = viewModel,
+            title = stringResource(R.string.change_device_mode),
+            message = stringResource(R.string.change_mode_confirm),
+            confirmLabel = stringResource(R.string.change_mode_confirm_button),
+            onDismiss = { confirmChangeMode = false },
+            onConfirmed = { confirmChangeMode = false; onChangeMode() },
+        )
+    }
+
+    if (confirmRelease) {
+        // The PIN again, for the same reason it guards leaving child mode — and here the stakes
+        // are higher: this is irreversible without re-enrolling the device from scratch.
+        PinConfirmDialog(
+            viewModel = viewModel,
+            title = stringResource(R.string.release_device_title),
+            message = stringResource(R.string.release_device_confirm),
+            confirmLabel = stringResource(R.string.release_device_confirm_button),
+            busy = releasing,
+            onDismiss = { confirmRelease = false },
+            onConfirmed = {
+                releasing = true
+                (context.applicationContext as dev.walcott.WalcottApplication).releaseDevice {
+                    releasing = false
+                    confirmRelease = false
+                    released = true
                 }
-            },
-            confirmButton = {
-                TextButton(enabled = pin.isNotEmpty(), onClick = {
-                    scope.launch {
-                        when (val result = viewModel.verifyPin(pin)) {
-                            is PinResult.Ok -> { confirmChangeMode = false; onChangeMode() }
-                            is PinResult.Wrong -> pinError = wrongPin
-                            is PinResult.Locked ->
-                                pinError = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
-                        }
-                    }
-                }) { Text(stringResource(R.string.change_mode_confirm_button)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmChangeMode = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
+
+    if (released) {
+        // Done, and the app no longer manages anything. Offer the last step — removing it —
+        // since "as if it had never been installed" is the whole point of this door.
+        AlertDialog(
+            onDismissRequest = { released = false; onReleased() },
+            title = { Text(stringResource(R.string.release_done_title)) },
+            text = { Text(stringResource(R.string.release_done_text)) },
+            confirmButton = {
+                TextButton(onClick = { dev.walcott.enforcement.PanicRelease.requestUninstall(context) }) {
+                    Text(stringResource(R.string.release_uninstall_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { released = false; onReleased() }) {
+                    Text(stringResource(R.string.action_close))
+                }
+            },
+        )
+    }
+}
+
+/**
+ * A destructive action's card: same shape as [NavCard] but in the error colour, because the
+ * two actions that use it (leaving child mode, releasing the device) can't be undone from
+ * this phone.
+ */
+@Composable
+private fun DangerCard(title: String, description: String, onClick: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.10f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = color)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = color)
+        }
+    }
+}
+
+/**
+ * Asks for the parent PIN before an irreversible local action, with the same brute-force
+ * lockout as every other PIN entry (see [WalcottViewModel.verifyPin]).
+ */
+@Composable
+private fun PinConfirmDialog(
+    viewModel: WalcottViewModel,
+    title: String,
+    message: String,
+    confirmLabel: String,
+    busy: Boolean = false,
+    onDismiss: () -> Unit,
+    onConfirmed: () -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val scope = rememberCoroutineScope()
+    var pin by remember { mutableStateOf("") }
+    var pinError by remember { mutableStateOf<String?>(null) }
+    val wrongPin = stringResource(R.string.pin_incorrect)
+    val lockedFmt = stringResource(R.string.pin_locked)
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(message)
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it.filter(Char::isDigit).take(8); pinError = null },
+                    label = { Text(stringResource(R.string.pin_label)) },
+                    singleLine = true,
+                    isError = pinError != null,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
+                )
+                pinError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = pin.isNotEmpty() && !busy, onClick = {
+                scope.launch {
+                    when (val result = viewModel.verifyPin(pin)) {
+                        is PinResult.Ok -> onConfirmed()
+                        is PinResult.Wrong -> pinError = wrongPin
+                        is PinResult.Locked ->
+                            pinError = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                    }
+                }
+            }) { Text(confirmLabel) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
 }
 
 @Composable

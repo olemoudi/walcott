@@ -1,0 +1,133 @@
+package dev.walcott.sync
+
+/**
+ * The child-initiated emergency release: the way out when the parent device is gone AND the
+ * parent PIN is lost, so nobody can free the device the normal way (see the PIN-gated release
+ * on the child's device settings).
+ *
+ * It is deliberately slow and loud rather than secret: the child starts a request, and for the
+ * next 24 hours the device must keep proving it can reach the family channel, sending the
+ * parent a fresh notice every two hours. A parent who is still alive out there sees a dozen
+ * alerts and can refuse with one tap, which also locks the child out of asking again for three
+ * days. Only a request that survives the full 24 hours releases the device.
+ *
+ * Time is counted in SERVER seconds (the sync server's timestamp on every message), never the
+ * local clock: moving the device clock forward is the obvious attack and this makes it useless.
+ * The local clock is only ever used to EXPIRE a request early, which can only hurt the child.
+ *
+ * Pure (no Android, no clock of its own), so every rule here is unit-tested.
+ */
+object PanicProtocol {
+
+    /** How often the device must prove it still has the channel, and notify the parent again. */
+    const val CHECKPOINT_INTERVAL_SEC = 2 * 60 * 60L
+
+    /**
+     * How late a checkpoint may be before the request dies. A connectivity failure at the moment
+     * a notice is due cancels the process, but the device sleeps: Doze defers the child's
+     * check-in (~30 min nominal) and the ntfy socket reconnects on its own schedule, so a hard
+     * deadline would kill honest requests. An hour tolerates that and nothing else — airplane
+     * mode or a powered-off phone still ends the process.
+     */
+    const val CHECKPOINT_GRACE_SEC = 60 * 60L
+
+    /** Checkpoints needed to earn the release: 12 × 2 h = 24 h of proven connectivity. */
+    const val REQUIRED_CHECKPOINTS = 12
+
+    /** How long a parent's refusal locks the child out of asking again. */
+    const val DENIAL_COOLDOWN_SEC = 3 * 24 * 60 * 60L
+
+    /** What the device must do about an active request right now. */
+    enum class Step {
+        /** Nothing due yet. */
+        WAIT,
+
+        /** A notice is due and the channel is proven: record it and tell the parent. */
+        CHECKPOINT,
+
+        /** The last checkpoint: the 24 hours are complete, release the device. */
+        RELEASE,
+
+        /** The channel failed when a notice was due: the request is void. */
+        EXPIRED,
+    }
+
+    /** Server second at which the next notice becomes due. */
+    fun dueSec(request: PanicRequest): Long = request.lastCheckpointSec + CHECKPOINT_INTERVAL_SEC
+
+    /** Server second past which a missed notice voids the request. */
+    fun deadlineSec(request: PanicRequest): Long = dueSec(request) + CHECKPOINT_GRACE_SEC
+
+    /**
+     * The step for [request] at [serverNowSec] — the server timestamp of a message that just
+     * arrived, which is itself the proof that the channel works right now.
+     */
+    fun evaluate(request: PanicRequest, serverNowSec: Long): Step = when {
+        serverNowSec > deadlineSec(request) -> Step.EXPIRED
+        serverNowSec < dueSec(request) -> Step.WAIT
+        request.checkpoints + 1 >= REQUIRED_CHECKPOINTS -> Step.RELEASE
+        else -> Step.CHECKPOINT
+    }
+
+    /** [request] with the notice due at [serverNowSec] recorded as sent. */
+    fun withCheckpoint(request: PanicRequest, serverNowSec: Long): PanicRequest =
+        request.copy(lastCheckpointSec = serverNowSec, checkpoints = request.checkpoints + 1)
+
+    /**
+     * Whether a request that hasn't heard from the channel for [msSinceChannelOk] is already
+     * void, judged on the LOCAL clock. Server time can't detect this case — the whole point is
+     * that no message is arriving — and being generous here would only let a child sit offline
+     * waiting out the clock. A local clock moved forward merely kills the request sooner.
+     */
+    fun expiredOffline(msSinceChannelOk: Long): Boolean =
+        msSinceChannelOk > (CHECKPOINT_INTERVAL_SEC + CHECKPOINT_GRACE_SEC) * 1000
+
+    /**
+     * How recently the channel must have proven itself (a message actually received) for a new
+     * request to be allowed to start. Requirement one: no connectivity, no request. The child
+     * publishes at least every ~30 min, so this is "the channel works right now" without
+     * needing a bespoke round-trip handshake. It also keeps the request's server-time anchor
+     * fresh — starting from a stale anchor would make the first notice due in the past.
+     */
+    const val START_CHANNEL_FRESH_MS = 30 * 60 * 1000L
+
+    /** Whether the channel has proven itself recently enough to start a request. */
+    fun channelProven(msSinceChannelOk: Long): Boolean = msSinceChannelOk <= START_CHANNEL_FRESH_MS
+
+    /**
+     * How far a message's server timestamp may sit from the local clock and still count as
+     * proof that the channel is working *now*.
+     */
+    const val MESSAGE_FRESH_MS = 15 * 60 * 1000L
+
+    /**
+     * Whether a message proves live connectivity. This is the difference between a device that
+     * was reachable and one that merely came back: on reconnect the transport REPLAYS
+     * everything published while the socket was down, and those old timestamps would otherwise
+     * pay, retroactively, for exactly the two-hourly notices the device failed to send. Only a
+     * message whose server timestamp matches the local clock is happening right now.
+     *
+     * Skewing the local clock to make a replayed message look live doesn't help: the checkpoints
+     * still have to march forward two hours of SERVER time each, so a stale message can't be
+     * reused, and the clock move is itself reported to the parent ([ClockGuard]).
+     */
+    fun provesChannel(localNowMs: Long, serverTimeSec: Long): Boolean =
+        serverTimeSec > 0 && kotlin.math.abs(localNowMs - serverTimeSec * 1000) <= MESSAGE_FRESH_MS
+
+    /** Server second until which a denial blocks new requests. */
+    fun cooldownUntilSec(deniedAtServerSec: Long): Long = deniedAtServerSec + DENIAL_COOLDOWN_SEC
+
+    /** Whether the child may start a request now (a parent's refusal blocks it for three days). */
+    fun canStart(blockedUntilSec: Long, serverNowSec: Long): Boolean = serverNowSec >= blockedUntilSec
+
+    /** Notices still to come before the device releases itself. */
+    fun remainingCheckpoints(request: PanicRequest): Int =
+        (REQUIRED_CHECKPOINTS - request.checkpoints).coerceAtLeast(0)
+
+    /**
+     * Progress as 0f..1f, for the child's countdown and the parent's alert card. Based on
+     * checkpoints, not on elapsed time, so it can never run ahead of what was actually proven.
+     */
+    fun progress(request: PanicRequest): Float =
+        (request.checkpoints.toFloat() / REQUIRED_CHECKPOINTS).coerceIn(0f, 1f)
+}

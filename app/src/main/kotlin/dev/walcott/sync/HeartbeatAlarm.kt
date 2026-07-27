@@ -75,6 +75,11 @@ object HeartbeatAlarm {
             .onFailure { DebugLog.e(TAG, "enforcement self-test failed", it) }
         runCatching { app.syncManager.publishHeartbeatIfStale(PUBLISH_MIN_INTERVAL_MS) }
             .onFailure { DebugLog.e(TAG, "heartbeat publish failed", it) }
+        // An emergency release must die the moment the channel fails on it. While the channel
+        // is down no message arrives to notice that, so the check rides on the one wakeup Doze
+        // always honours — otherwise a device could sit offline waiting the countdown out.
+        runCatching { app.syncManager.expirePanicIfOffline() }
+            .onFailure { DebugLog.e(TAG, "panic expiry check failed", it) }
         // The radio is already awake: the update check rides along for almost nothing. The
         // worker (not this receiver) does any actual download, which can outlive our budget.
         runCatching { UpdateWorker.runIfStale(context) }

@@ -33,6 +33,11 @@ class IconStore(context: Context) {
     fun store(pkg: String, webpBytes: ByteArray): Boolean =
         runCatching { fileFor(pkg).writeBytes(webpBytes) }.isSuccess
 
+    /** Drops every cached icon (emergency release: leave nothing behind). */
+    fun clear() {
+        runCatching { dir.listFiles()?.forEach { it.delete() } }
+    }
+
     companion object {
         /**
          * Render attempts, tried in order: (pixels, WebP quality). Most icons fit at full size;
