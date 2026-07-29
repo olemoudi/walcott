@@ -297,7 +297,7 @@ class EnforcementService : LifecycleService() {
             val nowForEarn = LocalDateTime.now()
             val earningNow = idleCfg != null &&
                 dev.walcott.rules.IdleEarnEngine.isEarningTime(
-                    idleCfg, config.calendar.dayTypeOf(nowForEarn.toLocalDate()), nowForEarn.toLocalTime(),
+                    idleCfg, config.calendar.dayTypeOf(nowForEarn), nowForEarn.toLocalTime(),
                 )
 
             // Screen off: blocked apps stay suspended. With idle-earn off we park with zero

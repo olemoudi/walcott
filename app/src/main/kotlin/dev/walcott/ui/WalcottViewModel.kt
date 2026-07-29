@@ -239,8 +239,27 @@ class WalcottViewModel(
     // --- Guided setup (presets) ---
 
     /** Caps every leisure category at [minutes] per day, all day types (null removes the caps). */
-    fun setLeisureBudget(minutes: Int?) = viewModelScope.launch {
-        repository.updateSettings { dev.walcott.data.SetupPresets.withLeisureBudget(it, minutes) }
+    /**
+     * The wizard's leisure cap. [weekdaysOnly] once the family has said weekends are different,
+     * so the weekend step's value isn't overwritten when the parent walks back a step.
+     */
+    fun setLeisureBudget(minutes: Int?, weekdaysOnly: Boolean = false) = viewModelScope.launch {
+        repository.updateSettings {
+            if (weekdaysOnly) {
+                dev.walcott.data.SetupPresets.withWeekdayLeisureBudget(it, minutes)
+            } else {
+                dev.walcott.data.SetupPresets.withLeisureBudget(it, minutes)
+            }
+        }
+    }
+
+    fun setWeekendLeisureBudget(minutes: Int?) = viewModelScope.launch {
+        repository.updateSettings { dev.walcott.data.SetupPresets.withWeekendLeisureBudget(it, minutes) }
+    }
+
+    /** "Weekends are the same as weekdays": one cap for every day, both edges back to midnight. */
+    fun clearWeekendDistinction() = viewModelScope.launch {
+        repository.updateSettings { dev.walcott.data.SetupPresets.withoutWeekendDistinction(it) }
     }
 
     /** Recommended anti-tamper set plus the parent's choice on blocking new installs. */
@@ -297,6 +316,19 @@ class WalcottViewModel(
 
     fun removeVacation(index: Int) = viewModelScope.launch {
         repository.updateSettings { it.copy(vacations = it.vacations.filterIndexed { i, _ -> i != index }) }
+    }
+
+    /**
+     * Moves the weekend edges. Minute-of-day, or null to leave the edge at midnight (the
+     * weekend then runs Saturday 00:00 → Monday 00:00, as it always has).
+     */
+    fun setWeekendEdges(startsFridayAtMinute: Int?, endsSundayAtMinute: Int?) = viewModelScope.launch {
+        repository.updateSettings {
+            it.copy(
+                weekendStartsFridayAtMinute = startsFridayAtMinute,
+                weekendEndsSundayAtMinute = endsSundayAtMinute,
+            )
+        }
     }
 
     fun addBlockedDomain(raw: String, childId: String? = null) {
@@ -461,7 +493,7 @@ class WalcottViewModel(
         val earnTarget = earnedPair.second
         val now = clockPair.first
         val clockTampered = clockPair.second
-        val dayType = config.calendar.dayTypeOf(now.toLocalDate())
+        val dayType = config.calendar.dayTypeOf(now)
         val bedtimeTonight = config.bedtime[dayType]
         val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
 
@@ -581,7 +613,8 @@ class WalcottViewModel(
     fun grantExtra(categoryId: String, minutes: Long) =
         viewModelScope.launch { repository.grantExtraMinutes(categoryId, minutes) }
 
-    fun createPin(pin: String) = viewModelScope.launch { repository.setPin(pin) }
+    /** Sets the parent PIN: creating it during setup, or replacing it from app settings. */
+    fun setPin(pin: String) = viewModelScope.launch { repository.setPin(pin) }
 
     /** PIN check with brute-force lockout. */
     suspend fun verifyPin(pin: String): dev.walcott.data.PinResult = sync.verifyPinGuarded(pin)

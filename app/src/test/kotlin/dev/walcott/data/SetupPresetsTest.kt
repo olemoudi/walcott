@@ -47,6 +47,58 @@ class SetupPresetsTest {
         assertEquals(45, cleared.budgets[AppCategory.EDUCATION.id]?.get(DayType.SCHOOL.name))
     }
 
+    // --- The weekend question the wizard asks ---
+
+    @Test
+    fun `the weekday cap leaves the weekend alone and vice versa`() {
+        val split = SetupPresets.withWeekendLeisureBudget(
+            SetupPresets.withWeekdayLeisureBudget(PolicySettings(), 60),
+            180,
+        )
+        for (categoryId in SetupPresets.LEISURE_CATEGORY_IDS) {
+            assertEquals(60, split.budgets[categoryId]?.get(DayType.SCHOOL.name))
+            assertEquals(180, split.budgets[categoryId]?.get(DayType.WEEKEND.name))
+        }
+        // HOLIDAY is left to the parent-write mirror, not written here.
+        assertEquals(null, split.budgets[AppCategory.GAMES.id]?.get(DayType.HOLIDAY.name))
+    }
+
+    @Test
+    fun `a policy only counts as weekend-aware once a cap or an edge differs`() {
+        assertFalse(SetupPresets.hasWeekendDistinction(PolicySettings()))
+        assertFalse(SetupPresets.hasWeekendDistinction(SetupPresets.withLeisureBudget(PolicySettings(), 90)))
+        assertTrue(
+            SetupPresets.hasWeekendDistinction(
+                SetupPresets.withWeekendLeisureBudget(SetupPresets.withLeisureBudget(PolicySettings(), 90), 180),
+            ),
+        )
+        // An edge on its own counts, even with identical caps.
+        assertTrue(SetupPresets.hasWeekendDistinction(PolicySettings(weekendStartsFridayAtMinute = 14 * 60)))
+        assertTrue(SetupPresets.hasWeekendDistinction(PolicySettings(weekendEndsSundayAtMinute = 20 * 60)))
+    }
+
+    @Test
+    fun `dropping the distinction copies the weekday cap over and resets both edges`() {
+        val split = SetupPresets
+            .withWeekendLeisureBudget(SetupPresets.withWeekdayLeisureBudget(PolicySettings(), 60), 180)
+            .copy(weekendStartsFridayAtMinute = 14 * 60, weekendEndsSundayAtMinute = 20 * 60)
+
+        val merged = SetupPresets.withoutWeekendDistinction(split)
+        for (day in DayType.entries) {
+            assertEquals(60, merged.budgets[AppCategory.GAMES.id]?.get(day.name))
+        }
+        assertEquals(null, merged.weekendStartsFridayAtMinute)
+        assertEquals(null, merged.weekendEndsSundayAtMinute)
+        assertFalse(SetupPresets.hasWeekendDistinction(merged))
+    }
+
+    @Test
+    fun `dropping the distinction from an unlimited weekday means unlimited everywhere`() {
+        val weekendOnly = SetupPresets.withWeekendLeisureBudget(PolicySettings(), 180)
+        val merged = SetupPresets.withoutWeekendDistinction(weekendOnly)
+        assertTrue(merged.budgets.isEmpty())
+    }
+
     @Test
     fun `the default idle-earn starter is internally consistent`() {
         val earn = SetupPresets.defaultIdleEarn()

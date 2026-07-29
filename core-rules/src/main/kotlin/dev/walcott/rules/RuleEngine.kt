@@ -23,8 +23,11 @@ object RuleEngine {
     ): Verdict {
         if (packageName in config.essentialPackages) return Verdict.Allowed
 
-        val dayType = config.calendar.dayTypeOf(now.toLocalDate())
+        val dayType = config.calendar.dayTypeOf(now)
         val time = now.toLocalTime()
+        // Blocked windows can be restricted to certain weekdays and can step aside on special
+        // days; bedtime is per day type and reads the clock alone.
+        val specialDay = dayType == DayType.HOLIDAY
 
         config.bedtime[dayType]?.let { window ->
             if (time in window) return Verdict.Blocked(BlockReason.BEDTIME)
@@ -32,7 +35,7 @@ object RuleEngine {
         // Family-wide screen-free windows: like bedtime, a hard block on every non-essential
         // app (before classification, so unclassified apps are inside too); extra time never
         // lifts a window.
-        if (config.blockedWindows[dayType].orEmpty().any { time in it }) {
+        if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
             return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
         }
 
@@ -43,8 +46,8 @@ object RuleEngine {
         if (policy == null && appPolicy == null) return Verdict.Allowed
 
         // Blocked windows: category OR per-app (the per-app ones only add restrictions).
-        val inCategoryWindow = policy?.blockedWindows?.get(dayType).orEmpty().any { time in it }
-        val inAppWindow = appPolicy?.blockedWindows?.get(dayType).orEmpty().any { time in it }
+        val inCategoryWindow = policy?.blockedWindows?.get(dayType).orEmpty().any { it.appliesAt(now, specialDay) }
+        val inAppWindow = appPolicy?.blockedWindows?.get(dayType).orEmpty().any { it.appliesAt(now, specialDay) }
         if (inCategoryWindow || inAppWindow) return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
 
         // Extra time applying to this package: everyone's grant + its category's + its own.

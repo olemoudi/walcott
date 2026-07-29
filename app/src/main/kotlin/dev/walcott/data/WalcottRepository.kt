@@ -170,7 +170,11 @@ class WalcottRepository(
     // derive off the main thread; the PIN screens show a progress state meanwhile.
     suspend fun setPin(pin: String) {
         val hashed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Pin.hash(pin) }
-        settingsStore.update { it.copy(pinHash = hashed.hash, pinSalt = hashed.salt) }
+        // Through updateSettings, so the policy version bumps. The hash travels to the children
+        // inside the policy (they verify the emergency release locally), and a child only adopts
+        // a snapshot strictly newer than the one it applied (SyncEngine.adoptsPolicy) — written
+        // straight to the store, a changed PIN would silently never reach them.
+        updateSettings { it.copy(pinHash = hashed.hash, pinSalt = hashed.salt) }
     }
 
     suspend fun verifyPin(pin: String): Boolean {

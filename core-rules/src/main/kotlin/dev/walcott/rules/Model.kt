@@ -3,6 +3,7 @@ package dev.walcott.rules
 import java.time.DayOfWeek
 import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 
 enum class DayType { SCHOOL, WEEKEND, HOLIDAY }
@@ -18,23 +19,81 @@ object ExtraTime {
     const val ALL_APPS = "__all_apps__"
 }
 
-/** Parent-editable holidays and vacations; decides the day type. */
+/** Parent-editable holidays, vacations and weekend edges; decides the day type. */
 data class SchoolCalendar(
     val holidays: Set<LocalDate> = emptySet(),
     val vacations: List<ClosedRange<LocalDate>> = emptyList(),
+    /**
+     * Friday time from which the weekend rules already apply (school is out). Null — the
+     * default — keeps the weekend starting at Saturday 00:00.
+     */
+    val weekendStartsFriday: LocalTime? = null,
+    /**
+     * Sunday time from which the weekday rules apply again (school night). Null — the
+     * default — keeps the weekend running to Monday 00:00.
+     */
+    val weekendEndsSunday: LocalTime? = null,
 ) {
-    fun dayTypeOf(date: LocalDate): DayType = when {
-        date in holidays || vacations.any { date in it } -> DayType.HOLIDAY
-        date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY -> DayType.WEEKEND
-        else -> DayType.SCHOOL
+    /**
+     * The day type in force at [now]. Deliberately NOT a function of the date alone: with a
+     * weekend edge set, one date carries two day types (Friday is SCHOOL in the morning and
+     * WEEKEND after the cut). Special days still win over both edges — a holiday is a holiday
+     * all day long.
+     *
+     * The usage counter behind budgets is per calendar day, so it does NOT restart at the cut:
+     * time already spent on Friday counts against the weekend budget the child moves into.
+     */
+    fun dayTypeOf(now: LocalDateTime): DayType {
+        val date = now.toLocalDate()
+        if (date in holidays || vacations.any { date in it }) return DayType.HOLIDAY
+        val time = now.toLocalTime()
+        return when (date.dayOfWeek) {
+            DayOfWeek.SATURDAY -> DayType.WEEKEND
+            DayOfWeek.SUNDAY ->
+                if (weekendEndsSunday != null && time >= weekendEndsSunday) DayType.SCHOOL else DayType.WEEKEND
+            DayOfWeek.FRIDAY ->
+                if (weekendStartsFriday != null && time >= weekendStartsFriday) DayType.WEEKEND else DayType.SCHOOL
+            else -> DayType.SCHOOL
+        }
     }
 }
 
 /** Time window [start, end); may cross midnight (e.g. 21:30–07:30). */
-data class TimeWindow(val start: LocalTime, val end: LocalTime) {
+data class TimeWindow(
+    val start: LocalTime,
+    val end: LocalTime,
+    /**
+     * Days of the week this window applies on; empty — the default, and what every window
+     * written before this field existed means — is every day.
+     */
+    val days: Set<DayOfWeek> = emptySet(),
+    /**
+     * When true the window stands down on calendar special days, so "no screens Mon–Fri
+     * 17:00–19:00 for homework" doesn't fire on a bank-holiday Tuesday.
+     */
+    val skipSpecialDays: Boolean = false,
+) {
     operator fun contains(time: LocalTime): Boolean =
         if (start <= end) time >= start && time < end
         else time >= start || time < end
+
+    /**
+     * Whether this window is in force at [at]: the time range AND the day filters. Callers that
+     * only care about the clock (bedtime, earn windows) keep using [contains].
+     *
+     * [specialDay] is whether [at]'s own date is a holiday or vacation. For the post-midnight
+     * tail of a window that crossed over, that is the date of the morning being blocked — the
+     * day the parent is thinking about when they say "not on holidays".
+     */
+    fun appliesAt(at: LocalDateTime, specialDay: Boolean = false): Boolean {
+        if (at.toLocalTime() !in this) return false
+        if (skipSpecialDays && specialDay) return false
+        if (days.isEmpty()) return true
+        // A window that crosses midnight belongs to the day it STARTED on: at 01:00 inside a
+        // 21:30–07:30 window, the day the parent picked is yesterday's.
+        val startedYesterday = start > end && at.toLocalTime() < end
+        return (if (startedYesterday) at.toLocalDate().minusDays(1).dayOfWeek else at.dayOfWeek) in days
+    }
 }
 
 data class CategoryPolicy(

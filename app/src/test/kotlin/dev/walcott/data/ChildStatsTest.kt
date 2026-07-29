@@ -10,11 +10,13 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 
 class ChildStatsTest {
 
-    private val monday: LocalDate = LocalDate.of(2026, 7, 20)
-    private val saturday: LocalDate = LocalDate.of(2026, 7, 25)
+    private val monday: LocalDateTime = LocalDate.of(2026, 7, 20).atTime(18, 0)
+    private val saturday: LocalDateTime = LocalDate.of(2026, 7, 25).atTime(18, 0)
 
     private fun config(policies: Map<String, CategoryPolicy>, calendar: SchoolCalendar = SchoolCalendar()) =
         FamilyConfig(version = 1, assignments = emptyMap(), policies = policies, calendar = calendar)
@@ -82,8 +84,26 @@ class ChildStatsTest {
     fun `a calendar special day resolves to the holiday slice`() {
         val config = config(
             mapOf("games" to budget(DayType.SCHOOL to 30, DayType.WEEKEND to 120, DayType.HOLIDAY to 120)),
-            calendar = SchoolCalendar(holidays = setOf(monday)),
+            calendar = SchoolCalendar(holidays = setOf(monday.toLocalDate())),
         )
         assertEquals(Duration.ofMinutes(120), ChildStats.remainingToday(config, monday, emptyMap(), emptyMap()))
+    }
+
+    @Test
+    fun `the Friday weekend edge switches the budget the dashboard reports`() {
+        val config = config(
+            mapOf("games" to budget(DayType.SCHOOL to 30, DayType.WEEKEND to 120)),
+            calendar = SchoolCalendar(weekendStartsFriday = LocalTime.of(14, 0)),
+        )
+        val friday = LocalDate.of(2026, 7, 24)
+        val used = mapOf("games" to Duration.ofMinutes(20))
+        assertEquals(
+            Duration.ofMinutes(10),
+            ChildStats.remainingToday(config, friday.atTime(9, 0), used, emptyMap()),
+        )
+        assertEquals(
+            Duration.ofMinutes(100),
+            ChildStats.remainingToday(config, friday.atTime(15, 0), used, emptyMap()),
+        )
     }
 }

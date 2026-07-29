@@ -97,7 +97,7 @@ fun PinGateScreen(
                 pin.length < 4 -> error = tooShort
                 pin != confirm -> error = mismatch
                 else -> {
-                    viewModel.createPin(pin)
+                    viewModel.setPin(pin)
                     onUnlocked()
                 }
             }

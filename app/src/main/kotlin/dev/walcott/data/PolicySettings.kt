@@ -9,6 +9,7 @@ import dev.walcott.rules.IdleEarnConfig
 import dev.walcott.rules.SchoolCalendar
 import dev.walcott.rules.TimeWindow
 import kotlinx.serialization.Serializable
+import java.time.DayOfWeek
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
@@ -23,12 +24,35 @@ import java.time.LocalTime
 internal fun <V> Map<String, V>.byDayType(): Map<DayType, V> =
     mapNotNull { (key, value) -> runCatching { DayType.valueOf(key) }.getOrNull()?.let { it to value } }.toMap()
 
+/**
+ * Minute-of-day to a [LocalTime], dropping anything out of range. Same reasoning as
+ * [byDayType]: the rules arrive from another device, and a bad value here would throw inside
+ * the enforcement loop rather than at a parse boundary.
+ */
+internal fun Int?.toTimeOfDayOrNull(): LocalTime? =
+    this?.takeIf { it in 0 until 24 * 60 }?.let { LocalTime.ofSecondOfDay(it * 60L) }
+
 /** Persistable time window: minutes since midnight. */
 @Serializable
-data class WindowDto(val startMinute: Int, val endMinute: Int) {
+data class WindowDto(
+    val startMinute: Int,
+    val endMinute: Int,
+    /**
+     * ISO day numbers (1 = Monday … 7 = Sunday) this window applies on; empty = every day.
+     * Empty is also what a child running a build older than this field will see, so an old
+     * device over-blocks (the window fires every day) rather than silently stopping.
+     */
+    val days: List<Int> = emptyList(),
+    /** Whether the window stands down on calendar special days (see [TimeWindow.skipSpecialDays]). */
+    val skipSpecialDays: Boolean = false,
+) {
     fun toTimeWindow() = TimeWindow(
         LocalTime.ofSecondOfDay(startMinute * 60L),
         LocalTime.ofSecondOfDay(endMinute * 60L),
+        // Unparseable day numbers are dropped rather than thrown — this runs inside the
+        // enforcement loop, same reasoning as [byDayType].
+        days = days.mapNotNullTo(mutableSetOf()) { runCatching { DayOfWeek.of(it) }.getOrNull() },
+        skipSpecialDays = skipSpecialDays,
     )
 }
 
@@ -207,6 +231,14 @@ data class PolicySettings(
     val holidays: Set<Long> = emptySet(),
     /** Vacation ranges (inclusive). */
     val vacations: List<VacationDto> = emptyList(),
+    /**
+     * Friday minute-of-day from which the weekend rules already apply (e.g. 840 = 14:00).
+     * Null — the default — starts the weekend at Saturday 00:00, which is what every install
+     * predating this field does: children on an older build simply ignore the key.
+     */
+    val weekendStartsFridayAtMinute: Int? = null,
+    /** Sunday minute-of-day from which the weekday rules return. Null runs the weekend to Monday 00:00. */
+    val weekendEndsSundayAtMinute: Int? = null,
     /** Earn-time rules ("X min of A unlocks Y min of B"). */
     val earnRules: List<EarnRuleDto> = emptyList(),
     /** Domains blocked at DNS level (suffix match). */
@@ -323,6 +355,8 @@ data class PolicySettings(
             calendar = SchoolCalendar(
                 holidays = holidays.map(LocalDate::ofEpochDay).toSet(),
                 vacations = vacations.map { LocalDate.ofEpochDay(it.startEpochDay)..LocalDate.ofEpochDay(it.endEpochDay) },
+                weekendStartsFriday = weekendStartsFridayAtMinute.toTimeOfDayOrNull(),
+                weekendEndsSunday = weekendEndsSundayAtMinute.toTimeOfDayOrNull(),
             ),
         )
     }

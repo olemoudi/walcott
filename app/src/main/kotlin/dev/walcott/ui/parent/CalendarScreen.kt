@@ -58,6 +58,16 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
+            item {
+                Column(Modifier.padding(top = spacing.md)) {
+                    WeekendEdgesCard(
+                        startMinute = settings.weekendStartsFridayAtMinute,
+                        endMinute = settings.weekendEndsSundayAtMinute,
+                        onChange = viewModel::setWeekendEdges,
+                    )
+                }
+            }
+
             item { SectionHeader(stringResource(R.string.calendar_holidays)) }
             items(settings.holidays.sorted(), key = { it }) { day ->
                 RowItem(fmt(day), onDelete = { viewModel.removeHoliday(day) })

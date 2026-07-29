@@ -38,7 +38,7 @@ fun RuleEngine.categoryStatus(
      */
     failClosed: Boolean = false,
 ): CategoryStatus {
-    val dayType = config.calendar.dayTypeOf(now.toLocalDate())
+    val dayType = config.calendar.dayTypeOf(now)
     val time = now.toLocalTime()
     val used = usageToday[categoryId] ?: Duration.ZERO
     val policy = config.policies[categoryId]
@@ -53,11 +53,13 @@ fun RuleEngine.categoryStatus(
             return CategoryStatus(categoryId, CategoryState.BLOCKED, used, budget, null, BlockReason.BEDTIME)
         }
     }
-    // Family-wide screen-free windows block every category, same as in RuleEngine.evaluate.
-    if (config.blockedWindows[dayType].orEmpty().any { time in it }) {
+    // Family-wide screen-free windows block every category, same as in RuleEngine.evaluate
+    // (weekday filters and the special-day opt-out included).
+    val specialDay = dayType == DayType.HOLIDAY
+    if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
         return CategoryStatus(categoryId, CategoryState.BLOCKED, used, budget, null, BlockReason.BLOCKED_WINDOW)
     }
-    if (policy != null && policy.blockedWindows[dayType].orEmpty().any { time in it }) {
+    if (policy != null && policy.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
         return CategoryStatus(categoryId, CategoryState.BLOCKED, used, budget, null, BlockReason.BLOCKED_WINDOW)
     }
     if (budget == null) {

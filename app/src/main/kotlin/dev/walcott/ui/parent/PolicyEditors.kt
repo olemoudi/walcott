@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
@@ -42,8 +43,12 @@ import dev.walcott.ui.components.TimePickerDialog
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.labelRes
+import java.time.DayOfWeek
 import java.time.Duration
 import java.time.LocalTime
+import java.time.format.TextStyle
+import java.time.temporal.WeekFields
+import java.util.Locale
 import dev.walcott.ui.theme.Tokens
 
 /**
@@ -109,6 +114,102 @@ private enum class BedtimeEdit { START, END }
 
 private fun LocalTime.toMinute() = hour * 60 + minute
 
+private enum class WeekendEdge { START, END }
+
+/** Sensible first guesses when a parent flips an edge on: school lets out, and school night. */
+internal const val DEFAULT_WEEKEND_START_MINUTE = 14 * 60
+internal const val DEFAULT_WEEKEND_END_MINUTE = 20 * 60
+
+/**
+ * The two optional weekend edges (minute-of-day, null = the edge stays at midnight). Both off
+ * — the default — is the plain calendar weekend: all of Saturday and all of Sunday. Shared by
+ * the special-days screen and the setup wizard's weekend step.
+ */
+@Composable
+internal fun WeekendEdgesCard(startMinute: Int?, endMinute: Int?, onChange: (Int?, Int?) -> Unit) {
+    val spacing = Tokens.spacing
+    var picking by remember { mutableStateOf<WeekendEdge?>(null) }
+
+    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(spacing.lg).animateContentSize()) {
+            Text(stringResource(R.string.weekend_edges_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.weekend_edges_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.size(spacing.md))
+            WeekendEdgeRow(
+                title = stringResource(R.string.weekend_start_title),
+                supporting = stringResource(
+                    if (startMinute == null) R.string.weekend_start_off else R.string.weekend_start_on,
+                ),
+                dayLabel = stringResource(R.string.weekend_edge_friday),
+                minute = startMinute,
+                onToggle = { on -> onChange(if (on) DEFAULT_WEEKEND_START_MINUTE else null, endMinute) },
+                onPick = { picking = WeekendEdge.START },
+            )
+            HorizontalDivider(Modifier.padding(vertical = spacing.sm))
+            WeekendEdgeRow(
+                title = stringResource(R.string.weekend_end_title),
+                supporting = stringResource(
+                    if (endMinute == null) R.string.weekend_end_off else R.string.weekend_end_on,
+                ),
+                dayLabel = stringResource(R.string.weekend_edge_sunday),
+                minute = endMinute,
+                onToggle = { on -> onChange(startMinute, if (on) DEFAULT_WEEKEND_END_MINUTE else null) },
+                onPick = { picking = WeekendEdge.END },
+            )
+            if (startMinute != null || endMinute != null) {
+                Spacer(Modifier.size(spacing.md))
+                Text(
+                    stringResource(R.string.weekend_edges_counter_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+    picking?.let { edge ->
+        val start = edge == WeekendEdge.START
+        val current = (if (start) startMinute else endMinute)
+            ?: if (start) DEFAULT_WEEKEND_START_MINUTE else DEFAULT_WEEKEND_END_MINUTE
+        TimePickerDialog(
+            initial = LocalTime.ofSecondOfDay(current * 60L),
+            title = stringResource(if (start) R.string.weekend_start_picker else R.string.weekend_end_picker),
+            onDismiss = { picking = null },
+            onConfirm = { picked ->
+                val minute = picked.toMinute()
+                if (start) onChange(minute, endMinute) else onChange(startMinute, minute)
+                picking = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun WeekendEdgeRow(
+    title: String,
+    supporting: String,
+    dayLabel: String,
+    minute: Int?,
+    onToggle: (Boolean) -> Unit,
+    onPick: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(supporting, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (minute != null) {
+            TimeButton(dayLabel, LocalTime.ofSecondOfDay(minute * 60L).hhmm(), onPick)
+            Spacer(Modifier.size(Tokens.spacing.sm))
+        }
+        Switch(checked = minute != null, onCheckedChange = onToggle)
+    }
+}
+
 /**
  * Multi-window block editor, shared by the family "screen-free times" card (all apps) and
  * the per-app hours editor. Like bedtime, the same list applies to every day type; the
@@ -149,6 +250,36 @@ internal fun BlockedWindowsCard(
                         )
                     }
                 }
+                DayPicker(
+                    selected = window.days,
+                    onToggle = { day ->
+                        onChange(
+                            windows.mapIndexed { i, w ->
+                                if (i == index) w.copy(days = w.days.toggledDay(day)) else w
+                            },
+                        )
+                    },
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.window_skip_special),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = window.skipSpecialDays,
+                        onCheckedChange = { on ->
+                            onChange(
+                                windows.mapIndexed { i, w ->
+                                    if (i == index) w.copy(skipSpecialDays = on) else w
+                                },
+                            )
+                        },
+                    )
+                }
             }
             Spacer(Modifier.size(spacing.md))
             BudgetPreset(stringResource(R.string.window_add)) { editing = WindowEdit.NewStart }
@@ -180,6 +311,62 @@ internal fun BlockedWindowsCard(
     }
 }
 
+/**
+ * The week, ordered from the locale's first day. Empty [selected] means "every day" — that is
+ * what an unrestricted window stores — so it renders as all seven lit.
+ */
+@Composable
+private fun DayPicker(selected: List<Int>, onToggle: (DayOfWeek) -> Unit) {
+    val locale = Locale.getDefault()
+    val week = remember(locale) {
+        val first = WeekFields.of(locale).firstDayOfWeek
+        List(7) { first.plus(it.toLong()) }
+    }
+    val all = selected.isEmpty()
+    Row(
+        Modifier.fillMaxWidth().padding(top = Tokens.spacing.sm),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        week.forEach { day ->
+            val on = all || day.value in selected
+            Surface(
+                onClick = { onToggle(day) },
+                shape = CircleShape,
+                color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        day.getDisplayName(TextStyle.NARROW, locale).uppercase(locale),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (on) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * This day set with [day] flipped, in the storage convention: empty = every day, and a full
+ * week collapses back to empty. Deselecting the last remaining day is refused — a window that
+ * applies on no day at all is a rule the parent can see but that never fires.
+ */
+internal fun List<Int>.toggledDay(day: DayOfWeek): List<Int> {
+    val current = if (isEmpty()) DayOfWeek.entries.map { it.value } else this
+    val next = if (day.value in current) current - day.value else current + day.value
+    return when {
+        next.isEmpty() -> this
+        next.size == DayOfWeek.entries.size -> emptyList()
+        else -> next.sorted()
+    }
+}
+
 private sealed interface WindowEdit {
     data class Start(val index: Int) : WindowEdit
     data class End(val index: Int) : WindowEdit
@@ -199,7 +386,7 @@ private fun WindowTimePicker(initialMinute: Int, titleRes: Int, onDone: (LocalTi
 }
 
 @Composable
-private fun TimeButton(label: String, value: String, onClick: () -> Unit) {
+internal fun TimeButton(label: String, value: String, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

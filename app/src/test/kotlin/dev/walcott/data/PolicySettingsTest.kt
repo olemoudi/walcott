@@ -3,6 +3,7 @@ package dev.walcott.data
 import dev.walcott.rules.DayType
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -59,10 +60,53 @@ class PolicySettingsTest {
     fun `toFamilyConfig maps holidays and carries assignments and essentials`() {
         val config = settings.copy(assignments = mapOf("com.game" to "games"))
             .toFamilyConfig(essentials = setOf("dev.walcott"))
-        assertEquals(DayType.HOLIDAY, config.calendar.dayTypeOf(LocalDate.of(2026, 10, 12)))
+        assertEquals(DayType.HOLIDAY, config.calendar.dayTypeOf(LocalDate.of(2026, 10, 12).atTime(12, 0)))
         assertEquals("games", config.assignments["com.game"])
         assertTrue("dev.walcott" in config.essentialPackages)
         assertEquals(3, config.version)
+    }
+
+    @Test
+    fun `weekend edges default to off and map to the calendar when set`() {
+        // A config written before the fields existed keeps the plain Saturday–Sunday weekend.
+        val legacy = PolicySettings().toFamilyConfig(emptySet()).calendar
+        assertNull(legacy.weekendStartsFriday)
+        assertNull(legacy.weekendEndsSunday)
+
+        val edged = PolicySettings(weekendStartsFridayAtMinute = 14 * 60, weekendEndsSundayAtMinute = 20 * 60)
+            .toFamilyConfig(emptySet()).calendar
+        assertEquals(java.time.LocalTime.of(14, 0), edged.weekendStartsFriday)
+        assertEquals(java.time.LocalTime.of(20, 0), edged.weekendEndsSunday)
+        // 2026-03-13 is a Friday.
+        assertEquals(DayType.SCHOOL, edged.dayTypeOf(LocalDate.of(2026, 3, 13).atTime(13, 0)))
+        assertEquals(DayType.WEEKEND, edged.dayTypeOf(LocalDate.of(2026, 3, 13).atTime(14, 0)))
+    }
+
+    @Test
+    fun `a window's day filter maps to the engine, and junk day numbers are dropped`() {
+        val window = WindowDto(17 * 60, 19 * 60, days = listOf(2, 4), skipSpecialDays = true).toTimeWindow()
+        assertEquals(setOf(java.time.DayOfWeek.TUESDAY, java.time.DayOfWeek.THURSDAY), window.days)
+        assertTrue(window.skipSpecialDays)
+
+        // A window written before the fields existed: every day, never stands down.
+        val legacy = WindowDto(17 * 60, 19 * 60).toTimeWindow()
+        assertTrue(legacy.days.isEmpty())
+        assertFalse(legacy.skipSpecialDays)
+
+        // Out-of-range numbers are ignored rather than thrown inside the enforcement loop.
+        // All-junk collapses to "every day", which over-blocks rather than silently stopping.
+        assertEquals(setOf(java.time.DayOfWeek.MONDAY), WindowDto(0, 60, days = listOf(1, 9, -3)).toTimeWindow().days)
+        assertTrue(WindowDto(0, 60, days = listOf(0, 8)).toTimeWindow().days.isEmpty())
+    }
+
+    @Test
+    fun `an out-of-range weekend edge is ignored, not thrown`() {
+        // Same doctrine as unknown day-type keys: bad rules from another device must degrade,
+        // never crash the enforcement loop.
+        val calendar = PolicySettings(weekendStartsFridayAtMinute = 5000, weekendEndsSundayAtMinute = -1)
+            .toFamilyConfig(emptySet()).calendar
+        assertNull(calendar.weekendStartsFriday)
+        assertNull(calendar.weekendEndsSunday)
     }
 
     @Test

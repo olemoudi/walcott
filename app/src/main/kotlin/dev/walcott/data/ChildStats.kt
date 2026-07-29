@@ -3,7 +3,7 @@ package dev.walcott.data
 import dev.walcott.rules.ExtraTime
 import dev.walcott.rules.FamilyConfig
 import java.time.Duration
-import java.time.LocalDate
+import java.time.LocalDateTime
 
 /**
  * Parent-side dashboard math over a child's reported usage and its resolved policy. Pure so
@@ -19,11 +19,12 @@ object ChildStats {
      */
     fun remainingToday(
         config: FamilyConfig,
-        today: LocalDate,
+        /** Wall clock, not just the date: with a weekend edge set, the day type flips mid-day. */
+        now: LocalDateTime,
         usage: Map<String, Duration>,
         extra: Map<String, Duration>,
     ): Duration? {
-        val dayType = config.calendar.dayTypeOf(today)
+        val dayType = config.calendar.dayTypeOf(now)
         var anyBudget = false
         var total = Duration.ZERO
         for ((categoryId, policy) in config.policies) {

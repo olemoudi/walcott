@@ -84,6 +84,9 @@ fun AppSettingsScreen(
             // The family's disaster recovery lives on the parent, whose keys are the family.
             val identity by viewModel.identity.collectAsStateWithLifecycle()
             if (identity.role == dev.walcott.sync.Role.PARENT) {
+                // Parent-only, and for the same reason PinGateScreen refuses to create a PIN on
+                // a child device: the PIN is what releases a child's phone.
+                ParentPinCard(viewModel)
                 FamilyBackupCard(viewModel)
             }
             AppUpdateCard(deviceOwner)

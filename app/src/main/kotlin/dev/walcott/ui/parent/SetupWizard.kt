@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Weekend
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -45,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -78,22 +80,27 @@ import java.time.LocalTime
  * and nothing here is irreversible: each screen the wizard touches stays editable on its own.
  */
 
-enum class WizardStep { BEDTIME, SCREEN_TIME, PROTECTION, LOCATION, EARN, WEBFILTER, SUMMARY }
+enum class WizardStep { BEDTIME, SCREEN_TIME, WEEKEND, PROTECTION, LOCATION, EARN, WEBFILTER, SUMMARY }
 
+/**
+ * WEEKEND follows SCREEN_TIME everywhere: the question ("do weekends need their own limits,
+ * and when does yours actually start?") only means something once there is a cap to differ
+ * from, and it's a common enough house rule to belong even in the shortest preset.
+ */
 enum class SetupPreset(val minutes: Int, val steps: List<WizardStep>) {
-    BASIC(2, listOf(WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.SUMMARY)),
+    BASIC(3, listOf(WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.WEEKEND, WizardStep.SUMMARY)),
     RECOMMENDED(
-        4,
+        5,
         listOf(
-            WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.PROTECTION,
+            WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.WEEKEND, WizardStep.PROTECTION,
             WizardStep.LOCATION, WizardStep.SUMMARY,
         ),
     ),
     FULL(
-        8,
+        9,
         listOf(
-            WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.PROTECTION, WizardStep.LOCATION,
-            WizardStep.EARN, WizardStep.WEBFILTER, WizardStep.SUMMARY,
+            WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.WEEKEND, WizardStep.PROTECTION,
+            WizardStep.LOCATION, WizardStep.EARN, WizardStep.WEBFILTER, WizardStep.SUMMARY,
         ),
     ),
 }
@@ -200,6 +207,15 @@ fun SetupWizardScreen(
     val steps = preset.steps
     val step = steps[stepIndex.coerceIn(0, steps.size - 1)]
 
+    // Hoisted: the screen-time step writes weekdays only once this is on, and the weekend step
+    // edits the other side. Latched ON from the stored policy (which arrives after the first
+    // composition) so re-entering the wizard shows the family's real answer; turning it off is
+    // the parent's own choice and writes the policy, so the latch can't undo it.
+    var weekendSplit by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(settings) {
+        if (SetupPresets.hasWeekendDistinction(settings)) weekendSplit = true
+    }
+
     Column(Modifier.fillMaxSize()) {
         // Header: where we are, how much is left.
         Row(
@@ -257,7 +273,16 @@ fun SetupWizardScreen(
             ) {
                 when (current) {
                     WizardStep.BEDTIME -> BedtimeStep(viewModel)
-                    WizardStep.SCREEN_TIME -> ScreenTimeStep(viewModel)
+                    WizardStep.SCREEN_TIME -> ScreenTimeStep(viewModel, weekdaysOnly = weekendSplit)
+                    WizardStep.WEEKEND -> WeekendStep(
+                        viewModel = viewModel,
+                        settings = settings,
+                        split = weekendSplit,
+                        onSplitChange = { on ->
+                            weekendSplit = on
+                            if (!on) viewModel.clearWeekendDistinction()
+                        },
+                    )
                     WizardStep.PROTECTION -> ProtectionStep(viewModel)
                     WizardStep.LOCATION -> LocationStep(viewModel)
                     WizardStep.EARN -> EarnStep(viewModel)
@@ -315,30 +340,86 @@ private fun BedtimeStep(viewModel: WalcottViewModel) {
     BedtimeCard(bedtime = settings.bedtime, onChange = { viewModel.setBedtime(it) })
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ScreenTimeStep(viewModel: WalcottViewModel) {
+private fun ScreenTimeStep(viewModel: WalcottViewModel, weekdaysOnly: Boolean) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val spacing = Tokens.spacing
     StepHeader(
         Icons.Outlined.Schedule,
         stringResource(R.string.step_screen_time_title),
         stringResource(R.string.step_screen_time_teach),
     )
-    // Selection derives from the stored policy (games' school budget as the representative),
-    // so re-entering the wizard shows what is actually configured.
+    if (weekdaysOnly) {
+        Text(
+            stringResource(R.string.step_screen_time_weekdays_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    // Selection derives from the stored policy (the leading leisure category's weekday budget
+    // as the representative), so re-entering the wizard shows what is actually configured.
+    LeisureBudgetChips(
+        current = SetupPresets.leisureBudget(settings, DayType.SCHOOL),
+        onSelect = { viewModel.setLeisureBudget(it, weekdaysOnly = weekdaysOnly) },
+    )
+}
+
+@Composable
+private fun WeekendStep(
+    viewModel: WalcottViewModel,
+    settings: dev.walcott.data.PolicySettings,
+    split: Boolean,
+    onSplitChange: (Boolean) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    StepHeader(
+        Icons.Outlined.Weekend,
+        stringResource(R.string.step_weekend_title),
+        stringResource(R.string.step_weekend_teach),
+    )
+    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.step_weekend_split), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(R.string.step_weekend_split_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = split, onCheckedChange = onSplitChange)
+        }
+    }
+    // Turning the switch on writes nothing: the weekend cap starts equal to the weekday one,
+    // and the parent raises it here. Only the edges below and this row change the policy.
+    if (split) {
+        Text(stringResource(R.string.step_weekend_budget_title), style = MaterialTheme.typography.titleSmall)
+        LeisureBudgetChips(
+            current = SetupPresets.leisureBudget(settings, DayType.WEEKEND),
+            onSelect = { viewModel.setWeekendLeisureBudget(it) },
+        )
+        WeekendEdgesCard(
+            startMinute = settings.weekendStartsFridayAtMinute,
+            endMinute = settings.weekendEndsSundayAtMinute,
+            onChange = viewModel::setWeekendEdges,
+        )
+    }
+}
+
+/** The daily-cap chip row, shared by the weekday and weekend steps. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LeisureBudgetChips(current: Int?, onSelect: (Int?) -> Unit) {
     val presets = listOf(60, 90, 120, 180)
-    val current = settings.budgets[SetupPresets.LEISURE_CATEGORY_IDS.first()]?.get(DayType.SCHOOL.name)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.spacing.sm)) {
         ChoiceChip(
             selected = current == null,
-            onClick = { viewModel.setLeisureBudget(null) },
+            onClick = { onSelect(null) },
             label = stringResource(R.string.no_limit),
         )
         presets.forEach { minutes ->
             ChoiceChip(
                 selected = current == minutes,
-                onClick = { viewModel.setLeisureBudget(minutes) },
+                onClick = { onSelect(minutes) },
                 label = Duration.ofMinutes(minutes.toLong()).humanize(),
             )
         }
@@ -351,7 +432,7 @@ private fun ScreenTimeStep(viewModel: WalcottViewModel) {
             },
             dialogTitle = stringResource(R.string.custom_minutes_title),
             initial = current ?: 120,
-            onConfirm = { viewModel.setLeisureBudget(it) },
+            onConfirm = { onSelect(it) },
         )
     }
 }
@@ -506,6 +587,23 @@ private fun SummaryStep(settings: dev.walcott.data.PolicySettings, steps: List<W
             leisure != null,
         )
     }
+    if (WizardStep.WEEKEND in steps) {
+        val split = SetupPresets.hasWeekendDistinction(settings)
+        val weekend = SetupPresets.leisureBudget(settings, DayType.WEEKEND)
+        SummaryRow(
+            stringResource(R.string.step_weekend_title),
+            when {
+                !split -> stringResource(R.string.summary_weekend_same)
+                weekend != null -> Duration.ofMinutes(weekend.toLong()).humanize()
+                else -> stringResource(R.string.no_limit)
+            },
+            split,
+        )
+        // Only worth recapping when an edge actually moved off midnight.
+        if (settings.weekendStartsFridayAtMinute != null || settings.weekendEndsSundayAtMinute != null) {
+            SummaryRow(stringResource(R.string.summary_weekend_runs), weekendRangeText(settings), true)
+        }
+    }
     if (WizardStep.PROTECTION in steps) {
         SummaryRow(
             stringResource(R.string.step_protection_installs),
@@ -540,6 +638,18 @@ private fun SummaryStep(settings: dev.walcott.data.PolicySettings, steps: List<W
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/** "Fri 14:00 → Mon 00:00": each end reads either the parent's edge or the plain default. */
+@Composable
+private fun weekendRangeText(settings: dev.walcott.data.PolicySettings): String {
+    val from = settings.weekendStartsFridayAtMinute?.let {
+        stringResource(R.string.weekend_edge_from_friday_fmt, LocalTime.ofSecondOfDay(it * 60L).hhmm())
+    } ?: stringResource(R.string.weekend_edge_from_saturday)
+    val to = settings.weekendEndsSundayAtMinute?.let {
+        stringResource(R.string.weekend_edge_to_sunday_fmt, LocalTime.ofSecondOfDay(it * 60L).hhmm())
+    } ?: stringResource(R.string.weekend_edge_to_monday)
+    return stringResource(R.string.weekend_range_fmt, from, to)
 }
 
 @Composable
