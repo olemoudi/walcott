@@ -131,7 +131,7 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
                     AppAssignRow(
                         viewModel,
                         row,
-                        hasOverride = row.app.packageName in settings.appPolicies,
+                        restrictions = appRestrictions(settings, row.app.packageName),
                         showOwners = showOwners,
                         iconRefresh = iconRefresh,
                         onClick = { onOpenApp(row.app.packageName) },
@@ -147,7 +147,8 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
 private fun AppAssignRow(
     viewModel: WalcottViewModel,
     row: AppRow,
-    hasOverride: Boolean,
+    /** The app's own restrictions, badged with the icons that title them in its own screen. */
+    restrictions: List<AppRestriction>,
     showOwners: Boolean,
     iconRefresh: Int,
     onClick: () -> Unit,
@@ -157,12 +158,15 @@ private fun AppAssignRow(
         headlineContent = { Text(row.app.label) },
         supportingContent = {
             Column {
-                // Category name (or "unclassified"), plus a hint when the app carries its own rules.
-                val base = category?.let { stringResource(it.nameRes) } ?: stringResource(R.string.unclassified_blocked)
-                Text(
-                    if (hasOverride) "$base · ${stringResource(R.string.app_has_override)}" else base,
-                    color = category?.color ?: MaterialTheme.colorScheme.error,
-                )
+                // Category name (or "unclassified"), then a badge per rule the app carries of
+                // its own — the same icons that title those sections inside the app.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        category?.let { stringResource(it.nameRes) } ?: stringResource(R.string.unclassified_blocked),
+                        color = category?.color ?: MaterialTheme.colorScheme.error,
+                    )
+                    AppRestrictionBadges(restrictions, Modifier.padding(start = Tokens.spacing.sm))
+                }
                 // Who has it: one small tag per child (only in multi-child families).
                 if (showOwners && row.owners.isNotEmpty()) {
                     FlowRow(

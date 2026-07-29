@@ -66,6 +66,9 @@ fun AppDetailScreen(
     val label = rows.firstOrNull { it.app.packageName == packageName }?.app?.label ?: packageName
     val categoryId = settings.assignments[packageName]
     val appPolicy = settings.appPolicies[packageName]
+    // Lit next to the section it belongs to when the app carries it — the same icon the list
+    // badges it with, so a parent can connect the two without a word of explanation.
+    val restrictions = appRestrictions(settings, packageName)
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(label, onBack)
@@ -98,7 +101,7 @@ fun AppDetailScreen(
                 )
             }
 
-            item { SectionTitle(stringResource(R.string.app_own_limit)) }
+            item { SectionTitle(stringResource(R.string.app_own_limit), AppRestriction.OWN_BUDGET, restrictions) }
             item {
                 Text(
                     stringResource(R.string.app_own_limit_hint),
@@ -114,7 +117,7 @@ fun AppDetailScreen(
                 )
             }
 
-            item { SectionTitle(stringResource(R.string.app_own_window)) }
+            item { SectionTitle(stringResource(R.string.app_own_window), AppRestriction.OWN_WINDOWS, restrictions) }
             item {
                 BlockedWindowsCard(
                     title = null,
@@ -124,7 +127,7 @@ fun AppDetailScreen(
                 )
             }
 
-            item { SectionTitle(stringResource(R.string.app_web_filter)) }
+            item { SectionTitle(stringResource(R.string.app_web_filter), AppRestriction.WEB_RULE, restrictions) }
             item {
                 Surface(
                     onClick = onOpenWebFilter,
@@ -148,8 +151,25 @@ fun AppDetailScreen(
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Tokens.spacing.sm))
+private fun SectionTitle(text: String, restriction: AppRestriction? = null, active: List<AppRestriction> = emptyList()) {
+    Row(
+        Modifier.padding(top = Tokens.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (restriction != null) {
+            // Lit when this app carries the rule — exactly when the list badges it. Dim
+            // otherwise, so the icon still teaches what the badge would have meant.
+            val on = restriction in active
+            Icon(
+                restriction.icon,
+                contentDescription = null,
+                tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(Tokens.spacing.sm))
+        }
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 @Composable
