@@ -14,6 +14,7 @@ data class SuspensionPlan(val toSuspend: List<String>, val toUnsuspend: List<Str
 class Enforcer(context: Context) {
 
     private val dpm = context.getSystemService(DevicePolicyManager::class.java)
+    private val pm = context.packageManager
     private val admin = WalcottAdminReceiver.componentName(context)
     private val ownPackage = context.packageName
 
@@ -48,9 +49,19 @@ class Enforcer(context: Context) {
         if (!failed.isNullOrEmpty()) {
             val verb = if (suspend) "suspend" else "unsuspend"
             DebugLog.w(TAG, "could not $verb: ${failed.joinToString()}")
-            if (suspend) recentSuspendFailures = (recentSuspendFailures + failed).distinct().takeLast(8)
+        }
+        if (suspend) {
+            recentSuspendFailures = nextSuspendFailures(
+                previous = recentSuspendFailures,
+                attempted = packages,
+                failed = failed?.toList().orEmpty(),
+                isInstalled = ::isInstalled,
+            )
         }
     }
+
+    private fun isInstalled(packageName: String): Boolean =
+        runCatching { pm.getApplicationInfo(packageName, 0) }.isSuccess
 
     /**
      * The subset of [blocked] the system does NOT currently report suspended — the heartbeat
@@ -81,6 +92,34 @@ class Enforcer(context: Context) {
          */
         @Volatile var recentSuspendFailures: List<String> = emptyList()
             private set
+
+        /** How many failing packages the report carries at most. */
+        private const val MAX_SUSPEND_FAILURES = 8
+
+        /**
+         * The failure list after an attempt to suspend [attempted], of which [failed] came back
+         * refused. Pure, because what it drops matters as much as what it keeps:
+         *
+         * - a package that is no longer installed is NOT a gap. The OS refuses to suspend it
+         *   forever, so it would otherwise pin its own name — in red, as a package name, with
+         *   no app to point at — to every future health report. It can't be used either way.
+         * - a package that suspended fine this time drops off. The list answers "what is still
+         *   broken", not "what ever broke once".
+         */
+        fun nextSuspendFailures(
+            previous: List<String>,
+            attempted: List<String>,
+            failed: List<String>,
+            isInstalled: (String) -> Boolean,
+        ): List<String> {
+            val healed = attempted.toSet() - failed.toSet()
+            return (previous - healed + failed)
+                // Filters the WHOLE list, not just the new entries: the name that pins itself to
+                // every report got there while the app was still installed.
+                .filter(isInstalled)
+                .distinct()
+                .takeLast(MAX_SUSPEND_FAILURES)
+        }
 
         /**
          * The suspend/unsuspend diff to make exactly [blocked] suspended among [managed], given

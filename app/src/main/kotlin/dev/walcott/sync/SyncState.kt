@@ -79,6 +79,19 @@ data class ParentEvent(
     }
 }
 
+/** How many health reports the parent keeps per child device. */
+const val MAX_DIAG_HISTORY = 10
+
+/**
+ * A health report as the parent filed it: what the child sent, plus what the parent knew at
+ * that moment. [seenAtVersionCode] exists because a report is dated: judging its app-version
+ * row against whatever the parent runs *today* would turn every release into a retroactive
+ * black mark on reports that were perfectly up to date when they were taken. 0 = filed before
+ * this was recorded, which has to read as "can't tell", never as "outdated".
+ */
+@Serializable
+data class StoredDiag(val report: DiagPayload, val seenAtVersionCode: Int = 0)
+
 /** Persistent sync bookkeeping, separate from the rules ([dev.walcott.data.PolicySettings]). */
 @Serializable
 data class SyncState(
@@ -164,8 +177,19 @@ data class SyncState(
     val selfTestNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for clock tampering (cleared once the skew is back to normal). */
     val clockTamperNotified: Set<String> = emptySet(),
-    /** deviceId -> latest health report received from that child (see [DiagPayload]). */
+    /**
+     * deviceId -> the last health report, as parents before [diagHistory] stored it. Kept only
+     * so those reports survive the update: the first new report for a device migrates it into
+     * the history and clears this. Never written any more.
+     */
     val diagReports: Map<String, DiagPayload> = emptyMap(),
+    /**
+     * deviceId -> its recent health reports, newest first, capped at [MAX_DIAG_HISTORY]. A
+     * report is a snapshot of one moment, not a live status, so they accumulate instead of
+     * overwriting: "it was already failing on Tuesday" is the question a single report can't
+     * answer. Live status comes from the child's check-in ([ChildSnapshot]).
+     */
+    val diagHistory: Map<String, List<StoredDiag>> = emptyMap(),
     /**
      * deviceId -> "requestId@checkpoints" of the emergency release already alerted about, so
      * each two-hourly notice raises exactly one alert and a re-started request alerts again.

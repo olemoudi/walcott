@@ -198,6 +198,7 @@
     <string name="earn_daily_cap">Daily cap (min)</string>
     <string name="action_save">Save</string>
     <string name="action_delete">Delete</string>
+    <string name="action_view">View</string>
     <string name="weekend_edges_title">When the weekend runs</string>
     <string name="weekend_edges_hint">By default it\'s all of Saturday and all of Sunday.</string>
     <string name="weekend_start_title">Start it on Friday</string>
@@ -277,6 +278,7 @@
     <string name="remove_child_confirm">Remove %1$s? Their device keeps the family rules until it enrolls again.</string>
     <string name="override_section_title">This child\'s rules</string>
     <string name="override_inherited_hint">Inherited from the family unless you customize them here.</string>
+    <string name="override_inherited_row_hint">Inherited from the family — turn on to change it for this child</string>
     <string name="override_bedtime_title">Custom bedtime</string>
     <string name="override_budgets_title">Custom budgets</string>
     <string name="last_7_days">Last 7 days</string>
@@ -558,6 +560,7 @@
     <string name="nav_location_title">Location</string>
     <string name="nav_location_subtitle">Tracking interval and 48-hour history for the whole family</string>
     <string name="location_family_note">Family defaults. Each child inherits these; you can customize a child from their own screen.</string>
+    <string name="override_scope_banner_inherited">These are the family rules %1$s inherits. Turn on the custom switch on their screen to change them.</string>
     <string name="override_scope_banner">Editing %1$s\'s custom rules. The family rules no longer apply to this section for them.</string>
     <string name="override_earn_title">Custom earned time</string>
     <string name="override_webfilter_title">Custom web filter</string>
@@ -652,8 +655,22 @@
     <string name="channel_offline_title">No connection with your family</string>
     <string name="channel_offline_desc">Nothing has arrived since %1$s. Rules and requests will catch up when the connection comes back.</string>
     <!-- Remote diagnostics (health report) -->
-    <string name="diag_section">Health report</string>
-    <string name="diag_hint">Fetch a status snapshot from this device, including its recent log</string>
+    <string name="diag_section">Health reports</string>
+    <string name="diag_hint">Each report is a snapshot of one moment, kept so you can compare — the live state is on the child\'s screen.</string>
+    <string name="diag_none_yet">No reports yet. Ask for one and it arrives on the device\'s next check-in.</string>
+    <string name="diag_all_clear">Nothing wrong</string>
+    <plurals name="diag_problems">
+        <item quantity="one">%d problem</item>
+        <item quantity="other">%d problems</item>
+    </plurals>
+    <string name="health_section">Health</string>
+    <string name="health_as_of">As of the last check-in, %1$s</string>
+    <string name="health_never_seen">This device hasn\'t checked in yet</string>
+    <string name="health_reports_subtitle">Point-in-time snapshots, with the device log</string>
+    <plurals name="health_reports_count">
+        <item quantity="one">%d health report</item>
+        <item quantity="other">%d health reports</item>
+    </plurals>
     <string name="diag_request">Request</string>
     <string name="diag_refresh">Refresh</string>
     <string name="diag_taken_at">Report from %1$s</string>

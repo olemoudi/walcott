@@ -418,9 +418,17 @@ class WalcottViewModel(
         sync.state.map { dev.walcott.sync.ClockGuard.isTampered(it.clockSkewMs) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Latest health report per child device (parent side), for the diagnostics card. */
-    val diagReports: StateFlow<Map<String, dev.walcott.sync.DiagPayload>> =
-        sync.state.map { it.diagReports }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    /**
+     * Recent health reports per child device (parent side), newest first. A report left over
+     * from a build that only kept the last one is surfaced as the single entry it is, so it
+     * stays readable until the next report files it into the history for good.
+     */
+    val diagHistory: StateFlow<Map<String, List<dev.walcott.sync.StoredDiag>>> =
+        sync.state.map { state ->
+            state.diagHistory + state.diagReports
+                .filterKeys { state.diagHistory[it].isNullOrEmpty() }
+                .mapValues { (_, report) -> listOf(dev.walcott.sync.StoredDiag(report)) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** The activity feed, newest first (parent side), for the home wall and child dashboards. */
     val recentEvents: StateFlow<List<dev.walcott.sync.ParentEvent>> =

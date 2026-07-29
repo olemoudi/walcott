@@ -45,6 +45,7 @@ import dev.walcott.ui.parent.DebugLogScreen
 import dev.walcott.ui.parent.DeviceProtectionScreen
 import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.FamiliesScreen
+import dev.walcott.ui.parent.HealthReportsScreen
 import dev.walcott.ui.parent.MapScreen
 import dev.walcott.ui.parent.ParentHomeScreen
 import dev.walcott.ui.parent.PinGateScreen
@@ -61,7 +62,7 @@ private fun overrideChildName(settings: PolicySettings, childId: String?): Strin
 private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, SETUP_PRESETS, SETUP_WIZARD, FAMILY, CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
-    APP_SETTINGS, DEBUG_LOGS, PANIC, ACTIVITY,
+    APP_SETTINGS, DEBUG_LOGS, PANIC, ACTIVITY, CHILD_HEALTH,
 }
 
 @Composable
@@ -193,6 +194,7 @@ fun WalcottApp(
             Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
+            Screen.CHILD_HEALTH -> Screen.CHILD_DETAIL
             Screen.PANIC -> Screen.CHILD
             Screen.ACTIVITY -> Screen.FAMILIES
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
@@ -288,12 +290,16 @@ fun WalcottApp(
                                 childDetailId = it
                                 screen = Screen.CHILD_MAP
                             },
+                            onOpenHealthReports = { screen = Screen.CHILD_HEALTH },
                             onEditWebFilter = { overrideChildId = childId; screen = Screen.WEBFILTER },
                             onEditProtection = { overrideChildId = childId; screen = Screen.PROTECTION },
                         )
                     }
                     Screen.CHILD_MAP -> childDetailId?.let { childId ->
                         MapScreen(viewModel, childId, onBack = ::back)
+                    }
+                    Screen.CHILD_HEALTH -> childDetailId?.let { childId ->
+                        HealthReportsScreen(viewModel, childId, onBack = ::back)
                     }
                     Screen.FAMILY -> ParentHomeScreen(
                         viewModel = viewModel,

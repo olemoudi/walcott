@@ -198,6 +198,7 @@
     <string name="earn_daily_cap">Tope diario (min)</string>
     <string name="action_save">Guardar</string>
     <string name="action_delete">Eliminar</string>
+    <string name="action_view">Ver</string>
     <string name="weekend_edges_title">Cuándo es finde</string>
     <string name="weekend_edges_hint">Por defecto, todo el sábado y todo el domingo.</string>
     <string name="weekend_start_title">Empezarlo el viernes</string>
@@ -277,6 +278,7 @@
     <string name="remove_child_confirm">¿Quitar a %1$s? Su dispositivo mantiene las reglas de la familia hasta que se vuelva a enrolar.</string>
     <string name="override_section_title">Reglas de este hijo</string>
     <string name="override_inherited_hint">Se heredan de la familia salvo que las personalices aquí.</string>
+    <string name="override_inherited_row_hint">Heredado de la familia: actívalo para cambiarlo solo a este hijo</string>
     <string name="override_bedtime_title">Hora de dormir personalizada</string>
     <string name="override_budgets_title">Límites personalizados</string>
     <string name="last_7_days">Últimos 7 días</string>
@@ -558,6 +560,7 @@
     <string name="nav_location_title">Ubicación</string>
     <string name="nav_location_subtitle">Frecuencia de rastreo e historial de 48 horas para toda la familia</string>
     <string name="location_family_note">Valores por defecto de la familia. Cada hijo los hereda; puedes personalizar a un hijo desde su propia pantalla.</string>
+    <string name="override_scope_banner_inherited">Estas son las reglas de familia que hereda %1$s. Activa el interruptor de personalizar en su pantalla para cambiarlas.</string>
     <string name="override_scope_banner">Editando las reglas personalizadas de %1$s. Las reglas de la familia ya no aplican a esta sección para este hijo.</string>
     <string name="override_earn_title">Tiempo ganado personalizado</string>
     <string name="override_webfilter_title">Filtro web personalizado</string>
@@ -652,8 +655,22 @@
     <string name="channel_offline_title">Sin conexión con tu familia</string>
     <string name="channel_offline_desc">No llega nada desde %1$s. Las reglas y peticiones se pondrán al día cuando vuelva la conexión.</string>
     <!-- Diagnóstico remoto (informe de salud) -->
-    <string name="diag_section">Informe de salud</string>
-    <string name="diag_hint">Pide una foto del estado de este dispositivo, incluido su registro reciente</string>
+    <string name="diag_section">Informes de salud</string>
+    <string name="diag_hint">Cada informe es una foto de un momento, y se guardan para poder comparar: el estado actual está en la pantalla del hijo.</string>
+    <string name="diag_none_yet">Aún no hay informes. Pide uno y llegará en el siguiente check-in del dispositivo.</string>
+    <string name="diag_all_clear">Nada que reportar</string>
+    <plurals name="diag_problems">
+        <item quantity="one">%d problema</item>
+        <item quantity="other">%d problemas</item>
+    </plurals>
+    <string name="health_section">Salud</string>
+    <string name="health_as_of">Según el último check-in, %1$s</string>
+    <string name="health_never_seen">Este dispositivo aún no ha dado señales</string>
+    <string name="health_reports_subtitle">Fotos de un momento concreto, con el registro del dispositivo</string>
+    <plurals name="health_reports_count">
+        <item quantity="one">%d informe de salud</item>
+        <item quantity="other">%d informes de salud</item>
+    </plurals>
     <string name="diag_request">Pedir</string>
     <string name="diag_refresh">Actualizar</string>
     <string name="diag_taken_at">Informe del %1$s</string>

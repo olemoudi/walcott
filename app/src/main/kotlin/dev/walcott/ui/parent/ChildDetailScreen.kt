@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
@@ -96,6 +97,7 @@ fun ChildDetailScreen(
     childId: String,
     onBack: () -> Unit,
     onOpenMap: (String) -> Unit,
+    onOpenHealthReports: () -> Unit,
     onEditWebFilter: () -> Unit,
     onEditProtection: () -> Unit,
 ) {
@@ -105,7 +107,8 @@ fun ChildDetailScreen(
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
-    val diagReports by viewModel.diagReports.collectAsStateWithLifecycle()
+    val diagHistory by viewModel.diagHistory.collectAsStateWithLifecycle()
+    val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
     val ledgers by viewModel.usageLedgers.collectAsStateWithLifecycle()
 
@@ -259,10 +262,12 @@ fun ChildDetailScreen(
                     )
                 }
                 item {
-                    DiagnosticsCard(
-                        deviceId = snapshot.deviceId,
-                        report = diagReports[snapshot.deviceId],
-                        onRequest = { viewModel.sendRemoteCommand(snapshot.deviceId, RemoteAction.DIAGNOSE) },
+                    LiveHealthCard(
+                        snapshot = snapshot,
+                        lastSeenMs = lastSeen[snapshot.deviceId] ?: 0L,
+                        nowMs = nowMs,
+                        reportCount = diagHistory[snapshot.deviceId]?.size ?: 0,
+                        onOpenReports = onOpenHealthReports,
                     )
                 }
             }
@@ -322,11 +327,14 @@ fun ChildDetailScreen(
                     },
                 )
             }
-            entry.overrides.bedtime?.let { bedtime ->
-                item {
-                    BedtimeCard(bedtime) { updated ->
-                        viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
-                    }
+            // Always rendered: inheriting shows the family's own bedtime, exactly as this child
+            // gets it, with every control refused. The switch above is what opens it for editing.
+            item {
+                BedtimeCard(
+                    bedtime = entry.overrides.bedtime ?: settings.bedtime,
+                    enabled = entry.overrides.bedtime != null,
+                ) { updated ->
+                    viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
                 }
             }
             item {
@@ -341,19 +349,19 @@ fun ChildDetailScreen(
                     },
                 )
             }
-            entry.overrides.budgets?.let { budgets ->
-                items(AppCategory.entries.toList(), key = { it.id }) { category ->
-                    CategoryBudgetCard(
-                        category = category,
-                        perDay = budgets[category.id].orEmpty(),
-                        onSetBudget = { dayType, minutes ->
-                            viewModel.setChildOverrides(
-                                childId,
-                                entry.overrides.copy(budgets = budgets.withBudget(category.id, dayType.name, minutes)),
-                            )
-                        },
-                    )
-                }
+            items(AppCategory.entries.toList(), key = { it.id }) { category ->
+                val budgets = entry.overrides.budgets ?: settings.budgets
+                CategoryBudgetCard(
+                    category = category,
+                    perDay = budgets[category.id].orEmpty(),
+                    enabled = entry.overrides.budgets != null,
+                    onSetBudget = { dayType, minutes ->
+                        viewModel.setChildOverrides(
+                            childId,
+                            entry.overrides.copy(budgets = budgets.withBudget(category.id, dayType.name, minutes)),
+                        )
+                    },
+                )
             }
             item {
                 OverrideSwitchRow(
@@ -365,7 +373,8 @@ fun ChildDetailScreen(
                             entry.overrides.copy(blockedDomains = if (on) settings.blockedDomains else null),
                         )
                     },
-                    onEdit = onEditWebFilter.takeIf { entry.overrides.blockedDomains != null },
+                    onEdit = onEditWebFilter,
+                    editable = entry.overrides.blockedDomains != null,
                 )
             }
             item {
@@ -378,7 +387,8 @@ fun ChildDetailScreen(
                             entry.overrides.copy(deviceRestrictions = if (on) settings.deviceRestrictions else null),
                         )
                     },
-                    onEdit = onEditProtection.takeIf { entry.overrides.deviceRestrictions != null },
+                    onEdit = onEditProtection,
+                    editable = entry.overrides.deviceRestrictions != null,
                 )
             }
             item {
@@ -1048,7 +1058,7 @@ private fun RemoteFixRow(title: String, description: String, emphasized: Boolean
  * Maps a command's machine-readable detail onto localized text. Unknown details (a newer
  * child reporting something this build doesn't know) fall through verbatim.
  */
-private fun remoteResultLabel(context: android.content.Context, detail: String): String = when (detail) {
+internal fun remoteResultLabel(context: android.content.Context, detail: String): String = when (detail) {
     "up_to_date" -> context.getString(R.string.remote_result_up_to_date)
     "installing" -> context.getString(R.string.remote_result_installing)
     "download_failed" -> context.getString(R.string.remote_result_download_failed)
@@ -1065,160 +1075,112 @@ private fun remoteResultLabel(context: android.content.Context, detail: String):
 }
 
 /**
- * Remote health report: request a diagnostics snapshot from the child (it arrives on the
- * device's next check-in, as its own message) and render the latest one received. The
- * "requested…" line clears itself when a report newer than the request lands.
+ * The child's health as of its last check-in — live, not a report. Every row comes from the
+ * snapshot the device publishes on every heartbeat, so nothing here carries a date that can go
+ * stale while still looking like the truth. The on-demand reports, which are snapshots of a
+ * moment and age badly, live behind [dev.walcott.ui.parent.HealthReportsScreen].
  */
 @Composable
-private fun DiagnosticsCard(deviceId: String, report: DiagPayload?, onRequest: () -> Unit) {
+private fun LiveHealthCard(
+    snapshot: ChildSnapshot,
+    lastSeenMs: Long,
+    nowMs: Long,
+    reportCount: Int,
+    onOpenReports: () -> Unit,
+) {
     val spacing = Tokens.spacing
-    val context = LocalContext.current
-    var sentAtMs by remember(deviceId) { mutableStateOf(0L) }
-    var showLog by remember(deviceId) { mutableStateOf(false) }
-    val waiting = sentAtMs > 0 && (report == null || report.atMs < sentAtMs)
-
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(spacing.lg)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.diag_section), style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        stringResource(R.string.diag_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(stringResource(R.string.health_section), style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (lastSeenMs > 0) {
+                    stringResource(
+                        R.string.health_as_of,
+                        android.text.format.DateUtils
+                            .getRelativeTimeSpanString(lastSeenMs, nowMs, android.text.format.DateUtils.MINUTE_IN_MILLIS)
+                            .toString(),
                     )
-                }
-                Spacer(Modifier.width(spacing.sm))
-                OutlinedButton(onClick = { onRequest(); sentAtMs = System.currentTimeMillis() }, enabled = !waiting) {
-                    Text(stringResource(if (report == null) R.string.diag_request else R.string.diag_refresh))
-                }
-            }
-            if (waiting) {
-                Text(
-                    stringResource(R.string.remote_command_sent),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = spacing.sm),
-                )
-            }
-            if (report != null) {
-                HorizontalDivider(Modifier.padding(vertical = spacing.sm))
-                val stamp = remember(report.atMs) {
-                    java.text.DateFormat
-                        .getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, Locale.getDefault())
-                        .format(java.util.Date(report.atMs))
-                }
-                Text(
-                    stringResource(R.string.diag_taken_at, stamp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                } else {
+                    stringResource(R.string.health_never_seen)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = spacing.sm),
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_enforcement),
+                value = stringResource(
+                    when (snapshot.enforcement) {
+                        EnforcementStatus.DEVICE_OWNER -> R.string.diag_enforcement_do
+                        EnforcementStatus.ACCESSIBILITY -> R.string.diag_enforcement_accessibility
+                        else -> R.string.diag_enforcement_none
+                    },
+                ),
+                ok = snapshot.enforcement == EnforcementStatus.DEVICE_OWNER,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_usage_access),
+                value = stringResource(if (snapshot.usageAccessOn) R.string.summary_on else R.string.summary_off),
+                ok = snapshot.usageAccessOn,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_network_location),
+                value = stringResource(if (snapshot.networkLocationOn) R.string.summary_on else R.string.summary_off),
+                ok = snapshot.networkLocationOn,
+            )
+            if (snapshot.batteryPercent in 0..100) {
                 DiagRow(
-                    label = stringResource(R.string.diag_enforcement),
+                    label = stringResource(R.string.diag_battery),
                     value = stringResource(
-                        when (report.enforcement) {
-                            EnforcementStatus.DEVICE_OWNER -> R.string.diag_enforcement_do
-                            EnforcementStatus.ACCESSIBILITY -> R.string.diag_enforcement_accessibility
-                            else -> R.string.diag_enforcement_none
-                        },
+                        if (snapshot.charging) R.string.diag_battery_charging else R.string.diag_battery_value,
+                        snapshot.batteryPercent,
                     ),
-                    ok = report.enforcement == EnforcementStatus.DEVICE_OWNER,
+                    ok = snapshot.charging || snapshot.batteryPercent >= LOW_BATTERY_PERCENT,
                 )
+            }
+            if (snapshot.appVersionCode > 0) {
                 DiagRow(
-                    label = stringResource(R.string.diag_usage_access),
-                    value = stringResource(if (report.usageAccess) R.string.summary_on else R.string.summary_off),
-                    ok = report.usageAccess,
+                    label = stringResource(R.string.diag_version),
+                    value = stringResource(
+                        R.string.diag_version_value,
+                        snapshot.appVersionName,
+                        snapshot.appVersionCode,
+                    ),
+                    // Live, so today's build IS the right yardstick — unlike a dated report.
+                    ok = snapshot.appVersionCode >= BuildConfig.VERSION_CODE,
                 )
-                DiagRow(
-                    label = stringResource(R.string.diag_location_permission),
-                    value = stringResource(if (report.locationPermission) R.string.summary_on else R.string.summary_off),
-                    ok = report.locationPermission,
-                )
-                DiagRow(
-                    label = stringResource(R.string.diag_gps),
-                    value = stringResource(if (report.gpsOn) R.string.summary_on else R.string.summary_off),
-                    ok = report.gpsOn,
-                )
-                DiagRow(
-                    label = stringResource(R.string.diag_network_location),
-                    value = stringResource(if (report.networkLocationOn) R.string.summary_on else R.string.summary_off),
-                    ok = report.networkLocationOn,
-                )
-                if (report.batteryPercent in 0..100) {
-                    DiagRow(
-                        label = stringResource(R.string.diag_battery),
-                        value = stringResource(
-                            if (report.charging) R.string.diag_battery_charging else R.string.diag_battery_value,
-                            report.batteryPercent,
-                        ),
-                        ok = report.charging || report.batteryPercent >= 20,
-                    )
-                }
-                if (report.appVersionCode > 0) {
-                    DiagRow(
-                        label = stringResource(R.string.diag_version),
-                        value = stringResource(R.string.diag_version_value, report.appVersionName, report.appVersionCode),
-                        ok = report.appVersionCode >= BuildConfig.VERSION_CODE,
-                    )
-                }
-                if (report.updateError.isNotBlank()) {
-                    DiagRow(
-                        label = stringResource(R.string.diag_update_error),
-                        value = remoteResultLabel(context, report.updateError),
-                        ok = report.updateError == "waiting_parent",
-                    )
-                }
-                if (report.suspendFailures.isNotEmpty()) {
-                    DiagRow(
-                        label = stringResource(R.string.diag_suspend_failures),
-                        value = report.suspendFailures.joinToString(),
-                        ok = false,
-                    )
-                }
-                if (report.logLines.isNotEmpty()) {
-                    TextButton(onClick = { showLog = !showLog }) {
+            }
+            HorizontalDivider(Modifier.padding(vertical = spacing.sm))
+            Surface(
+                onClick = onOpenReports,
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(Modifier.padding(vertical = spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            if (showLog) {
-                                stringResource(R.string.diag_hide_log)
+                            if (reportCount > 0) {
+                                pluralStringResource(R.plurals.health_reports_count, reportCount, reportCount)
                             } else {
-                                stringResource(R.string.diag_show_log, report.logLines.size)
+                                stringResource(R.string.diag_section)
                             },
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            stringResource(R.string.health_reports_subtitle),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (showLog) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                report.logLines.joinToString("\n"),
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                ),
-                                modifier = Modifier.padding(spacing.sm),
-                            )
-                        }
-                    }
+                    Icon(
+                        Icons.Filled.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun DiagRow(label: String, value: String, ok: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-        )
     }
 }
 
@@ -1349,19 +1311,19 @@ private fun UpdateWifiOverrideCard(
                 // Customize snapshots the current resolved value; turning it off re-inherits.
                 Switch(checked = customized, onCheckedChange = { on -> onSetOverride(if (on) value else null) })
             }
-            if (customized) {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = spacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.update_wifi_only_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(checked = value, onCheckedChange = { onSetOverride(it) })
-                }
+            Row(
+                Modifier.fillMaxWidth().padding(top = spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.update_wifi_only_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                // Always shown, so the inherited value is visible as the child actually gets it;
+                // only customizing hands over the control.
+                Switch(checked = value, enabled = customized, onCheckedChange = { onSetOverride(it) })
             }
         }
     }
@@ -1373,6 +1335,8 @@ private fun OverrideSwitchRow(
     checked: Boolean,
     onToggle: (Boolean) -> Unit,
     onEdit: (() -> Unit)? = null,
+    /** Whether [onEdit] opens the rules to change them, or just to look at what is inherited. */
+    editable: Boolean = checked,
 ) {
     val spacing = Tokens.spacing
     Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
@@ -1381,16 +1345,18 @@ private fun OverrideSwitchRow(
                 Text(title, style = MaterialTheme.typography.titleSmall)
                 // Make the "snapshot" nature of overrides explicit: once on, it stops tracking
                 // later family edits (resolveForChild replaces the whole field).
-                if (checked) {
-                    Text(
-                        stringResource(R.string.override_customized_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    stringResource(
+                        if (checked) R.string.override_customized_hint else R.string.override_inherited_row_hint,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (onEdit != null) {
-                TextButton(onClick = onEdit) { Text(stringResource(R.string.action_edit)) }
+                TextButton(onClick = onEdit) {
+                    Text(stringResource(if (editable) R.string.action_edit else R.string.action_view))
+                }
             }
             Switch(checked = checked, onCheckedChange = onToggle)
         }

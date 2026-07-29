@@ -58,11 +58,15 @@ import dev.walcott.ui.theme.Tokens
  */
 
 @Composable
-internal fun BedtimeCard(bedtime: Map<String, WindowDto>, onChange: (Map<String, WindowDto>) -> Unit) {
+internal fun BedtimeCard(
+    bedtime: Map<String, WindowDto>,
+    /** False renders the window as configured but refuses every control — an inherited rule. */
+    enabled: Boolean = true,
+    onChange: (Map<String, WindowDto>) -> Unit,
+) {
     val spacing = Tokens.spacing
     // The MVP applies the same bedtime window to every day type.
     val window = bedtime[DayType.SCHOOL.name]
-    val enabled = window != null
     val start = window?.let { LocalTime.ofSecondOfDay(it.startMinute * 60L) } ?: LocalTime.of(21, 30)
     val end = window?.let { LocalTime.ofSecondOfDay(it.endMinute * 60L) } ?: LocalTime.of(7, 30)
 
@@ -83,15 +87,16 @@ internal fun BedtimeCard(bedtime: Map<String, WindowDto>, onChange: (Map<String,
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.bedtime_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Switch(
-                    checked = enabled,
+                    checked = window != null,
+                    enabled = enabled,
                     onCheckedChange = { on -> if (on) applyAll(start, end) else applyAll(null, null) },
                 )
             }
-            if (enabled) {
+            if (window != null) {
                 Spacer(Modifier.size(spacing.md))
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
-                    TimeButton(stringResource(R.string.from), start.hhmm()) { editing = BedtimeEdit.START }
-                    TimeButton(stringResource(R.string.to), end.hhmm()) { editing = BedtimeEdit.END }
+                    TimeButton(stringResource(R.string.from), start.hhmm(), enabled) { editing = BedtimeEdit.START }
+                    TimeButton(stringResource(R.string.to), end.hhmm(), enabled) { editing = BedtimeEdit.END }
                 }
             }
         }
@@ -203,7 +208,7 @@ private fun WeekendEdgeRow(
             Text(supporting, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (minute != null) {
-            TimeButton(dayLabel, LocalTime.ofSecondOfDay(minute * 60L).hhmm(), onPick)
+            TimeButton(dayLabel, LocalTime.ofSecondOfDay(minute * 60L).hhmm(), onClick = onPick)
             Spacer(Modifier.size(Tokens.spacing.sm))
         }
         Switch(checked = minute != null, onCheckedChange = onToggle)
@@ -386,8 +391,8 @@ private fun WindowTimePicker(initialMinute: Int, titleRes: Int, onDone: (LocalTi
 }
 
 @Composable
-internal fun TimeButton(label: String, value: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+internal fun TimeButton(label: String, value: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.titleLarge)
@@ -396,9 +401,10 @@ internal fun TimeButton(label: String, value: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun BudgetPreset(label: String, onClick: () -> Unit) {
+private fun BudgetPreset(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.secondaryContainer,
     ) {
@@ -416,6 +422,8 @@ private fun BudgetPreset(label: String, onClick: () -> Unit) {
 internal fun CategoryBudgetCard(
     category: AppCategory,
     perDay: Map<String, Int>,
+    /** False still expands to show the numbers; it only refuses to change them. */
+    enabled: Boolean = true,
     onSetBudget: (DayType, Int?) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -451,11 +459,11 @@ internal fun CategoryBudgetCard(
                     Modifier.fillMaxWidth().padding(top = spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
-                    BudgetPreset(stringResource(R.string.no_limit)) { DAY_TYPES.forEach { onSetBudget(it, null) } }
-                    BudgetPreset("1h") { DAY_TYPES.forEach { onSetBudget(it, 60) } }
-                    BudgetPreset("2h") { DAY_TYPES.forEach { onSetBudget(it, 120) } }
+                    BudgetPreset(stringResource(R.string.no_limit), enabled) { DAY_TYPES.forEach { onSetBudget(it, null) } }
+                    BudgetPreset("1h", enabled) { DAY_TYPES.forEach { onSetBudget(it, 60) } }
+                    BudgetPreset("2h", enabled) { DAY_TYPES.forEach { onSetBudget(it, 120) } }
                     var customAll by remember { mutableStateOf(false) }
-                    BudgetPreset(stringResource(R.string.custom_value)) { customAll = true }
+                    BudgetPreset(stringResource(R.string.custom_value), enabled) { customAll = true }
                     if (customAll) {
                         dev.walcott.ui.components.MinutesPickerDialog(
                             title = stringResource(R.string.custom_minutes_title),
@@ -481,6 +489,7 @@ internal fun CategoryBudgetCard(
                                 onSetBudget(dayType, if (next < 15) null else next)
                             },
                             onIncrement = { onSetBudget(dayType, (minutes ?: 0) + 15) },
+                            enabled = enabled,
                         )
                     }
                 }

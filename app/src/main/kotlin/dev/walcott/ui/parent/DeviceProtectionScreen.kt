@@ -55,10 +55,14 @@ fun DeviceProtectionScreen(
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val overrides = settings.children.firstOrNull { it.childId == childId }?.overrides
+    // What this child ACTUALLY gets: its own set once customized, the family's while it still
+    // inherits — read-only in that case, rather than an empty list that reads as "unprotected".
+    val editable = childId == null || overrides?.deviceRestrictions != null
     val enabledKeys = if (childId == null) {
         settings.deviceRestrictions
     } else {
-        settings.children.firstOrNull { it.childId == childId }?.overrides?.deviceRestrictions.orEmpty()
+        overrides?.deviceRestrictions ?: settings.deviceRestrictions
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -68,7 +72,7 @@ fun DeviceProtectionScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             if (childName != null) {
-                item { OverrideScopeBanner(childName) }
+                item { OverrideScopeBanner(childName, editable = editable) }
             }
             item {
                 Text(
@@ -82,6 +86,7 @@ fun DeviceProtectionScreen(
                     title = stringResource(restriction.titleRes),
                     description = stringResource(restriction.descRes),
                     checked = restriction.key in enabledKeys,
+                    enabled = editable,
                     onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on, childId) },
                 )
             }
@@ -102,7 +107,13 @@ fun DeviceProtectionScreen(
 }
 
 @Composable
-private fun RestrictionRow(title: String, description: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+private fun RestrictionRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
     val spacing = Tokens.spacing
     Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
@@ -115,7 +126,7 @@ private fun RestrictionRow(title: String, description: String, checked: Boolean,
                 )
             }
             Spacer(Modifier.width(spacing.md))
-            Switch(checked = checked, onCheckedChange = onToggle)
+            Switch(checked = checked, enabled = enabled, onCheckedChange = onToggle)
         }
     }
 }

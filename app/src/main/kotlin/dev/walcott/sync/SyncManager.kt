@@ -741,6 +741,7 @@ class SyncManager(
                 selfTestNotified = s.selfTestNotified - deviceId,
                 clockTamperNotified = s.clockTamperNotified - deviceId,
                 diagReports = s.diagReports - deviceId,
+                diagHistory = s.diagHistory - deviceId,
                 // Only legacy devices ledger under their deviceId; child-keyed history stays.
                 usageHistory = s.usageHistory - deviceId,
             )
@@ -1293,9 +1294,21 @@ class SyncManager(
         }
     }
 
-    /** Parent: keep the latest health report per device, for the child-detail screen. */
+    /** Parent: file the health report, newest first, for the child's health-reports screen. */
     private suspend fun applyDiagPayload(payload: DiagPayload) {
-        syncStore.update { it.copy(diagReports = it.diagReports + (payload.deviceId to payload)) }
+        syncStore.update { s ->
+            // A report stored by a parent build that only kept the last one still counts as the
+            // oldest entry of the new history; filing over it is what retires that field.
+            val legacy = s.diagReports[payload.deviceId]?.let { listOf(StoredDiag(it)) }.orEmpty()
+            val previous = s.diagHistory[payload.deviceId] ?: legacy
+            // Stamped on arrival — see StoredDiag for why the version row needs the date.
+            val filed = StoredDiag(payload, BuildConfig.VERSION_CODE)
+            s.copy(
+                diagHistory = s.diagHistory +
+                    (payload.deviceId to (listOf(filed) + previous).take(MAX_DIAG_HISTORY)),
+                diagReports = s.diagReports - payload.deviceId,
+            )
+        }
     }
 
     /**

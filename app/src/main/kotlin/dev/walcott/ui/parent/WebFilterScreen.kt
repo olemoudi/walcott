@@ -53,10 +53,15 @@ fun WebFilterScreen(
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val overrides = settings.children.firstOrNull { it.childId == childId }?.overrides
+    // In child scope this shows what the child ACTUALLY gets: its own list once customized,
+    // the family's while it still inherits — read-only in that case, never an empty list that
+    // reads as "nothing is blocked for them".
+    val editable = childId == null || overrides?.blockedDomains != null
     val blockedDomains = if (childId == null) {
         settings.blockedDomains
     } else {
-        settings.children.firstOrNull { it.childId == childId }?.overrides?.blockedDomains.orEmpty()
+        overrides?.blockedDomains ?: settings.blockedDomains
     }
     val apps by viewModel.appRows.collectAsStateWithLifecycle()
     val labelOf = remember(apps) { apps.associate { it.app.packageName to it.app.label } }
@@ -74,7 +79,7 @@ fun WebFilterScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
             if (childName != null) {
-                item { OverrideScopeBanner(childName) }
+                item { OverrideScopeBanner(childName, editable = editable) }
             }
             item {
                 Text(
@@ -93,18 +98,23 @@ fun WebFilterScreen(
                         onValueChange = { newDomain = it },
                         placeholder = { Text(stringResource(R.string.webfilter_domain_hint)) },
                         singleLine = true,
+                        enabled = editable,
                         modifier = Modifier.weight(1f),
                     )
-                    OutlinedButton(onClick = { viewModel.addBlockedDomain(newDomain, childId); newDomain = "" }) {
-                        Text(stringResource(R.string.action_add))
-                    }
+                    OutlinedButton(
+                        enabled = editable,
+                        onClick = { viewModel.addBlockedDomain(newDomain, childId); newDomain = "" },
+                    ) { Text(stringResource(R.string.action_add)) }
                 }
             }
             if (blockedDomains.isEmpty()) {
                 item { Text(stringResource(R.string.webfilter_empty_domains), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             items(blockedDomains.sorted(), key = { it }) { domain ->
-                DeletableRow(domain, onDelete = { viewModel.removeBlockedDomain(domain, childId) })
+                DeletableRow(
+                    domain,
+                    onDelete = if (editable) ({ viewModel.removeBlockedDomain(domain, childId) }) else null,
+                )
             }
 
             // Per-app domain rules aren't part of the per-child overrides; in child scope
@@ -171,11 +181,12 @@ fun WebFilterScreen(
 }
 
 @Composable
-private fun DeletableRow(label: String, onDelete: () -> Unit) {
+private fun DeletableRow(label: String, onDelete: (() -> Unit)?) {
     Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = Tokens.spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Text(label, Modifier.weight(1f))
-            IconButton(onClick = onDelete) {
+            // Null while the entry is inherited: it is shown, not owned by this child.
+            IconButton(onClick = onDelete ?: {}, enabled = onDelete != null) {
                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_delete))
             }
         }

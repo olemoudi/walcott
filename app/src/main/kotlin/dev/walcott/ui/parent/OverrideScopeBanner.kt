@@ -22,11 +22,12 @@ import dev.walcott.R
 import dev.walcott.ui.theme.Tokens
 
 /**
- * Shown at the top of a rule editor when it is editing one child's override, so the
- * parent always knows whether a change affects the family or just this child.
+ * Shown at the top of a rule editor opened in one child's scope, so the parent always knows
+ * whether a change affects the family or just this child — and, when the child still inherits
+ * the section, that they are looking at the family's rules rather than editing anything.
  */
 @Composable
-fun OverrideScopeBanner(childName: String) {
+fun OverrideScopeBanner(childName: String, editable: Boolean = true) {
     val spacing = Tokens.spacing
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -42,7 +43,10 @@ fun OverrideScopeBanner(childName: String) {
             )
             Spacer(Modifier.width(spacing.sm))
             Text(
-                stringResource(R.string.override_scope_banner, childName),
+                stringResource(
+                    if (editable) R.string.override_scope_banner else R.string.override_scope_banner_inherited,
+                    childName,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )

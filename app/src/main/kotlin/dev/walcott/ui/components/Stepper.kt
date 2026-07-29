@@ -27,16 +27,23 @@ fun Stepper(
     onDecrement: () -> Unit,
     onIncrement: () -> Unit,
     decrementEnabled: Boolean = true,
+    /** False shows the value but refuses both buttons (a read-only, inherited setting). */
+    enabled: Boolean = true,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        StepButton(Icons.Filled.Remove, stringResource(R.string.decrement), enabled = decrementEnabled, onClick = onDecrement)
+        StepButton(
+            Icons.Filled.Remove,
+            stringResource(R.string.decrement),
+            enabled = enabled && decrementEnabled,
+            onClick = onDecrement,
+        )
         Text(
             valueLabel,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(72.dp),
         )
-        StepButton(Icons.Filled.Add, stringResource(R.string.increment), onClick = onIncrement)
+        StepButton(Icons.Filled.Add, stringResource(R.string.increment), enabled = enabled, onClick = onIncrement)
     }
 }
 
