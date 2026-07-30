@@ -527,6 +527,21 @@ class WalcottViewModel(
         .map { AutoBackupUi(it.autoBackupUri.isNotBlank(), it.autoBackupError) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AutoBackupUi(false, false))
 
+    /**
+     * True when this parent has a PIN but no key for the on-device copies yet, so the nightly
+     * backup cannot run. Only ever true for a family that already existed before the copies did:
+     * a new parent sets the PIN moments after creating the family and is keyed from day one.
+     * Surfaced on the home rather than left to a settings screen — a safety net nobody is told
+     * about is the same opt-in problem it was built to remove.
+     */
+    val localBackupNeedsPin: StateFlow<Boolean> = combine(
+        sync.state, repository.settingsFlow,
+    ) { state, settings -> settings.pinHash != null && state.localBackupKeyB64.isBlank() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Derives and caches the on-device backup key from a PIN the parent just re-entered. */
+    suspend fun enableLocalBackup(pin: String) = sync.cacheLocalBackupKey(pin)
+
     /** Start rewriting the backup into [uri] automatically on every rule change. */
     suspend fun enableAutoBackup(uri: String, passphrase: CharArray) = sync.enableAutoBackup(uri, passphrase)
 

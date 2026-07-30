@@ -96,6 +96,18 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         val ok = runCatching { dpm.clearDeviceOwnerApp(app.packageName) }.isSuccess
                         DebugLog.i("WalcottSeed", "clearDeviceOwnerApp ok=$ok")
                     }
+                    // `--es mode upgraded_parent`: a parent that existed BEFORE the on-device
+                    // copies did — PIN set, no backup key. Reproduces what every current family
+                    // sees the first time they update, which is the only way to check that the
+                    // "turn it on" card actually shows up for them.
+                    "upgraded_parent" -> {
+                        if (app.identityStore.current().role != dev.walcott.sync.Role.PARENT) {
+                            app.syncManager.becomeParent("DebugFamily")
+                        }
+                        app.repository.setPin(intent.getStringExtra("local_backup_pin") ?: "4291")
+                        app.syncManager.clearLocalBackupKeyForDebug()
+                        DebugLog.i("WalcottSeed", "upgraded parent: pin set, local backup key cleared")
+                    }
                     // `--es mode local_backup_list`: only enumerates, so a freshly installed app
                     // can be asked what it sees without writing anything first.
                     "local_backup_list" ->

@@ -739,6 +739,10 @@
     <string name="restore_card_desc">¿Repones un móvil de padre perdido? Carga su fichero de copia y la familia vuelve.</string>
     <string name="restore_pass_title">Contraseña de la copia</string>
     <string name="restore_failed">Contraseña incorrecta o fichero de copia no válido</string>
+    <string name="local_backup_enable_title">Guardar una copia en este móvil</string>
+    <string name="local_backup_enable_body">Walcott puede guardar aquí tres copias cifradas de tu familia, actualizadas cada noche, para que desinstalar la app no se lleve tus reglas. Introduce tu PIN una vez para activarlo.</string>
+    <string name="local_backup_enable_action">Activar</string>
+    <string name="local_backup_pin_prompt">Tu PIN abre las copias si algún día necesitas restaurarlas. Se pide una sola vez.</string>
     <string name="backup_local_note">Walcott guarda además tres copias cifradas en este móvil (%1$s), actualizadas cada noche y protegidas con tu PIN parental. Sobreviven a desinstalar la app, pero no a perder o romper el móvil: para eso está el backup de arriba.</string>
     <string name="restore_pin_title">PIN parental</string>
     <string name="restore_pin_label">PIN parental</string>

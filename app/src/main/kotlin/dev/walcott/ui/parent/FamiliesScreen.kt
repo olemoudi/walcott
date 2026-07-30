@@ -91,6 +91,7 @@ import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
 
@@ -126,6 +127,8 @@ fun FamiliesScreen(
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
+    val needsBackupPin by viewModel.localBackupNeedsPin.collectAsStateWithLifecycle()
+    var showBackupPin by remember { mutableStateOf(false) }
 
     // Re-check when the user comes back from the notification settings we deep-link into.
     var notificationsEnabled by remember { mutableStateOf(true) }
@@ -217,6 +220,14 @@ fun FamiliesScreen(
                     onOpen = { onOpenDomainRequest(request.batchId) },
                 )
             }
+        }
+
+        // A family that existed before the on-device copies did has no key for them yet, and
+        // there is no reliable moment when it would appear: app lock is off by default, and with
+        // biometrics on the PIN is never typed at all. Left to a settings screen this would be
+        // the same opt-in nobody switches on that the copies exist to replace.
+        if (needsBackupPin) {
+            item { EnableLocalBackupCard(onEnable = { showBackupPin = true }) }
         }
 
         item {
@@ -384,6 +395,13 @@ fun FamiliesScreen(
             dismissButton = {
                 TextButton(onClick = { removingDevice = null }) { Text(stringResource(R.string.action_cancel)) }
             },
+        )
+    }
+
+    if (showBackupPin) {
+        LocalBackupPinDialog(
+            viewModel = viewModel,
+            onDismiss = { showBackupPin = false },
         )
     }
 
@@ -878,5 +896,87 @@ private fun AddChildDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/**
+ * Asks for the PIN once so the nightly on-device copies can start (see [dev.walcott.sync.LocalBackupStore]).
+ * Only shown while there is no key: it disappears for good the moment one is derived.
+ */
+@Composable
+private fun EnableLocalBackupCard(onEnable: () -> Unit) {
+    val spacing = Tokens.spacing
+    WalcottCard(color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)) {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(
+                stringResource(R.string.local_backup_enable_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                stringResource(R.string.local_backup_enable_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
+            androidx.compose.material3.TextButton(
+                onClick = onEnable,
+                modifier = Modifier.padding(top = spacing.xs),
+            ) { Text(stringResource(R.string.local_backup_enable_action)) }
+        }
+    }
+}
+
+/** Takes the PIN once and derives the on-device backup key from it; wrong PINs keep it open. */
+@Composable
+private fun LocalBackupPinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var pin by remember { mutableStateOf("") }
+    var failed by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(stringResource(R.string.local_backup_enable_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.local_backup_pin_prompt), style = MaterialTheme.typography.bodyMedium)
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it; failed = false },
+                    label = { Text(stringResource(R.string.restore_pin_label)) },
+                    isError = failed,
+                    supportingText = { if (failed) Text(stringResource(R.string.pin_incorrect)) },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = Tokens.spacing.sm),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = pin.isNotEmpty() && !busy,
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        // Verified first: deriving from a wrong PIN would seal every copy with a
+                        // key nobody can reproduce, and the failure would only show up at restore.
+                        if (viewModel.verifyPin(pin) is dev.walcott.data.PinResult.Ok) {
+                            viewModel.enableLocalBackup(pin)
+                            onDismiss()
+                        } else {
+                            failed = true
+                        }
+                        busy = false
+                    }
+                },
+            ) {
+                if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text(stringResource(R.string.local_backup_enable_action))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

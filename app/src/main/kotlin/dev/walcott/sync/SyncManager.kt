@@ -983,6 +983,11 @@ class SyncManager(
         return written.keys
     }
 
+    /** Debug harness only: puts this parent back in the state an un-upgraded one is in. */
+    suspend fun clearLocalBackupKeyForDebug() {
+        syncStore.update { it.copy(localBackupKeyB64 = "", localBackupSaltB64 = "", localBackupDays = emptyMap()) }
+    }
+
     suspend fun disableAutoBackup() {
         syncStore.update {
             it.copy(autoBackupUri = "", autoBackupKeyB64 = "", autoBackupSaltB64 = "", autoBackupError = false)
