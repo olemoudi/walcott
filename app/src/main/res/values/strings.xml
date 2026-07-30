@@ -874,8 +874,8 @@
         <item quantity="other">%d lookups</item>
     </plurals>
     <plurals name="domain_monitor_send">
-        <item quantity="one">Send %d domain to the parent</item>
-        <item quantity="other">Send %d domains to the parent</item>
+        <item quantity="one">Send the %d selected domain</item>
+        <item quantity="other">Send the %d selected domains</item>
     </plurals>
     <plurals name="domain_monitor_sent">
         <item quantity="one">%d domain sent. The parent decides whether to block it.</item>
@@ -885,4 +885,36 @@
     <string name="ask_domains_block_app">Block in %1$s</string>
     <string name="ask_domains_block_all">Block everywhere</string>
     <string name="domain_monitor_no_tunnel">The DNS filter could not start, so nothing can be seen. Another VPN app may be holding the slot on this phone.</string>
+    <!-- Domain requests reaching the parent (chunked delivery, see DomainDelivery) -->
+    <string name="domain_send_failed">Those domains never reached the parent phone. The family channel is not getting through right now \u2014 pick them again when it is back.</string>
+    <string name="domain_send_progress">Sending\u2026 %1$d of %2$d confirmed by the parent</string>
+    <string name="sync_domains_title">%1$s sent domains to block</string>
+    <plurals name="sync_domains_text">
+        <item quantity="one">%1$d domain seen in %2$s</item>
+        <item quantity="other">%1$d domains seen in %2$s</item>
+    </plurals>
+    <plurals name="event_domains">
+        <item quantity="one">%1$s sent %2$d domain from %3$s</item>
+        <item quantity="other">%1$s sent %2$d domains from %3$s</item>
+    </plurals>
+    <string name="domains_home_title">%1$s sent domains to block</string>
+    <plurals name="domains_home_sub">
+        <item quantity="one">%1$d domain seen in %2$s \u2014 tap to review</item>
+        <item quantity="other">%1$d domains seen in %2$s \u2014 tap to review</item>
+    </plurals>
+    <string name="domain_review_title">Domains to block</string>
+    <string name="domain_review_from">%1$s picked these while using %2$s. Untick anything you would rather leave alone.</string>
+    <string name="domain_review_scope_who">Who does this apply to?</string>
+    <string name="domain_review_scope_family">The whole family</string>
+    <string name="domain_review_scope_child">Only %1$s</string>
+    <string name="domain_review_scope_what">Where does it apply?</string>
+    <string name="domain_review_scope_app">Only in %1$s</string>
+    <string name="domain_review_scope_any">In any app</string>
+    <string name="domain_review_scope_app_generic">Only in that app</string>
+    <plurals name="domain_review_apply">
+        <item quantity="one">Block %1$d domain</item>
+        <item quantity="other">Block %1$d domains</item>
+    </plurals>
+    <string name="domain_review_discard">Discard this request</string>
+    <string name="domain_review_none">Nothing ticked \u2014 discard the request instead.</string>
 </resources>

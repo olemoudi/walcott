@@ -47,6 +47,7 @@ import dev.walcott.ui.parent.DeviceProtectionScreen
 import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.FamiliesScreen
 import dev.walcott.ui.parent.DomainMonitorScreen
+import dev.walcott.ui.parent.DomainReviewScreen
 import dev.walcott.ui.parent.HealthReportsScreen
 import dev.walcott.ui.parent.MapScreen
 import dev.walcott.ui.parent.ParentHomeScreen
@@ -64,7 +65,7 @@ private fun overrideChildName(settings: PolicySettings, childId: String?): Strin
 private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, SETUP_PRESETS, SETUP_WIZARD, FAMILY, CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
-    APP_SETTINGS, DEBUG_LOGS, PANIC, ACTIVITY, CHILD_HEALTH, DOMAIN_MONITOR,
+    APP_SETTINGS, DEBUG_LOGS, PANIC, ACTIVITY, CHILD_HEALTH, DOMAIN_MONITOR, DOMAIN_REVIEW,
 }
 
 @Composable
@@ -97,6 +98,8 @@ fun WalcottApp(
         )
     }
     var childDetailId by remember { mutableStateOf<String?>(null) }
+    // Which domain request the parent is reviewing (DOMAIN_REVIEW screen).
+    var domainBatchId by remember { mutableStateOf<String?>(null) }
     // Where "Special days" was opened from, so Back lands on the screen that sent the parent
     // there instead of the hub. Null = reached from the hub itself.
     var calendarReturnTo by remember { mutableStateOf<Screen?>(null) }
@@ -202,6 +205,7 @@ fun WalcottApp(
             Screen.CHILD_MAP -> Screen.CHILD_DETAIL
             Screen.CHILD_HEALTH -> Screen.CHILD_DETAIL
             Screen.DOMAIN_MONITOR -> Screen.FAMILY
+            Screen.DOMAIN_REVIEW -> Screen.FAMILIES
             Screen.PANIC -> Screen.CHILD
             Screen.ACTIVITY -> Screen.FAMILIES
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
@@ -264,6 +268,10 @@ fun WalcottApp(
                         onOpenBudgets = { screen = Screen.BUDGETS },
                         onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
                         onOpenActivity = { screen = Screen.ACTIVITY },
+                        onOpenDomainRequest = { batchId ->
+                            domainBatchId = batchId
+                            screen = Screen.DOMAIN_REVIEW
+                        },
                     )
                     Screen.ACTIVITY -> ActivityScreen(
                         viewModel,
@@ -309,6 +317,9 @@ fun WalcottApp(
                         HealthReportsScreen(viewModel, childId, onBack = ::back)
                     }
                     Screen.DOMAIN_MONITOR -> DomainMonitorScreen(viewModel, onBack = ::back)
+                    Screen.DOMAIN_REVIEW -> domainBatchId?.let { batchId ->
+                        DomainReviewScreen(viewModel, batchId, onBack = ::back)
+                    }
                     Screen.FAMILY -> ParentHomeScreen(
                         viewModel = viewModel,
                         title = if (parentMode) {

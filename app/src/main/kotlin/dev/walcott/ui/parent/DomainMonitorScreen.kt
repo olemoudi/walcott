@@ -18,13 +18,12 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
@@ -33,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.net.DomainMonitor
+import dev.walcott.sync.DomainBatch
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
@@ -56,7 +56,7 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val labels by viewModel.installedLabels.collectAsStateWithLifecycle()
     val tunnelUp by viewModel.dnsTunnelUp.collectAsStateWithLifecycle()
     val selected = remember { mutableStateMapOf<Pair<String?, String>, Boolean>() }
-    var sent by remember { mutableStateOf(0) }
+    val delivery by viewModel.domainDelivery.collectAsStateWithLifecycle()
 
     // Ticks so the countdown moves and the screen notices the session expiring by itself.
     val nowMs by androidx.compose.runtime.produceState(System.currentTimeMillis()) {
@@ -67,11 +67,19 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     }
     val active = monitor.isActive(nowMs)
     val groups = remember(monitor) { monitor.byApp() }
+    // Everything ticked, across every app group — the fixed bar sends one batch, and a parent
+    // who ticked in two apps expects one tap to cover both.
+    val chosen = groups.flatMap { (packageName, sightings) ->
+        if (packageName == null) emptyList()
+        else sightings.filter { selected[packageName to it.domain] == true }.map { packageName to it.domain }
+    }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.domain_monitor_title), onBack)
         LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = spacing.screen),
+            // weight(1f): the list takes what is left after the send bar, so the bar stays put
+            // however far the list scrolls.
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
             item {
@@ -126,7 +134,7 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                             ) { Text(stringResource(R.string.domain_monitor_stop)) }
                         } else {
                             Button(
-                                onClick = { selected.clear(); sent = 0; viewModel.startDomainMonitor() },
+                                onClick = { selected.clear(); viewModel.startDomainMonitor() },
                                 modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
                             ) { Text(stringResource(R.string.domain_monitor_start)) }
                         }
@@ -134,15 +142,11 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
 
-            if (sent > 0) {
-                item {
-                    Text(
-                        pluralStringResource(R.plurals.domain_monitor_sent, sent, sent),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = spacing.sm),
-                    )
-                }
+            // What became of the last selection. Sending is not instant and has no delivery
+            // guarantee, so "sent" is not a claim this screen gets to make on its own: it says
+            // confirmed, still going, or never arrived.
+            if (delivery != null) {
+                item { DeliveryStatus(delivery!!) }
             }
 
             if (active && groups.isEmpty() && tunnelUp) {
@@ -178,29 +182,59 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                         }
                     }
                 }
-                val chosen = sightings.filter { selected[packageName to it.domain] == true }
-                if (chosen.isNotEmpty() && packageName != null) {
-                    item(key = "send-$packageName") {
-                        Button(
-                            onClick = {
-                                viewModel.sendDomainsToParent(
-                                    packageName = packageName,
-                                    label = labels[packageName] ?: packageName,
-                                    domains = chosen.map { it.domain },
-                                )
-                                sent += chosen.size
-                                chosen.forEach { selected.remove(packageName to it.domain) }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(pluralStringResource(R.plurals.domain_monitor_send, chosen.size, chosen.size))
-                        }
-                    }
-                }
             }
             item { Spacer(Modifier.size(spacing.xl)) }
         }
+
+        // Pinned, outside the list: a parent who scrolled to the bottom of a long list of
+        // lookups was previously hunting for a button that had scrolled away with its group.
+        if (chosen.isNotEmpty()) {
+            Surface(
+                tonalElevation = 3.dp,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Button(
+                    onClick = {
+                        // One batch per tap. The package of the first pick names it, because a
+                        // rule needs one app to hang on — and a selection spanning two apps is
+                        // the parent's own doing, not something to silently split.
+                        val packageName = chosen.first().first
+                        viewModel.sendDomainsToParent(
+                            packageName = packageName,
+                            label = labels[packageName] ?: packageName,
+                            domains = chosen.map { it.second },
+                        )
+                        selected.clear()
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(spacing.lg),
+                ) {
+                    Text(pluralStringResource(R.plurals.domain_monitor_send, chosen.size, chosen.size))
+                }
+            }
+        }
     }
+}
+
+/** Where the last selection got to: confirmed by the parent, still travelling, or given up on. */
+@Composable
+private fun DeliveryStatus(batch: DomainBatch) {
+    val spacing = Tokens.spacing
+    val confirmed = batch.slices.sumOf { s -> if (s.index in batch.ackedIndexes) s.domains.size else 0 }
+    val (text, color) = when {
+        batch.delivered -> pluralStringResource(
+            R.plurals.domain_monitor_sent, batch.domainCount, batch.domainCount,
+        ) to MaterialTheme.colorScheme.primary
+        batch.abandoned -> stringResource(R.string.domain_send_failed) to MaterialTheme.colorScheme.error
+        else -> stringResource(R.string.domain_send_progress, confirmed, batch.domainCount) to
+            MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = color,
+        modifier = Modifier.padding(top = spacing.sm),
+    )
 }
 
 @Composable

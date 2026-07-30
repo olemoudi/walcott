@@ -28,6 +28,16 @@ class SnapshotFitTest {
         locations = trail(trailPoints),
     )
 
+    /**
+     * Hostnames with no shared structure. Realistic-looking domains share so many bytes that gzip
+     * folds a wildly oversized list back under the cap, which would let these tests pass without
+     * the degradation they are here to check.
+     */
+    private fun noisyDomains(count: Int, seed: Int): List<String> {
+        val rnd = java.util.Random(seed.toLong())
+        return List(count) { buildString { repeat(14) { append('a' + rnd.nextInt(26)) } } + ".com" }
+    }
+
     private fun decode(encoded: String): ChildSnapshot {
         val pair = FamilyCrypto.generateSigningKeyPair()
         return (SyncProtocol.decode(encoded, key, pair.public) as IncomingMessage.FromChild).snapshot
@@ -84,5 +94,57 @@ class SnapshotFitTest {
     fun `the degradation report names what was cut`() {
         val result = SnapshotFit.encodeChild(snapshot(apps = 1000), key, maxBytes = 1200)
         assertTrue(result.degraded!!.startsWith("trail,history"))
+    }
+
+    @Test
+    fun `a long batch of domain slices still fits, cut only at slice boundaries`() {
+        val chunks = List(20) { i ->
+            DomainChunk("batch-1", "com.game", "Game", i, 20, noisyDomains(10, i))
+        }
+        val result = SnapshotFit.encodeChild(snapshot(apps = 60).copy(domainChunks = chunks), key)
+        assertTrue(result.encoded.length <= SnapshotFit.MAX_BYTES) { "got ${result.encoded.length}" }
+        val out = decode(result.encoded)
+        assertTrue(out.domainChunks.size < 20) { "an oversized batch has to be thinned" }
+        // Survivors are a prefix with their contents intact: the ones left behind ride the next
+        // publish, and a half-emptied slice would assemble into a batch that never completes.
+        assertEquals(chunks.take(out.domainChunks.size), out.domainChunks)
+    }
+
+    @Test
+    fun `asks are cut too, so they can no longer overflow the message on their own`() {
+        // The bug this guards: everything after the app list used to be assumed small, and the
+        // final attempt was returned unmeasured. A parent-chosen list of domains inside an ask
+        // broke that assumption, publishing over the cap — HTTP 413, and the child goes quiet.
+        val asks = List(8) { i ->
+            ChildRequest(
+                requestId = "ask-$i",
+                kind = ChildRequest.KIND_DOMAINS,
+                text = DomainAsk.encode("Game", "com.game", noisyDomains(40, 100 + i)),
+                createdAtEpochMs = now,
+            )
+        }
+        val result = SnapshotFit.encodeChild(snapshot(apps = 0, trailPoints = 0, historyDays = 0).copy(asks = asks), key)
+        assertTrue(result.encoded.length <= SnapshotFit.MAX_BYTES) { "got ${result.encoded.length}" }
+        val out = decode(result.encoded)
+        assertTrue(out.asks.size < 8) { "asks are the last thing cut, but they are cut" }
+        assertTrue(result.degraded!!.contains("asks:")) { "the parent's log has to say a voice was dropped" }
+    }
+
+    @Test
+    fun `the fixed fields survive even when nothing else can`() {
+        // A cap so small that every variable field has to go. The snapshot still has to decode:
+        // an unmeasured return here is the 413 all over again.
+        val result = SnapshotFit.encodeChild(
+            snapshot(apps = 400).copy(
+                asks = List(4) { ChildRequest("ask-$it", ChildRequest.KIND_OTHER, "please", now) },
+                domainChunks = List(4) { DomainChunk("b", "com.game", "Game", it, 4, noisyDomains(10, it)) },
+            ),
+            key,
+            maxBytes = 700,
+        )
+        val out = decode(result.encoded)
+        assertEquals("device-1", out.deviceId)
+        assertEquals(9, out.version)
+        assertEquals(20_000L, out.epochDay)
     }
 }

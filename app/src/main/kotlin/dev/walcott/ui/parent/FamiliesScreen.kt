@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.PhoneAndroid
@@ -110,6 +111,7 @@ fun FamiliesScreen(
     onOpenBudgets: () -> Unit,
     onOpenGuidedSetup: () -> Unit,
     onOpenActivity: () -> Unit,
+    onOpenDomainRequest: (String) -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
@@ -118,6 +120,7 @@ fun FamiliesScreen(
     val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
+    val domainRequests by viewModel.domainRequests.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
@@ -202,11 +205,25 @@ fun FamiliesScreen(
             )
         }
 
+        // A domain selection a parent went and gathered on the child's phone. Highlighted like the
+        // other things a child asks for, and above the family card: the parent is standing there
+        // having just done the work, so this is the one moment it is worth answering.
+        items(domainRequests, key = { "domains-" + it.batchId }) { request ->
+            Box(Modifier.animateItem()) {
+                DomainRequestHomeRow(
+                    childName = childNameFor(request.deviceId, settings.children, snapshots),
+                    appLabel = request.label.ifBlank { request.packageName },
+                    count = request.domains()?.size ?: 0,
+                    onOpen = { onOpenDomainRequest(request.batchId) },
+                )
+            }
+        }
+
         item {
             FamilyCard(
                 name = settings.familyName.ifBlank { stringResource(R.string.family_default_name) },
                 childrenCount = settings.children.size,
-                pendingCount = requests.size + asks.size,
+                pendingCount = requests.size + asks.size + domainRequests.size,
                 onClick = onOpenFamily,
             )
         }
@@ -517,6 +534,34 @@ private fun RecentActivityCard(
                 onClick = onSeeAll,
                 modifier = Modifier.align(Alignment.End).padding(top = spacing.xs),
             ) { Text(stringResource(R.string.timeline_see_all)) }
+        }
+    }
+}
+
+/**
+ * A child's domain selection waiting to be turned into rules. Highlighted in the primary colour
+ * rather than the panic red: this is an invitation, not an alarm.
+ */
+@Composable
+private fun DomainRequestHomeRow(childName: String, appLabel: String, count: Int, onOpen: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.primary
+    WalcottCard(onClick = onOpen, color = color.copy(alpha = 0.12f)) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Language, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.domains_home_title, childName),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = color,
+                )
+                Text(
+                    pluralStringResource(R.plurals.domains_home_sub, count, count, appLabel),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

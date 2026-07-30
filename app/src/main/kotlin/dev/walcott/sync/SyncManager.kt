@@ -7,6 +7,8 @@ import dev.walcott.data.PinResult
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.SettingsStore
 import dev.walcott.data.WalcottRepository
+import dev.walcott.data.withChildDomainRules
+import dev.walcott.data.withFamilyDomainRules
 import dev.walcott.BuildConfig
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.enforcement.EnforcementBackends
@@ -61,6 +63,8 @@ class SyncManager(
     private val panicMutex = Mutex()
     /** In-flight debounced auto-backup rewrite; replaced on every new trigger. */
     private var autoBackupJob: Job? = null
+    /** Child-only resend loop for a domain batch in flight (see [nudgeDomainBatch]). */
+    private var domainNudgeJob: Job? = null
 
     val identity: StateFlow<FamilyIdentity> =
         identityStore.identity.stateIn(scope, SharingStarted.Eagerly, FamilyIdentity())
@@ -90,6 +94,15 @@ class SyncManager(
 
     data class PendingAsk(val childName: String, val ask: ChildRequest)
 
+    /**
+     * Domain selections from children that have arrived whole and the parent hasn't answered.
+     * Incomplete batches are held back on purpose: acting on the slices that made it through
+     * would block a list nobody chose (see [DomainInbox]).
+     */
+    val pendingDomainBatches: StateFlow<List<DomainInboxEntry>> = syncStore.state.map { s ->
+        s.domainInbox.filter { it.complete && it.batchId !in s.domainsHandled }
+    }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
     /** Until when app installs are temporarily allowed on this device. */
     val installExemption: StateFlow<Long> =
         syncStore.state.map { it.installExemptionUntilMs }.stateIn(scope, SharingStarted.Eagerly, 0L)
@@ -103,6 +116,10 @@ class SyncManager(
     /** This device's own unanswered asks (apps, anything). */
     val myPendingAsks: StateFlow<List<ChildRequest>> =
         syncStore.state.map { it.pendingAsks }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** The domain selection this device last sent, and how far it got (see [sendDomains]). */
+    val domainDelivery: StateFlow<DomainBatch?> =
+        syncStore.state.map { it.domainBatch }.stateIn(scope, SharingStarted.Eagerly, null)
 
     /** The parents' latest answer (approval/denial/bonus), until the child dismisses it. */
     val notice: StateFlow<NoticeEntry?> =
@@ -331,6 +348,42 @@ class SyncManager(
             )
         }
         publishSelf()
+    }
+
+    /**
+     * Child: hand the parent a selection of domains the monitor saw (see [DomainDelivery]).
+     *
+     * Deliberately the only path off this device for anything the monitor recorded. The selection
+     * is sliced and then resent until each slice is confirmed, because a domain list is the one
+     * payload here big enough to outgrow a message, and losing part of it silently would have the
+     * parent blocking a list nobody chose.
+     */
+    suspend fun sendDomains(packageName: String, label: String, domains: List<String>) {
+        val batch = DomainDelivery.start(UUID.randomUUID().toString(), packageName, label, domains) ?: return
+        syncStore.update { it.copy(childVersion = it.childVersion + 1, domainBatch = batch) }
+        publishSelf()
+        nudgeDomainBatch()
+    }
+
+    /**
+     * Resend the unconfirmed slices every [DOMAIN_NUDGE_MS] until the parent has them all, or
+     * until the batch runs out of retries.
+     *
+     * Far tighter than the regular re-emit, and deliberately so: the parent handed the phone back
+     * and is watching their own device right now, so the cost of a few extra messages buys the
+     * only minute in which this request is interesting. The loop ends by itself — [DomainDelivery]
+     * stops offering slices once the batch is delivered or abandoned.
+     */
+    private fun nudgeDomainBatch() {
+        if (domainNudgeJob?.isActive == true) return
+        domainNudgeJob = scope.launch {
+            while (true) {
+                delay(DOMAIN_NUDGE_MS)
+                val batch = syncStore.current().domainBatch
+                if (batch == null || batch.delivered || batch.abandoned) return@launch
+                publishSelf()
+            }
+        }
     }
 
     // --- Emergency release, child-initiated (see PanicProtocol) ---
@@ -1101,6 +1154,7 @@ class SyncManager(
                     locationRequests = state.locationRequests,
                     commands = state.commands,
                     iconRequests = iconRequests,
+                    domainAcks = state.domainAcks,
                     // The parent is the fleet's update canary: children only follow up to this.
                     parentVersionCode = BuildConfig.VERSION_CODE,
                 )
@@ -1156,6 +1210,7 @@ class SyncManager(
                     enforcementGaps = s.enforcementGaps,
                     clockSkewMs = s.clockSkewMs,
                     panic = s.panic,
+                    domainChunks = DomainDelivery.forPublish(s.domainBatch),
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -1165,6 +1220,14 @@ class SyncManager(
                     dev.walcott.debug.DebugLog.w(TAG, "snapshot over size budget; degraded: ${fitted.degraded}")
                 }
                 transport.publish(fitted.encoded)
+                // Count the round only when slices actually went out, and only after the publish
+                // succeeded: charging a retry to a message that was never sent would burn the
+                // give-up budget on this device's own connectivity rather than on the parent.
+                if (snapshot.domainChunks.isNotEmpty()) {
+                    syncStore.update { st ->
+                        st.copy(domainBatch = st.domainBatch?.let { DomainDelivery.published(it) })
+                    }
+                }
             }
             Role.UNPAIRED -> Unit
         }
@@ -1381,6 +1444,21 @@ class SyncManager(
             syncStore.update {
                 it.copy(parentAppVersionCode = maxOf(it.parentAppVersionCode, snapshot.parentVersionCode))
             }
+        }
+
+        // Mark off the domain slices the parent confirmed. Doing this before the publishes below
+        // means a batch that just completed stops riding the very next message.
+        if (snapshot.domainAcks.isNotEmpty() && s.domainBatch != null) {
+            syncStore.update { st ->
+                st.copy(domainBatch = st.domainBatch?.let { DomainDelivery.acked(it, snapshot.domainAcks) })
+            }
+            // Send the next slices on the back of the confirmation rather than waiting out the
+            // nudge interval: each round moves the batch forward, so a long selection lands in
+            // seconds instead of a minute, which is the difference between the parent seeing it
+            // while they are still looking and finding it later.
+            val next = syncStore.current().domainBatch
+            val progressed = (next?.ackedIndexes?.size ?: 0) > s.domainBatch.ackedIndexes.size
+            if (progressed && next != null && !next.delivered && !next.abandoned) publishSelf()
         }
 
         // On-demand: answer a fresh "locate now" addressed to this device (one attempt each).
@@ -1761,6 +1839,78 @@ class SyncManager(
             SyncNotifications.notifyAsk(context, snapshot.displayName, ask.text, ask.requestId)
             syncStore.update { it.plusEvent(event(ParentEvent.TYPE_ASK, snapshot, detail = ask.text)) }
         }
+
+        // Domain slices from the child's monitor. Acknowledge every slice — including ones for a
+        // batch already answered, which is the only thing that lets the child stop resending —
+        // and alert once, when the batch is whole and therefore actionable.
+        if (snapshot.domainChunks.isNotEmpty()) {
+            val nowMs = System.currentTimeMillis()
+            val handledBefore = before.domainsHandled
+            val wasComplete = before.domainInbox.filter { it.complete }.map { it.batchId }.toSet()
+            syncStore.update {
+                it.copy(
+                    domainInbox = DomainInbox.merge(
+                        inbox = it.domainInbox,
+                        incoming = snapshot.domainChunks,
+                        deviceId = snapshot.deviceId,
+                        childId = snapshot.childId,
+                        childName = snapshot.displayName,
+                        handled = handledBefore,
+                        nowMs = nowMs,
+                    ),
+                    domainAcks = DomainInbox.withAcks(it.domainAcks, snapshot.domainChunks),
+                )
+            }
+            // Ack promptly: a re-emit is minutes away and the child is nudging every few seconds.
+            publishSelf()
+            for (entry in syncStore.current().domainInbox) {
+                if (!entry.complete || entry.batchId in wasComplete || entry.batchId in handledBefore) continue
+                val count = entry.domains()?.size ?: continue
+                SyncNotifications.notifyDomainRequest(context, entry.childName, entry.label, count, entry.childId)
+                syncStore.update {
+                    it.plusEvent(
+                        event(ParentEvent.TYPE_DOMAINS, snapshot, detail = entry.label, count = count),
+                    )
+                }
+            }
+        }
+    }
+
+    // --- Parent: answering a domain request (see DomainInbox) ---
+
+    /**
+     * Turn a domain batch into web-filter rules and mark it answered.
+     *
+     * [familyWide] false scopes the rules to this child alone; [anyApp] false keeps them to the app
+     * that resolved them, which is the precise answer the monitor makes possible — the parent knows
+     * exactly who asked. Marking it answered is part of the same call: a batch whose rules exist but
+     * that still shows as pending would be blocked twice by the next tap.
+     */
+    suspend fun applyDomainRules(batchId: String, domains: List<String>, familyWide: Boolean, anyApp: Boolean) {
+        val entry = syncStore.current().domainInbox.firstOrNull { it.batchId == batchId } ?: return
+        val clean = domains.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
+        if (clean.isNotEmpty()) {
+            // Through the repository, not the store: a rule written without bumping the policy
+            // version is a rule no child ever hears about.
+            val scopeToApp = entry.packageName.takeUnless { anyApp }
+            repository.updateSettings { settings ->
+                if (familyWide) settings.withFamilyDomainRules(clean, scopeToApp)
+                else settings.withChildDomainRules(entry.childId, clean, scopeToApp)
+            }
+        }
+        markDomainBatchHandled(batchId)
+    }
+
+    /** Parent: the request is not worth acting on. Gone from the home, and it does not come back. */
+    suspend fun discardDomainBatch(batchId: String) = markDomainBatchHandled(batchId)
+
+    private suspend fun markDomainBatchHandled(batchId: String) {
+        syncStore.update {
+            it.copy(
+                domainsHandled = DomainInbox.withHandled(it.domainsHandled, batchId),
+                domainInbox = it.domainInbox.filterNot { e -> e.batchId == batchId },
+            )
+        }
     }
 
     companion object {
@@ -1785,6 +1935,13 @@ class SyncManager(
         private const val DIAG_LOG_LINES = 80
         /** One backup rewrite per burst of edits (a wizard changes many settings in seconds). */
         private const val AUTO_BACKUP_DEBOUNCE_MS = 15_000L
+
+        /**
+         * How often a child re-offers the unconfirmed slices of a domain batch. Aggressive next to
+         * [RE_EMIT_MILLIS] because the parent has just handed the phone back and is looking at
+         * their own screen: this is the one minute in which the request matters.
+         */
+        private const val DOMAIN_NUDGE_MS = 20_000L
         /** How far a restore jumps the version counter past the backup's (see restoreBackup). */
         private const val RESTORE_VERSION_LEAP = 1_000_000L
 

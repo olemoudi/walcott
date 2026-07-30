@@ -56,9 +56,146 @@ data class ChildRequest(
 }
 
 /**
- * The payload of a [ChildRequest.KIND_DOMAINS] ask, encoded into the request's existing text
- * field rather than a new wire type — so a parent running an older build still receives a
- * sentence it can read and act on by hand, instead of an empty request it can't explain.
+ * One slice of a batch of domains a child is handing the parent.
+ *
+ * Every slice carries the shape of the whole batch ([chunks]), so it is its own manifest: the
+ * parent learns what to expect from whichever slice arrives first, in any order, and no handshake
+ * can wedge waiting for one. A slice is confirmed by its [DomainDelivery.ackId] appearing in
+ * [ParentSnapshot.domainAcks]; anything still unconfirmed is simply sent again.
+ */
+@Serializable
+data class DomainChunk(
+    val batchId: String,
+    val packageName: String,
+    val label: String,
+    val index: Int,
+    val chunks: Int,
+    val domains: List<String>,
+)
+
+/**
+ * Splitting a selection of domains across messages, and putting it back together.
+ *
+ * The channel carries one small message at a time with no delivery guarantee, and a child
+ * snapshot that outgrows the cap is rejected whole — which takes the child off the air
+ * entirely, not just its domains (see [SnapshotFit]). So a selection travels in slices small
+ * enough that a snapshot carrying a couple still fits, each resent until the parent confirms it.
+ *
+ * Pure, because "no domain lost, none duplicated, whatever order they arrive in" is the whole
+ * promise being made to a parent who just ticked forty boxes.
+ */
+object DomainDelivery {
+
+    /** Domains per slice. Ten plus the header is a few hundred bytes on the wire. */
+    const val DOMAINS_PER_CHUNK = 10
+
+    /** How many unconfirmed slices one snapshot offers to carry. */
+    const val CHUNKS_PER_MESSAGE = 2
+
+    /**
+     * How many publishes in a row may go unconfirmed before the child stops trying. With the
+     * nudge interval the child uses after a send, that is a couple of minutes — long past the
+     * moment the parent is still holding the phone, and short enough that an undeliverable batch
+     * can't resend for the rest of the day. Giving up is reported on the child's screen, not
+     * swallowed: a selection that never arrived has to be visibly worth doing again.
+     *
+     * Counted *since the last confirmed slice*, not over the batch's life. A batch only offers
+     * [CHUNKS_PER_MESSAGE] slices per publish, so a big selection legitimately needs many more
+     * publishes than this to finish; a total-attempt bound would abandon it half-delivered on a
+     * perfectly healthy channel.
+     */
+    const val MAX_ATTEMPTS = 8
+
+    fun giveUp(roundsWithoutAck: Int): Boolean = roundsWithoutAck >= MAX_ATTEMPTS
+
+    fun ackId(batchId: String, index: Int): String = "$batchId#$index"
+
+    /** [domains] as slices, in order. An empty selection produces no slices. */
+    fun chunk(batchId: String, packageName: String, label: String, domains: List<String>): List<DomainChunk> {
+        val clean = domains.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (clean.isEmpty()) return emptyList()
+        val slices = clean.chunked(DOMAINS_PER_CHUNK)
+        return slices.mapIndexed { index, slice ->
+            DomainChunk(batchId, packageName, label, index, slices.size, slice)
+        }
+    }
+
+    /**
+     * The batch's domains once every slice has arrived, or null while any is missing — so a
+     * parent is never shown half a request as though it were the whole of it.
+     */
+    fun assemble(received: Collection<DomainChunk>): List<String>? {
+        val expected = received.firstOrNull()?.chunks ?: return null
+        val byIndex = received.associateBy { it.index }
+        if (byIndex.size != expected || (0 until expected).any { it !in byIndex }) return null
+        return (0 until expected).flatMap { byIndex.getValue(it).domains }.distinct()
+    }
+
+    /** The batch to start for [domains], or null when there is nothing worth sending. */
+    fun start(batchId: String, packageName: String, label: String, domains: List<String>): DomainBatch? =
+        chunk(batchId, packageName, label, domains)
+            .takeIf { it.isNotEmpty() }
+            ?.let { DomainBatch(batchId, packageName, label, it) }
+
+    /**
+     * The slices to attach to the next publish: the oldest unconfirmed ones, bounded so the
+     * snapshot still fits. Empty once the batch is delivered or abandoned, which is what stops
+     * a finished batch from riding every message for the rest of the day.
+     */
+    fun forPublish(batch: DomainBatch?): List<DomainChunk> =
+        if (batch == null || batch.delivered || batch.abandoned) emptyList()
+        else batch.pending.take(CHUNKS_PER_MESSAGE)
+
+    /** [batch] after a publish that carried slices — one more round with nothing confirmed yet. */
+    fun published(batch: DomainBatch): DomainBatch = batch.copy(roundsWithoutAck = batch.roundsWithoutAck + 1)
+
+    /**
+     * [batch] with whatever [acks] confirms marked off. Any new confirmation resets the give-up
+     * counter: the channel just proved it works, so the remaining slices deserve a full run of
+     * attempts rather than inheriting the impatience built up before it recovered.
+     */
+    fun acked(batch: DomainBatch, acks: Collection<String>): DomainBatch {
+        val confirmed = batch.slices
+            .map { it.index }
+            .filter { ackId(batch.batchId, it) in acks }
+            .toSet()
+        val fresh = confirmed - batch.ackedIndexes
+        if (fresh.isEmpty()) return batch
+        return batch.copy(ackedIndexes = batch.ackedIndexes + fresh, roundsWithoutAck = 0)
+    }
+}
+
+/**
+ * A batch of domains as the sending child tracks it: every slice, which ones the parent has
+ * confirmed, and how many publishes have gone by since the last confirmation.
+ *
+ * Lives here rather than in the app's sync state because "when is this delivered, and when do we
+ * stop trying" is exactly the logic that must not be discovered by tapping through an emulator.
+ */
+@Serializable
+data class DomainBatch(
+    val batchId: String,
+    val packageName: String,
+    val label: String,
+    val slices: List<DomainChunk>,
+    val ackedIndexes: Set<Int> = emptySet(),
+    /** Publishes carrying slices since the last one the parent confirmed (see [DomainDelivery.MAX_ATTEMPTS]). */
+    val roundsWithoutAck: Int = 0,
+) {
+    val pending: List<DomainChunk> get() = slices.filterNot { it.index in ackedIndexes }
+
+    val delivered: Boolean get() = pending.isEmpty()
+
+    /** Out of retries with slices still unconfirmed: the child stops, and says so. */
+    val abandoned: Boolean get() = !delivered && DomainDelivery.giveUp(roundsWithoutAck)
+
+    val domainCount: Int get() = slices.sumOf { it.domains.size }
+}
+
+/**
+ * The summary line of a [ChildRequest.KIND_DOMAINS] ask, in the request's existing text field so
+ * that a parent running an older build still reads a sentence instead of an empty request. The
+ * domains themselves travel as [DomainChunk]s, which is what a selection of any size needs.
  *
  * Format: `Label (package): a.com, b.com`. Pure and symmetrical, because the parent's blocking
  * actions depend on getting the package back out intact.
@@ -223,6 +360,11 @@ data class ChildSnapshot(
     val childId: String = "",
     /** Pending generic asks (resolved through the same [Resolution] channel). */
     val asks: List<ChildRequest> = emptyList(),
+    /**
+     * Slices of domain batches still waiting to be confirmed. Bounded per message and resent
+     * until acknowledged; see [DomainDelivery].
+     */
+    val domainChunks: List<DomainChunk> = emptyList(),
     /** User apps installed on this device, so the parent classifies the real list. */
     val apps: List<InstalledAppInfo> = emptyList(),
     /** Recent GPS fixes (last 12h) for the parent's map, newest last. */
@@ -323,6 +465,12 @@ data class ParentSnapshot(
      * build can't take down every child at once. 0 = legacy parent (children don't wait).
      */
     val parentVersionCode: Int = 0,
+    /**
+     * Slice ids ([DomainDelivery.ackId]) the parent has taken in, so the child stops resending
+     * them. Bounded to the recent ones: a slice whose ack has aged out is simply delivered again,
+     * and reassembly is idempotent.
+     */
+    val domainAcks: List<String> = emptyList(),
 )
 
 /** One app icon, compressed small (WebP) and base64'd, sent child→parent on request. */

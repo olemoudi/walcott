@@ -217,6 +217,18 @@ object SyncNotifications {
         notifId = ("ask$requestId").hashCode(),
     )
 
+    /**
+     * A child's domain selection arrived whole and is waiting to be turned into rules. Its own
+     * notification rather than the generic ask: answering it is not yes/no, it is choosing a reach.
+     */
+    fun notifyDomainRequest(context: Context, childName: String, appLabel: String, count: Int, childId: String) = post(
+        context, CHANNEL, R.string.sync_request_channel_name,
+        title = context.getString(R.string.sync_domains_title, childName),
+        text = context.resources.getQuantityString(R.plurals.sync_domains_text, count, count, appLabel),
+        notifId = ("domains$childId$appLabel").hashCode(),
+        dest = childDest(childId),
+    )
+
     fun notifyRequest(context: Context, childName: String, minutes: Int) = post(
         context, CHANNEL, R.string.sync_request_channel_name,
         title = context.getString(R.string.sync_request_title),

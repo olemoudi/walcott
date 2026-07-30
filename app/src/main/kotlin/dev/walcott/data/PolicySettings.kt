@@ -210,6 +210,58 @@ fun PolicySettings.withSpecialDaysOwnBudget(on: Boolean): PolicySettings =
     else copy(specialDaysOwnBudget = false)
 
 /**
+ * The domains in [domains] added to the family's web filter.
+ *
+ * [scopeToApp] null blocks them for every app (the global blocklist); a package keeps them to the
+ * app that resolved them, which is the precise answer the domain monitor makes possible.
+ */
+fun PolicySettings.withFamilyDomainRules(domains: List<String>, scopeToApp: String?): PolicySettings =
+    if (scopeToApp == null) copy(blockedDomains = blockedDomains + domains)
+    else copy(domainAppRules = domainAppRules.plusAppRules(domains, scopeToApp))
+
+/**
+ * The same rules for one child only.
+ *
+ * A per-child override replaces the family value wholesale, so it has to be seeded from what that
+ * child currently lives under: starting from an empty set would turn "also block this for Ana"
+ * into "block only this for Ana", quietly dropping every rule she inherited.
+ *
+ * An unknown [childId] (a legacy device with no registry entry, which can hold no overrides) falls
+ * back to the family scope. It is the wider of the two, and for a parental control a block that
+ * reaches too far is recoverable in a way that a button doing nothing at all is not.
+ */
+fun PolicySettings.withChildDomainRules(childId: String, domains: List<String>, scopeToApp: String?): PolicySettings {
+    if (children.none { it.childId == childId }) return withFamilyDomainRules(domains, scopeToApp)
+    return copy(
+        children = children.map { child ->
+            if (child.childId != childId) {
+                child
+            } else {
+                child.copy(
+                    overrides = if (scopeToApp == null) {
+                        child.overrides.copy(
+                            blockedDomains = (child.overrides.blockedDomains ?: blockedDomains) + domains,
+                        )
+                    } else {
+                        child.overrides.copy(
+                            domainAppRules = (child.overrides.domainAppRules ?: domainAppRules)
+                                .plusAppRules(domains, scopeToApp),
+                        )
+                    },
+                )
+            }
+        },
+    )
+}
+
+/** These rules plus one per domain not already covered for [packageName] (adding twice is a no-op). */
+private fun List<DomainAppRuleDto>.plusAppRules(domains: List<String>, packageName: String): List<DomainAppRuleDto> {
+    val covered = filter { it.packageName == packageName }.map { it.domain }.toSet()
+    return this + domains.filterNot { it in covered }
+        .map { DomainAppRuleDto(domain = it, packageName = packageName, allowOnlyFromApp = false) }
+}
+
+/**
  * Per-child policy overrides. A null field inherits the family value; a non-null field
  * replaces it wholesale (no deep merge, so "no limit for this child" is expressible).
  */
@@ -220,6 +272,8 @@ data class ChildOverrides(
     val bedtime: Map<String, WindowDto>? = null,
     val earnRules: List<EarnRuleDto>? = null,
     val blockedDomains: Set<String>? = null,
+    /** Per-app domain rules for this child alone. Null inherits the family list. */
+    val domainAppRules: List<DomainAppRuleDto>? = null,
     val deviceRestrictions: Set<String>? = null,
     /** Periodic location-tracking interval in minutes (0 = off). Null inherits the family value. */
     val trackingIntervalMinutes: Int? = null,
@@ -230,7 +284,8 @@ data class ChildOverrides(
 ) {
     val isEmpty: Boolean
         get() = budgets == null && blockedWindows == null && bedtime == null &&
-            earnRules == null && blockedDomains == null && deviceRestrictions == null &&
+            earnRules == null && blockedDomains == null && domainAppRules == null &&
+            deviceRestrictions == null &&
             trackingIntervalMinutes == null && locationHistoryEnabled == null &&
             updateWifiOnly == null
 }
@@ -340,6 +395,7 @@ data class PolicySettings(
             bedtime = overrides.bedtime ?: bedtime,
             earnRules = overrides.earnRules ?: earnRules,
             blockedDomains = overrides.blockedDomains ?: blockedDomains,
+            domainAppRules = overrides.domainAppRules ?: domainAppRules,
             deviceRestrictions = overrides.deviceRestrictions ?: deviceRestrictions,
             trackingIntervalMinutes = overrides.trackingIntervalMinutes ?: trackingIntervalMinutes,
             locationHistoryEnabled = overrides.locationHistoryEnabled ?: locationHistoryEnabled,

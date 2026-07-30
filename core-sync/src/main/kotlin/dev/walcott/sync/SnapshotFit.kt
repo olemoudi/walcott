@@ -13,8 +13,16 @@ import javax.crypto.SecretKey
  * Degradation order trades the least critical data first:
  *  1. location trail → newest fix only (the map loses history, never the current position)
  *  2. usage history → empty (the weekly report degrades; today's usage still travels)
- *  3. app list → progressively halved (classification of the tail waits for a leaner day)
- * A snapshot degraded this far always fits: the fixed fields are a few hundred bytes.
+ *  3. domain slices → fewer per message (the rest ride the next publish; they are resent
+ *     until acknowledged anyway, so this costs latency and nothing else)
+ *  4. app list → progressively halved (classification of the tail waits for a leaner day)
+ *  5. asks → dropped, and only here. An ask is a child waiting for an answer, so losing one is
+ *     worse than losing any of the above; it is still better than a rejected publish, which
+ *     loses the child's whole voice rather than one sentence of it.
+ *
+ * Nothing is returned without being measured. The last resort used to be assumed to fit — true
+ * only while every remaining field was small, which stopped being true the moment a child could
+ * attach a list a parent had chosen.
  */
 object SnapshotFit {
 
@@ -38,17 +46,46 @@ object SnapshotFit {
             if (it.length <= maxBytes) return Result(it, "trail,history")
         }
 
-        var apps = noHistory.apps
+        // Domain slices are the only payload here that is retried by design, so thinning them
+        // costs a publish cycle and never a domain.
+        var trimmed = noHistory
+        while (trimmed.domainChunks.size > 1) {
+            trimmed = trimmed.copy(domainChunks = trimmed.domainChunks.dropLast(1))
+            SyncProtocol.encodeChild(trimmed, familyKey).let {
+                if (it.length <= maxBytes) return Result(it, "trail,history,chunks:${trimmed.domainChunks.size}")
+            }
+        }
+
+        var apps = trimmed.apps
         while (apps.isNotEmpty()) {
             apps = apps.take(apps.size / 2)
-            SyncProtocol.encodeChild(noHistory.copy(apps = apps), familyKey).let {
+            SyncProtocol.encodeChild(trimmed.copy(apps = apps), familyKey).let {
                 if (it.length <= maxBytes) return Result(it, "trail,history,apps:${apps.size}")
             }
         }
-        // Bare snapshot: fixed fields only. This always fits any sane cap.
+
+        val bare = trimmed.copy(apps = emptyList())
+        SyncProtocol.encodeChild(bare, familyKey).let {
+            if (it.length <= maxBytes) return Result(it, "trail,history,apps:0")
+        }
+
+        // Still too big, so something variable is left: the last domain slice, then the asks.
+        // Measured rather than assumed, because the alternative to an honest degradation here is
+        // a rejected publish, and a rejected publish is a child that has simply gone quiet.
+        val noChunks = bare.copy(domainChunks = emptyList())
+        SyncProtocol.encodeChild(noChunks, familyKey).let {
+            if (it.length <= maxBytes) return Result(it, "trail,history,apps:0,chunks:0")
+        }
+        var asks = noChunks.asks
+        while (asks.isNotEmpty()) {
+            asks = asks.dropLast(1)
+            SyncProtocol.encodeChild(noChunks.copy(asks = asks), familyKey).let {
+                if (it.length <= maxBytes) return Result(it, "trail,history,apps:0,chunks:0,asks:${asks.size}")
+            }
+        }
         return Result(
-            SyncProtocol.encodeChild(noHistory.copy(apps = emptyList()), familyKey),
-            "trail,history,apps:0",
+            SyncProtocol.encodeChild(noChunks.copy(asks = emptyList(), requests = emptyList()), familyKey),
+            "everything but the fixed fields",
         )
     }
 }

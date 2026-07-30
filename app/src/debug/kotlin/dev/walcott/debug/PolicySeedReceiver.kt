@@ -238,6 +238,36 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 )
             }
         }
+        // `--es child_domains "com.game=Game=a.com,b.com"`: a domain selection from this fake
+        // child, folded in through the real DomainInbox so the parent's card, review screen and
+        // rule creation can be driven on one emulator. `--ez child_domains_partial true` holds the
+        // last slice back, which is how the "not actionable yet" case is checked.
+        intent.getStringExtra("child_domains")?.let { spec ->
+            val parts = spec.split("=", limit = 3)
+            val pkg = parts.getOrElse(0) { "com.example" }
+            val label = parts.getOrElse(1) { pkg }
+            val domains = parts.getOrElse(2) { "" }.split(",").filter { it.isNotBlank() }
+            val slices = dev.walcott.sync.DomainDelivery.chunk("debug-batch", pkg, label, domains)
+            val delivered = if (intent.getBooleanExtra("child_domains_partial", false)) {
+                slices.dropLast(1)
+            } else {
+                slices
+            }
+            app.syncStore.update { s ->
+                s.copy(
+                    domainInbox = dev.walcott.sync.DomainInbox.merge(
+                        inbox = s.domainInbox,
+                        incoming = delivered,
+                        deviceId = snapshot.deviceId,
+                        childId = childId,
+                        childName = name,
+                        handled = s.domainsHandled,
+                        nowMs = System.currentTimeMillis(),
+                    ),
+                    domainAcks = dev.walcott.sync.DomainInbox.withAcks(s.domainAcks, delivered),
+                )
+            }
+        }
         if (intent.getBooleanExtra("child_feed", false)) {
             val now = System.currentTimeMillis()
             fun entry(type: String, agoMs: Long, detail: String = "", count: Int = 0) = dev.walcott.sync.ParentEvent(

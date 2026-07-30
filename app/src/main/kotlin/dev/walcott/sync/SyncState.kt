@@ -76,6 +76,9 @@ data class ParentEvent(
         const val TYPE_PANIC_RELEASED = "panic_released"
         const val TYPE_PANIC_DENIED = "panic_denied"
         const val TYPE_PANIC_CANCELLED = "panic_cancelled"
+
+        /** A child sent a selection of domains to block; [detail] is the app, [count] how many. */
+        const val TYPE_DOMAINS = "domains"
     }
 }
 
@@ -144,6 +147,13 @@ data class SyncState(
     /** This device's pending emergency-release request (see [PanicProtocol]); null = none. */
     val panic: PanicRequest? = null,
     /**
+     * The domain selection this device is delivering to the parent, or the last one it tried:
+     * kept after it lands (or runs out of retries) so the monitor screen can say which it was.
+     * Replaced wholesale by the next send — one batch at a time is all a parent standing over
+     * the phone ever produces. See [DomainDelivery].
+     */
+    val domainBatch: DomainBatch? = null,
+    /**
      * Server second until which a parent's refusal blocks a new request. Counted in server
      * time, like the request itself, so moving the device clock can't wait out the lockout.
      */
@@ -211,6 +221,16 @@ data class SyncState(
     val autoBackupIterations: Int = 0,
     /** True while the last auto-refresh failed (file deleted, permission revoked…). */
     val autoBackupError: Boolean = false,
+    /** Domain batches arriving from children, complete or still missing slices (see [DomainInbox]). */
+    val domainInbox: List<DomainInboxEntry> = emptyList(),
+    /** Slice acknowledgements echoed to children so they stop resending; bounded, newest last. */
+    val domainAcks: List<String> = emptyList(),
+    /**
+     * Batch ids the parent has already answered — applied or discarded. Slices keep arriving for
+     * a short while after either (an ack takes a round trip), and without this a discarded
+     * request would reappear on the home with the next nudge.
+     */
+    val domainsHandled: List<String> = emptyList(),
     /** Every app package ever seen across children, to notify only on genuinely new installs. */
     val seenAppPackages: Set<String> = emptySet(),
     /** True once [seenAppPackages] was seeded from existing data (prevents a first-run flood). */

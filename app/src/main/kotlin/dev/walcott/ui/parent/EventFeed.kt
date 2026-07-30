@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Redeem
@@ -61,7 +62,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_TIME_REQUEST, ParentEvent.TYPE_ASK, ParentEvent.TYPE_REQUEST_APPROVED,
     ParentEvent.TYPE_REQUEST_DENIED, ParentEvent.TYPE_BONUS, ParentEvent.TYPE_REMOTE_DONE,
     ParentEvent.TYPE_PANIC_REQUEST, ParentEvent.TYPE_PANIC_RELEASED, ParentEvent.TYPE_PANIC_DENIED,
-    ParentEvent.TYPE_PANIC_CANCELLED,
+    ParentEvent.TYPE_PANIC_CANCELLED, ParentEvent.TYPE_DOMAINS,
 )
 
 @Composable
@@ -140,6 +141,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_PANIC_RELEASED -> Icons.Outlined.LockOpen to error
         ParentEvent.TYPE_PANIC_DENIED -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_PANIC_CANCELLED -> Icons.Filled.CheckCircle to good
+        ParentEvent.TYPE_DOMAINS -> Icons.Outlined.Language to neutral
         else -> Icons.Outlined.Build to neutral
     }
 }
@@ -189,6 +191,8 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_PANIC_RELEASED -> stringResource(R.string.event_panic_released, name)
     ParentEvent.TYPE_PANIC_DENIED -> stringResource(R.string.event_panic_denied, name)
     ParentEvent.TYPE_PANIC_CANCELLED -> stringResource(R.string.event_panic_cancelled, name)
+    ParentEvent.TYPE_DOMAINS ->
+        pluralStringResource(R.plurals.event_domains, event.count, name, event.count, event.detail)
     ParentEvent.TYPE_REMOTE_DONE -> stringResource(
         if (event.count > 0) R.string.event_remote_ok else R.string.event_remote_failed,
         name, remoteActionLabel(event.detail),

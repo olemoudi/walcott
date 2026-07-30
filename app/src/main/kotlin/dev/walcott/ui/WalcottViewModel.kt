@@ -107,16 +107,26 @@ class WalcottViewModel(
     fun stopDomainMonitor() = dev.walcott.net.DomainMonitor.stop()
 
     /**
-     * Hands the chosen domains to the parent as a request — deliberately the only path off this
-     * device. Everything else the monitor saw stays in memory and dies with the session.
+     * Hands the chosen domains to the parent — deliberately the only path off this device.
+     * Everything else the monitor saw stays in memory and dies with the session.
      */
     fun sendDomainsToParent(packageName: String, label: String, domains: List<String>) = viewModelScope.launch {
-        if (domains.isEmpty()) return@launch
-        sync.askFor(
-            dev.walcott.sync.ChildRequest.KIND_DOMAINS,
-            dev.walcott.sync.DomainAsk.encode(label, packageName, domains),
-        )
+        sync.sendDomains(packageName, label, domains)
     }
+
+    /** How the last selection this device sent is getting on (see [dev.walcott.sync.DomainDelivery]). */
+    val domainDelivery: StateFlow<dev.walcott.sync.DomainBatch?> = sync.domainDelivery
+
+    // --- Domain requests (parent mode) ---
+
+    /** Domain selections from children that arrived whole and are waiting for an answer. */
+    val domainRequests: StateFlow<List<dev.walcott.sync.DomainInboxEntry>> = sync.pendingDomainBatches
+
+    /** Turns a reviewed selection into web-filter rules; see [SyncManager.applyDomainRules]. */
+    fun applyDomainRules(batchId: String, domains: List<String>, familyWide: Boolean, anyApp: Boolean) =
+        viewModelScope.launch { sync.applyDomainRules(batchId, domains, familyWide, anyApp) }
+
+    fun discardDomainRequest(batchId: String) = viewModelScope.launch { sync.discardDomainBatch(batchId) }
 
     suspend fun becomeParent(familyName: String) = sync.becomeParent(familyName)
     suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)

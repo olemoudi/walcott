@@ -874,8 +874,8 @@
         <item quantity="other">%d consultas</item>
     </plurals>
     <plurals name="domain_monitor_send">
-        <item quantity="one">Enviar %d dominio al padre</item>
-        <item quantity="other">Enviar %d dominios al padre</item>
+        <item quantity="one">Enviar el %d dominio seleccionado</item>
+        <item quantity="other">Enviar los %d dominios seleccionados</item>
     </plurals>
     <plurals name="domain_monitor_sent">
         <item quantity="one">%d dominio enviado. El padre decide si lo bloquea.</item>
@@ -885,4 +885,36 @@
     <string name="ask_domains_block_app">Bloquear en %1$s</string>
     <string name="ask_domains_block_all">Bloquear en todo el móvil</string>
     <string name="domain_monitor_no_tunnel">El filtro DNS no ha podido arrancar, así que no se puede ver nada. Puede que otra app de VPN esté ocupando el sitio en este móvil.</string>
+    <!-- Peticiones de dominios que llegan al padre (envío por trozos, ver DomainDelivery) -->
+    <string name="domain_send_failed">Esos dominios no han llegado al móvil del padre. El canal de la familia no está pasando ahora mismo \u2014 vuelve a elegirlos cuando funcione.</string>
+    <string name="domain_send_progress">Enviando\u2026 el padre ha confirmado %1$d de %2$d</string>
+    <string name="sync_domains_title">%1$s ha mandado dominios para bloquear</string>
+    <plurals name="sync_domains_text">
+        <item quantity="one">%1$d dominio visto en %2$s</item>
+        <item quantity="other">%1$d dominios vistos en %2$s</item>
+    </plurals>
+    <plurals name="event_domains">
+        <item quantity="one">%1$s ha mandado %2$d dominio de %3$s</item>
+        <item quantity="other">%1$s ha mandado %2$d dominios de %3$s</item>
+    </plurals>
+    <string name="domains_home_title">%1$s ha mandado dominios para bloquear</string>
+    <plurals name="domains_home_sub">
+        <item quantity="one">%1$d dominio visto en %2$s \u2014 toca para revisarlo</item>
+        <item quantity="other">%1$d dominios vistos en %2$s \u2014 toca para revisarlos</item>
+    </plurals>
+    <string name="domain_review_title">Dominios para bloquear</string>
+    <string name="domain_review_from">%1$s eligió estos mientras usaba %2$s. Desmarca los que prefieras dejar en paz.</string>
+    <string name="domain_review_scope_who">¿A quién se le aplica?</string>
+    <string name="domain_review_scope_family">A toda la familia</string>
+    <string name="domain_review_scope_child">Solo a %1$s</string>
+    <string name="domain_review_scope_what">¿Dónde se aplica?</string>
+    <string name="domain_review_scope_app">Solo en %1$s</string>
+    <string name="domain_review_scope_any">En cualquier app</string>
+    <string name="domain_review_scope_app_generic">Solo en esa app</string>
+    <plurals name="domain_review_apply">
+        <item quantity="one">Bloquear %1$d dominio</item>
+        <item quantity="other">Bloquear %1$d dominios</item>
+    </plurals>
+    <string name="domain_review_discard">Descartar la petición</string>
+    <string name="domain_review_none">No has marcado nada \u2014 mejor descarta la petición.</string>
 </resources>
