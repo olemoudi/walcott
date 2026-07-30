@@ -109,6 +109,23 @@ class SpecialDayScopeTest {
     }
 
     @Test
+    fun `a child's own day becomes a special day for them and an ordinary one for their sibling`() {
+        // The end of the chain the parent actually cares about: policy -> resolveForChild ->
+        // FamilyConfig -> the day type the enforcement loop reads. A birthday that stops at the
+        // policy and never reaches the calendar would look configured and do nothing.
+        val birthday = java.time.LocalDate.of(2026, 3, 4)
+        val settings = base
+            .withHolidayScope(birthday.toEpochDay(), setOf("c1"))
+            .withHolidayMirroringWeekend()
+        val at = birthday.atTime(18, 0)
+
+        val forAna = settings.resolveForChild("c1").toFamilyConfig(emptySet()).calendar
+        val forLeo = settings.resolveForChild("c2").toFamilyConfig(emptySet()).calendar
+        assertEquals(dev.walcott.rules.DayType.HOLIDAY, forAna.dayTypeOf(at))
+        assertEquals(dev.walcott.rules.DayType.SCHOOL, forLeo.dayTypeOf(at)) { "4 Mar 2026 is a Wednesday" }
+    }
+
+    @Test
     fun `per-child days survive the holiday mirror pass untouched`() {
         // Every parent write runs through it; a calendar entry is not a day-typed rule and has no
         // business being collapsed by it.

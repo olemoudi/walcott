@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <application>
+    <application android:networkSecurityConfig="@xml/network_security_config">
         <!-- Debug-build-only test hook (see PolicySeedReceiver): lets adb drive a device into
              child/parent mode with an injected policy, so enforcement can be exercised on an
              emulator without a second paired device. Absent from release builds entirely. -->

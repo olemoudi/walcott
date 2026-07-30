@@ -59,7 +59,31 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         ),
                     )
                     "parent" -> app.identityStore.save(app.identityStore.current().copy(mode = DeviceMode.PARENT))
+                    // `--es mode pair --es pair_with "walcott1:…"`: joins this device to a family
+                    // as a real child, through the same code path the QR uses — so one emulator
+                    // can play the parent, publish, and then become the child that receives it.
+                    "pair" -> {
+                        val ok = app.syncManager.pairAsChild(intent.getStringExtra("pair_with").orEmpty())
+                        DebugLog.i("WalcottSeed", "pairAsChild ok=$ok")
+                    }
                     "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
+                }
+                // `--es ntfy_server http://10.0.2.2:8099`: points this device's channel at a local
+                // sink, so a parent->child exchange can be exercised when ntfy.sh is rate-limiting.
+                intent.getStringExtra("ntfy_server")?.let { url ->
+                    app.identityStore.save(app.identityStore.current().copy(ntfyServer = url))
+                    // Reconnect on the spot: the transport captures its URL when it is built, and
+                    // a Device Owner refuses `am force-stop`, so there is no restarting into it.
+                    app.syncManager.start()
+                    DebugLog.i("WalcottSeed", "ntfy server -> $url")
+                }
+                // `--es apply_msg_b64 <base64 of an envelope>`: feeds one message into the real
+                // receive path (decode, signature check, resolveForChild, settings write). Lets the
+                // parent->child half be verified without depending on the public server's mood.
+                intent.getStringExtra("apply_msg_b64")?.let { b64 ->
+                    val raw = String(java.util.Base64.getDecoder().decode(b64))
+                    app.syncManager.applyIncoming(raw, System.currentTimeMillis() / 1000)
+                    DebugLog.i("WalcottSeed", "applied incoming message (${raw.length} bytes)")
                 }
                 // `--ez legacy_keys true` converts this parent family to a pre-v0.11 one
                 // (signing key in the Android Keystore, not exportable), so the backup's

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only. Permits cleartext to the emulator's host loopback (10.0.2.2) so a local
+  stand-in for the sync server can be used when the public one is rate-limiting, which is the
+  only way to exercise a parent -> child exchange on a single emulator on demand.
+
+  Everything else keeps the platform default (cleartext refused). Release builds do not contain
+  this file, so the real channel stays HTTPS-only.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
