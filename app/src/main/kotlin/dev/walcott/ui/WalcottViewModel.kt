@@ -8,7 +8,7 @@ import dev.walcott.data.InstalledApp
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.WalcottRepository
 import dev.walcott.data.withBudget
-import dev.walcott.data.withSpecialDaysOwnBudget
+import dev.walcott.data.withSpecialDaysOwnRules
 import dev.walcott.rules.CategoryStatus
 import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
@@ -353,8 +353,9 @@ class WalcottViewModel(
      * Whether the calendar's special days carry their own daily limits. See
      * [dev.walcott.data.withSpecialDaysOwnBudget] for why turning it on seeds the column.
      */
-    fun setSpecialDaysOwnBudget(on: Boolean) = viewModelScope.launch {
-        repository.updateSettings { it.withSpecialDaysOwnBudget(on) }
+    /** The one family-wide switch behind every special-day row (see [withSpecialDaysOwnRules]). */
+    fun setSpecialDaysOwnRules(on: Boolean) = viewModelScope.launch {
+        repository.updateSettings { it.withSpecialDaysOwnRules(on) }
     }
 
     fun addHoliday(epochDay: Long) =
@@ -659,23 +660,26 @@ class WalcottViewModel(
     }
 
     /** Set this app's own blocked windows (any number), applied to every day type. */
-    fun setAppWindows(pkg: String, windows: List<dev.walcott.data.WindowDto>) = mutateAppPolicy(pkg) { dto ->
-        dto.copy(
-            blockedWindows = if (windows.isEmpty()) emptyMap() else DAY_TYPES.associate { it.name to windows },
-        )
+    fun setAppWindows(
+        pkg: String,
+        dayType: DayType,
+        windows: List<dev.walcott.data.WindowDto>,
+    ) = mutateAppPolicy(pkg) { dto ->
+        val next = dto.blockedWindows.toMutableMap()
+        if (windows.isEmpty()) next.remove(dayType.name) else next[dayType.name] = windows
+        dto.copy(blockedWindows = next)
     }
 
     fun setBedtime(bedtime: Map<String, dev.walcott.data.WindowDto>) = viewModelScope.launch {
         repository.updateSettings { it.copy(bedtime = bedtime) }
     }
 
-    /** Family-wide screen-free windows (they block ALL apps), applied to every day type. */
-    fun setAllAppsWindows(windows: List<dev.walcott.data.WindowDto>) = viewModelScope.launch {
+    /** Family-wide screen-free windows (they block ALL apps), for one day type. */
+    fun setAllAppsWindows(dayType: DayType, windows: List<dev.walcott.data.WindowDto>) = viewModelScope.launch {
         repository.updateSettings {
-            it.copy(
-                allAppsBlockedWindows =
-                    if (windows.isEmpty()) emptyMap() else DAY_TYPES.associate { d -> d.name to windows },
-            )
+            val next = it.allAppsBlockedWindows.toMutableMap()
+            if (windows.isEmpty()) next.remove(dayType.name) else next[dayType.name] = windows
+            it.copy(allAppsBlockedWindows = next)
         }
     }
 

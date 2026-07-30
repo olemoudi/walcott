@@ -20,7 +20,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.ui.WalcottViewModel
-import dev.walcott.ui.budgetDayTypes
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.CardPosition
@@ -43,60 +42,38 @@ fun BudgetsScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenSpecial
             item { SectionHeader(stringResource(R.string.budgets_section_schedules)) }
             item {
                 CardGroup {
-                    BedtimeCard(settings.bedtime, position = CardPosition.First, onChange = viewModel::setBedtime)
+                    BedtimeCard(
+                        bedtime = settings.bedtime,
+                        position = CardPosition.First,
+                        specialDaysOwnRules = settings.specialDaysOwnRules,
+                        onOpenSpecialDays = onOpenSpecialDays,
+                        onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                        onChange = viewModel::setBedtime,
+                    )
                     BlockedWindowsCard(
                         title = stringResource(R.string.all_apps_windows_title),
                         hint = stringResource(R.string.all_apps_windows_hint),
-                        windows = settings.allAppsBlockedWindows[dev.walcott.rules.DayType.SCHOOL.name].orEmpty(),
+                        windowsByDay = settings.allAppsBlockedWindows,
                         position = CardPosition.Last,
+                        specialDaysOwnRules = settings.specialDaysOwnRules,
+                        onOpenSpecialDays = onOpenSpecialDays,
+                        onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
                         onChange = viewModel::setAllAppsWindows,
                     )
                 }
             }
             item { SectionHeader(stringResource(R.string.daily_budget_header)) }
             item {
-                WalcottCard {
-                    Column(Modifier.padding(spacing.lg)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    stringResource(R.string.budget_special_days_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                )
-                                Text(
-                                    stringResource(
-                                        if (settings.specialDaysOwnBudget) {
-                                            R.string.budget_special_days_on
-                                        } else {
-                                            R.string.budget_special_days_off
-                                        },
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            // Turning it on seeds the column from the weekend's, so nothing
-                            // changes until the parent moves a number.
-                            Switch(
-                                checked = settings.specialDaysOwnBudget,
-                                onCheckedChange = viewModel::setSpecialDaysOwnBudget,
-                            )
-                        }
-                        if (settings.specialDaysOwnBudget) SpecialDaysNote(onOpenSpecialDays)
-                    }
-                }
-            }
-            item {
                 val categories = AppCategory.entries.toList()
-                val dayTypes = budgetDayTypes(settings.specialDaysOwnBudget)
                 CardGroup {
                     categories.forEachIndexed { index, category ->
                         CategoryBudgetCard(
                             category = category,
                             perDay = settings.budgets[category.id].orEmpty(),
                             position = cardPosition(index, categories.size),
-                            dayTypes = dayTypes,
-                            onOpenSpecialDays = onOpenSpecialDays.takeIf { settings.specialDaysOwnBudget },
+                            specialDaysOwnRules = settings.specialDaysOwnRules,
+                            onOpenSpecialDays = onOpenSpecialDays,
+                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
                             onSetBudget = { dayType, minutes -> viewModel.setBudget(category.id, dayType, minutes) },
                         )
                     }

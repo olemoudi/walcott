@@ -76,6 +76,27 @@ class DomainDeliveryTest {
     }
 
     @Test
+    fun `a batch with the right number of slices but the wrong indexes assembles to nothing`() {
+        // Corruption that a plain count check would wave through: three slices for a batch of
+        // three, but one of them is index 5. Counting is not the same as having them all.
+        val good = DomainDelivery.chunk("b1", "com.game", "Game", domains(25))
+        val bent = good.dropLast(1) + good.last().copy(index = 5)
+        assertEquals(3, bent.size)
+        assertNull(DomainDelivery.assemble(bent))
+    }
+
+    @Test
+    fun `a delivered batch is never reported as abandoned, however many rounds went by`() {
+        // Order matters in the guard: a batch that arrived and then sat through more publishes
+        // must read as delivered, not as a failure the child announces in red.
+        var batch = start(25)
+        repeat(DomainDelivery.MAX_ATTEMPTS + 3) { batch = DomainDelivery.published(batch) }
+        batch = DomainDelivery.acked(batch, (0..2).map { DomainDelivery.ackId("b1", it) })
+        assertTrue(batch.delivered)
+        assertFalse(batch.abandoned)
+    }
+
+    @Test
     fun `ack ids identify a slice, not just its batch`() {
         assertEquals("b1#0", DomainDelivery.ackId("b1", 0))
         assertFalse(DomainDelivery.ackId("b1", 0) == DomainDelivery.ackId("b1", 1))

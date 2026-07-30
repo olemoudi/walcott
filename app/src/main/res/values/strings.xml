@@ -91,9 +91,6 @@
     <string name="bedtime_start_title">Goes to sleep</string>
     <string name="bedtime_end_title">Wakes up</string>
     <string name="daily_budget_header">Daily budget per category</string>
-    <string name="budget_special_days_title">Special days have their own limits</string>
-    <string name="budget_special_days_off">They follow the weekend\'s limits.</string>
-    <string name="budget_special_days_on">Holidays and breaks get their own column, starting from the weekend\'s values.</string>
     <string name="special_days_note_short">Which days those are is set in Special days.</string>
     <string name="special_days_note_action">Info</string>
     <string name="special_days_note_open">Open Special days</string>
@@ -917,4 +914,10 @@
     </plurals>
     <string name="domain_review_discard">Discard this request</string>
     <string name="domain_review_none">Nothing ticked \u2014 discard the request instead.</string>
+    <!-- Special days: one family-wide switch, shown inside every time-based editor -->
+    <string name="special_days_own_rules_title">Own rules on special days</string>
+    <string name="special_days_own_rules_on">Special days have their own limits and schedules, for the whole family.</string>
+    <string name="special_days_own_rules_off">Special days follow the weekend rules.</string>
+    <string name="windows_none">No windows</string>
+    <string name="window_range">%1$s to %2$s</string>
 </resources>

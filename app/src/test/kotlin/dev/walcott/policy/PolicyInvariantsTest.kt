@@ -273,7 +273,7 @@ class PolicyInvariantsTest {
     fun `special days mirror the weekend unless the family claimed the column`() {
         for (case in cases) {
             val written = case.settings.withHolidayMirroringWeekend()
-            val own = written.specialDaysOwnBudget
+            val own = written.specialDaysOwnRules
             // Schedules mirror no matter what: a special day always has the weekend's bedtime
             // and windows, because nothing else can give it any.
             assertEquals(

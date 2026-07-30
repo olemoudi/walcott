@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import dev.walcott.rules.DayType
 import org.junit.jupiter.api.Test
 
 /**
@@ -94,25 +95,69 @@ class HolidayMirrorTest {
     @Test
     fun `with the column on, budgets keep a distinct holiday value`() {
         val out = PolicySettings(
-            specialDaysOwnBudget = true,
+            specialDaysOwnRules = true,
             budgets = mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 120, "HOLIDAY" to 240)),
         ).withHolidayMirroringWeekend()
         assertEquals(240, out.budgets.getValue("games")["HOLIDAY"])
     }
 
     @Test
-    fun `schedules keep mirroring even with the column on`() {
-        // Opting into a special-day BUDGET must never cost a special day its bedtime and its
-        // screen-free windows: those have no third editor, so the mirror is all they have.
+    fun `with the switch on, schedules keep their own special-day value too`() {
+        // The switch governs the whole day-type dimension, not just budgets: a family that has
+        // claimed special days can give them their own bedtime and their own screen-free windows.
+        // It used to govern budgets alone, which is why bedtime had no special-day row at all.
+        val other = WindowDto(23 * 60, 9 * 60)
         val out = PolicySettings(
-            specialDaysOwnBudget = true,
-            bedtime = mapOf("SCHOOL" to window, "WEEKEND" to window),
-            allAppsBlockedWindows = mapOf("SCHOOL" to listOf(window), "WEEKEND" to listOf(window)),
-            blockedWindows = mapOf("games" to mapOf("WEEKEND" to listOf(window))),
+            specialDaysOwnRules = true,
+            bedtime = mapOf("SCHOOL" to window, "WEEKEND" to window, "HOLIDAY" to other),
+            allAppsBlockedWindows = mapOf("WEEKEND" to listOf(window), "HOLIDAY" to listOf(other)),
+            blockedWindows = mapOf("games" to mapOf("WEEKEND" to listOf(window), "HOLIDAY" to listOf(other))),
+            appPolicies = mapOf(
+                "com.game" to AppPolicyDto(
+                    blockedWindows = mapOf("WEEKEND" to listOf(window), "HOLIDAY" to listOf(other)),
+                ),
+            ),
+        ).withHolidayMirroringWeekend()
+        assertEquals(other, out.bedtime["HOLIDAY"])
+        assertEquals(listOf(other), out.allAppsBlockedWindows["HOLIDAY"])
+        assertEquals(listOf(other), out.blockedWindows.getValue("games")["HOLIDAY"])
+        assertEquals(listOf(other), out.appPolicies.getValue("com.game").blockedWindows["HOLIDAY"])
+    }
+
+    @Test
+    fun `with the switch off, schedules still collapse onto the weekend`() {
+        // The default, and what protects a special day from having no bedtime at all.
+        val other = WindowDto(23 * 60, 9 * 60)
+        val out = PolicySettings(
+            bedtime = mapOf("SCHOOL" to window, "WEEKEND" to window, "HOLIDAY" to other),
+            allAppsBlockedWindows = mapOf("WEEKEND" to listOf(window), "HOLIDAY" to listOf(other)),
         ).withHolidayMirroringWeekend()
         assertEquals(window, out.bedtime["HOLIDAY"])
         assertEquals(listOf(window), out.allAppsBlockedWindows["HOLIDAY"])
-        assertEquals(listOf(window), out.blockedWindows.getValue("games")["HOLIDAY"])
+    }
+
+    @Test
+    fun `turning the switch on seeds the schedules from the weekend too`() {
+        // Same promise as budgets, and the one that matters most: dropping the mirror with
+        // nothing behind it would leave a special day with no bedtime, which reads as "no rule".
+        val out = PolicySettings(
+            bedtime = mapOf("SCHOOL" to window, "WEEKEND" to window),
+            allAppsBlockedWindows = mapOf("SCHOOL" to listOf(window), "WEEKEND" to listOf(window)),
+            appPolicies = mapOf("com.game" to AppPolicyDto(blockedWindows = mapOf("WEEKEND" to listOf(window)))),
+            idleEarn = IdleEarnDto(
+                targetCategoryId = "games",
+                minutesIdlePerReward = 30,
+                rewardMinutes = 10,
+                windowHours = 4,
+                windowCapMinutes = 60,
+                weeklyCapMinutes = 300,
+                earnWindows = mapOf("WEEKEND" to listOf(window)),
+            ),
+        ).withSpecialDaysOwnRules(true)
+        assertEquals(window, out.bedtime["HOLIDAY"])
+        assertEquals(listOf(window), out.allAppsBlockedWindows["HOLIDAY"])
+        assertEquals(listOf(window), out.appPolicies.getValue("com.game").blockedWindows["HOLIDAY"])
+        assertEquals(listOf(window), out.idleEarn?.earnWindows?.get("HOLIDAY"))
     }
 
     @Test
@@ -126,8 +171,8 @@ class HolidayMirrorTest {
                 ChildEntry("c1", "Ana", ChildOverrides(budgets = mapOf("games" to mapOf("WEEKEND" to 90)))),
             ),
         )
-        val out = before.withSpecialDaysOwnBudget(true)
-        assertTrue(out.specialDaysOwnBudget)
+        val out = before.withSpecialDaysOwnRules(true)
+        assertTrue(out.specialDaysOwnRules)
         assertEquals(120, out.budgets.getValue("games")["HOLIDAY"])
         assertEquals(45, out.appPolicies.getValue("com.game").budgets["HOLIDAY"])
         assertEquals(90, out.children.first().overrides.budgets?.getValue("games")?.get("HOLIDAY"))
@@ -136,12 +181,26 @@ class HolidayMirrorTest {
     @Test
     fun `turning it off re-collapses the column on the next write`() {
         val split = PolicySettings(
-            specialDaysOwnBudget = true,
+            specialDaysOwnRules = true,
             budgets = mapOf("games" to mapOf("WEEKEND" to 120, "HOLIDAY" to 240)),
         )
-        val out = split.withSpecialDaysOwnBudget(false).withHolidayMirroringWeekend()
-        assertFalse(out.specialDaysOwnBudget)
+        val out = split.withSpecialDaysOwnRules(false).withHolidayMirroringWeekend()
+        assertFalse(out.specialDaysOwnRules)
         assertEquals(120, out.budgets.getValue("games")["HOLIDAY"])
+    }
+
+    @Test
+    fun `a special day's own bedtime reaches the engine, not just the policy`() {
+        // The whole point of the switch, end to end: the parent sets a later bedtime for special
+        // days, the write keeps it, and the config the child enforces from actually carries it.
+        val lateNight = WindowDto(23 * 60, 9 * 60)
+        val config = PolicySettings(
+            specialDaysOwnRules = true,
+            bedtime = mapOf("SCHOOL" to window, "WEEKEND" to window, "HOLIDAY" to lateNight),
+        ).withHolidayMirroringWeekend().toFamilyConfig(emptySet())
+
+        assertEquals(lateNight.toTimeWindowOrNull(), config.bedtime[DayType.HOLIDAY])
+        assertEquals(window.toTimeWindowOrNull(), config.bedtime[DayType.SCHOOL])
     }
 
     @Test
@@ -149,7 +208,7 @@ class HolidayMirrorTest {
         // Weekday-only limit: there is nothing to copy, and inventing one would tighten the
         // rules behind the parent's back.
         val out = PolicySettings(budgets = mapOf("games" to mapOf("SCHOOL" to 30)))
-            .withSpecialDaysOwnBudget(true)
+            .withSpecialDaysOwnRules(true)
         assertNull(out.budgets.getValue("games")["HOLIDAY"])
     }
 }

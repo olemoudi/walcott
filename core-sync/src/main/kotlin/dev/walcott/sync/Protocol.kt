@@ -543,6 +543,43 @@ sealed interface IncomingMessage {
  * full child snapshot (app list + locations + history) stays under ntfy's message size cap;
  * decode transparently accepts both gzipped and legacy uncompressed payloads.
  */
+/**
+ * Encoding and decoding of everything that travels over the family's ntfy topic.
+ *
+ * ## Who is authenticated, and how
+ *
+ * Two different guarantees, deliberately not the same in both directions:
+ *
+ * - **Family boundary, both directions.** Every message body is AES-GCM under the shared
+ *   `familyKey`. That is an AEAD, so a stranger who merely knows the topic name cannot produce
+ *   anything that decrypts. They *can* publish arbitrary bytes to it — the topic is a bearer
+ *   secret in a URL with no ntfy account behind it — which is why [decodeVerbose] treats every
+ *   step as hostile input and returns null rather than throwing (see ProtocolHostileTest).
+ *
+ * - **Parent → child, additionally signed.** ECDSA over the ciphertext, verified against the
+ *   parent's public key from the pairing QR. Children hold the family key but never the parent's
+ *   private key, so a child cannot mint rules for itself. This is the direction where a forgery
+ *   would be a control bypass, and it is closed.
+ *
+ * **Child → parent carries no per-child signature, and that is a decision, not an oversight.**
+ * Any holder of the family key can emit a child message with any `senderId`, so one enrolled
+ * device can impersonate another to the parent. Per-child signing keys were considered and
+ * rejected, because they buy less than they look like they do:
+ *
+ *  - Nothing a child sends *commands* another device. Resolutions, bonuses and remote commands
+ *    all originate in [ParentSnapshot] and are signed. A forged child message only ever misinforms
+ *    the parent — a lie about usage, a request in a sibling's name, a fake health report.
+ *  - Signing would not stop the case that actually matters. A device compromised enough to forge
+ *    would hold its own private key and would sign its lies just as validly. Per-child keys stop
+ *    a sibling impersonating a sibling; they do nothing about a child lying about itself.
+ *  - Reaching the family key at all needs root on a Device Owner device whose seeded restrictions
+ *    already block clearing app data and sideloading, and where unlocking the bootloader wipes
+ *    userdata — taking the key with it. A child who has got that far has defeated the enforcement
+ *    outright and has no need to forge anything.
+ *
+ * Revisit this if a child message ever starts *driving* an action on another device rather than
+ * informing the parent, or if the topic is ever shared beyond the family.
+ */
 object SyncProtocol {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }

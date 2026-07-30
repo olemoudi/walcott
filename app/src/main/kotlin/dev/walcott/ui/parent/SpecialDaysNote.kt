@@ -80,6 +80,51 @@ internal fun SpecialDaysNote(onOpenCalendar: () -> Unit) {
     }
 }
 
+/**
+ * The one control that claims special days, rendered identically at the foot of every time-based
+ * editor: daily budgets, bedtime, screen-free windows, per-app windows, earn windows.
+ *
+ * It is deliberately one family-wide switch shown in many places rather than a switch per screen.
+ * A parent editing an app's limit should not have to remember that the row they want was enabled
+ * on a different screen — nor discover that flipping it here left the other editors behind. Same
+ * state, same wording, wherever you happen to be standing.
+ *
+ * Off does not hide the special-day row; it greys it out, showing the weekend values it mirrors.
+ * A row that vanishes reads as "not supported here", which is exactly the confusion this replaces.
+ */
+@Composable
+internal fun SpecialDaysRulesToggle(
+    on: Boolean,
+    onOpenCalendar: () -> Unit,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    androidx.compose.material3.HorizontalDivider(Modifier.padding(top = spacing.sm))
+    Row(
+        Modifier.fillMaxWidth().padding(top = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(R.string.special_days_own_rules_title),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                stringResource(
+                    if (on) R.string.special_days_own_rules_on else R.string.special_days_own_rules_off,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // Turning it on seeds every special-day slot from the weekend's, so nothing changes
+        // until the parent moves a value (see withSpecialDaysOwnRules).
+        androidx.compose.material3.Switch(checked = on, enabled = enabled, onCheckedChange = onChange)
+    }
+    if (on) SpecialDaysNote(onOpenCalendar)
+}
+
 /** Compact but still tappable, so the note stays one line next to a row label. */
 private val ComfortableTextButtonPadding =
     androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)

@@ -38,7 +38,7 @@ class PolicyCorpusTest {
             note("vacation", config.calendar.vacations.isNotEmpty())
             note("weekend starts Friday", config.calendar.weekendStartsFriday != null)
             note("weekend ends Sunday", config.calendar.weekendEndsSunday != null)
-            note("own special-day budget", case.settings.specialDaysOwnBudget)
+            note("own special-day budget", case.settings.specialDaysOwnRules)
             note("child overrides", case.settings.children.any { !it.overrides.isEmpty })
             note("unclassified app", PolicyFuzz.MANAGED.any { it !in config.assignments })
             val allWindows = config.blockedWindows.values.flatten() +

@@ -126,7 +126,7 @@ class PolicyCompositionTest {
         assertEquals(Verdict.AllowedWithBudget(Duration.ofHours(2)), RuleEngine.evaluate(mirrored, game, at15))
 
         // Claimed: the special-day column stands, and it outranks the weekend edge.
-        val claimed = config(base.copy(specialDaysOwnBudget = true), null)
+        val claimed = config(base.copy(specialDaysOwnRules = true), null)
         assertEquals(Verdict.AllowedWithBudget(Duration.ofHours(4)), RuleEngine.evaluate(claimed, game, at15))
     }
 

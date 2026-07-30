@@ -308,6 +308,10 @@ fun WalcottApp(
                             onOpenHealthReports = { screen = Screen.CHILD_HEALTH },
                             onEditWebFilter = { overrideChildId = childId; screen = Screen.WEBFILTER },
                             onEditProtection = { overrideChildId = childId; screen = Screen.PROTECTION },
+                            onOpenSpecialDays = {
+                                calendarReturnTo = Screen.CHILD_DETAIL
+                                screen = Screen.CALENDAR
+                            },
                         )
                     }
                     Screen.CHILD_MAP -> childDetailId?.let { childId ->
@@ -363,7 +367,11 @@ fun WalcottApp(
                         onOpenSpecialDays = { calendarReturnTo = Screen.BUDGETS; screen = Screen.CALENDAR },
                     )
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
-                    Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.EARN -> EarnRulesScreen(
+                        viewModel,
+                        onBack = { screen = Screen.FAMILY },
+                        onOpenSpecialDays = { calendarReturnTo = Screen.EARN; screen = Screen.CALENDAR },
+                    )
                     Screen.CALENDAR -> CalendarScreen(viewModel, onBack = ::back)
                     Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.WEBFILTER -> WebFilterScreen(

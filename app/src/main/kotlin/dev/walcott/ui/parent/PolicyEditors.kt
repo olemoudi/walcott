@@ -36,8 +36,11 @@ import androidx.compose.ui.unit.dp
 import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.data.WindowDto
+import dev.walcott.data.toTimeOfDayOrNull
 import dev.walcott.rules.DayType
 import dev.walcott.ui.DAY_TYPES
+import dev.walcott.ui.RULE_DAY_TYPES
+import dev.walcott.ui.editableUnder
 import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.Stepper
 import dev.walcott.ui.components.TimePickerDialog
@@ -62,63 +65,108 @@ import dev.walcott.ui.theme.Tokens
 @Composable
 internal fun BedtimeCard(
     bedtime: Map<String, WindowDto>,
-    /** False renders the window as configured but refuses every control — an inherited rule. */
+    /** False renders the windows as configured but refuses every control — an inherited rule. */
     enabled: Boolean = true,
     position: CardPosition = CardPosition.Single,
+    /** The family's single special-days switch: it decides whether the third row accepts edits. */
+    specialDaysOwnRules: Boolean = false,
+    onOpenSpecialDays: (() -> Unit)? = null,
+    onSetSpecialDaysOwnRules: ((Boolean) -> Unit)? = null,
     onChange: (Map<String, WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
-    // The MVP applies the same bedtime window to every day type.
-    val window = bedtime[DayType.SCHOOL.name]
-    val start = window?.let { LocalTime.ofSecondOfDay(it.startMinute * 60L) } ?: LocalTime.of(21, 30)
-    val end = window?.let { LocalTime.ofSecondOfDay(it.endMinute * 60L) } ?: LocalTime.of(7, 30)
-
+    val defaultStart = LocalTime.of(21, 30)
+    val defaultEnd = LocalTime.of(7, 30)
+    // "There is a bedtime" is any day type having one; the master switch seeds or clears them all.
+    val on = RULE_DAY_TYPES.any { bedtime[it.name] != null }
     var editing by remember { mutableStateOf<BedtimeEdit?>(null) }
 
-    fun applyAll(s: LocalTime?, e: LocalTime?) {
+    fun windowOf(dayType: DayType): Pair<LocalTime, LocalTime> {
+        val w = bedtime[dayType.name]
+        return (w?.startMinute.toTimeOfDayOrNull() ?: defaultStart) to (w?.endMinute.toTimeOfDayOrNull() ?: defaultEnd)
+    }
+
+    fun setAll(s: LocalTime?, e: LocalTime?) {
         onChange(
-            if (s == null || e == null) {
-                emptyMap()
-            } else {
-                DAY_TYPES.associate { it.name to WindowDto(s.toMinute(), e.toMinute()) }
-            },
+            if (s == null || e == null) emptyMap()
+            else RULE_DAY_TYPES.associate { it.name to WindowDto(s.toMinute(), e.toMinute()) },
         )
     }
 
+    /** Writes one day type only. The mirror pass folds WEEKEND onto HOLIDAY while it is off. */
+    fun setOne(dayType: DayType, s: LocalTime, e: LocalTime) {
+        onChange(bedtime + (dayType.name to WindowDto(s.toMinute(), e.toMinute())))
+    }
+
     WalcottCard(position = position) {
-        Column(Modifier.padding(spacing.lg)) {
+        Column(Modifier.padding(spacing.lg).animateContentSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.bedtime_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(
+                    stringResource(R.string.bedtime_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
                 Switch(
-                    checked = window != null,
+                    checked = on,
                     enabled = enabled,
-                    onCheckedChange = { on -> if (on) applyAll(start, end) else applyAll(null, null) },
+                    onCheckedChange = { want -> if (want) setAll(defaultStart, defaultEnd) else setAll(null, null) },
                 )
             }
-            if (window != null) {
-                Spacer(Modifier.size(spacing.md))
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
-                    TimeButton(stringResource(R.string.from), start.hhmm(), enabled) { editing = BedtimeEdit.START }
-                    TimeButton(stringResource(R.string.to), end.hhmm(), enabled) { editing = BedtimeEdit.END }
+            if (on) {
+                RULE_DAY_TYPES.forEach { dayType ->
+                    val (start, end) = windowOf(dayType)
+                    val rowEnabled = enabled && dayType.editableUnder(specialDaysOwnRules)
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(dayType.labelRes()),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                                .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
+                        )
+                        // The special-day row is the only one whose days live on another screen.
+                        if (dayType == DayType.HOLIDAY && onOpenSpecialDays != null) {
+                            SpecialDaysInfoButton(onOpenSpecialDays)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TimeButton(stringResource(R.string.from), start.hhmm(), rowEnabled) {
+                            editing = BedtimeEdit(dayType, isStart = true)
+                        }
+                        Spacer(Modifier.size(spacing.sm))
+                        TimeButton(stringResource(R.string.to), end.hhmm(), rowEnabled) {
+                            editing = BedtimeEdit(dayType, isStart = false)
+                        }
+                    }
+                }
+                if (onSetSpecialDaysOwnRules != null && onOpenSpecialDays != null) {
+                    SpecialDaysRulesToggle(
+                        on = specialDaysOwnRules,
+                        onOpenCalendar = onOpenSpecialDays,
+                        enabled = enabled,
+                        onChange = onSetSpecialDaysOwnRules,
+                    )
                 }
             }
         }
     }
 
     editing?.let { which ->
+        val (start, end) = windowOf(which.dayType)
         TimePickerDialog(
-            initial = if (which == BedtimeEdit.START) start else end,
-            title = stringResource(if (which == BedtimeEdit.START) R.string.bedtime_start_title else R.string.bedtime_end_title),
+            initial = if (which.isStart) start else end,
+            title = stringResource(if (which.isStart) R.string.bedtime_start_title else R.string.bedtime_end_title),
             onDismiss = { editing = null },
             onConfirm = { picked ->
-                if (which == BedtimeEdit.START) applyAll(picked, end) else applyAll(start, picked)
+                if (which.isStart) setOne(which.dayType, picked, end) else setOne(which.dayType, start, picked)
                 editing = null
             },
         )
     }
 }
 
-private enum class BedtimeEdit { START, END }
+private data class BedtimeEdit(val dayType: DayType, val isStart: Boolean)
 
 private fun LocalTime.toMinute() = hour * 60 + minute
 
@@ -224,75 +272,145 @@ private fun WeekendEdgeRow(
  * caller maps the list into its per-day-type storage. [title] is null when the screen
  * already provides a section header.
  */
+/**
+ * Blocked-window editor, one list of windows per day type.
+ *
+ * The special-day group is always present. While the family's switch is off it is read-only and
+ * shows the weekend's windows, which is what actually applies on those days; turning the switch on
+ * gives it a list of its own, seeded from the weekend so nothing changes until the parent edits it.
+ */
 @Composable
 internal fun BlockedWindowsCard(
     title: String?,
     hint: String,
-    windows: List<WindowDto>,
+    windowsByDay: Map<String, List<WindowDto>>,
     position: CardPosition = CardPosition.Single,
+    /** False renders the windows as configured but refuses every control — an inherited rule. */
+    enabled: Boolean = true,
+    specialDaysOwnRules: Boolean = false,
+    onOpenSpecialDays: (() -> Unit)? = null,
+    onSetSpecialDaysOwnRules: ((Boolean) -> Unit)? = null,
+    onChange: (DayType, List<WindowDto>) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    WalcottCard(position = position) {
+        Column(Modifier.padding(spacing.lg).animateContentSize()) {
+            if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            RULE_DAY_TYPES.forEach { dayType ->
+                val editable = enabled && dayType.editableUnder(specialDaysOwnRules)
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(dayType.labelRes()),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    if (dayType == DayType.HOLIDAY && onOpenSpecialDays != null) {
+                        SpecialDaysInfoButton(onOpenSpecialDays)
+                    }
+                }
+                WindowsForDay(
+                    windows = windowsByDay[dayType.name].orEmpty(),
+                    editable = editable,
+                    // Per-window "stand down on special days" only means anything while special
+                    // days mirror the weekend. Once they have a list of their own, leaving the
+                    // window out of it says the same thing, and two controls for one idea is
+                    // exactly the confusion this screen is being cured of.
+                    showSkipSpecial = !specialDaysOwnRules,
+                    onChange = { onChange(dayType, it) },
+                )
+            }
+            if (onSetSpecialDaysOwnRules != null && onOpenSpecialDays != null) {
+                SpecialDaysRulesToggle(
+                    on = specialDaysOwnRules,
+                    onOpenCalendar = onOpenSpecialDays,
+                    enabled = enabled,
+                    onChange = onSetSpecialDaysOwnRules,
+                )
+            }
+        }
+    }
+}
+
+/** One day type's windows. Read-only when [editable] is false — it is then a mirror, not a rule. */
+@Composable
+private fun WindowsForDay(
+    windows: List<WindowDto>,
+    editable: Boolean,
+    showSkipSpecial: Boolean,
     onChange: (List<WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
     var editing by remember { mutableStateOf<WindowEdit?>(null) }
 
-    WalcottCard(position = position) {
-        Column(Modifier.padding(spacing.lg).animateContentSize()) {
-            if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            windows.forEachIndexed { index, window ->
-                if (index > 0) HorizontalDivider(Modifier.padding(vertical = spacing.sm))
-                Row(
-                    Modifier.fillMaxWidth().padding(top = if (index == 0) spacing.md else 0.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
-                ) {
-                    val start = LocalTime.ofSecondOfDay(window.startMinute * 60L)
-                    val end = LocalTime.ofSecondOfDay(window.endMinute * 60L)
-                    TimeButton(stringResource(R.string.from), start.hhmm()) { editing = WindowEdit.Start(index) }
-                    TimeButton(stringResource(R.string.to), end.hhmm()) { editing = WindowEdit.End(index) }
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { onChange(windows.filterIndexed { i, _ -> i != index }) }) {
-                        Icon(
-                            Icons.Outlined.Delete,
-                            contentDescription = stringResource(R.string.window_delete),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                DayPicker(
-                    selected = window.days,
-                    onToggle = { day ->
-                        onChange(
-                            windows.mapIndexed { i, w ->
-                                if (i == index) w.copy(days = w.days.toggledDay(day)) else w
-                            },
-                        )
+    if (windows.isEmpty()) {
+        Text(
+            stringResource(R.string.windows_none),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = spacing.xs),
+        )
+    }
+    windows.forEachIndexed { index, window ->
+        if (index > 0) HorizontalDivider(Modifier.padding(vertical = spacing.sm))
+        val start = LocalTime.ofSecondOfDay(window.startMinute * 60L)
+        val end = LocalTime.ofSecondOfDay(window.endMinute * 60L)
+        if (!editable) {
+            Text(
+                stringResource(R.string.window_range, start.hhmm(), end.hhmm()),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
+            return@forEachIndexed
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = if (index == 0) spacing.xs else 0.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            TimeButton(stringResource(R.string.from), start.hhmm()) { editing = WindowEdit.Start(index) }
+            TimeButton(stringResource(R.string.to), end.hhmm()) { editing = WindowEdit.End(index) }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { onChange(windows.filterIndexed { i, _ -> i != index }) }) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    contentDescription = stringResource(R.string.window_delete),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DayPicker(
+            selected = window.days,
+            onToggle = { day ->
+                onChange(windows.mapIndexed { i, w -> if (i == index) w.copy(days = w.days.toggledDay(day)) else w })
+            },
+        )
+        if (showSkipSpecial) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.window_skip_special),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = window.skipSpecialDays,
+                    onCheckedChange = { on ->
+                        onChange(windows.mapIndexed { i, w -> if (i == index) w.copy(skipSpecialDays = on) else w })
                     },
                 )
-                Row(
-                    Modifier.fillMaxWidth().padding(top = spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.window_skip_special),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = window.skipSpecialDays,
-                        onCheckedChange = { on ->
-                            onChange(
-                                windows.mapIndexed { i, w ->
-                                    if (i == index) w.copy(skipSpecialDays = on) else w
-                                },
-                            )
-                        },
-                    )
-                }
             }
-            Spacer(Modifier.size(spacing.md))
-            BudgetPreset(stringResource(R.string.window_add)) { editing = WindowEdit.NewStart }
         }
+    }
+    if (editable) {
+        Spacer(Modifier.size(spacing.sm))
+        BudgetPreset(stringResource(R.string.window_add)) { editing = WindowEdit.NewStart }
     }
 
     when (val edit = editing) {
@@ -320,10 +438,6 @@ internal fun BlockedWindowsCard(
     }
 }
 
-/**
- * The week, ordered from the locale's first day. Empty [selected] means "every day" — that is
- * what an unrestricted window stores — so it renders as all seven lit.
- */
 @Composable
 private fun DayPicker(selected: List<Int>, onToggle: (DayOfWeek) -> Unit) {
     val locale = Locale.getDefault()
@@ -396,10 +510,16 @@ private fun WindowTimePicker(initialMinute: Int, titleRes: Int, onDone: (LocalTi
 
 @Composable
 internal fun TimeButton(label: String, value: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+    // Disabled has to LOOK disabled: Surface(enabled = false) only stops the tap, and an
+    // explicit container colour keeps it looking live. A row that reads as editable and
+    // silently isn't is worse than one that admits it is a mirror.
+    val container = MaterialTheme.colorScheme.surfaceVariant.let { if (enabled) it else it.copy(alpha = 0.4f) }
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.let { if (enabled) it else it.copy(alpha = 0.5f) }
+    val valueColor = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.5f) }
+    Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(14.dp), color = container) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleLarge)
+            Text(label, style = MaterialTheme.typography.labelMedium, color = labelColor)
+            Text(value, style = MaterialTheme.typography.titleLarge, color = valueColor)
         }
     }
 }
@@ -429,15 +549,21 @@ internal fun CategoryBudgetCard(
     /** False still expands to show the numbers; it only refuses to change them. */
     enabled: Boolean = true,
     position: CardPosition = CardPosition.Single,
-    /** The rows to offer — [dev.walcott.ui.budgetDayTypes] decides whether special days are one. */
-    dayTypes: List<DayType> = DAY_TYPES,
-    /** Shown beside the special-day row: which days those are is set on another screen. */
+    /** The family's single special-days switch: it decides whether the third row accepts edits. */
+    specialDaysOwnRules: Boolean = false,
+    /** Opens the screen where special days themselves are chosen; null hides the shortcut. */
     onOpenSpecialDays: (() -> Unit)? = null,
+    /** Null hides the switch — the per-child editor edits one child, the switch is family-wide. */
+    onSetSpecialDaysOwnRules: ((Boolean) -> Unit)? = null,
     onSetBudget: (DayType, Int?) -> Unit,
 ) {
     val spacing = Tokens.spacing
     var expanded by remember { mutableStateOf(false) }
-    val limitedDays = dayTypes.count { perDay[it.name] != null }
+    // Only rows the family can actually set count towards the summary: with special days
+    // mirroring the weekend, counting three would claim a limit the parent never chose.
+    val dayTypes = RULE_DAY_TYPES
+    val editableDays = dayTypes.filter { it.editableUnder(specialDaysOwnRules) }
+    val limitedDays = editableDays.count { perDay[it.name] != null }
     val summary = if (limitedDays == 0) stringResource(R.string.no_limit)
     else pluralStringResource(R.plurals.days_with_limit, limitedDays, limitedDays)
 
@@ -468,9 +594,9 @@ internal fun CategoryBudgetCard(
                     Modifier.fillMaxWidth().padding(top = spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
-                    BudgetPreset(stringResource(R.string.no_limit), enabled) { dayTypes.forEach { onSetBudget(it, null) } }
-                    BudgetPreset("1h", enabled) { dayTypes.forEach { onSetBudget(it, 60) } }
-                    BudgetPreset("2h", enabled) { dayTypes.forEach { onSetBudget(it, 120) } }
+                    BudgetPreset(stringResource(R.string.no_limit), enabled) { editableDays.forEach { onSetBudget(it, null) } }
+                    BudgetPreset("1h", enabled) { editableDays.forEach { onSetBudget(it, 60) } }
+                    BudgetPreset("2h", enabled) { editableDays.forEach { onSetBudget(it, 120) } }
                     var customAll by remember { mutableStateOf(false) }
                     BudgetPreset(stringResource(R.string.custom_value), enabled) { customAll = true }
                     if (customAll) {
@@ -478,17 +604,23 @@ internal fun CategoryBudgetCard(
                             title = stringResource(R.string.custom_minutes_title),
                             initial = 60,
                             onDismiss = { customAll = false },
-                            onConfirm = { m -> dayTypes.forEach { onSetBudget(it, m) }; customAll = false },
+                            onConfirm = { m -> editableDays.forEach { onSetBudget(it, m) }; customAll = false },
                         )
                     }
                 }
                 dayTypes.forEach { dayType ->
                     val minutes = perDay[dayType.name]
+                    val rowEnabled = enabled && dayType.editableUnder(specialDaysOwnRules)
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = spacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            stringResource(dayType.labelRes()),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                                .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
+                        )
                         // The special-day row is the only one whose days live on another screen.
                         if (dayType == DayType.HOLIDAY && onOpenSpecialDays != null) {
                             SpecialDaysInfoButton(onOpenSpecialDays)
@@ -503,9 +635,17 @@ internal fun CategoryBudgetCard(
                                 onSetBudget(dayType, if (next < 15) null else next)
                             },
                             onIncrement = { onSetBudget(dayType, (minutes ?: 0) + 15) },
-                            enabled = enabled,
+                            enabled = rowEnabled,
                         )
                     }
+                }
+                if (onSetSpecialDaysOwnRules != null && onOpenSpecialDays != null) {
+                    SpecialDaysRulesToggle(
+                        on = specialDaysOwnRules,
+                        onOpenCalendar = onOpenSpecialDays,
+                        enabled = enabled,
+                        onChange = onSetSpecialDaysOwnRules,
+                    )
                 }
             }
         }

@@ -100,6 +100,7 @@ fun ChildDetailScreen(
     onOpenHealthReports: () -> Unit,
     onEditWebFilter: () -> Unit,
     onEditProtection: () -> Unit,
+    onOpenSpecialDays: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -365,7 +366,9 @@ fun ChildDetailScreen(
                             perDay = budgets[category.id].orEmpty(),
                             enabled = entry.overrides.budgets != null,
                             position = cardPosition(index + 1, categories.size + 1),
-                            dayTypes = dev.walcott.ui.budgetDayTypes(settings.specialDaysOwnBudget),
+                            specialDaysOwnRules = settings.specialDaysOwnRules,
+                            onOpenSpecialDays = onOpenSpecialDays,
+                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
                             onSetBudget = { dayType, minutes ->
                                 viewModel.setChildOverrides(
                                     childId,

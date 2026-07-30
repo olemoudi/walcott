@@ -31,7 +31,8 @@ import dev.walcott.R
 import dev.walcott.data.IdleEarnDto
 import dev.walcott.data.WindowDto
 import dev.walcott.rules.DayType
-import dev.walcott.ui.DAY_TYPES
+import dev.walcott.ui.RULE_DAY_TYPES
+import dev.walcott.ui.editableUnder
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
@@ -52,7 +53,7 @@ import java.time.LocalTime
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
+fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenSpecialDays: () -> Unit) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val cfg = settings.idleEarn
@@ -87,7 +88,14 @@ fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                         RateCard(cfg, position = CardPosition.First, onChange = viewModel::setIdleEarn)
                         CapsCard(cfg, position = CardPosition.Middle, onChange = viewModel::setIdleEarn)
                         TargetCard(cfg, position = CardPosition.Middle, onChange = viewModel::setIdleEarn)
-                        EarnWindowsCard(cfg, position = CardPosition.Last, onSetWindow = { d, w -> viewModel.setEarnWindow(d, w) })
+                        EarnWindowsCard(
+                            cfg,
+                            position = CardPosition.Last,
+                            specialDaysOwnRules = settings.specialDaysOwnRules,
+                            onOpenSpecialDays = onOpenSpecialDays,
+                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                            onSetWindow = { d, w -> viewModel.setEarnWindow(d, w) },
+                        )
                     }
                 }
             }
@@ -182,7 +190,14 @@ private fun TargetCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.S
 }
 
 @Composable
-private fun EarnWindowsCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.Single, onSetWindow: (DayType, WindowDto?) -> Unit) {
+private fun EarnWindowsCard(
+    cfg: IdleEarnDto,
+    position: CardPosition = CardPosition.Single,
+    specialDaysOwnRules: Boolean,
+    onOpenSpecialDays: () -> Unit,
+    onSetSpecialDaysOwnRules: (Boolean) -> Unit,
+    onSetWindow: (DayType, WindowDto?) -> Unit,
+) {
     val spacing = Tokens.spacing
     var editing by remember { mutableStateOf<Pair<DayType, Boolean>?>(null) } // dayType, isStart
 
@@ -194,13 +209,22 @@ private fun EarnWindowsCard(cfg: IdleEarnDto, position: CardPosition = CardPosit
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            DAY_TYPES.forEach { dayType ->
+            RULE_DAY_TYPES.forEach { dayType ->
                 val window = cfg.earnWindows[dayType.name]?.firstOrNull()
+                val rowEnabled = dayType.editableUnder(specialDaysOwnRules)
                 Column(Modifier.padding(top = spacing.md)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        Text(
+                            stringResource(dayType.labelRes()),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                                .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (dayType == DayType.HOLIDAY) SpecialDaysInfoButton(onOpenSpecialDays)
                         Switch(
                             checked = window != null,
+                            enabled = rowEnabled,
                             onCheckedChange = { on ->
                                 onSetWindow(dayType, if (on) WindowDto(16 * 60, 21 * 60) else null)
                             },
@@ -210,8 +234,8 @@ private fun EarnWindowsCard(cfg: IdleEarnDto, position: CardPosition = CardPosit
                         val start = LocalTime.ofSecondOfDay(window.startMinute * 60L)
                         val end = LocalTime.ofSecondOfDay(window.endMinute * 60L)
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), modifier = Modifier.padding(top = spacing.xs)) {
-                            WindowChip(stringResource(R.string.from), start.hhmm()) { editing = dayType to true }
-                            WindowChip(stringResource(R.string.to), end.hhmm()) { editing = dayType to false }
+                            WindowChip(stringResource(R.string.from), start.hhmm(), rowEnabled) { editing = dayType to true }
+                            WindowChip(stringResource(R.string.to), end.hhmm(), rowEnabled) { editing = dayType to false }
                         }
                     } else {
                         Text(
@@ -222,6 +246,11 @@ private fun EarnWindowsCard(cfg: IdleEarnDto, position: CardPosition = CardPosit
                     }
                 }
             }
+            SpecialDaysRulesToggle(
+                on = specialDaysOwnRules,
+                onOpenCalendar = onOpenSpecialDays,
+                onChange = onSetSpecialDaysOwnRules,
+            )
         }
     }
 
@@ -254,11 +283,15 @@ private fun StepperRow(label: String, valueLabel: String, onDecrement: () -> Uni
 }
 
 @Composable
-private fun WindowChip(label: String, value: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+private fun WindowChip(label: String, value: String, enabled: Boolean = true, onClick: () -> Unit) {
+    // Same reasoning as TimeButton: a mirrored row has to look mirrored, not merely be inert.
+    val container = MaterialTheme.colorScheme.surfaceVariant.let { if (enabled) it else it.copy(alpha = 0.4f) }
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.let { if (enabled) it else it.copy(alpha = 0.5f) }
+    val valueColor = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.5f) }
+    Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(14.dp), color = container) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleLarge)
+            Text(label, style = MaterialTheme.typography.labelMedium, color = labelColor)
+            Text(value, style = MaterialTheme.typography.titleLarge, color = valueColor)
         }
     }
 }

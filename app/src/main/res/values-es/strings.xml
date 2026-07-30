@@ -91,9 +91,6 @@
     <string name="bedtime_start_title">Empieza a dormir</string>
     <string name="bedtime_end_title">Se levanta</string>
     <string name="daily_budget_header">Presupuesto diario por categoría</string>
-    <string name="budget_special_days_title">Los días especiales tienen su propio límite</string>
-    <string name="budget_special_days_off">Siguen el límite del finde.</string>
-    <string name="budget_special_days_on">Festivos y periodos tienen su propia columna, partiendo de los valores del finde.</string>
     <string name="special_days_note_short">Qué días son se elige en Días especiales.</string>
     <string name="special_days_note_action">Info</string>
     <string name="special_days_note_open">Abrir Días especiales</string>
@@ -917,4 +914,10 @@
     </plurals>
     <string name="domain_review_discard">Descartar la petición</string>
     <string name="domain_review_none">No has marcado nada \u2014 mejor descarta la petición.</string>
+    <!-- Días especiales: un único interruptor de familia, dentro de cada editor con horarios -->
+    <string name="special_days_own_rules_title">Reglas propias en días especiales</string>
+    <string name="special_days_own_rules_on">Los días especiales tienen sus propios límites y horarios, para toda la familia.</string>
+    <string name="special_days_own_rules_off">Los días especiales siguen las reglas del finde.</string>
+    <string name="windows_none">Sin horarios</string>
+    <string name="window_range">De %1$s a %2$s</string>
 </resources>

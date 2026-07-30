@@ -5,20 +5,25 @@ import dev.walcott.R
 import dev.walcott.rules.DayType
 
 /**
- * Ordered day types shown in the parent UI. Deliberately only two: SCHOOL is presented as
- * "weekdays" and HOLIDAY is hidden — the calendar's special days follow the weekend rules
- * (the policy writer mirrors WEEKEND into the HOLIDAY slot; see
- * [dev.walcott.data.withHolidayMirroringWeekend]), so there is no third policy to edit.
+ * Ordered day types shown in the parent UI. SCHOOL is presented as "weekdays"; HOLIDAY is the
+ * calendar's special days.
  */
 val DAY_TYPES: List<DayType> = listOf(DayType.SCHOOL, DayType.WEEKEND)
 
 /**
- * The rows a daily-limit editor shows. The special-day column appears only once the family has
- * claimed it ([dev.walcott.data.PolicySettings.specialDaysOwnBudget]); until then its budget is
- * a mirror of the weekend's and a third row would be a lie you could edit.
+ * The rows every time-based editor shows: weekdays, weekend, and special days.
+ *
+ * The special-day row is always present, in every editor. Whether it can be *edited* is the
+ * family's single [dev.walcott.data.PolicySettings.specialDaysOwnRules] switch — when that is off
+ * the row is disabled and displays the weekend values it mirrors, which is true rather than
+ * absent. Hiding it was the older behaviour and it read as "special days aren't supported here",
+ * differently on each screen depending on where the switch happened to live.
  */
-fun budgetDayTypes(specialDaysOwnBudget: Boolean): List<DayType> =
-    if (specialDaysOwnBudget) DAY_TYPES + DayType.HOLIDAY else DAY_TYPES
+val RULE_DAY_TYPES: List<DayType> = DAY_TYPES + DayType.HOLIDAY
+
+/** Whether [dayType]'s row accepts edits, given the family's special-days switch. */
+fun DayType.editableUnder(specialDaysOwnRules: Boolean): Boolean =
+    this != DayType.HOLIDAY || specialDaysOwnRules
 
 @StringRes
 fun DayType.labelRes(): Int = when (this) {

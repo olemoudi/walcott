@@ -34,7 +34,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.rules.DayType
-import dev.walcott.ui.budgetDayTypes
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppIcon
 import dev.walcott.ui.components.ChoiceChip
@@ -43,6 +42,8 @@ import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.components.MinutesPickerDialog
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.RULE_DAY_TYPES
+import dev.walcott.ui.editableUnder
 import dev.walcott.ui.labelRes
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
@@ -114,8 +115,9 @@ fun AppDetailScreen(
             item {
                 PerDayBudgetCard(
                     perDay = appPolicy?.budgets.orEmpty(),
-                    dayTypes = budgetDayTypes(settings.specialDaysOwnBudget),
+                    specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
+                    onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
                     onSetBudget = { dayType, minutes -> viewModel.setAppBudget(packageName, dayType, minutes) },
                     onSetAllDays = { minutes -> viewModel.setAppBudgetAllDays(packageName, minutes) },
                 )
@@ -126,8 +128,11 @@ fun AppDetailScreen(
                 BlockedWindowsCard(
                     title = null,
                     hint = stringResource(R.string.app_windows_hint),
-                    windows = appPolicy?.blockedWindows?.get(DayType.SCHOOL.name).orEmpty(),
-                    onChange = { viewModel.setAppWindows(packageName, it) },
+                    windowsByDay = appPolicy?.blockedWindows.orEmpty(),
+                    specialDaysOwnRules = settings.specialDaysOwnRules,
+                    onOpenSpecialDays = onOpenSpecialDays,
+                    onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                    onChange = { dayType, windows -> viewModel.setAppWindows(packageName, dayType, windows) },
                 )
             }
 
@@ -226,8 +231,9 @@ private fun CategoryOptionRow(
 @Composable
 private fun PerDayBudgetCard(
     perDay: Map<String, Int>,
-    dayTypes: List<DayType>,
+    specialDaysOwnRules: Boolean,
     onOpenSpecialDays: () -> Unit,
+    onSetSpecialDaysOwnRules: (Boolean) -> Unit,
     onSetBudget: (DayType, Int?) -> Unit,
     onSetAllDays: (Int?) -> Unit,
 ) {
@@ -261,13 +267,35 @@ private fun PerDayBudgetCard(
                 }
             }
 
-            dayTypes.forEach { dayType ->
+            RULE_DAY_TYPES.forEach { dayType ->
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
                 val minutes = perDay[dayType.name]
+                val rowEnabled = dayType.editableUnder(specialDaysOwnRules)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(dayType.labelRes()),
+                        style = MaterialTheme.typography.titleSmall,
+                        // A mirrored row must not look like one you can set.
+                        color = MaterialTheme.colorScheme.onSurface
+                            .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
+                    )
                     // Which days count as special is set elsewhere; say so where it matters.
                     if (dayType == DayType.HOLIDAY) SpecialDaysInfoButton(onOpenSpecialDays)
+                }
+                if (!rowEnabled) {
+                    // Mirroring the weekend: show what actually applies rather than chips that
+                    // would silently write to a slot the next policy save overwrites.
+                    Text(
+                        when {
+                            minutes == null -> stringResource(R.string.no_limit)
+                            minutes == 0 -> stringResource(R.string.app_limit_blocked)
+                            else -> Duration.ofMinutes(minutes.toLong()).humanize()
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = spacing.xs),
+                    )
+                    return@forEach
                 }
                 FlowRow(
                     Modifier.padding(top = spacing.xs),
@@ -302,6 +330,11 @@ private fun PerDayBudgetCard(
                     }
                 }
             }
+            SpecialDaysRulesToggle(
+                on = specialDaysOwnRules,
+                onOpenCalendar = onOpenSpecialDays,
+                onChange = onSetSpecialDaysOwnRules,
+            )
         }
     }
 }

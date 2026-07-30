@@ -132,7 +132,7 @@ object PolicyFuzz {
             },
             weekendStartsFridayAtMinute = if (rnd.nextInt(3) == 0) 14 * 60 else null,
             weekendEndsSundayAtMinute = if (rnd.nextInt(4) == 0) 20 * 60 else null,
-            specialDaysOwnBudget = rnd.nextInt(4) == 0,
+            specialDaysOwnRules = rnd.nextInt(4) == 0,
             assignments = assignments,
             appPolicies = appPolicies,
             children = children,

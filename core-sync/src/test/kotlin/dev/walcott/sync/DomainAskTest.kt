@@ -48,6 +48,15 @@ class DomainAskTest {
         assertNull(DomainAsk.decode(""))
         assertNull(DomainAsk.decode("): "))
         assertNull(DomainAsk.decode("Label (com.pkg): "))
+        // No " (" before the "): " — the package is where the label should be, so there is no
+        // package to hand the parent's per-app rule.
+        assertNull(DomainAsk.decode("Label): a.com"))
+        assertNull(DomainAsk.decode(" (com.pkg): a.com"))
+        // An empty package between the brackets: a rule scoped to nothing at all.
+        assertNull(DomainAsk.decode("Label (): a.com"))
+        // A bracket inside the "package" means the parse latched onto the wrong one — a real
+        // package name has none, so this is a mis-read rather than an exotic package.
+        assertNull(DomainAsk.decode("Label (com.p(kg): a.com"))
     }
 
     @Test
