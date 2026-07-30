@@ -20,7 +20,7 @@ no company holding your family's data. Everything runs on your own phones.
 
 Point your phone's camera at this code, or tap the link below.
 
-<img src="docs/download-qr.png" width="200" alt="QR code linking to the latest Walcott APK">
+<img src="docs/install-qr.png" width="200" alt="QR code linking to the latest Walcott APK">
 
 **[github.com/olemoudi/walcott/releases/latest/download/walcott.apk](https://github.com/olemoudi/walcott/releases/latest/download/walcott.apk)**
 
