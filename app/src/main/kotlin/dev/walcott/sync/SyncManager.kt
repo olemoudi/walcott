@@ -62,7 +62,6 @@ class SyncManager(
     /** Same, for the emergency-release checkpoints (see [evaluatePanic]). */
     private val panicMutex = Mutex()
     /** In-flight debounced auto-backup rewrite; replaced on every new trigger. */
-    private var autoBackupJob: Job? = null
     /** Child-only resend loop for a domain batch in flight (see [nudgeDomainBatch]). */
     private var domainNudgeJob: Job? = null
 
@@ -167,19 +166,14 @@ class SyncManager(
                 settingsStore.settings.drop(1).collect {
                     runCatching { publishConfigChanged() }
                         .onFailure { dev.walcott.debug.DebugLog.e(TAG, "publish on settings change failed", it) }
-                    // Stamp BEFORE the (debounced) auto-refresh: once that lands it re-stamps
-                    // lastBackupAtMs above this, which is what keeps the reminders silent.
+                    // What the reminder ladder measures a saved backup against: a file older
+                    // than the last edit is stale and worth nagging about.
                     syncStore.update { s -> s.copy(lastPolicyEditAtMs = System.currentTimeMillis()) }
-                    // Fire-and-forget backups: the same edits that republish also refresh the
-                    // backup file, so it can never quietly go months stale.
-                    scheduleAutoBackupRefresh()
                 }
             }
         } else {
             null
         }
-        // Catch up the auto-backup on process start too (edits can land between process lives).
-        if (id.role == Role.PARENT) scheduleAutoBackupRefresh()
         // Re-emit heals lost messages from the moment a device is paired — including devices
         // paired during this process's lifetime (pairing used to publish exactly once).
         periodicReEmit()
@@ -299,6 +293,11 @@ class SyncManager(
         syncStore.update { it.copy(parentSetupAtMs = System.currentTimeMillis()) }
         settingsStore.update { it.copy(familyName = familyName) }
         repository.seedHardeningIfNeeded()
+        // The other half of dropping the ordering dependency: if the PIN was set first, the key
+        // is already here and the copies should exist from the moment the family does, not from
+        // whenever the nightly worker next happens to run.
+        runCatching { writeDueLocalBackups(java.time.LocalDate.now()) }
+            .onFailure { dev.walcott.debug.DebugLog.w(TAG, "first local backup failed", it) }
         connect(identity)
         publishSelf()
     }
@@ -897,26 +896,6 @@ class SyncManager(
     }
 
     /**
-     * Turns on fire-and-forget backups into [uri] (a SAF document with persisted write
-     * permission): from now on every rule change rewrites the file, re-sealed with the KDF
-     * output cached here — the passphrase itself is never stored, and the cached key adds
-     * nothing an attacker with this phone doesn't already have (all keys live here anyway).
-     */
-    suspend fun enableAutoBackup(uri: String, passphrase: CharArray) {
-        val saltB64 = FamilyBackup.newSaltB64()
-        val keyB64 = withContext(Dispatchers.Default) { FamilyBackup.deriveKeyB64(passphrase, saltB64) }
-        syncStore.update {
-            it.copy(
-                autoBackupUri = uri,
-                autoBackupKeyB64 = keyB64,
-                autoBackupSaltB64 = saltB64,
-                autoBackupIterations = FamilyBackup.KDF_ITERATIONS,
-                autoBackupError = false,
-            )
-        }
-    }
-
-    /**
      * Caches the key for the on-device copies, stretched from the parent PIN. Called whenever the
      * PIN is set or successfully entered, which is what lets the nightly write be silent: the PIN
      * itself is never stored, and an existing parent picks this up the next time they unlock
@@ -926,7 +905,11 @@ class SyncManager(
      * replacement for one — see [LocalBackupStore] for what it is and isn't for.
      */
     suspend fun cacheLocalBackupKey(pin: String) {
-        if (identityStore.current().role != Role.PARENT) return
+        // Deliberately NOT gated on being a parent yet. Gating it made the whole feature depend on
+        // the PIN being set after the family exists, and if a setup journey ever did it the other
+        // way round the key would silently never be derived — no backup, no signal, exactly the
+        // failure this is here to prevent. Deriving early is harmless: writing still requires a
+        // parent, and a child never reaches the code that uses it.
         val current = syncStore.current()
         val salt = current.localBackupSaltB64.takeIf { it.isNotBlank() } ?: FamilyBackup.newSaltB64()
         val key = withContext(Dispatchers.Default) { FamilyBackup.deriveKeyB64(pin.toCharArray(), salt) }
@@ -986,47 +969,6 @@ class SyncManager(
     /** Debug harness only: puts this parent back in the state an un-upgraded one is in. */
     suspend fun clearLocalBackupKeyForDebug() {
         syncStore.update { it.copy(localBackupKeyB64 = "", localBackupSaltB64 = "", localBackupDays = emptyMap()) }
-    }
-
-    suspend fun disableAutoBackup() {
-        syncStore.update {
-            it.copy(autoBackupUri = "", autoBackupKeyB64 = "", autoBackupSaltB64 = "", autoBackupError = false)
-        }
-    }
-
-    /** Debounced trigger: one rewrite shortly after a burst of rule edits, not one per edit. */
-    private fun scheduleAutoBackupRefresh() {
-        autoBackupJob?.cancel()
-        autoBackupJob = scope.launch {
-            delay(AUTO_BACKUP_DEBOUNCE_MS)
-            refreshAutoBackup()
-        }
-    }
-
-    /** Rewrites the auto-backup document with the current family state. Never throws. */
-    private suspend fun refreshAutoBackup() {
-        val s = syncStore.current()
-        if (s.autoBackupUri.isBlank() || identityStore.current().role != Role.PARENT) return
-        val ok = runCatching {
-            val text = withContext(Dispatchers.Default) {
-                FamilyBackup.encryptWithDerivedKey(
-                    buildBackupPayload(), s.autoBackupKeyB64, s.autoBackupSaltB64, s.autoBackupIterations,
-                )
-            }
-            withContext(Dispatchers.IO) {
-                val uri = android.net.Uri.parse(s.autoBackupUri)
-                // "wt" truncates the previous content; fall back for providers that reject it.
-                val stream = runCatching { context.contentResolver.openOutputStream(uri, "wt") }.getOrNull()
-                    ?: context.contentResolver.openOutputStream(uri)
-                checkNotNull(stream) { "no output stream" }.use { it.write(text.toByteArray()) }
-            }
-        }.onFailure {
-            dev.walcott.debug.DebugLog.w(TAG, "auto-backup refresh failed", it)
-        }.isSuccess
-        syncStore.update {
-            if (ok) it.copy(lastBackupAtMs = System.currentTimeMillis(), autoBackupError = false)
-            else it.copy(autoBackupError = true)
-        }
     }
 
     /**
@@ -2013,7 +1955,6 @@ class SyncManager(
         /** Log lines offered to the diagnostics report before DiagFit trims to the size cap. */
         private const val DIAG_LOG_LINES = 80
         /** One backup rewrite per burst of edits (a wizard changes many settings in seconds). */
-        private const val AUTO_BACKUP_DEBOUNCE_MS = 15_000L
 
         /**
          * How often a child re-offers the unconfirmed slices of a domain batch. Aggressive next to

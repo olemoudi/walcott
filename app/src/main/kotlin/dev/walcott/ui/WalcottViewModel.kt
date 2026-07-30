@@ -520,13 +520,6 @@ class WalcottViewModel(
     suspend fun restoreBackup(fileJson: String, passphrase: CharArray): Boolean =
         sync.restoreBackup(fileJson, passphrase)
 
-    data class AutoBackupUi(val enabled: Boolean, val failing: Boolean)
-
-    /** Whether the fire-and-forget backup is on, and whether its last rewrite failed. */
-    val autoBackup: StateFlow<AutoBackupUi> = sync.state
-        .map { AutoBackupUi(it.autoBackupUri.isNotBlank(), it.autoBackupError) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AutoBackupUi(false, false))
-
     /**
      * True when this parent has a PIN but no key for the on-device copies yet, so the nightly
      * backup cannot run. Only ever true for a family that already existed before the copies did:
@@ -541,11 +534,6 @@ class WalcottViewModel(
 
     /** Derives and caches the on-device backup key from a PIN the parent just re-entered. */
     suspend fun enableLocalBackup(pin: String) = sync.cacheLocalBackupKey(pin)
-
-    /** Start rewriting the backup into [uri] automatically on every rule change. */
-    suspend fun enableAutoBackup(uri: String, passphrase: CharArray) = sync.enableAutoBackup(uri, passphrase)
-
-    fun disableAutoBackup() = viewModelScope.launch { sync.disableAutoBackup() }
 
     /** Toggle the "your backup is missing/stale" nudge notifications. */
     fun setBackupReminders(enabled: Boolean) = viewModelScope.launch { sync.setBackupReminders(enabled) }

@@ -721,11 +721,6 @@
     <string name="backup_save_file">Save to a file</string>
     <string name="backup_share">Send a copy</string>
     <string name="backup_share_subject">Walcott family backup</string>
-    <string name="backup_auto_checkbox">Keep this file updated automatically when the rules change</string>
-    <string name="backup_auto_on">Updates automatically · last: %1$s</string>
-    <string name="backup_auto_switch">Update automatically</string>
-    <string name="backup_auto_error">Couldn\'t update the backup — the file may have moved. Save a new one.</string>
-    <string name="backup_auto_unsupported">That location doesn\'t allow automatic updates — the file was saved once</string>
     <string name="backup_saved">Backup saved</string>
     <string name="backup_save_failed">Couldn\'t save the backup</string>
     <string name="backup_pass_title">Backup passphrase</string>

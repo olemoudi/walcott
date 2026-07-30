@@ -213,14 +213,6 @@ data class SyncState(
     val lastPolicyEditAtMs: Long = 0,
     /** Last backup reminder shown, so the escalation ladder doesn't repeat a step. */
     val lastBackupReminderAtMs: Long = 0,
-    /** SAF document the backup auto-refreshes into ("" = auto-backup off). */
-    val autoBackupUri: String = "",
-    /** KDF output + parameters cached so auto-refresh can re-seal WITHOUT storing the passphrase. */
-    val autoBackupKeyB64: String = "",
-    val autoBackupSaltB64: String = "",
-    val autoBackupIterations: Int = 0,
-    /** True while the last auto-refresh failed (file deleted, permission revoked…). */
-    val autoBackupError: Boolean = false,
     /**
      * KDF output for the on-device copies in shared storage ([LocalBackupStore]), derived from the
      * parent PIN the last time it was set or entered. Empty until then, which is what keeps the

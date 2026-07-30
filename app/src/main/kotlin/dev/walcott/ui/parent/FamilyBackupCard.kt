@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,11 +48,15 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * The family's disaster-recovery card. Two ways out, both credential-less by design:
- * save the encrypted file through the system picker (Drive and friends show up there), or
- * hand it to the share sheet (mail it to yourself). Saving can also turn on fire-and-forget
- * mode: the file is rewritten automatically on every rule change, so a backup made once at
- * setup never goes stale.
+ * The family's disaster-recovery card: the copy that lives somewhere OTHER than this phone, for
+ * the day the phone is lost, stolen or broken. Two ways out, both credential-less by design —
+ * save the encrypted file through the system picker (Drive and friends show up there), or hand
+ * it to the share sheet (mail it to yourself) — plus the reminders that nag when it goes stale.
+ *
+ * Deliberately manual. It used to offer to keep a chosen file refreshed by itself, which read as
+ * "backups are handled" while only ever writing to this same phone — exactly what the nightly
+ * on-device copies now do properly, under the parent PIN and with no setup at all. Two automatic
+ * local backups is one too many, and the confusing one was this.
  */
 @Composable
 internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
@@ -61,20 +64,17 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val lastBackupAtMs by viewModel.lastBackupAtMs.collectAsStateWithLifecycle()
-    val autoBackup by viewModel.autoBackup.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
 
     // null = no dialog; SAVE/SHARE pick what happens after the passphrase is chosen.
     var dialogMode by remember { mutableStateOf<BackupMode?>(null) }
     // Held between the passphrase dialog and the file picker's async result.
     var pendingPassphrase by remember { mutableStateOf("") }
-    var pendingAutoUpdate by remember { mutableStateOf(false) }
 
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
         val passphrase = pendingPassphrase
-        val autoUpdate = pendingAutoUpdate
         pendingPassphrase = ""
         if (uri == null || passphrase.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
@@ -93,20 +93,6 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
                 return@launch
             }
             viewModel.recordBackupSaved()
-            if (autoUpdate) {
-                // Fire-and-forget needs the grant to outlive this process and reboots.
-                val persisted = runCatching {
-                    context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                    )
-                }.isSuccess
-                if (persisted) {
-                    viewModel.enableAutoBackup(uri.toString(), passphrase.toCharArray())
-                } else {
-                    Toast.makeText(context, R.string.backup_auto_unsupported, Toast.LENGTH_LONG).show()
-                }
-            }
             Toast.makeText(context, R.string.backup_saved, Toast.LENGTH_SHORT).show()
         }
     }
@@ -156,43 +142,24 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
                 }
             }
 
-            // Honest status line: never backed up (red), auto-updating (calm), or auto failing.
+            // Honest status line: when this copy was last taken, or that it never was.
             val statusText = when {
-                autoBackup.enabled && autoBackup.failing -> stringResource(R.string.backup_auto_error)
                 lastBackupAtMs > 0 -> {
                     val stamp = remember(lastBackupAtMs) {
                         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
                             .format(Date(lastBackupAtMs))
                     }
-                    if (autoBackup.enabled) {
-                        stringResource(R.string.backup_auto_on, stamp)
-                    } else {
-                        stringResource(R.string.backup_last, stamp)
-                    }
+                    stringResource(R.string.backup_last, stamp)
                 }
                 else -> stringResource(R.string.backup_never)
             }
-            val statusIsError = (autoBackup.enabled && autoBackup.failing) || lastBackupAtMs == 0L
+            val statusIsError = lastBackupAtMs == 0L
             Text(
                 statusText,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (statusIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = spacing.sm),
             )
-
-            if (autoBackup.enabled) {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.backup_auto_switch),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(checked = true, onCheckedChange = { viewModel.disableAutoBackup() })
-                }
-            }
 
             // The nightly on-device copies. Stated plainly, and stated as NOT covering the case
             // this card is really about: a phone that is lost or broken takes them with it.
@@ -236,14 +203,12 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
 
     dialogMode?.let { mode ->
         BackupPassphraseDialog(
-            showAutoOption = mode == BackupMode.SAVE,
             onDismiss = { dialogMode = null },
-            onConfirm = { passphrase, autoUpdate ->
+            onConfirm = { passphrase ->
                 dialogMode = null
                 when (mode) {
                     BackupMode.SAVE -> {
                         pendingPassphrase = passphrase
-                        pendingAutoUpdate = autoUpdate
                         saveLauncher.launch("walcott-family-backup.json")
                     }
                     BackupMode.SHARE -> shareBackup(passphrase)
@@ -258,14 +223,12 @@ private enum class BackupMode { SAVE, SHARE }
 /** Choose (and confirm) the backup passphrase. There is no reset — the dialog says so. */
 @Composable
 private fun BackupPassphraseDialog(
-    showAutoOption: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (passphrase: String, autoUpdate: Boolean) -> Unit,
+    onConfirm: (passphrase: String) -> Unit,
 ) {
     val spacing = Tokens.spacing
     var passphrase by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
-    var autoUpdate by remember { mutableStateOf(true) }
     val tooShort = passphrase.length < FamilyBackup.MIN_PASSPHRASE_CHARS
     val mismatch = repeat.isNotEmpty() && repeat != passphrase
 
@@ -298,21 +261,12 @@ private fun BackupPassphraseDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (showAutoOption) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = spacing.xs)) {
-                        Checkbox(checked = autoUpdate, onCheckedChange = { autoUpdate = it })
-                        Text(
-                            stringResource(R.string.backup_auto_checkbox),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = !tooShort && repeat == passphrase,
-                onClick = { onConfirm(passphrase, showAutoOption && autoUpdate) },
+                onClick = { onConfirm(passphrase) },
             ) { Text(stringResource(R.string.action_continue)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
