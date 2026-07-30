@@ -12,7 +12,7 @@ import dev.walcott.WalcottAdminReceiver
  * No-ops on devices that aren't Device Owner. Only the restrictions listed here are
  * ever touched, so Walcott never clears a restriction it doesn't own.
  *
- * Deliberately NOT offered while the app is alpha: blocking factory reset, safe mode,
+ * Deliberately NOT offered while the app is beta: blocking factory reset, safe mode,
  * sideloading or USB debugging. Those are the recovery paths if Walcott itself
  * misbehaves — locking them could leave the device unrecoverable. The parent gets a
  * check-in staleness alert instead (see StaleChildWorker).

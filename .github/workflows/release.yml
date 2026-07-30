@@ -28,21 +28,27 @@ jobs:
       - name: Build release APK
         run: ./gradlew :app:assembleRelease
 
-      - name: Rename APK to a stable asset name
-        run: cp app/build/outputs/apk/release/app-release.apk walcott-alpha.apk
+      # walcott-beta.apk is the canonical name. walcott-alpha.apk is a byte-identical copy kept
+      # for compatibility: parent phones that haven't updated yet still show an onboarding QR
+      # encoding the old name, and those scans must not 404. Do not drop it.
+      - name: Copy APK to the stable asset names
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk walcott-beta.apk
+          cp app/build/outputs/apk/release/app-release.apk walcott-alpha.apk
 
       - name: Build version.json (drives in-app auto-update)
         run: |
           VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           printf '{"versionCode": %s, "versionName": "%s", "apk": "%s"}\n' \
-            "$VC" "$VN" "https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk" > version.json
+            "$VC" "$VN" "https://github.com/olemoudi/walcott/releases/latest/download/walcott-beta.apk" > version.json
           cat version.json
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
+            walcott-beta.apk
             walcott-alpha.apk
             version.json
           fail_on_unmatched_files: true

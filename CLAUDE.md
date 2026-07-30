@@ -199,9 +199,10 @@ These are standing rules for this repository. Follow them without being re-asked
 ### Distribution & releases
 - GitHub remote: `https://github.com/olemoudi/walcott.git`.
 - This is a sideloaded, personal/family app (not Play Store).
-- **Release signing uses a stable, committed keystore** (`walcott-release.jks`, password `walcott`) so in-place auto-updates chain across releases. This is deliberate for an alpha family app with no secrets; CI can override with `SIGNING_STORE_FILE`/`SIGNING_STORE_PASSWORD`/`SIGNING_KEY_ALIAS`/`SIGNING_KEY_PASSWORD` env if you'd rather keep the key in a secret. **Never re-sign with a different key** — it breaks the update chain and requires a reinstall.
-- Releases are published by GitHub Actions on pushing a tag matching `v*`. The workflow builds `assembleRelease` and attaches two assets with **stable names**: `walcott-alpha.apk` and `version.json`.
-- Stable URLs: APK at `…/releases/latest/download/walcott-alpha.apk` (in-app QR points here); `version.json` at `…/releases/latest/download/version.json`. Keep the names stable so old QRs and installed apps keep working.
+- **Release signing uses a stable, committed keystore** (`walcott-release.jks`, password `walcott`) so in-place auto-updates chain across releases. This is deliberate for a beta family app with no secrets; CI can override with `SIGNING_STORE_FILE`/`SIGNING_STORE_PASSWORD`/`SIGNING_KEY_ALIAS`/`SIGNING_KEY_PASSWORD` env if you'd rather keep the key in a secret. **Never re-sign with a different key** — it breaks the update chain and requires a reinstall.
+- Releases are published by GitHub Actions on pushing a tag matching `v*`. The workflow builds `assembleRelease` and attaches three assets with **stable names**: `walcott-beta.apk`, `walcott-alpha.apk` (a byte-identical copy) and `version.json`.
+- Stable URLs: APK at `…/releases/latest/download/walcott-beta.apk` (in-app QR points here); `version.json` at `…/releases/latest/download/version.json`. Keep the names stable so old QRs and installed apps keep working.
+- **`walcott-alpha.apk` must keep being published**, identical bytes, even though nothing new points at it. It was the canonical name before the app went to beta in 0.25.0, and a parent phone that hasn't updated yet still shows an onboarding QR encoding it; dropping it would 404 those scans. Auto-update never depended on either name — `Updater` follows the url inside `version.json` and only checks the host prefix.
 - **Bumping a version:** raise `versionCode` (and `versionName`) in `app/build.gradle.kts`, then push a `v*` tag. CI derives `version.json` from `versionCode`.
 
 ### Auto-update

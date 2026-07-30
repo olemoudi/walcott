@@ -22,7 +22,7 @@ Point your phone's camera at this code, or tap the link below.
 
 <img src="docs/download-qr.png" width="200" alt="QR code linking to the latest Walcott APK">
 
-**[github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk](https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk)**
+**[github.com/olemoudi/walcott/releases/latest/download/walcott-beta.apk](https://github.com/olemoudi/walcott/releases/latest/download/walcott-beta.apk)**
 
 The same app is both the parent app and the child app — you choose which on first launch.
 Android 10 or newer. Once installed, Walcott keeps itself up to date from this same page.
@@ -30,8 +30,9 @@ Android 10 or newer. Once installed, Walcott keeps itself up to date from this s
 Your phone will warn you that the file comes from outside the Play Store, and Play Protect
 may offer to scan it first — that is normal for any app installed this way.
 
-> **Alpha software.** Walcott is used by its author's family and is offered as-is. Try it on a
-> phone you can afford to factory-reset.
+> **Beta software.** Walcott is used by its author's family every day and is offered as-is.
+> The child's phone has to be set up from scratch, so try it on a phone you can afford to
+> factory-reset.
 
 ## What it does
 

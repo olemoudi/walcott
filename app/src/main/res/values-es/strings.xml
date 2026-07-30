@@ -427,7 +427,7 @@
     <!-- Protección del dispositivo (restricciones de usuario) -->
     <string name="nav_protection_title">Protección del dispositivo</string>
     <string name="nav_protection_subtitle">Impide que el hijo cambie ajustes críticos</string>
-    <string name="protection_note">Estos bloqueos se aplican en móviles de hijo con protección total (Device Owner). Mientras Walcott esté en alfa, los bloqueos que podrían dejar un dispositivo irrecuperable (restablecimiento de fábrica, modo seguro, APKs, depuración USB) no se ofrecen a propósito — el aviso de check-in cubre las manipulaciones.</string>
+    <string name="protection_note">Estos bloqueos se aplican en móviles de hijo con protección total (Device Owner). Mientras Walcott esté en beta, los bloqueos que podrían dejar un dispositivo irrecuperable (restablecimiento de fábrica, modo seguro, APKs, depuración USB) no se ofrecen a propósito — el aviso de check-in cubre las manipulaciones.</string>
     <string name="restriction_vpn_title">Proteger el filtro web</string>
     <string name="restriction_vpn_desc">Los ajustes de VPN quedan bloqueados: el filtro DNS no se puede quitar</string>
     <string name="restriction_location_title">Ubicación siempre activa</string>

@@ -14,14 +14,14 @@ android {
         applicationId = "dev.walcott"
         minSdk = 29
         targetSdk = 35
-        versionCode = 66
-        versionName = "0.24.0"
+        versionCode = 67
+        versionName = "0.25.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         // Stable key so in-place auto-updates chain across releases. Committed on purpose
-        // (alpha family app, no secrets). CI can override via SIGNING_* env if a secret is set.
+        // (beta family app, no secrets). CI can override via SIGNING_* env if a secret is set.
         create("release") {
             storeFile = file(System.getenv("SIGNING_STORE_FILE") ?: "../walcott-release.jks")
             storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: "walcott"
@@ -43,7 +43,7 @@ android {
             // The release key, on purpose. The instrumented tests exercise Device Owner
             // behaviour, and a Device Owner can only be replaced by a build with its own
             // signature — so a debug APK signed with the debug key cannot be installed over
-            // the app it is meant to test. (The keystore is committed for this family alpha;
+            // the app it is meant to test. (The keystore is committed for this family beta;
             // see the release signingConfig above.)
             signingConfig = signingConfigs.getByName("release")
         }

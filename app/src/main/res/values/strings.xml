@@ -427,7 +427,7 @@
     <!-- Device protection (user restrictions) -->
     <string name="nav_protection_title">Device protection</string>
     <string name="nav_protection_subtitle">Stop the child from changing critical settings</string>
-    <string name="protection_note">These locks apply on child phones with full protection (Device Owner). While Walcott is in alpha, locks that could make a device unrecoverable (factory reset, safe mode, sideloading, USB debugging) are deliberately not offered — the check-in alert below covers tampering instead.</string>
+    <string name="protection_note">These locks apply on child phones with full protection (Device Owner). While Walcott is in beta, locks that could make a device unrecoverable (factory reset, safe mode, sideloading, USB debugging) are deliberately not offered — the check-in alert below covers tampering instead.</string>
     <string name="restriction_vpn_title">Protect the web filter</string>
     <string name="restriction_vpn_desc">VPN settings are locked, so the DNS filter can\'t be removed</string>
     <string name="restriction_location_title">Keep location on</string>
