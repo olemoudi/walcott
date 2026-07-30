@@ -916,6 +916,73 @@ class SyncManager(
         }
     }
 
+    /**
+     * Caches the key for the on-device copies, stretched from the parent PIN. Called whenever the
+     * PIN is set or successfully entered, which is what lets the nightly write be silent: the PIN
+     * itself is never stored, and an existing parent picks this up the next time they unlock
+     * without being asked for anything.
+     *
+     * The PIN is short, so this file is far weaker than a passphrase backup and is not a
+     * replacement for one — see [LocalBackupStore] for what it is and isn't for.
+     */
+    suspend fun cacheLocalBackupKey(pin: String) {
+        if (identityStore.current().role != Role.PARENT) return
+        val current = syncStore.current()
+        val salt = current.localBackupSaltB64.takeIf { it.isNotBlank() } ?: FamilyBackup.newSaltB64()
+        val key = withContext(Dispatchers.Default) { FamilyBackup.deriveKeyB64(pin.toCharArray(), salt) }
+        if (key == current.localBackupKeyB64) return
+        // A changed PIN has to open ALL three copies, not just whichever the rotation happens to
+        // refresh next — otherwise the monthly one keeps needing a PIN the parent has forgotten.
+        // Forgetting the written days makes every slot due, and the rewrite happens now.
+        syncStore.update { it.copy(localBackupKeyB64 = key, localBackupSaltB64 = salt, localBackupDays = emptyMap()) }
+        writeDueLocalBackups(java.time.LocalDate.now())
+    }
+
+    /**
+     * Rewrites whichever on-device copies are due tonight (see [BackupRotation]). No-op until the
+     * PIN has been seen once, and on anything that isn't a parent. Never throws — a failed backup
+     * must not take down the worker that called it.
+     */
+    suspend fun writeDueLocalBackups(today: java.time.LocalDate): Set<BackupRotation.Slot> {
+        val s = syncStore.current()
+        if (identityStore.current().role != Role.PARENT || s.localBackupKeyB64.isBlank()) return emptySet()
+        val lastWritten = s.localBackupDays.mapNotNull { (name, day) ->
+            BackupRotation.Slot.entries.firstOrNull { it.name == name }?.to(java.time.LocalDate.ofEpochDay(day))
+        }.toMap()
+        val due = BackupRotation.due(today, lastWritten)
+        if (due.isEmpty()) return emptySet()
+
+        val text = runCatching {
+            withContext(Dispatchers.Default) {
+                FamilyBackup.encryptWithDerivedKey(
+                    buildBackupPayload(), s.localBackupKeyB64, s.localBackupSaltB64,
+                    keySource = FamilyBackup.SOURCE_PIN,
+                )
+            }
+        }.getOrElse {
+            dev.walcott.debug.DebugLog.w(TAG, "local backup payload failed", it)
+            syncStore.update { st -> st.copy(localBackupError = true) }
+            return emptySet()
+        }
+
+        // One ciphertext for every slot due tonight: they are copies of the same state, and
+        // re-sealing per slot would only burn CPU for three different nonces.
+        val written = due.mapNotNull { slot ->
+            LocalBackupStore.write(context, slot, text, s.localBackupUris[slot.name])?.let { slot to it.toString() }
+        }.toMap()
+        // Deliberately does NOT touch lastBackupAtMs: that drives the reminder to set up a backup
+        // that lives somewhere else, and a copy on the same phone is no answer to losing the
+        // phone. Silencing that nudge here would trade one disaster for another.
+        syncStore.update { st ->
+            st.copy(
+                localBackupDays = st.localBackupDays + written.keys.associate { it.name to today.toEpochDay() },
+                localBackupUris = st.localBackupUris + written.mapKeys { it.key.name },
+                localBackupError = written.size != due.size,
+            )
+        }
+        return written.keys
+    }
+
     suspend fun disableAutoBackup() {
         syncStore.update {
             it.copy(autoBackupUri = "", autoBackupKeyB64 = "", autoBackupSaltB64 = "", autoBackupError = false)
@@ -1091,6 +1158,10 @@ class SyncManager(
             if (s.pinFailedAttempts != 0 || s.pinLockedUntilMs != 0L) {
                 syncStore.update { it.copy(pinFailedAttempts = 0, pinLockedUntilMs = 0) }
             }
+            // A correct PIN is the only moment we ever hold it, so it is the only moment the
+            // on-device backup key can be derived. Parents who set their PIN before this existed
+            // get it on their next unlock, without being asked for anything.
+            if (s.localBackupKeyB64.isBlank()) cacheLocalBackupKey(pin)
             return PinResult.Ok
         }
 

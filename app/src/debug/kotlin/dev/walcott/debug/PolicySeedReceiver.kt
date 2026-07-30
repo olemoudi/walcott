@@ -67,6 +67,39 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         DebugLog.i("WalcottSeed", "pairAsChild ok=$ok")
                     }
                     "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
+                    // `--es mode local_backup [--es local_backup_slots daily,weekly,monthly]`:
+                    // writes the shared-storage copies now, and logs what this install can see
+                    // afterwards. Exists to answer the scoped-storage question on a device rather
+                    // than from documentation: does the write need a permission, does the file
+                    // outlive an uninstall, and can a reinstalled app still enumerate it.
+                    // `--es mode local_backup --es local_backup_pin 4291`: creates a family if
+                    // needed, derives the on-device backup key from that PIN and writes the copies
+                    // through the real path — so the resulting file can be pulled off the device
+                    // and decrypted elsewhere to prove it is genuinely restorable.
+                    "local_backup" -> {
+                        if (app.identityStore.current().role != dev.walcott.sync.Role.PARENT) {
+                            app.syncManager.becomeParent("DebugFamily")
+                        }
+                        val pin = intent.getStringExtra("local_backup_pin") ?: "4291"
+                        app.repository.setPin(pin)
+                        app.syncManager.cacheLocalBackupKey(pin)
+                        val written = app.syncManager.writeDueLocalBackups(java.time.LocalDate.now())
+                        DebugLog.i("WalcottSeed", "local backup wrote=$written pin=$pin")
+                        DebugLog.i("WalcottSeed", "visible to this install: ${dev.walcott.sync.LocalBackupStore.listOwn(app)}")
+                    }
+                    // `--es mode clear_do`: drops Device Owner so the app can be uninstalled.
+                    // `dpm remove-active-admin` refuses to do this from adb, and without it an
+                    // uninstall-and-reinstall — the whole scenario the local backup exists for —
+                    // can't be rehearsed. Re-provision afterwards with `dpm set-device-owner`.
+                    "clear_do" -> {
+                        val dpm = app.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+                        val ok = runCatching { dpm.clearDeviceOwnerApp(app.packageName) }.isSuccess
+                        DebugLog.i("WalcottSeed", "clearDeviceOwnerApp ok=$ok")
+                    }
+                    // `--es mode local_backup_list`: only enumerates, so a freshly installed app
+                    // can be asked what it sees without writing anything first.
+                    "local_backup_list" ->
+                        DebugLog.i("WalcottSeed", "visible to this install: ${dev.walcott.sync.LocalBackupStore.listOwn(app)}")
                 }
                 // `--es ntfy_server http://10.0.2.2:8099`: points this device's channel at a local
                 // sink, so a parent->child exchange can be exercised when ntfy.sh is rate-limiting.

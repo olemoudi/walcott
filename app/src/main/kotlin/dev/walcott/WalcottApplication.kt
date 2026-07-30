@@ -82,6 +82,10 @@ class WalcottApplication : Application() {
         // Parent-side nudge when the family backup is missing or stale (no-op elsewhere).
         dev.walcott.sync.BackupReminderWorker.schedule(this)
 
+        // Parent-side nightly copy into shared storage, so an uninstall isn't the end of the
+        // family (no-op elsewhere, and until the PIN has been seen once).
+        dev.walcott.sync.LocalBackupWorker.schedule(this)
+
         // Parent-side catch-up poll so requests/alerts arrive while the app is closed.
         ParentPollWorker.schedule(this)
 

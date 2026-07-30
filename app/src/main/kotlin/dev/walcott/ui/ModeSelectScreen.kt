@@ -150,7 +150,10 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
 
     // Accept any type: cloud providers often serve the .json as octet-stream or text.
     val openLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        // Opens straight at Documents/Walcott/ when the provider honours the hint, so the nightly
+        // on-device copies are the first thing listed. Scoped storage forbids finding them
+        // ourselves (see LocalBackupStore), and this is as close to that as Android allows.
+        OpenBackupDocument(),
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
@@ -177,6 +180,7 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
 
     backupText?.let { text ->
         RestorePassphraseDialog(
+            fromPin = dev.walcott.sync.FamilyBackup.keySourceOf(text) == dev.walcott.sync.FamilyBackup.SOURCE_PIN,
             onDismiss = { backupText = null },
             onRestore = { passphrase, onError ->
                 scope.launch {
@@ -192,9 +196,19 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
     }
 }
 
-/** Passphrase prompt for a picked backup file; stays open with an error on a wrong one. */
+/**
+ * Secret prompt for a picked backup file; stays open with an error on a wrong one.
+ *
+ * [fromPin] switches the wording to the parent PIN, which is what the automatic on-device copies
+ * are sealed with. Asking for "the passphrase" on a file that wants a 4-digit PIN is the kind of
+ * small lie that makes someone give up on a recovery that would have worked.
+ */
 @Composable
-private fun RestorePassphraseDialog(onDismiss: () -> Unit, onRestore: (String, onError: () -> Unit) -> Unit) {
+private fun RestorePassphraseDialog(
+    fromPin: Boolean,
+    onDismiss: () -> Unit,
+    onRestore: (String, onError: () -> Unit) -> Unit,
+) {
     val spacing = Tokens.spacing
     var passphrase by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
@@ -202,15 +216,15 @@ private fun RestorePassphraseDialog(onDismiss: () -> Unit, onRestore: (String, o
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = { if (!restoring) onDismiss() },
-        title = { Text(stringResource(R.string.restore_pass_title)) },
+        title = { Text(stringResource(if (fromPin) R.string.restore_pin_title else R.string.restore_pass_title)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = passphrase,
                     onValueChange = { passphrase = it; failed = false },
-                    label = { Text(stringResource(R.string.backup_pass_label)) },
+                    label = { Text(stringResource(if (fromPin) R.string.restore_pin_label else R.string.backup_pass_label)) },
                     isError = failed,
-                    supportingText = { if (failed) Text(stringResource(R.string.restore_failed)) },
+                    supportingText = { if (failed) Text(stringResource(if (fromPin) R.string.restore_pin_failed else R.string.restore_failed)) },
                     singleLine = true,
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
@@ -271,4 +285,25 @@ private fun ModeCard(
             }
         }
     }
+}
+
+/**
+ * [ActivityResultContracts.OpenDocument] that asks the picker to start in the folder the nightly
+ * backups live in. The hint is advisory — providers may ignore it — so the flow still works
+ * unchanged when it lands somewhere else.
+ */
+private class OpenBackupDocument : androidx.activity.result.contract.ActivityResultContracts.OpenDocument() {
+    override fun createIntent(context: android.content.Context, input: Array<String>): android.content.Intent =
+        super.createIntent(context, input).apply {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                initialFolderUri()?.let { putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, it) }
+            }
+        }
+
+    private fun initialFolderUri(): android.net.Uri? = runCatching {
+        android.provider.DocumentsContract.buildDocumentUri(
+            "com.android.externalstorage.documents",
+            "primary:${dev.walcott.sync.LocalBackupStore.FOLDER}",
+        )
+    }.getOrNull()
 }

@@ -221,6 +221,23 @@ data class SyncState(
     val autoBackupIterations: Int = 0,
     /** True while the last auto-refresh failed (file deleted, permission revoked…). */
     val autoBackupError: Boolean = false,
+    /**
+     * KDF output for the on-device copies in shared storage ([LocalBackupStore]), derived from the
+     * parent PIN the last time it was set or entered. Empty until then, which is what keeps the
+     * nightly rewrite silent: no prompt, and the PIN itself is never stored.
+     */
+    val localBackupKeyB64: String = "",
+    val localBackupSaltB64: String = "",
+    /** Epoch day each rotation slot was last written on, keyed by [BackupRotation.Slot] name. */
+    val localBackupDays: Map<String, Long> = emptyMap(),
+    /**
+     * The document each slot writes into, keyed by slot name. Remembered because a reinstalled app
+     * cannot find the previous install's files again, and inserting over their MediaStore rows
+     * fails outright — see [LocalBackupStore.write].
+     */
+    val localBackupUris: Map<String, String> = emptyMap(),
+    /** True while the last nightly write failed, so the backup card can say so. */
+    val localBackupError: Boolean = false,
     /** Domain batches arriving from children, complete or still missing slices (see [DomainInbox]). */
     val domainInbox: List<DomainInboxEntry> = emptyList(),
     /** Slice acknowledgements echoed to children so they stop resending; bounded, newest last. */

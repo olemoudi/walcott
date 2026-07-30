@@ -739,6 +739,10 @@
     <string name="restore_card_desc">Replacing a lost parent phone? Load its backup file and the family comes back.</string>
     <string name="restore_pass_title">Backup passphrase</string>
     <string name="restore_failed">Wrong passphrase or invalid backup file</string>
+    <string name="backup_local_note">Walcott also keeps three encrypted copies on this phone (%1$s), refreshed nightly and unlocked with your parent PIN. They survive uninstalling the app — but not losing or breaking the phone, which is what the backup above is for.</string>
+    <string name="restore_pin_title">Parent PIN</string>
+    <string name="restore_pin_label">Parent PIN</string>
+    <string name="restore_pin_failed">Wrong PIN or invalid backup file</string>
     <string name="restore_action">Restore</string>
     <string name="backup_reminders_switch">Backup reminders</string>
     <string name="backup_reminder_title_never">Your family has no backup</string>

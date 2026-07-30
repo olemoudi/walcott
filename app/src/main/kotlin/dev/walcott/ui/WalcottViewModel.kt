@@ -697,7 +697,12 @@ class WalcottViewModel(
         viewModelScope.launch { repository.grantExtraMinutes(categoryId, minutes) }
 
     /** Sets the parent PIN: creating it during setup, or replacing it from app settings. */
-    fun setPin(pin: String) = viewModelScope.launch { repository.setPin(pin) }
+    fun setPin(pin: String) = viewModelScope.launch {
+        repository.setPin(pin)
+        // Re-derive rather than keep the old key: a changed PIN must be the one that opens the
+        // next on-device backup, or restore would ask for a PIN the parent no longer knows.
+        sync.cacheLocalBackupKey(pin)
+    }
 
     /** PIN check with brute-force lockout. */
     suspend fun verifyPin(pin: String): dev.walcott.data.PinResult = sync.verifyPinGuarded(pin)

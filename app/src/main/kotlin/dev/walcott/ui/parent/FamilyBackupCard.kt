@@ -194,6 +194,15 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
                 }
             }
 
+            // The nightly on-device copies. Stated plainly, and stated as NOT covering the case
+            // this card is really about: a phone that is lost or broken takes them with it.
+            Text(
+                stringResource(R.string.backup_local_note, dev.walcott.sync.LocalBackupStore.FOLDER),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = spacing.sm),
+            )
+
             // The nudge notifications; the notification's own action can also turn this off.
             Row(
                 Modifier.fillMaxWidth().padding(top = spacing.xs),

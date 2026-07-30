@@ -53,6 +53,13 @@ data class FamilyBackupFile(
     val saltB64: String,
     /** AES-GCM(PBKDF2(passphrase), gzip(payload JSON)), base64url. */
     val ciphertextB64: String,
+    /**
+     * What the key was stretched from, so restore can ask for the right secret instead of making
+     * the parent guess which of the two it wants. [FamilyBackup.SOURCE_PASSPHRASE] for a backup
+     * the parent set up by hand, [FamilyBackup.SOURCE_PIN] for the automatic on-device copies.
+     * Defaults to the passphrase for files written before this field existed.
+     */
+    val keySource: String = FamilyBackup.SOURCE_PASSPHRASE,
 )
 
 object FamilyBackup {
@@ -60,6 +67,10 @@ object FamilyBackup {
     const val FORMAT = "walcott-family-backup"
     const val KDF_ITERATIONS = 600_000
     const val MIN_PASSPHRASE_CHARS = 12
+
+    /** Key sources, recorded in the file so restore knows which secret to ask for. */
+    const val SOURCE_PASSPHRASE = "passphrase"
+    const val SOURCE_PIN = "pin"
     /** Bounds on the (unauthenticated) header field, so a crafted file can't pin a core. */
     private val SANE_ITERATIONS = 10_000..2_000_000
     private const val SALT_BYTES = 16
@@ -96,6 +107,7 @@ object FamilyBackup {
         derivedKeyB64: String,
         saltB64: String,
         iterations: Int = KDF_ITERATIONS,
+        keySource: String = SOURCE_PASSPHRASE,
     ): String {
         val key = SecretKeySpec(FamilyCrypto.fromB64(derivedKeyB64), "AES")
         val plaintext = gzip(json.encodeToString(FamilyBackupPayload.serializer(), payload).toByteArray())
@@ -103,9 +115,22 @@ object FamilyBackup {
             kdfIterations = iterations,
             saltB64 = saltB64,
             ciphertextB64 = FamilyCrypto.toB64(FamilyCrypto.encrypt(key, plaintext)),
+            keySource = keySource,
         )
         return json.encodeToString(FamilyBackupFile.serializer(), file)
     }
+
+    /**
+     * Which secret [fileJson] was sealed with, read from the unencrypted header so the restore
+     * screen can ask for the PIN or the passphrase by name. Null when this isn't a backup file at
+     * all. The header is unauthenticated, so a tampered value can only change the prompt's
+     * wording — the wrong secret still fails to decrypt.
+     */
+    fun keySourceOf(fileJson: String): String? =
+        runCatching { json.decodeFromString(FamilyBackupFile.serializer(), fileJson) }
+            .getOrNull()
+            ?.takeIf { it.format == FORMAT }
+            ?.keySource
 
     /** Opens a backup file. Null when the passphrase is wrong or the file isn't a valid backup. */
     fun decrypt(fileJson: String, passphrase: CharArray): FamilyBackupPayload? {

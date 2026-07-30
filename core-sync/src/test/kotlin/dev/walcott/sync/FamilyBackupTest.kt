@@ -84,6 +84,39 @@ class FamilyBackupTest {
     }
 
     @Test
+    fun `a PIN-sealed backup says so, and opens with the PIN`() {
+        // The nightly on-device copy. Restore reads keySource to decide what to ask for, so a
+        // file that lies about it (or a build that forgets to set it) sends the parent looking
+        // for a passphrase they never chose.
+        val original = payload()
+        val saltB64 = FamilyBackup.newSaltB64()
+        val keyB64 = FamilyBackup.deriveKeyB64("4291".toCharArray(), saltB64, fastIterations)
+        val file = FamilyBackup.encryptWithDerivedKey(
+            original, keyB64, saltB64, fastIterations, FamilyBackup.SOURCE_PIN,
+        )
+        assertEquals(FamilyBackup.SOURCE_PIN, FamilyBackup.keySourceOf(file))
+        assertEquals(original, FamilyBackup.decrypt(file, "4291".toCharArray()))
+        assertNull(FamilyBackup.decrypt(file, "4292".toCharArray()))
+    }
+
+    @Test
+    fun `a backup from before key sources existed reads as a passphrase one`() {
+        // Files already sitting in parents' Drive folders have no keySource field; defaulting to
+        // anything else would prompt them for a PIN that never sealed them.
+        val original = payload()
+        val file = FamilyBackup.encrypt(original, "correct horse".toCharArray(), fastIterations)
+        val stripped = file.replace(Regex(""",?"keySource":"[a-z]+""""), "")
+        assertEquals(FamilyBackup.SOURCE_PASSPHRASE, FamilyBackup.keySourceOf(stripped))
+        assertEquals(original, FamilyBackup.decrypt(stripped, "correct horse".toCharArray()))
+    }
+
+    @Test
+    fun `keySourceOf refuses anything that is not a backup file`() {
+        assertNull(FamilyBackup.keySourceOf("not json at all"))
+        assertNull(FamilyBackup.keySourceOf("""{"format":"something-else","kdfIterations":600000,"saltB64":"x","ciphertextB64":"y"}"""))
+    }
+
+    @Test
     fun `default iterations round-trip too`() {
         val original = payload()
         val file = FamilyBackup.encrypt(original, "real strength".toCharArray())
