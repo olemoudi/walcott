@@ -39,7 +39,12 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 // The DNS filter can be torn down without us: another VPN app takes the tun,
                 // or the system revokes it. Nothing else notices — the enforcement service only
                 // reacts to rule *changes* — so re-assert it here like every other policy.
-                dev.walcott.net.VpnController.apply(applicationContext, settings.hasWebFilter())
+                dev.walcott.net.VpnController.apply(
+                    applicationContext,
+                    // A live monitoring session counts as a reason to be up, or the watchdog
+                    // would pull the tunnel out from under the parent mid-look.
+                    settings.hasWebFilter() || dev.walcott.net.DomainMonitor.isActive(),
+                )
             }.onFailure { DebugLog.e(TAG, "restriction reassert failed", it) }
             // Housekeeping: the per-day counters have no natural end, so a device enrolled for
             // years would accumulate a row per category (and per app with its own budget) per

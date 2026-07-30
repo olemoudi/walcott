@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
@@ -76,6 +77,7 @@ fun ParentHomeScreen(
     onOpenCalendar: () -> Unit,
     onOpenReport: () -> Unit,
     onOpenWebFilter: () -> Unit,
+    onOpenDomainMonitor: () -> Unit,
     onOpenProtection: () -> Unit,
     onOpenLocation: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -118,7 +120,24 @@ fun ParentHomeScreen(
                 NavCard(Icons.Outlined.Apps, stringResource(R.string.nav_apps_title), stringResource(R.string.nav_apps_subtitle), onOpenApps, position = CardPosition.First)
                 NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets, position = CardPosition.Middle)
                 NavCard(Icons.Outlined.Language, stringResource(R.string.nav_webfilter_title), stringResource(R.string.nav_webfilter_subtitle), onOpenWebFilter, position = CardPosition.Middle)
-                NavCard(Icons.Outlined.Security, stringResource(R.string.nav_protection_title), stringResource(R.string.nav_protection_subtitle), onOpenProtection, position = CardPosition.Last)
+                NavCard(
+                    Icons.Outlined.Security,
+                    stringResource(R.string.nav_protection_title),
+                    stringResource(R.string.nav_protection_subtitle),
+                    onOpenProtection,
+                    position = if (childDevice) CardPosition.Middle else CardPosition.Last,
+                )
+                // Only on the child: it watches what THIS device resolves, and there is nothing
+                // to watch on the parent's own phone.
+                if (childDevice) {
+                    NavCard(
+                        Icons.Outlined.TravelExplore,
+                        stringResource(R.string.domain_monitor_title),
+                        stringResource(R.string.domain_monitor_nav_subtitle),
+                        onOpenDomainMonitor,
+                        position = CardPosition.Last,
+                    )
+                }
             }
             SectionHeader(stringResource(R.string.home_section_family))
             CardGroup {

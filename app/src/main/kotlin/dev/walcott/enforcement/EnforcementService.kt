@@ -215,8 +215,12 @@ class EnforcementService : LifecycleService() {
     private fun observeWebFilter() {
         val repo = (application as WalcottApplication).repository
         lifecycleScope.launch {
-            repo.settingsFlow
-                .map { it.hasWebFilter() }
+            // Either reason keeps the tunnel up: rules to enforce, or a parent watching which
+            // domains an app resolves. When the session expires the flow drops back by itself.
+            kotlinx.coroutines.flow.combine(
+                repo.settingsFlow.map { it.hasWebFilter() },
+                dev.walcott.net.DomainMonitor.state,
+            ) { hasRules, monitor -> hasRules || monitor.isActive(System.currentTimeMillis()) }
                 .distinctUntilChanged()
                 .collect { enabled -> VpnController.apply(this@EnforcementService, enabled) }
         }

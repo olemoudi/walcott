@@ -227,11 +227,7 @@ fun FamiliesScreen(
             }
             items(asks, key = { "ask-" + it.ask.requestId }) { pending ->
                 Box(Modifier.animateItem()) {
-                    AskRequestCard(
-                        pending = pending,
-                        onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
-                        onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
-                    )
+                    AskCard(pending, viewModel)
                 }
             }
         }

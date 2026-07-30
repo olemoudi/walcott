@@ -49,6 +49,42 @@ data class ChildRequest(
     companion object {
         const val KIND_APP = "app"
         const val KIND_OTHER = "other"
+
+        /** Domains an app was seen resolving, sent for the parent to block (see [DomainAsk]). */
+        const val KIND_DOMAINS = "domains"
+    }
+}
+
+/**
+ * The payload of a [ChildRequest.KIND_DOMAINS] ask, encoded into the request's existing text
+ * field rather than a new wire type — so a parent running an older build still receives a
+ * sentence it can read and act on by hand, instead of an empty request it can't explain.
+ *
+ * Format: `Label (package): a.com, b.com`. Pure and symmetrical, because the parent's blocking
+ * actions depend on getting the package back out intact.
+ */
+object DomainAsk {
+
+    data class Parsed(val label: String, val packageName: String, val domains: List<String>)
+
+    fun encode(label: String, packageName: String, domains: List<String>): String =
+        "$label ($packageName): " + domains.joinToString(", ")
+
+    /** The payload, or null when [text] isn't one — an ask of another kind, or a mangled one. */
+    fun decode(text: String): Parsed? {
+        val split = text.lastIndexOf("): ")
+        if (split <= 0) return null
+        val head = text.substring(0, split)
+        val open = head.lastIndexOf(" (")
+        if (open <= 0) return null
+        val packageName = head.substring(open + 2)
+        if (packageName.isEmpty() || '(' in packageName) return null
+        val domains = text.substring(split + 3)
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (domains.isEmpty()) return null
+        return Parsed(head.substring(0, open), packageName, domains)
     }
 }
 

@@ -854,4 +854,35 @@
     <string name="event_panic_released">El dispositivo de %1$s se ha liberado</string>
     <string name="event_panic_denied">Rechazada la solicitud de liberación de %1$s</string>
     <string name="event_panic_cancelled">La solicitud de liberación de %1$s ha terminado</string>
+    <!-- Visor de dominios (dispositivo del hijo, lo maneja el padre) -->
+    <string name="domain_monitor_title">Ver a qué se conecta una app</string>
+    <string name="domain_monitor_nav_subtitle">Mira qué dominios consulta una app y mándalos a bloquear</string>
+    <string name="domain_monitor_idle">Sin mirar</string>
+    <string name="domain_monitor_running">Mirando ahora</string>
+    <string name="domain_monitor_hint_idle">Empieza a mirar, sal de Walcott, usa la app un minuto y vuelve aquí. No se registra nada hasta que empieces, y nada se guarda en este móvil.</string>
+    <string name="domain_monitor_hint_running">Ahora abre la app que quieras mirar, úsala un poco y vuelve. Marca los dominios que merezca bloquear y mándalos al móvil del padre.</string>
+    <string name="domain_monitor_start">Empezar a mirar</string>
+    <string name="domain_monitor_stop">Parar y olvidar</string>
+    <string name="domain_monitor_empty">Nada todavía. Abre la app que quieras mirar y vuelve.</string>
+    <string name="domain_monitor_unattributed">No se pudo saber qué app</string>
+    <plurals name="domain_monitor_minutes_left">
+        <item quantity="one">queda %d min</item>
+        <item quantity="other">quedan %d min</item>
+    </plurals>
+    <plurals name="domain_monitor_lookups">
+        <item quantity="one">%d consulta</item>
+        <item quantity="other">%d consultas</item>
+    </plurals>
+    <plurals name="domain_monitor_send">
+        <item quantity="one">Enviar %d dominio al padre</item>
+        <item quantity="other">Enviar %d dominios al padre</item>
+    </plurals>
+    <plurals name="domain_monitor_sent">
+        <item quantity="one">%d dominio enviado. El padre decide si lo bloquea.</item>
+        <item quantity="other">%d dominios enviados. El padre decide si los bloquea.</item>
+    </plurals>
+    <string name="ask_domains_title">%1$s quiere que mires estos dominios</string>
+    <string name="ask_domains_block_app">Bloquear en %1$s</string>
+    <string name="ask_domains_block_all">Bloquear en todo el móvil</string>
+    <string name="domain_monitor_no_tunnel">El filtro DNS no ha podido arrancar, así que no se puede ver nada. Puede que otra app de VPN esté ocupando el sitio en este móvil.</string>
 </resources>

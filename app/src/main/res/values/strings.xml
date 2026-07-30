@@ -854,4 +854,35 @@
     <string name="event_panic_released">%1$s\'s device released itself</string>
     <string name="event_panic_denied">Refused %1$s\'s release request</string>
     <string name="event_panic_cancelled">%1$s\'s release request ended</string>
+    <!-- Domain monitor (child device, parent-driven) -->
+    <string name="domain_monitor_title">See what an app connects to</string>
+    <string name="domain_monitor_nav_subtitle">Watch which domains an app looks up, then send them to be blocked</string>
+    <string name="domain_monitor_idle">Not watching</string>
+    <string name="domain_monitor_running">Watching now</string>
+    <string name="domain_monitor_hint_idle">Start watching, leave Walcott, use the app for a minute, then come back here. Nothing is recorded until you start, and nothing is saved to this phone.</string>
+    <string name="domain_monitor_hint_running">Now open the app you want to look at, use it a little, and come back. Tick the domains worth blocking and send them to the parent phone.</string>
+    <string name="domain_monitor_start">Start watching</string>
+    <string name="domain_monitor_stop">Stop and forget</string>
+    <string name="domain_monitor_empty">Nothing yet. Open the app you want to look at, then come back.</string>
+    <string name="domain_monitor_unattributed">Could not tell which app</string>
+    <plurals name="domain_monitor_minutes_left">
+        <item quantity="one">%d min left</item>
+        <item quantity="other">%d min left</item>
+    </plurals>
+    <plurals name="domain_monitor_lookups">
+        <item quantity="one">%d lookup</item>
+        <item quantity="other">%d lookups</item>
+    </plurals>
+    <plurals name="domain_monitor_send">
+        <item quantity="one">Send %d domain to the parent</item>
+        <item quantity="other">Send %d domains to the parent</item>
+    </plurals>
+    <plurals name="domain_monitor_sent">
+        <item quantity="one">%d domain sent. The parent decides whether to block it.</item>
+        <item quantity="other">%d domains sent. The parent decides whether to block them.</item>
+    </plurals>
+    <string name="ask_domains_title">%1$s wants these domains looked at</string>
+    <string name="ask_domains_block_app">Block in %1$s</string>
+    <string name="ask_domains_block_all">Block everywhere</string>
+    <string name="domain_monitor_no_tunnel">The DNS filter could not start, so nothing can be seen. Another VPN app may be holding the slot on this phone.</string>
 </resources>

@@ -84,6 +84,40 @@ class WalcottViewModel(
     fun askFor(kind: String, text: String) = viewModelScope.launch { sync.askFor(kind, text) }
     fun allowInstallsTemporarily() = viewModelScope.launch { sync.allowInstallsTemporarily() }
 
+    // --- Domain monitor: the child device, driven by a parent holding it ---
+
+    /** Live view of the current look at what apps resolve; see [dev.walcott.net.DomainMonitor]. */
+    val domainMonitor: StateFlow<dev.walcott.net.DomainMonitor.State> = dev.walcott.net.DomainMonitor.state
+
+    /** package -> label for the apps on THIS device, to name what the tunnel attributes. */
+    val installedLabels: StateFlow<Map<String, String>> =
+        flow {
+            emit(
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    repository.inventory.launchableApps().associate { it.packageName to it.label }
+                },
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Whether the DNS tunnel is really up; see [dev.walcott.net.VpnStatus]. */
+    val dnsTunnelUp: StateFlow<Boolean> = dev.walcott.net.VpnStatus.tunnelUp
+
+    fun startDomainMonitor() = dev.walcott.net.DomainMonitor.start()
+
+    fun stopDomainMonitor() = dev.walcott.net.DomainMonitor.stop()
+
+    /**
+     * Hands the chosen domains to the parent as a request — deliberately the only path off this
+     * device. Everything else the monitor saw stays in memory and dies with the session.
+     */
+    fun sendDomainsToParent(packageName: String, label: String, domains: List<String>) = viewModelScope.launch {
+        if (domains.isEmpty()) return@launch
+        sync.askFor(
+            dev.walcott.sync.ChildRequest.KIND_DOMAINS,
+            dev.walcott.sync.DomainAsk.encode(label, packageName, domains),
+        )
+    }
+
     suspend fun becomeParent(familyName: String) = sync.becomeParent(familyName)
     suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)
     fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }

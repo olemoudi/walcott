@@ -75,7 +75,19 @@ class WalcottVpnService : VpnService() {
             .addDnsServer(SENTINEL_DNS)
             .addRoute(SENTINEL_DNS, 32)
         runCatching { builder.addDisallowedApplication(packageName) }
-        tunnel = runCatching { builder.establish() }.getOrNull() ?: run { running = false; return }
+        // A filter that fails to come up must say so: without this the child simply stops
+        // being filtered, and nothing anywhere records that it happened.
+        tunnel = runCatching { builder.establish() }
+            .onFailure { DebugLog.e(TAG, "could not establish the DNS tunnel", it) }
+            .getOrNull()
+            ?: run {
+                DebugLog.w(TAG, "DNS tunnel not established (no VPN consent?); filtering is OFF")
+                running = false
+                VpnStatus.set(false)
+                return
+            }
+        DebugLog.i(TAG, "DNS tunnel established")
+        VpnStatus.set(true)
         scope.launch { runLoop(tunnel!!) }
     }
 
@@ -118,6 +130,10 @@ class WalcottVpnService : VpnService() {
 
         val host = parseDnsQuestion(packet, dnsStart) ?: return forward(packet, dnsStart, srcIp, srcPort, output)
         val pkg = ownerPackage(srcPort)
+        // Both halves are already in hand, so a monitoring session is only a window onto a
+        // decision this loop was making anyway. Recorded before the verdict on purpose: "this
+        // app keeps trying X" is worth seeing even when X is already blocked. No-op otherwise.
+        DomainMonitor.record(host, pkg)
 
         if (DomainFilter.isBlocked(host, pkg, blockedDomains, appRules)) {
             writePacket(output, buildResponse(packet, dnsStart, nxDomain(packet, dnsStart)))
@@ -226,6 +242,7 @@ class WalcottVpnService : VpnService() {
         running = false
         runCatching { tunnel?.close() }
         tunnel = null
+        VpnStatus.set(false)
     }
 
     /**

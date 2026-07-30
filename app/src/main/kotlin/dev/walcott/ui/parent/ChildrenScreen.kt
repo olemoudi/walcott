@@ -61,11 +61,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                     )
                 }
                 items(asks, key = { it.ask.requestId }) { pending ->
-                    AskRequestCard(
-                        pending = pending,
-                        onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
-                        onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
-                    )
+                    AskCard(pending, viewModel)
                 }
             }
 
