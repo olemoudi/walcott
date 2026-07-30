@@ -174,12 +174,15 @@ fun ChildDetailScreen(
             // --- Dashboard: the child's day at a glance, plus their recent events ---
             if (snapshot != null) {
                 item {
-                    // The parent's clock stands in for the child's here (same family, same
-                    // timezone); the time matters because a weekend edge flips the day type
-                    // mid-day, and with it the budget this card reports.
-                    val now = java.time.LocalDateTime.now()
+                    // The child's clock, falling back to the parent's when it doesn't report one.
+                    // Its epochDay and counters are keyed to its own calendar day, and the time
+                    // matters too because a weekend edge flips the day type mid-day, and with it
+                    // the budget this card reports.
+                    val parentNow = java.time.LocalDateTime.now()
+                    val now = dev.walcott.data.ChildStats.localNow(snapshot.tzOffsetMinutes, nowMs, parentNow)
                     val today = now.toLocalDate().toEpochDay()
-                    val reportedToday = snapshot.epochDay == today
+                    val reportedToday = dev.walcott.data.ChildStats
+                        .reportsCurrentDay(snapshot.epochDay, snapshot.tzOffsetMinutes, nowMs, parentNow)
                     val config = remember(settings, childId) {
                         settings.resolveForChild(childId).toFamilyConfig(emptySet())
                     }

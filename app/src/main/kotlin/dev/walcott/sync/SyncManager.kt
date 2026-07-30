@@ -1211,6 +1211,9 @@ class SyncManager(
                     clockSkewMs = s.clockSkewMs,
                     panic = s.panic,
                     domainChunks = DomainDelivery.forPublish(s.domainBatch),
+                    // Which clock `epochDay` and the counters beside it were read by, so the
+                    // parent doesn't date them with its own while one of them is travelling.
+                    tzOffsetMinutes = java.time.OffsetDateTime.now().offset.totalSeconds / 60,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a

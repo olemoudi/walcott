@@ -92,7 +92,7 @@ import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
 import java.time.Duration
-import java.time.LocalDate
+import java.time.LocalDateTime
 
 /**
  * Parent-mode home: the family (list-shaped for future multi-family support) and its
@@ -455,8 +455,12 @@ private fun ChildRow(
     onClick: () -> Unit,
 ) {
     val spacing = Tokens.spacing
-    val today = LocalDate.now().toEpochDay()
-    val usageToday = snapshot?.takeIf { it.epochDay == today }
+    // Dated by the child's clock, not the parent's: a child in another timezone is on another
+    // calendar day, and matched against the parent's its usage would read as zero all day.
+    val usageToday = snapshot
+        ?.takeIf {
+            dev.walcott.data.ChildStats.reportsCurrentDay(it.epochDay, it.tzOffsetMinutes, nowMs, LocalDateTime.now())
+        }
         ?.usage?.sumOf { it.seconds } ?: 0L
     // A quiet child is almost always just a phone at rest (Doze) — say so neutrally, and
     // save the red for silences longer than any benign gap (see Staleness).

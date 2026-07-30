@@ -196,7 +196,8 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * (e.g. waiting_parent), `--ez child_diag true` (a synthesized health report),
      * `--es child_usage "games=1800,video=600"` (today's per-category seconds),
      * `--ei child_history_days N` (a ledger of N past days, for the dashboard average),
-     * `--ez child_feed true` (a handful of activity-feed entries for the wall).
+     * `--ez child_feed true` (a handful of activity-feed entries for the wall),
+     * `--ei child_tz_offset_min N` (a child in another timezone, reporting its own day).
      */
     private suspend fun seedChild(app: WalcottApplication, spec: String, intent: Intent) {
         val (childId, name, appsPart) = spec.split(":", limit = 3).let {
@@ -210,8 +211,19 @@ class PolicySeedReceiver : BroadcastReceiver() {
             val (cat, secs) = it.split("=", limit = 2).let { p -> p[0] to (p.getOrNull(1)?.toLongOrNull() ?: 0L) }
             dev.walcott.sync.UsageEntry(cat, secs)
         } ?: emptyList()
-        val today = java.time.LocalDate.now().toEpochDay()
+        // `--ei child_tz_offset_min N`: pretend this child is in another timezone, so its own
+        // calendar day differs from the parent's and the dashboard can be checked against a
+        // travelling child. Derived independently of ChildStats.localNow — the point is to test
+        // that function, not to agree with it.
+        val tzOffsetMinutes = intent.getIntExtra("child_tz_offset_min", Int.MIN_VALUE)
+            .takeIf { it != Int.MIN_VALUE }
+        val today = tzOffsetMinutes?.let {
+            java.time.LocalDateTime
+                .ofInstant(java.time.Instant.now(), java.time.ZoneOffset.ofTotalSeconds(it * 60))
+                .toLocalDate().toEpochDay()
+        } ?: java.time.LocalDate.now().toEpochDay()
         val snapshot = dev.walcott.sync.ChildSnapshot(
+            tzOffsetMinutes = tzOffsetMinutes,
             deviceId = "dev-$childId",
             displayName = name,
             version = System.currentTimeMillis(),

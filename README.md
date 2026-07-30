@@ -1,18 +1,7 @@
 # Walcott — family parental control for Android
 
-[![CI](https://github.com/olemoudi/walcott/actions/workflows/ci.yml/badge.svg)](https://github.com/olemoudi/walcott/actions/workflows/ci.yml)
-[![coverage](.github/badges/coverage.svg)](https://github.com/olemoudi/walcott/actions/workflows/ci.yml)
-
-A parental control app built for one family, with two things that set it apart from the
-commercial options:
-
-1. **Smart, dynamic rules** — per-category budgets by day type (school / weekend / holiday),
-   bedtime, extra time on request with parent approval, and earned time via rewards.
-2. **Zero recurring cost, minimal setup** — no server, no accounts, no subscriptions:
-   enforcement is 100% local via Device Owner, and (from Phase 2) devices sync over
-   end-to-end-encrypted messages with QR pairing.
-
-## Screenshots
+Screen-time rules for your kids' phones that actually hold: no accounts, no subscriptions,
+no company holding your family's data. Everything runs on your own phones.
 
 <table>
   <tr>
@@ -24,120 +13,128 @@ commercial options:
   </tr>
 </table>
 
-## Web filter (DNS)
+## Download
 
-Walcott can block specific domains at the DNS level via a local `VpnService` (no root). As
-Device Owner it pins the VPN always-on so the child can't disable it; lockdown is off, so
-only DNS is intercepted and normal traffic is untouched. You can also set per-app rules
-("allow this domain only from this app" / "block this domain in this app").
+Point your phone's camera at this code, or tap the link below.
 
-**Limitations, by design:** DNS blocking catches plain DNS lookups. Apps that use their own
-encrypted DNS (DoH/QUIC) or hard-coded IPs — notably the YouTube app and some browsers — can
-bypass it; robust blocking of those needs SNI/full-tunnel inspection (not implemented).
-Per-app attribution is best-effort (`getConnectionOwnerUid`); when a query can't be
-attributed, "allow-only-from-app" rules fail closed. IPv4 DNS only for now.
+<img src="docs/download-qr.png" width="200" alt="QR code linking to the latest Walcott APK">
 
-## Fail-closed by design
+**[github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk](https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk)**
+
+The same app is both the parent app and the child app — you choose which on first launch.
+Android 10 or newer. Once installed, Walcott keeps itself up to date from this same page.
+
+Your phone will warn you that the file comes from outside the Play Store, and Play Protect
+may offer to scan it first — that is normal for any app installed this way.
+
+> **Alpha software.** Walcott is used by its author's family and is offered as-is. Try it on a
+> phone you can afford to factory-reset.
+
+## What it does
+
+**Time limits that understand the week.** Apps are grouped into categories (games, video,
+social…), and each category gets its own daily budget per kind of day: school days, weekends,
+and special days. Bedtime is per kind of day too.
+
+**Special days.** Mark a holiday, a school break, or a birthday, and the rules for that day
+change automatically. A special day can apply to the whole family or to one child only — a
+birthday belongs to whoever's it is.
+
+**Screen-free windows.** Block every app during homework, dinner or class, family-wide or per
+app, on the days you choose.
+
+**Asking for more.** The child can request extra time from their phone; you get a
+notification and approve or deny with one tap. You can also hand out bonus time unprompted.
+
+**Earned time.** Optionally, time spent off the phone during set hours converts into extra
+screen time — putting it down is worth something.
+
+**Per-app rules.** Any single app can have its own budget and its own blocked hours, on top of
+its category's.
+
+**Web filtering.** Block specific domains without root, using a local VPN that only inspects
+DNS. You can see what a child's app is actually contacting and block it from there.
+
+**Where they are.** Optional location, with a recent trail on your map.
+
+**Emergency button.** A way out that doesn't depend on you being reachable — see below.
+
+The app is fully usable in **English** and **Spanish**, following your phone's language.
+
+## Setting it up
+
+**On your phone (the parent):** install, open, choose *Parent mode*, set a PIN. Create a
+child, and Walcott shows you a QR code to pair with.
+
+**On the child's phone:** Walcott has to be installed on a **new or factory-reset phone** —
+that is what lets it hold rules the child can't simply switch off. During the initial Android
+setup wizard, tap the welcome screen six times to open the QR reader, and scan the enrollment
+code. Then open Walcott, scan the pairing QR from your phone, and you're done.
+
+Rules you change on your phone reach theirs within seconds.
+
+**Worth knowing before you start:**
+
+- The child's phone must be set up from scratch. There's no way to convert a phone already in
+  use without wiping it.
+- Walcott is **not compatible with Google Family Link** on the same device — pick one.
+- Set up a backup (Parent mode → settings) as soon as you have rules worth keeping. It is how
+  you recover if your phone is lost or replaced.
+
+## No accounts, no servers of ours
+
+There is no Walcott account and no Walcott server. Your phones talk to each other through a
+public notification relay, and everything they say is **encrypted end-to-end** with a key
+created when you pair — the relay carries sealed envelopes it cannot read, and rule changes
+are signed so only your parent phone can issue them.
+
+Nothing about your family reaches us, because there is no "us" to reach: no analytics, no
+crash reporting, no ads, no telemetry of any kind.
+
+## When the rules can't be trusted, they tighten
 
 Two things the rules depend on can be taken away on the child's phone, and both are answered
-the same way — by blocking everything managed until they come back, so tampering costs the
-child time instead of buying it:
+the same way — by blocking managed apps until they come back, so tampering costs time instead
+of buying it:
 
 - **Usage access**, without which budgets never count down.
-- **The clock**: every rule is a rule about *when*, so a clock moved forward walks past
-  bedtime and hands back a fresh day. Drift is measured against the sync server's timestamps
-  ([`ClockGuard`](core-sync/src/main/kotlin/dev/walcott/sync/ClockGuard.kt)), not trusted from
-  the device, and beyond 15 minutes the rules fail closed. The child's home says so and points
-  at the setting; with automatic time on (a recommended default) it corrects itself as soon as
-  there's a network.
+- **The clock.** Every rule is a rule about *when*, so a clock moved forward would walk past
+  bedtime and hand back a fresh day. Walcott measures the phone's clock against the relay's
+  timestamps instead of trusting it, and past 15 minutes of drift the rules fail closed. The
+  child's home screen says so and points at the setting; with automatic time on it fixes
+  itself as soon as there's a network.
 
 A family with no budgets, windows or bedtime can't be cheated this way, so neither rule locks
-anything on a device nobody was limiting.
+anything on a phone nobody was limiting.
 
-## Emergency release (getting a device back)
+## Getting a phone back
 
-Device Owner is deliberately hard to undo, which raises an obvious question: what happens to
-the child's phone if the parent device dies and the backup is gone with it? Two ways out,
-both of them on the child's phone:
+Walcott is deliberately hard to remove, which raises a fair question: what if the parent's
+phone dies and the backup is gone with it? There are two ways out, both from the child's
+phone:
 
-- **With the parent PIN** — device settings → *Remove Walcott from this device*. Unblocks
-  every app, gives back every device setting, erases the rules and history, drops Device
-  Owner and offers to uninstall. Nothing is left to suggest the device was ever enrolled.
-- **Without the PIN** — the child can request the same release from the bottom of their home
-  screen, and it takes 24 hours of being *loud*: the parents are notified immediately and
-  again every two hours, each alert carrying a one-tap refusal. The phone must keep reaching
-  the family channel the whole time (a connectivity failure when a notice is due cancels it),
-  and the countdown runs on the sync server's clock, so moving the device clock does nothing.
-  A refusal ends the request and blocks new ones for three days.
+- **With the parent PIN** — settings → *Remove Walcott from this device*. Unblocks every app,
+  gives back every setting, erases the rules and history and drops out of management. Nothing
+  is left to suggest the phone was ever enrolled.
+- **Without the PIN** — the child can request the same release from their home screen, and it
+  takes 24 hours of being *loud*: parents are notified immediately and again every two hours,
+  each alert carrying a one-tap refusal. The phone must keep reaching the family channel the
+  whole time, and the countdown runs on the relay's clock, so moving the phone's clock does
+  nothing. A refusal ends the request and blocks new ones for three days.
 
-The child's route is a deliberate trade-off: a determined child can free their phone in 24
-hours, but only by telling their parents a dozen times first — and a factory reset, which
-Walcott deliberately does not block, was always the faster way out anyway.
+That second route is a deliberate trade-off: a determined child can free their phone in a day,
+but only by telling their parents a dozen times first — and a factory reset, which Walcott
+does not block, was always the faster way out anyway.
 
-## Language & localization
+## Honest limitations
 
-All code and comments are in English. All user-facing text is localized: English is the
-default (`app/src/main/res/values/strings.xml`) and Spanish ships in
-`app/src/main/res/values-es/strings.xml`. Keep both files in sync when adding strings.
+- **Web filtering is DNS-based.** It catches ordinary domain lookups. Apps that ship their own
+  encrypted DNS or hard-coded addresses — notably YouTube and some browsers — can get around
+  it. Blocking those properly needs full traffic inspection, which Walcott does not do.
+- Per-app attribution of a domain lookup is best-effort; when a lookup can't be attributed,
+  "only from this app" rules block rather than allow.
+- IPv4 DNS only, for now.
+- Walcott counts foreground app time. It is not a keylogger, a message reader or a screen
+  recorder, and it is not intended to become one.
 
-## Modules
-
-- `:core-rules` — the rule engine: pure Kotlin, deterministic, no Android dependencies.
-  All budget/window/bedtime logic lives here, fully unit-tested.
-- `:app` — the Android app (Compose, minSdk 29). Acts as a DPC (Device Policy Controller):
-  on the child's phone it is provisioned as Device Owner.
-
-## Install the alpha
-
-Download the latest signed APK and sideload it:
-
-**https://github.com/olemoudi/walcott/releases/latest/download/walcott-alpha.apk**
-
-The parent app can also show this as a QR code (Parent mode → *Set up child's phone*) so the
-child just scans it with their camera. The alpha release is signed with the debug key on
-purpose — fine for personal sideloading, not for the Play Store.
-
-## Development (WSL2)
-
-Toolchain installed under `$HOME` (no sudo):
-
-```bash
-export JAVA_HOME=$HOME/.jdks/jdk-17.0.19+10
-export ANDROID_HOME=$HOME/Android/Sdk
-export PATH=$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
-```
-
-Build and test:
-
-```bash
-./gradlew test               # unit tests (core-rules + app)
-./gradlew :app:assembleDebug # APK in app/build/outputs/apk/debug/
-```
-
-## Provisioning a child phone as Device Owner
-
-On a new or factory-reset phone, either:
-
-- **QR / setup wizard**: tap the welcome screen 6 times to open the QR reader (standard MDM
-  enrollment), or
-- **ADB (development)**:
-
-```bash
-adb install app/build/outputs/apk/debug/app-debug.apk
-adb shell dpm set-device-owner dev.walcott/.WalcottAdminReceiver
-adb shell appops set dev.walcott android:get_usage_stats allow
-```
-
-If `set-device-owner` fails with "already some accounts on the device", wait a minute for a
-transient sign-in to clear and retry.
-
-## Releases
-
-Push a tag matching `v*` and GitHub Actions builds `assembleRelease`, runs the tests, and
-publishes the APK as the release asset `walcott-alpha.apk` (the stable name the in-app QR
-points at):
-
-```bash
-git tag v0.1.0-alpha
-git push origin v0.1.0-alpha
-```
+Source is public so anyone can check these claims for themselves.

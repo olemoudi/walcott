@@ -429,6 +429,16 @@ data class ChildSnapshot(
      * legacy child, so an old device can never look like it is asking for one.
      */
     val panic: PanicRequest? = null,
+    /**
+     * The device's UTC offset in minutes when it published (Madrid in winter = 60). [epochDay]
+     * and every counter beside it are keyed to the child's OWN calendar day, which stops being
+     * the parent's the moment either of them flies somewhere: read with the parent's clock, a
+     * travelling child's usage silently reads as zero for up to a day.
+     *
+     * Null on legacy children that don't report it, and the parent falls back to its own clock —
+     * the right answer whenever the family shares a timezone, which is nearly always.
+     */
+    val tzOffsetMinutes: Int? = null,
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */
