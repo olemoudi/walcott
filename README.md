@@ -1,5 +1,8 @@
 # Walcott — family parental control for Android
 
+[![CI](https://github.com/olemoudi/walcott/actions/workflows/ci.yml/badge.svg)](https://github.com/olemoudi/walcott/actions/workflows/ci.yml)
+[![coverage](.github/badges/coverage.svg)](https://github.com/olemoudi/walcott/actions/workflows/ci.yml)
+
 Screen-time rules for your kids' phones that actually hold: no accounts, no subscriptions,
 no company holding your family's data. Everything runs on your own phones.
 
