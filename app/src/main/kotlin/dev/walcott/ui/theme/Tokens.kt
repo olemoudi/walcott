@@ -15,6 +15,8 @@ data class Spacing(
     val xl: Dp = 24.dp,
     val xxl: Dp = 32.dp,
     val screen: Dp = 20.dp,
+    /** Gap between cards of the same connected group (see CardPosition). */
+    val groupGap: Dp = 2.dp,
 )
 
 /**

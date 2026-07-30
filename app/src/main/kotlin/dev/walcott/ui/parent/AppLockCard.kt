@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.ui.BiometricAuth
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 
 /** Parent-mode toggle: require the PIN (and optionally biometrics) to open this app. */
@@ -38,7 +37,7 @@ internal fun AppLockCard(viewModel: WalcottViewModel) {
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val biometricAvailable = remember { BiometricAuth.isAvailable(context) }
 
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(

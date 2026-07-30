@@ -3,6 +3,7 @@ package dev.walcott
 import android.app.Application
 import dev.walcott.data.AppInventory
 import dev.walcott.data.SettingsStore
+import dev.walcott.data.ThemeStore
 import dev.walcott.data.WalcottDatabase
 import dev.walcott.data.WalcottRepository
 import dev.walcott.debug.DebugLog
@@ -35,6 +36,9 @@ class WalcottApplication : Application() {
     /** Exposed for the debug-only test seeder; the app itself goes through [syncManager]. */
     lateinit var syncStore: SyncStore
         private set
+    /** Device-local light/dark preference (see [ThemeStore]). */
+    lateinit var themeStore: ThemeStore
+        private set
 
     private val appScope = CoroutineScope(SupervisorJob())
 
@@ -43,6 +47,7 @@ class WalcottApplication : Application() {
         DebugLog.init(this)
         val settingsStore = SettingsStore(this)
         identityStore = IdentityStore(this)
+        themeStore = ThemeStore(this)
         repository = WalcottRepository(
             db = WalcottDatabase.get(this),
             settingsStore = settingsStore,

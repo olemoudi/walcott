@@ -53,12 +53,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +95,7 @@ import dev.walcott.ui.components.ModeBadge
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.NumberDisplay
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -402,11 +403,7 @@ private fun openAppDetails(context: android.content.Context) {
 private fun ChannelOfflineCard(sinceMs: Long) {
     val spacing = Tokens.spacing
     val since = android.text.format.DateUtils.getRelativeTimeSpanString(sinceMs).toString()
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = MaterialTheme.colorScheme.surfaceVariant) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.CloudOff,
@@ -432,12 +429,7 @@ private fun ChannelOfflineCard(sinceMs: Long) {
 private fun PanicProgressRow(request: dev.walcott.sync.PanicRequest, onOpen: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        onClick = onOpen,
-        shape = RoundedCornerShape(22.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onOpen, color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.LockOpen, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(spacing.md))
@@ -466,12 +458,7 @@ private fun PanicProgressRow(request: dev.walcott.sync.PanicRequest, onOpen: () 
 private fun ClockWrongCard(onFix: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        onClick = onFix,
-        shape = RoundedCornerShape(22.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onFix, color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Schedule, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(spacing.md))
@@ -488,12 +475,7 @@ private fun ClockWrongCard(onFix: () -> Unit) {
 private fun LocationPermissionCard(onFix: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        onClick = onFix,
-        shape = RoundedCornerShape(22.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onFix, color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Filled.LocationOn,
@@ -522,12 +504,7 @@ private fun LocationPermissionCard(onFix: () -> Unit) {
 private fun UsageAccessCard(onFix: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        onClick = onFix,
-        shape = RoundedCornerShape(22.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onFix, color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Filled.Lock,
@@ -571,7 +548,7 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
     else MaterialTheme.colorScheme.surfaceVariant
     val tint = if (positive) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
 
-    Surface(shape = RoundedCornerShape(22.dp), color = container, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(color = container) {
         Row(Modifier.padding(horizontal = spacing.lg, vertical = spacing.md), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 if (positive) Icons.Filled.CheckCircle else Icons.Filled.Lock,
@@ -595,11 +572,7 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
 @Composable
 private fun InstallWindowCard(remainingMs: Long) {
     val spacing = Tokens.spacing
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.InstallMobile,
@@ -631,11 +604,7 @@ private fun InstallWindowCard(remainingMs: Long) {
 @Composable
 private fun WaitingCard(texts: List<String>) {
     val spacing = Tokens.spacing
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = MaterialTheme.colorScheme.surfaceVariant) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.HourglassEmpty,
@@ -658,12 +627,7 @@ private fun WaitingCard(texts: List<String>) {
 @Composable
 private fun PendingInstallCard(pkg: String, onOpen: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(
-        onClick = onOpen,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onOpen, color = MaterialTheme.colorScheme.secondaryContainer) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.InstallMobile,
@@ -692,13 +656,7 @@ private fun PendingInstallCard(pkg: String, onOpen: () -> Unit) {
 @Composable
 private fun RequestTimeCard(onClick: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onClick) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Filled.MoreTime,
@@ -802,13 +760,7 @@ private fun RequestTimeDialog(title: String, onDismiss: () -> Unit, onSend: (Int
 @Composable
 private fun AskCard(onClick: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onClick) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Filled.WavingHand,
@@ -880,12 +832,7 @@ private fun AskDialog(onDismiss: () -> Unit, onSend: (String, String) -> Unit) {
 @Composable
 private fun JoinFamilyCard(onLink: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(
-        onClick = onLink,
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onLink, color = MaterialTheme.colorScheme.primaryContainer) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Filled.QrCodeScanner,
@@ -1054,12 +1001,7 @@ private fun CategoryCard(card: CategoryStatusUi, requestPending: Boolean, onRequ
     val category = card.category
     val status = card.status
 
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(

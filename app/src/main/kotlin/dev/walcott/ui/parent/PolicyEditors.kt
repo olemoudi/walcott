@@ -24,9 +24,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,8 +38,10 @@ import dev.walcott.R
 import dev.walcott.data.WindowDto
 import dev.walcott.rules.DayType
 import dev.walcott.ui.DAY_TYPES
+import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.Stepper
 import dev.walcott.ui.components.TimePickerDialog
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.labelRes
@@ -62,6 +64,7 @@ internal fun BedtimeCard(
     bedtime: Map<String, WindowDto>,
     /** False renders the window as configured but refuses every control — an inherited rule. */
     enabled: Boolean = true,
+    position: CardPosition = CardPosition.Single,
     onChange: (Map<String, WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -82,7 +85,7 @@ internal fun BedtimeCard(
         )
     }
 
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.bedtime_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -135,7 +138,7 @@ internal fun WeekendEdgesCard(startMinute: Int?, endMinute: Int?, onChange: (Int
     val spacing = Tokens.spacing
     var picking by remember { mutableStateOf<WeekendEdge?>(null) }
 
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg).animateContentSize()) {
             Text(stringResource(R.string.weekend_edges_title), style = MaterialTheme.typography.titleMedium)
             Text(
@@ -226,12 +229,13 @@ internal fun BlockedWindowsCard(
     title: String?,
     hint: String,
     windows: List<WindowDto>,
+    position: CardPosition = CardPosition.Single,
     onChange: (List<WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
     var editing by remember { mutableStateOf<WindowEdit?>(null) }
 
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg).animateContentSize()) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -424,6 +428,7 @@ internal fun CategoryBudgetCard(
     perDay: Map<String, Int>,
     /** False still expands to show the numbers; it only refuses to change them. */
     enabled: Boolean = true,
+    position: CardPosition = CardPosition.Single,
     onSetBudget: (DayType, Int?) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -432,7 +437,7 @@ internal fun CategoryBudgetCard(
     val summary = if (limitedDays == 0) stringResource(R.string.no_limit)
     else pluralStringResource(R.plurals.days_with_limit, limitedDays, limitedDays)
 
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.animateContentSize().clickable { expanded = !expanded }.padding(spacing.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {

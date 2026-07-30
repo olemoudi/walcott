@@ -10,18 +10,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -29,10 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
-import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.ChildSnapshot
-import dev.walcott.sync.SyncManager
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.SectionHeader
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
@@ -52,7 +49,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            item { Text(stringResource(R.string.pending_requests), style = MaterialTheme.typography.titleMedium) }
+            item { SectionHeader(stringResource(R.string.pending_requests)) }
             if (requests.isEmpty() && asks.isEmpty()) {
                 item { Text(stringResource(R.string.no_requests), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
@@ -72,13 +69,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
 
-            item {
-                Text(
-                    stringResource(R.string.usage_today),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = spacing.sm),
-                )
-            }
+            item { SectionHeader(stringResource(R.string.usage_today)) }
             if (children.isEmpty()) {
                 item { Text(stringResource(R.string.no_children), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
@@ -103,7 +94,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 @Composable
 private fun ChildUsageCard(child: ChildSnapshot, onGiveBonus: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
             Text(child.displayName, style = MaterialTheme.typography.titleMedium)
             if (child.usage.isEmpty()) {

@@ -5,15 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,12 +17,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.CardGroup
+import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.theme.Tokens
 
 private data class RestrictionUi(val key: String, val titleRes: Int, val descRes: Int)
@@ -81,14 +80,19 @@ fun DeviceProtectionScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            items(RESTRICTIONS, key = { it.key }) { restriction ->
-                RestrictionRow(
-                    title = stringResource(restriction.titleRes),
-                    description = stringResource(restriction.descRes),
-                    checked = restriction.key in enabledKeys,
-                    enabled = editable,
-                    onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on, childId) },
-                )
+            item {
+                CardGroup {
+                    RESTRICTIONS.forEachIndexed { index, restriction ->
+                        RestrictionRow(
+                            title = stringResource(restriction.titleRes),
+                            description = stringResource(restriction.descRes),
+                            checked = restriction.key in enabledKeys,
+                            enabled = editable,
+                            position = cardPosition(index, RESTRICTIONS.size),
+                            onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on, childId) },
+                        )
+                    }
+                }
             }
             // Family-wide alert (not a per-child override), most useful when installs aren't blocked.
             if (childId == null && DeviceRestrictions.KEY_INSTALLS !in enabledKeys) {
@@ -113,9 +117,10 @@ private fun RestrictionRow(
     checked: Boolean,
     onToggle: (Boolean) -> Unit,
     enabled: Boolean = true,
+    position: CardPosition = CardPosition.Single,
 ) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)

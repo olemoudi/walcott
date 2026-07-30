@@ -25,16 +25,15 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +48,7 @@ import dev.walcott.sync.SyncManager
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -155,11 +155,7 @@ private fun blockedReason(status: SyncManager.PanicStatus, nowMs: Long): String?
 private fun IntroCard() {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = color.copy(alpha = 0.10f),
-        modifier = Modifier.fillMaxWidth().padding(top = spacing.sm),
-    ) {
+    WalcottCard(color = color.copy(alpha = 0.10f), modifier = Modifier.padding(top = spacing.sm)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.LockOpen, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(spacing.md))
@@ -178,7 +174,7 @@ private fun IntroCard() {
 @Composable
 private fun HowItWorksCard() {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             Text(stringResource(R.string.panic_how_title), style = MaterialTheme.typography.titleSmall)
             listOf(
@@ -207,11 +203,7 @@ private fun ActiveRequestCard(status: SyncManager.PanicStatus, nowMs: Long) {
     val leftSec = (remaining - 1).coerceAtLeast(0) * PanicProtocol.CHECKPOINT_INTERVAL_SEC + nextSec
     val progress by animateFloatAsState(PanicProtocol.progress(request), tween(Tokens.motion.medium), label = "panic")
 
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = MaterialTheme.colorScheme.primaryContainer) {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             Text(
                 stringResource(R.string.panic_active_title),

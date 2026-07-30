@@ -8,8 +8,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -36,7 +33,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,10 +45,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -70,7 +66,6 @@ import dev.walcott.data.withBudget
 import dev.walcott.provisioning.DeviceOwnerProvisioning
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.ClockGuard
-import dev.walcott.sync.DiagPayload
 import dev.walcott.sync.EnforcementStatus
 import dev.walcott.sync.PairingPayload
 import dev.walcott.sync.PanicProtocol
@@ -79,6 +74,11 @@ import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Role
 import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.CardGroup
+import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.SectionHeader
+import dev.walcott.ui.components.WalcottCard
+import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.qr.rememberQrBitmap
 import dev.walcott.ui.theme.Tokens
@@ -247,28 +247,41 @@ fun ChildDetailScreen(
 
             // --- Stats ---
             if (snapshot != null) {
-                item { UsageTodayCard(snapshot, onGiveBonus = { showBonus = true }) }
-                if (snapshot.history.isNotEmpty()) {
-                    item { HistoryCard(snapshot) }
+                item { SectionHeader(stringResource(R.string.child_section_activity)) }
+                item {
+                    CardGroup {
+                        val hasHistory = snapshot.history.isNotEmpty()
+                        UsageTodayCard(
+                            snapshot,
+                            position = if (hasHistory) CardPosition.First else CardPosition.Single,
+                            onGiveBonus = { showBonus = true },
+                        )
+                        if (hasHistory) {
+                            HistoryCard(snapshot, position = CardPosition.Last)
+                        }
+                    }
                 }
             }
 
             // --- Remote fixes (only meaningful once a device is actually linked) ---
             if (snapshot != null) {
+                item { SectionHeader(stringResource(R.string.child_section_device)) }
                 item {
-                    RemoteFixCard(
-                        snapshot = snapshot,
-                        onCommand = { action -> viewModel.sendRemoteCommand(snapshot.deviceId, action) },
-                    )
-                }
-                item {
-                    LiveHealthCard(
-                        snapshot = snapshot,
-                        lastSeenMs = lastSeen[snapshot.deviceId] ?: 0L,
-                        nowMs = nowMs,
-                        reportCount = diagHistory[snapshot.deviceId]?.size ?: 0,
-                        onOpenReports = onOpenHealthReports,
-                    )
+                    CardGroup {
+                        RemoteFixCard(
+                            snapshot = snapshot,
+                            position = CardPosition.First,
+                            onCommand = { action -> viewModel.sendRemoteCommand(snapshot.deviceId, action) },
+                        )
+                        LiveHealthCard(
+                            snapshot = snapshot,
+                            lastSeenMs = lastSeen[snapshot.deviceId] ?: 0L,
+                            nowMs = nowMs,
+                            reportCount = diagHistory[snapshot.deviceId]?.size ?: 0,
+                            position = CardPosition.Last,
+                            onOpenReports = onOpenHealthReports,
+                        )
+                    }
                 }
             }
 
@@ -302,66 +315,65 @@ fun ChildDetailScreen(
 
             // --- Per-child overrides ---
             item {
-                Column {
-                    Text(
-                        stringResource(R.string.override_section_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = spacing.sm),
+                SectionHeader(
+                    stringResource(R.string.override_section_title),
+                    supporting = stringResource(R.string.override_inherited_hint),
+                )
+            }
+            // Each override is a connected pair: the switch that owns the rule on top, the
+            // rule itself (always rendered, refused while inherited) attached below it.
+            item {
+                CardGroup {
+                    OverrideSwitchRow(
+                        title = stringResource(R.string.override_bedtime_title),
+                        checked = entry.overrides.bedtime != null,
+                        position = CardPosition.First,
+                        onToggle = { on ->
+                            viewModel.setChildOverrides(
+                                childId,
+                                entry.overrides.copy(bedtime = if (on) settings.bedtime else null),
+                            )
+                        },
                     )
-                    Text(
-                        stringResource(R.string.override_inherited_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    BedtimeCard(
+                        bedtime = entry.overrides.bedtime ?: settings.bedtime,
+                        enabled = entry.overrides.bedtime != null,
+                        position = CardPosition.Last,
+                    ) { updated ->
+                        viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
+                    }
                 }
             }
             item {
-                OverrideSwitchRow(
-                    title = stringResource(R.string.override_bedtime_title),
-                    checked = entry.overrides.bedtime != null,
-                    onToggle = { on ->
-                        viewModel.setChildOverrides(
-                            childId,
-                            entry.overrides.copy(bedtime = if (on) settings.bedtime else null),
+                val categories = AppCategory.entries.toList()
+                CardGroup {
+                    OverrideSwitchRow(
+                        title = stringResource(R.string.override_budgets_title),
+                        checked = entry.overrides.budgets != null,
+                        position = CardPosition.First,
+                        onToggle = { on ->
+                            viewModel.setChildOverrides(
+                                childId,
+                                entry.overrides.copy(budgets = if (on) settings.budgets else null),
+                            )
+                        },
+                    )
+                    categories.forEachIndexed { index, category ->
+                        val budgets = entry.overrides.budgets ?: settings.budgets
+                        CategoryBudgetCard(
+                            category = category,
+                            perDay = budgets[category.id].orEmpty(),
+                            enabled = entry.overrides.budgets != null,
+                            position = cardPosition(index + 1, categories.size + 1),
+                            onSetBudget = { dayType, minutes ->
+                                viewModel.setChildOverrides(
+                                    childId,
+                                    entry.overrides.copy(budgets = budgets.withBudget(category.id, dayType.name, minutes)),
+                                )
+                            },
                         )
-                    },
-                )
-            }
-            // Always rendered: inheriting shows the family's own bedtime, exactly as this child
-            // gets it, with every control refused. The switch above is what opens it for editing.
-            item {
-                BedtimeCard(
-                    bedtime = entry.overrides.bedtime ?: settings.bedtime,
-                    enabled = entry.overrides.bedtime != null,
-                ) { updated ->
-                    viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
+                    }
                 }
-            }
-            item {
-                OverrideSwitchRow(
-                    title = stringResource(R.string.override_budgets_title),
-                    checked = entry.overrides.budgets != null,
-                    onToggle = { on ->
-                        viewModel.setChildOverrides(
-                            childId,
-                            entry.overrides.copy(budgets = if (on) settings.budgets else null),
-                        )
-                    },
-                )
-            }
-            items(AppCategory.entries.toList(), key = { it.id }) { category ->
-                val budgets = entry.overrides.budgets ?: settings.budgets
-                CategoryBudgetCard(
-                    category = category,
-                    perDay = budgets[category.id].orEmpty(),
-                    enabled = entry.overrides.budgets != null,
-                    onSetBudget = { dayType, minutes ->
-                        viewModel.setChildOverrides(
-                            childId,
-                            entry.overrides.copy(budgets = budgets.withBudget(category.id, dayType.name, minutes)),
-                        )
-                    },
-                )
             }
             item {
                 OverrideSwitchRow(
@@ -557,7 +569,7 @@ private fun EnrollInstallStep(mode: EnrollMode) {
 @Composable
 private fun LinkedCard(snapshot: ChildSnapshot, rulesSyncing: Boolean, onShowCode: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Filled.CheckCircle,
@@ -634,7 +646,7 @@ private fun ChildDashboardCard(
     nowMs: Long,
 ) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
             Row(Modifier.fillMaxWidth()) {
                 StatTile(
@@ -676,9 +688,9 @@ private fun StatTile(value: String, label: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun UsageTodayCard(snapshot: ChildSnapshot, onGiveBonus: () -> Unit) {
+private fun UsageTodayCard(snapshot: ChildSnapshot, position: CardPosition = CardPosition.Single, onGiveBonus: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.usage_today), style = MaterialTheme.typography.titleMedium)
             if (snapshot.usage.isEmpty()) {
@@ -706,11 +718,11 @@ private fun UsageTodayCard(snapshot: ChildSnapshot, onGiveBonus: () -> Unit) {
 }
 
 @Composable
-private fun HistoryCard(snapshot: ChildSnapshot) {
+private fun HistoryCard(snapshot: ChildSnapshot, position: CardPosition = CardPosition.Single) {
     val spacing = Tokens.spacing
     val formatter = remember { DateTimeFormatter.ofPattern("EEE d", Locale.getDefault()) }
     val days = snapshot.history.sortedByDescending { it.epochDay }.take(7)
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.last_7_days), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider(Modifier.padding(vertical = spacing.sm))
@@ -741,11 +753,7 @@ private fun EnforcementWarningCard(status: String) {
     val text = stringResource(
         if (accessibility) R.string.enforcement_accessibility_child else R.string.enforcement_none_child,
     )
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
@@ -758,11 +766,7 @@ private fun EnforcementWarningCard(status: String) {
 private fun UsageAccessWarningCard() {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
@@ -776,11 +780,7 @@ private fun UsageAccessWarningCard() {
 private fun EnforcementGapCard(count: Int) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
@@ -806,11 +806,7 @@ private fun PanicRequestCard(request: PanicRequest, onDeny: () -> Unit) {
     val hoursLeft = (remaining * PanicProtocol.CHECKPOINT_INTERVAL_SEC / 3600).toInt()
     var confirming by remember { mutableStateOf(false) }
 
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
@@ -868,11 +864,7 @@ private fun ClockTamperCard(skewMs: Long) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
@@ -889,11 +881,7 @@ private fun ClockTamperCard(skewMs: Long) {
 private fun WrongPinCard(total: Int, lastAttemptMs: Long) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
@@ -928,7 +916,7 @@ private fun WrongPinCard(total: Int, lastAttemptMs: Long) {
  * raises a guided notification there rather than pretending to fix them from here.
  */
 @Composable
-private fun RemoteFixCard(snapshot: ChildSnapshot, onCommand: (String) -> Unit) {
+private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = CardPosition.Single, onCommand: (String) -> Unit) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
     // Local echo: the child only acknowledges on its next check-in, so without this the
@@ -941,7 +929,7 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, onCommand: (String) -> Unit) 
     // Deliberately waiting for the canary (this phone) is not a failure — don't paint it red.
     val waitingForParent = snapshot.updateError == "waiting_parent"
 
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.remote_fix_section), style = MaterialTheme.typography.titleMedium)
             Text(
@@ -1086,10 +1074,11 @@ private fun LiveHealthCard(
     lastSeenMs: Long,
     nowMs: Long,
     reportCount: Int,
+    position: CardPosition = CardPosition.Single,
     onOpenReports: () -> Unit,
 ) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.health_section), style = MaterialTheme.typography.titleMedium)
             Text(
@@ -1198,7 +1187,7 @@ private fun LocationCard(
     onOpenMap: () -> Unit,
 ) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.location_section_title), style = MaterialTheme.typography.titleMedium)
             // Children inherit the family's location defaults; the switch snapshots them
@@ -1290,7 +1279,7 @@ private fun UpdateWifiOverrideCard(
     val spacing = Tokens.spacing
     val customized = override != null
     val value = override ?: familyValue
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1337,9 +1326,10 @@ private fun OverrideSwitchRow(
     onEdit: (() -> Unit)? = null,
     /** Whether [onEdit] opens the rules to change them, or just to look at what is inherited. */
     editable: Boolean = checked,
+    position: CardPosition = CardPosition.Single,
 ) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Row(Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)

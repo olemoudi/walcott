@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import dev.walcott.data.ThemeMode
 
 private val WalcottTypography = Typography().run {
     copy(
@@ -24,6 +25,14 @@ private val WalcottTypography = Typography().run {
 
 /** Large display figures for the time counters. */
 val NumberDisplay = TextStyle(fontWeight = FontWeight.Bold, fontSize = 44.sp, letterSpacing = (-1).sp)
+
+/** Whether this preference renders dark right now (SYSTEM follows the device). */
+@Composable
+fun ThemeMode.resolvesToDark(): Boolean = when (this) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
 
 @Composable
 fun WalcottTheme(

@@ -20,10 +20,12 @@ import kotlinx.coroutines.launch
 import dev.walcott.enforcement.Enforcer
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.sync.SyncNotifications
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.ui.WalcottApp
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.update.UpdateWorker
 import dev.walcott.ui.theme.WalcottTheme
+import dev.walcott.ui.theme.resolvesToDark
 
 class MainActivity : ComponentActivity() {
 
@@ -51,7 +53,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            WalcottTheme {
+            val themeMode by app.themeStore.mode.collectAsStateWithLifecycle(
+                initialValue = dev.walcott.data.ThemeMode.SYSTEM,
+            )
+            WalcottTheme(darkTheme = themeMode.resolvesToDark()) {
                 val vm: WalcottViewModel = viewModel(
                     factory = WalcottViewModel.Factory(app.repository, app.syncManager),
                 )

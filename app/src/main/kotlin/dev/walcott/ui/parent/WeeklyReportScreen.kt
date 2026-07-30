@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +31,7 @@ import dev.walcott.sync.DeviceMode
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import java.time.Duration
 import java.time.LocalDate
@@ -68,7 +68,7 @@ fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 return@Column
             }
 
-            Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            WalcottCard {
                 Row(
                     Modifier.fillMaxWidth().height(180.dp).padding(spacing.lg),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),

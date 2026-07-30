@@ -4,19 +4,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -24,13 +20,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -39,7 +34,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppIcon
+import dev.walcott.ui.components.CardGroup
+import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.SectionHeader
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.theme.Tokens
 
 /** Web filter editor; with a [childId] it edits that child's blocked-domain override. */
@@ -90,7 +90,7 @@ fun WebFilterScreen(
                 )
             }
 
-            item { Text(stringResource(R.string.webfilter_blocked_domains), style = MaterialTheme.typography.titleMedium) }
+            item { SectionHeader(stringResource(R.string.webfilter_blocked_domains)) }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     OutlinedTextField(
@@ -110,11 +110,17 @@ fun WebFilterScreen(
             if (blockedDomains.isEmpty()) {
                 item { Text(stringResource(R.string.webfilter_empty_domains), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            items(blockedDomains.sorted(), key = { it }) { domain ->
-                DeletableRow(
-                    domain,
-                    onDelete = if (editable) ({ viewModel.removeBlockedDomain(domain, childId) }) else null,
-                )
+            item {
+                val sorted = blockedDomains.sorted()
+                CardGroup {
+                    sorted.forEachIndexed { index, domain ->
+                        DeletableRow(
+                            domain,
+                            position = cardPosition(index, sorted.size),
+                            onDelete = if (editable) ({ viewModel.removeBlockedDomain(domain, childId) }) else null,
+                        )
+                    }
+                }
             }
 
             // Per-app domain rules aren't part of the per-child overrides; in child scope
@@ -130,21 +136,24 @@ fun WebFilterScreen(
                 }
             }
             if (childId == null) item {
-                Text(
-                    stringResource(R.string.webfilter_advanced),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = spacing.md),
-                )
+                SectionHeader(stringResource(R.string.webfilter_advanced))
             }
             if (childId == null) {
-                itemsIndexed(settings.domainAppRules) { index, rule ->
-                    val appLabel = labelOf[rule.packageName] ?: rule.packageName
-                    val text = if (rule.allowOnlyFromApp) {
-                        stringResource(R.string.webfilter_rule_allow_only, rule.domain, appLabel)
-                    } else {
-                        stringResource(R.string.webfilter_rule_block_in, rule.domain, appLabel)
+                item {
+                    CardGroup {
+                        settings.domainAppRules.forEachIndexed { index, rule ->
+                            val appLabel = labelOf[rule.packageName] ?: rule.packageName
+                            val text = if (rule.allowOnlyFromApp) {
+                                stringResource(R.string.webfilter_rule_allow_only, rule.domain, appLabel)
+                            } else {
+                                stringResource(R.string.webfilter_rule_block_in, rule.domain, appLabel)
+                            }
+                            DeletableRow(
+                                text,
+                                position = cardPosition(index, settings.domainAppRules.size),
+                            ) { viewModel.removeDomainAppRule(index) }
+                        }
                     }
-                    DeletableRow(text, onDelete = { viewModel.removeDomainAppRule(index) })
                 }
             }
             if (childId == null) item {
@@ -181,8 +190,8 @@ fun WebFilterScreen(
 }
 
 @Composable
-private fun DeletableRow(label: String, onDelete: (() -> Unit)?) {
-    Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+private fun DeletableRow(label: String, position: CardPosition = CardPosition.Single, onDelete: (() -> Unit)?) {
+    WalcottCard(position = position) {
         Row(Modifier.padding(start = Tokens.spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Text(label, Modifier.weight(1f))
             // Null while the entry is inherited: it is shown, not owned by this child.
@@ -205,7 +214,7 @@ private fun AddRuleCard(
     onAdd: () -> Unit,
 ) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             OutlinedTextField(
                 value = domain,

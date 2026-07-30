@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.CheckCircle
@@ -25,7 +24,6 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -42,6 +40,7 @@ import dev.walcott.sync.ParentEvent
 import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import java.time.Duration
 
@@ -72,14 +71,7 @@ internal fun EventRow(event: ParentEvent, childName: String, nowMs: Long, onClic
     val (icon, tint) = eventBadge(event)
     val age = DateUtils.getRelativeTimeSpanString(event.atMs, nowMs, DateUtils.MINUTE_IN_MILLIS).toString()
 
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick ?: {},
-        enabled = onClick != null,
-    ) {
+    WalcottCard(onClick = onClick ?: {}, enabled = onClick != null) {
         Row(
             Modifier.padding(horizontal = Tokens.spacing.lg, vertical = Tokens.spacing.md),
             verticalAlignment = Alignment.CenterVertically,

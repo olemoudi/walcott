@@ -10,7 +10,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
@@ -19,27 +18,30 @@ import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.WalcottApplication
 import dev.walcott.data.PinResult
+import dev.walcott.data.ThemeMode
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.NavCard
+import dev.walcott.ui.components.SectionHeader
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
@@ -78,7 +80,10 @@ fun AppSettingsScreen(
                 .padding(bottom = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
+            SectionHeader(stringResource(R.string.app_settings_section_appearance))
+            ThemeCard()
             if (!childDevice) {
+                SectionHeader(stringResource(R.string.app_settings_section_security))
                 AppLockCard(viewModel)
             }
             // The family's disaster recovery lives on the parent, whose keys are the family.
@@ -89,6 +94,7 @@ fun AppSettingsScreen(
                 ParentPinCard(viewModel)
                 FamilyBackupCard(viewModel)
             }
+            SectionHeader(stringResource(R.string.app_settings_section_updates))
             AppUpdateCard(deviceOwner)
             // Wi-Fi-only updates: a family policy, so it's only editable on the parent.
             if (!childDevice) {
@@ -98,6 +104,7 @@ fun AppSettingsScreen(
                     onToggle = { viewModel.setUpdateWifiOnly(it) },
                 )
             }
+            SectionHeader(stringResource(R.string.app_settings_section_device))
             NavCard(
                 Icons.Outlined.BugReport,
                 stringResource(R.string.nav_debug_title),
@@ -199,12 +206,7 @@ fun AppSettingsScreen(
 private fun DangerCard(title: String, description: String, onClick: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = color.copy(alpha = 0.10f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onClick, color = color.copy(alpha = 0.10f)) {
         Column(Modifier.padding(spacing.lg)) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = color)
             Text(description, style = MaterialTheme.typography.bodySmall, color = color)
@@ -275,7 +277,7 @@ private fun PinConfirmDialog(
 @Composable
 private fun UpdateWifiOnlyCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.update_wifi_only_title), style = MaterialTheme.typography.titleSmall)
@@ -287,6 +289,42 @@ private fun UpdateWifiOnlyCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
             }
             Spacer(Modifier.width(spacing.sm))
             Switch(checked = enabled, onCheckedChange = onToggle)
+        }
+    }
+}
+
+/**
+ * Manual light/dark choice, stored on this device only — a display preference, not policy,
+ * so it never syncs to the family.
+ */
+@Composable
+private fun ThemeCard() {
+    val spacing = Tokens.spacing
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val themeStore = (context.applicationContext as WalcottApplication).themeStore
+    val mode by themeStore.mode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+    val scope = rememberCoroutineScope()
+    WalcottCard {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(stringResource(R.string.theme_title), style = MaterialTheme.typography.titleSmall)
+            Row(
+                Modifier.padding(top = spacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                ThemeMode.entries.forEach { candidate ->
+                    ChoiceChip(
+                        selected = mode == candidate,
+                        onClick = { scope.launch { themeStore.setMode(candidate) } },
+                        label = stringResource(
+                            when (candidate) {
+                                ThemeMode.SYSTEM -> R.string.theme_system
+                                ThemeMode.LIGHT -> R.string.theme_light
+                                ThemeMode.DARK -> R.string.theme_dark
+                            },
+                        ),
+                    )
+                }
+            }
         }
     }
 }

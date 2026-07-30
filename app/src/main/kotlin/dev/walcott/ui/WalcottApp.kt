@@ -11,6 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -81,7 +82,7 @@ fun WalcottApp(
     // don't flash the mode selector.
     val loadedMode = bootMode
     if (loadedMode == null) {
-        Surface(Modifier.fillMaxSize()) {}
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
         return
     }
 
@@ -166,7 +167,7 @@ fun WalcottApp(
     }
 
     if (appLockOn && !unlocked) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().systemBarsPadding()) {
                 AppLockScreen(viewModel, onUnlocked = { unlocked = true })
             }
@@ -205,7 +206,7 @@ fun WalcottApp(
     val isHome = screen == Screen.MODE_SELECT || screen == Screen.CHILD || screen == Screen.FAMILIES
     BackHandler(enabled = !isHome) { back() }
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().systemBarsPadding()) {
             AnimatedContent(
                 targetState = screen,

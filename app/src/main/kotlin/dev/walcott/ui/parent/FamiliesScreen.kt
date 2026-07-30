@@ -49,12 +49,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,8 +80,13 @@ import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Staleness
 import dev.walcott.sync.SyncEngine
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.CardGroup
+import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.ModeBadge
 import dev.walcott.ui.components.PermissionFixRow
+import dev.walcott.ui.components.SectionHeader
+import dev.walcott.ui.components.WalcottCard
+import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
@@ -209,13 +214,7 @@ fun FamiliesScreen(
         // Pending child requests, actionable right from the home (they also arrive as a
         // parent notification). Approving/denying here resolves them immediately.
         if (requests.isNotEmpty() || asks.isNotEmpty()) {
-            item {
-                Text(
-                    stringResource(R.string.pending_requests),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = spacing.sm),
-                )
-            }
+            item { SectionHeader(stringResource(R.string.pending_requests)) }
             items(requests, key = { "req-" + it.request.requestId }) { pending ->
                 // animateItem: resolved requests slide out instead of popping (and new ones in).
                 Box(Modifier.animateItem()) {
@@ -242,14 +241,10 @@ fun FamiliesScreen(
         // doesn't re-send blindly, and cancellable while still queued.
         if (pendingOps.isNotEmpty()) {
             item {
-                Column(Modifier.padding(top = spacing.sm)) {
-                    Text(stringResource(R.string.pending_ops_title), style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        stringResource(R.string.pending_ops_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                SectionHeader(
+                    stringResource(R.string.pending_ops_title),
+                    supporting = stringResource(R.string.pending_ops_hint),
+                )
             }
             items(pendingOps, key = { "op-" + it.deviceId + it.action + it.arg + it.sentAtMs }) { op ->
                 Box(Modifier.animateItem()) {
@@ -310,13 +305,7 @@ fun FamiliesScreen(
             }
         }
 
-        item {
-            Text(
-                stringResource(R.string.children_section),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = spacing.sm),
-            )
-        }
+        item { SectionHeader(stringResource(R.string.children_section)) }
         if (settings.children.isEmpty()) {
             item {
                 Text(
@@ -326,16 +315,21 @@ fun FamiliesScreen(
                 )
             }
         }
-        items(settings.children, key = { it.childId }) { entry ->
-            val snapshot = snapshots.firstOrNull { it.childId == entry.childId }
-            ChildRow(
-                entry = entry,
-                snapshot = snapshot,
-                lastSeenMs = snapshot?.let { lastSeen[it.deviceId] },
-                nowMs = nowMs,
-                parentVersion = parentVersion,
-                onClick = { onOpenChild(entry.childId) },
-            )
+        item {
+            CardGroup {
+                settings.children.forEachIndexed { index, entry ->
+                    val snapshot = snapshots.firstOrNull { it.childId == entry.childId }
+                    ChildRow(
+                        entry = entry,
+                        snapshot = snapshot,
+                        lastSeenMs = snapshot?.let { lastSeen[it.deviceId] },
+                        nowMs = nowMs,
+                        parentVersion = parentVersion,
+                        position = cardPosition(index, settings.children.size),
+                        onClick = { onOpenChild(entry.childId) },
+                    )
+                }
+            }
         }
         item {
             OutlinedButton(onClick = { showAddChild = true }, modifier = Modifier.fillMaxWidth()) {
@@ -346,15 +340,17 @@ fun FamiliesScreen(
         }
 
         if (legacyDevices.isNotEmpty()) {
+            item { SectionHeader(stringResource(R.string.legacy_devices_header)) }
             item {
-                Text(
-                    stringResource(R.string.legacy_devices_header),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = spacing.sm),
-                )
-            }
-            items(legacyDevices, key = { it.deviceId }) { device ->
-                LegacyDeviceRow(device, onRemove = { removingDevice = device })
+                CardGroup {
+                    legacyDevices.forEachIndexed { index, device ->
+                        LegacyDeviceRow(
+                            device,
+                            position = cardPosition(index, legacyDevices.size),
+                            onRemove = { removingDevice = device },
+                        )
+                    }
+                }
             }
         }
 
@@ -442,6 +438,7 @@ private fun ChildRow(
     lastSeenMs: Long?,
     nowMs: Long,
     parentVersion: Long,
+    position: CardPosition = CardPosition.Single,
     onClick: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -452,13 +449,7 @@ private fun ChildRow(
     // save the red for silences longer than any benign gap (see Staleness).
     val tier = if (snapshot == null) Staleness.Tier.FRESH else Staleness.tierOf(lastSeenMs, nowMs)
 
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onClick, position = position) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.Face,
@@ -521,11 +512,7 @@ private fun RecentActivityCard(
     onSeeAll: () -> Unit,
 ) {
     val spacing = Tokens.spacing
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth().padding(top = spacing.sm),
-    ) {
+    WalcottCard(modifier = Modifier.padding(top = spacing.sm)) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.timeline_title), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(spacing.sm))
@@ -547,12 +534,7 @@ private fun PanicHomeRow(childName: String, request: PanicRequest, onOpen: () ->
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
     val hoursLeft = (PanicProtocol.remainingCheckpoints(request) * PanicProtocol.CHECKPOINT_INTERVAL_SEC / 3600).toInt()
-    Surface(
-        onClick = onOpen,
-        shape = RoundedCornerShape(22.dp),
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onOpen, color = color.copy(alpha = 0.12f)) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(spacing.md))
@@ -579,12 +561,7 @@ private fun PanicHomeRow(childName: String, request: PanicRequest, onOpen: () ->
 @Composable
 private fun GuidedSetupCard(onClick: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(onClick = onClick, color = MaterialTheme.colorScheme.primaryContainer) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.AutoFixHigh,
@@ -619,11 +596,7 @@ private data class SetupStep(val label: String, val done: Boolean, val onClick: 
 @Composable
 private fun SetupChecklistCard(steps: List<SetupStep>) {
     val spacing = Tokens.spacing
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {
         Column(Modifier.padding(spacing.lg)) {
             Text(
                 stringResource(R.string.setup_title),
@@ -729,14 +702,9 @@ private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
 }
 
 @Composable
-private fun LegacyDeviceRow(device: ChildSnapshot, onRemove: () -> Unit) {
+private fun LegacyDeviceRow(device: ChildSnapshot, position: CardPosition = CardPosition.Single, onRemove: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard(position = position) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.PhoneAndroid,
@@ -796,12 +764,7 @@ private fun PendingOpRow(
     }
     val age = Duration.ofMillis((nowMs - op.sentAtMs).coerceAtLeast(0)).humanize()
 
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    WalcottCard {
         Row(
             Modifier.padding(horizontal = spacing.lg, vertical = spacing.md),
             verticalAlignment = Alignment.CenterVertically,

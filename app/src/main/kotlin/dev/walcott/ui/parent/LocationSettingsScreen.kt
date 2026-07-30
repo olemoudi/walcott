@@ -10,11 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,12 +19,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.CustomValueChip
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
 
@@ -52,7 +49,7 @@ fun LocationSettingsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            WalcottCard {
                 Column(Modifier.padding(spacing.lg)) {
                     Text(stringResource(R.string.tracking_periodic_title), style = MaterialTheme.typography.titleSmall)
                     TrackingIntervalChips(

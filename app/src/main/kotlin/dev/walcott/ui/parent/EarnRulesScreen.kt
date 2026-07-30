@@ -12,16 +12,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -34,8 +33,11 @@ import dev.walcott.data.WindowDto
 import dev.walcott.rules.DayType
 import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.CardGroup
+import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.Stepper
 import dev.walcott.ui.components.TimePickerDialog
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.labelRes
@@ -69,7 +71,7 @@ fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 )
             }
             item {
-                Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                WalcottCard {
                     Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.earn_enable), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                         Switch(
@@ -80,10 +82,14 @@ fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
             if (cfg != null) {
-                item { RateCard(cfg, onChange = viewModel::setIdleEarn) }
-                item { CapsCard(cfg, onChange = viewModel::setIdleEarn) }
-                item { TargetCard(cfg, onChange = viewModel::setIdleEarn) }
-                item { EarnWindowsCard(cfg, onSetWindow = { d, w -> viewModel.setEarnWindow(d, w) }) }
+                item {
+                    CardGroup {
+                        RateCard(cfg, position = CardPosition.First, onChange = viewModel::setIdleEarn)
+                        CapsCard(cfg, position = CardPosition.Middle, onChange = viewModel::setIdleEarn)
+                        TargetCard(cfg, position = CardPosition.Middle, onChange = viewModel::setIdleEarn)
+                        EarnWindowsCard(cfg, position = CardPosition.Last, onSetWindow = { d, w -> viewModel.setEarnWindow(d, w) })
+                    }
+                }
             }
             item { Spacer(Modifier.size(spacing.xl)) }
         }
@@ -100,9 +106,9 @@ private fun defaultConfig() = IdleEarnDto(
 )
 
 @Composable
-private fun RateCard(cfg: IdleEarnDto, onChange: (IdleEarnDto) -> Unit) {
+private fun RateCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.Single, onChange: (IdleEarnDto) -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.earn_rate_title), style = MaterialTheme.typography.titleMedium)
             StepperRow(
@@ -122,9 +128,9 @@ private fun RateCard(cfg: IdleEarnDto, onChange: (IdleEarnDto) -> Unit) {
 }
 
 @Composable
-private fun CapsCard(cfg: IdleEarnDto, onChange: (IdleEarnDto) -> Unit) {
+private fun CapsCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.Single, onChange: (IdleEarnDto) -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.earn_caps_title), style = MaterialTheme.typography.titleMedium)
             Text(
@@ -156,9 +162,9 @@ private fun CapsCard(cfg: IdleEarnDto, onChange: (IdleEarnDto) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun TargetCard(cfg: IdleEarnDto, onChange: (IdleEarnDto) -> Unit) {
+private fun TargetCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.Single, onChange: (IdleEarnDto) -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.earn_target_title), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.size(spacing.sm))
@@ -176,11 +182,11 @@ private fun TargetCard(cfg: IdleEarnDto, onChange: (IdleEarnDto) -> Unit) {
 }
 
 @Composable
-private fun EarnWindowsCard(cfg: IdleEarnDto, onSetWindow: (DayType, WindowDto?) -> Unit) {
+private fun EarnWindowsCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.Single, onSetWindow: (DayType, WindowDto?) -> Unit) {
     val spacing = Tokens.spacing
     var editing by remember { mutableStateOf<Pair<DayType, Boolean>?>(null) } // dayType, isStart
 
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.earn_windows_title), style = MaterialTheme.typography.titleMedium)
             Text(

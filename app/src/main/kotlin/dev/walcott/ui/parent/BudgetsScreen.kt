@@ -7,9 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -18,7 +15,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.CardGroup
+import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.theme.Tokens
 
 @Composable
@@ -32,28 +33,32 @@ fun BudgetsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            item { BedtimeCard(settings.bedtime, onChange = viewModel::setBedtime) }
+            item { SectionHeader(stringResource(R.string.budgets_section_schedules)) }
             item {
-                BlockedWindowsCard(
-                    title = stringResource(R.string.all_apps_windows_title),
-                    hint = stringResource(R.string.all_apps_windows_hint),
-                    windows = settings.allAppsBlockedWindows[dev.walcott.rules.DayType.SCHOOL.name].orEmpty(),
-                    onChange = viewModel::setAllAppsWindows,
-                )
+                CardGroup {
+                    BedtimeCard(settings.bedtime, position = CardPosition.First, onChange = viewModel::setBedtime)
+                    BlockedWindowsCard(
+                        title = stringResource(R.string.all_apps_windows_title),
+                        hint = stringResource(R.string.all_apps_windows_hint),
+                        windows = settings.allAppsBlockedWindows[dev.walcott.rules.DayType.SCHOOL.name].orEmpty(),
+                        position = CardPosition.Last,
+                        onChange = viewModel::setAllAppsWindows,
+                    )
+                }
             }
+            item { SectionHeader(stringResource(R.string.daily_budget_header)) }
             item {
-                Text(
-                    stringResource(R.string.daily_budget_header),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = spacing.sm),
-                )
-            }
-            items(AppCategory.entries.toList(), key = { it.id }) { category ->
-                CategoryBudgetCard(
-                    category = category,
-                    perDay = settings.budgets[category.id].orEmpty(),
-                    onSetBudget = { dayType, minutes -> viewModel.setBudget(category.id, dayType, minutes) },
-                )
+                val categories = AppCategory.entries.toList()
+                CardGroup {
+                    categories.forEachIndexed { index, category ->
+                        CategoryBudgetCard(
+                            category = category,
+                            perDay = settings.budgets[category.id].orEmpty(),
+                            position = cardPosition(index, categories.size),
+                            onSetBudget = { dayType, minutes -> viewModel.setBudget(category.id, dayType, minutes) },
+                        )
+                    }
+                }
             }
             item { Spacer(Modifier.size(spacing.xl)) }
         }

@@ -3,22 +3,19 @@ package dev.walcott.ui.parent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.SyncManager
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 
 /**
@@ -39,7 +36,7 @@ fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> U
         else -> key
     }
 
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             Text(pending.childName, style = MaterialTheme.typography.titleMedium)
             Text(
@@ -61,7 +58,7 @@ fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> U
 @Composable
 fun AskRequestCard(pending: SyncManager.PendingAsk, onApprove: () -> Unit, onDeny: () -> Unit) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             Text(pending.childName, style = MaterialTheme.typography.titleMedium)
             Text(

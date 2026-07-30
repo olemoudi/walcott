@@ -23,9 +23,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -44,6 +44,7 @@ import dev.walcott.ui.components.MinutesPickerDialog
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.labelRes
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import java.time.Duration
 
@@ -129,12 +130,7 @@ fun AppDetailScreen(
 
             item { SectionTitle(stringResource(R.string.app_web_filter), AppRestriction.WEB_RULE, restrictions) }
             item {
-                Surface(
-                    onClick = onOpenWebFilter,
-                    shape = RoundedCornerShape(20.dp),
-                    tonalElevation = 1.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+                WalcottCard(onClick = onOpenWebFilter) {
                     Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             stringResource(R.string.app_web_filter_link),
@@ -174,7 +170,7 @@ private fun SectionTitle(text: String, restriction: AppRestriction? = null, acti
 
 @Composable
 private fun CategorySelector(current: String?, onPick: (AppCategory?) -> Unit) {
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(Tokens.spacing.md), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             AppCategory.entries.forEach { category ->
                 CategoryOptionRow(
@@ -231,7 +227,7 @@ private fun PerDayBudgetCard(
     onSetAllDays: (Int?) -> Unit,
 ) {
     val spacing = Tokens.spacing
-    Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
             // Quick apply-all, so a single daily limit (or a blanket block) needs one tap, not three.
             Text(

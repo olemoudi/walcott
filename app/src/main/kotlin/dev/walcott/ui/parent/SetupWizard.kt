@@ -35,7 +35,6 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Weekend
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -46,13 +45,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,6 +68,7 @@ import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import java.time.Duration
 import java.time.LocalTime
@@ -163,12 +163,9 @@ private fun PresetCard(
     onClick: () -> Unit,
 ) {
     val spacing = Tokens.spacing
-    Surface(
+    WalcottCard(
         onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
         color = if (highlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        tonalElevation = if (highlighted) 0.dp else 1.dp,
-        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(spacing.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -376,7 +373,7 @@ private fun WeekendStep(
         stringResource(R.string.step_weekend_title),
         stringResource(R.string.step_weekend_teach),
     )
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.step_weekend_split), style = MaterialTheme.typography.titleSmall)
@@ -447,7 +444,7 @@ private fun ProtectionStep(viewModel: WalcottViewModel) {
         stringResource(R.string.step_protection_teach),
     )
     val blockInstalls = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.step_protection_installs), style = MaterialTheme.typography.titleSmall)
@@ -462,7 +459,7 @@ private fun ProtectionStep(viewModel: WalcottViewModel) {
     }
     // When installs aren't blocked, offer the softer option: just be told a new app appeared.
     if (!blockInstalls) {
-        Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        WalcottCard {
             Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.new_app_alerts_title), style = MaterialTheme.typography.titleSmall)
@@ -502,7 +499,7 @@ private fun EarnStep(viewModel: WalcottViewModel) {
         stringResource(R.string.nav_earn_title),
         stringResource(R.string.step_earn_teach),
     )
-    Surface(shape = RoundedCornerShape(22.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    WalcottCard {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.step_earn_enable), style = MaterialTheme.typography.titleSmall)
