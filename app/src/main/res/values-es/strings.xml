@@ -91,6 +91,13 @@
     <string name="bedtime_start_title">Empieza a dormir</string>
     <string name="bedtime_end_title">Se levanta</string>
     <string name="daily_budget_header">Presupuesto diario por categoría</string>
+    <string name="budget_special_days_title">Los días especiales tienen su propio límite</string>
+    <string name="budget_special_days_off">Siguen el límite del finde.</string>
+    <string name="budget_special_days_on">Festivos y periodos tienen su propia columna, partiendo de los valores del finde.</string>
+    <string name="special_days_note_short">Qué días son se elige en Días especiales.</string>
+    <string name="special_days_note_action">Info</string>
+    <string name="special_days_note_open">Abrir Días especiales</string>
+    <string name="special_days_note_long">Un límite de días especiales solo se aplica los días que marques como especiales: los festivos y periodos de la pantalla Días especiales. Si no hay ninguno marcado, esta columna no entra nunca en juego.</string>
     <string name="no_limit">Sin límite</string>
     <string name="custom_value">Personalizado</string>
     <string name="custom_minutes_title">Minutos personalizados</string>

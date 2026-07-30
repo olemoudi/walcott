@@ -365,6 +365,7 @@ fun ChildDetailScreen(
                             perDay = budgets[category.id].orEmpty(),
                             enabled = entry.overrides.budgets != null,
                             position = cardPosition(index + 1, categories.size + 1),
+                            dayTypes = dev.walcott.ui.budgetDayTypes(settings.specialDaysOwnBudget),
                             onSetBudget = { dayType, minutes ->
                                 viewModel.setChildOverrides(
                                     childId,

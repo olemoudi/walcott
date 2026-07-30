@@ -139,7 +139,8 @@ fun Map<String, Map<String, Int>>.withBudget(
 }
 
 /** This day-typed map with the HOLIDAY slot mirroring WEEKEND (copied, or removed when absent). */
-private fun <V> Map<String, V>.mirrorHoliday(): Map<String, V> {
+private fun <V> Map<String, V>.mirrorHoliday(mirror: Boolean = true): Map<String, V> {
+    if (!mirror) return this
     val weekend = this[DayType.WEEKEND.name]
     return if (weekend == null) this - DayType.HOLIDAY.name else this + (DayType.HOLIDAY.name to weekend)
 }
@@ -151,29 +152,51 @@ private fun <V> Map<String, V>.mirrorHoliday(): Map<String, V> {
  * throws on unknown day-type keys), so the wire format is frozen; only the meaning changes:
  * a special day now simply behaves like a weekend. Applied on every parent policy write.
  */
-fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings = copy(
-    budgets = budgets.mapValues { it.value.mirrorHoliday() }.filterValues { it.isNotEmpty() },
-    blockedWindows = blockedWindows.mapValues { it.value.mirrorHoliday() }.filterValues { it.isNotEmpty() },
-    bedtime = bedtime.mirrorHoliday(),
-    allAppsBlockedWindows = allAppsBlockedWindows.mirrorHoliday(),
-    appPolicies = appPolicies
-        .mapValues { (_, dto) ->
-            dto.copy(budgets = dto.budgets.mirrorHoliday(), blockedWindows = dto.blockedWindows.mirrorHoliday())
-        }
-        .filterValues { !it.isEmpty },
-    idleEarn = idleEarn?.let { it.copy(earnWindows = it.earnWindows.mirrorHoliday()) },
-    children = children.map { child ->
-        child.copy(
-            overrides = child.overrides.copy(
-                budgets = child.overrides.budgets
-                    ?.mapValues { it.value.mirrorHoliday() }?.filterValues { it.isNotEmpty() },
-                blockedWindows = child.overrides.blockedWindows
-                    ?.mapValues { it.value.mirrorHoliday() }?.filterValues { it.isNotEmpty() },
-                bedtime = child.overrides.bedtime?.mirrorHoliday(),
-            ),
-        )
-    },
-)
+fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
+    // Budgets are the one thing a family can claim for special days ([specialDaysOwnBudget]);
+    // schedules keep mirroring either way, so opting in never leaves a special day with no
+    // bedtime and no screen-free windows.
+    val budgetMirror = !specialDaysOwnBudget
+    return copy(
+        budgets = budgets.mapValues { it.value.mirrorHoliday(budgetMirror) }.filterValues { it.isNotEmpty() },
+        blockedWindows = blockedWindows.mapValues { it.value.mirrorHoliday() }.filterValues { it.isNotEmpty() },
+        bedtime = bedtime.mirrorHoliday(),
+        allAppsBlockedWindows = allAppsBlockedWindows.mirrorHoliday(),
+        appPolicies = appPolicies
+            .mapValues { (_, dto) ->
+                dto.copy(
+                    budgets = dto.budgets.mirrorHoliday(budgetMirror),
+                    blockedWindows = dto.blockedWindows.mirrorHoliday(),
+                )
+            }
+            .filterValues { !it.isEmpty },
+        idleEarn = idleEarn?.let { it.copy(earnWindows = it.earnWindows.mirrorHoliday()) },
+        children = children.map { child ->
+            child.copy(
+                overrides = child.overrides.copy(
+                    budgets = child.overrides.budgets
+                        ?.mapValues { it.value.mirrorHoliday(budgetMirror) }?.filterValues { it.isNotEmpty() },
+                    blockedWindows = child.overrides.blockedWindows
+                        ?.mapValues { it.value.mirrorHoliday() }?.filterValues { it.isNotEmpty() },
+                    bedtime = child.overrides.bedtime?.mirrorHoliday(),
+                ),
+            )
+        },
+    )
+}
+
+/**
+ * Turns the special-day budget column on or off.
+ *
+ * Switching ON seeds every HOLIDAY budget from the WEEKEND value it was mirroring, so the rules
+ * are identical at the instant the parent takes control. Without that, dropping the mirror would
+ * leave special days with no budget at all — which reads as unlimited, the one direction a
+ * parental control must never move by accident. Switching OFF only clears the flag: the mirror
+ * pass that runs on every write re-collapses the column by itself.
+ */
+fun PolicySettings.withSpecialDaysOwnBudget(on: Boolean): PolicySettings =
+    if (on) copy(specialDaysOwnBudget = false).withHolidayMirroringWeekend().copy(specialDaysOwnBudget = true)
+    else copy(specialDaysOwnBudget = false)
 
 /**
  * Per-child policy overrides. A null field inherits the family value; a non-null field
@@ -231,6 +254,13 @@ data class PolicySettings(
     val holidays: Set<Long> = emptySet(),
     /** Vacation ranges (inclusive). */
     val vacations: List<VacationDto> = emptyList(),
+    /**
+     * Whether the calendar's special days get their own daily limits instead of following the
+     * weekend's. Off — the default, and what every install before this field did — keeps the
+     * HOLIDAY budget slot a mirror of WEEKEND (see [withHolidayMirroringWeekend]), which is
+     * exactly why a third column can't exist until a parent asks for it.
+     */
+    val specialDaysOwnBudget: Boolean = false,
     /**
      * Friday minute-of-day from which the weekend rules already apply (e.g. 840 = 14:00).
      * Null — the default — starts the weekend at Saturday 00:00, which is what every install

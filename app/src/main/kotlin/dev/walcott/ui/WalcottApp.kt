@@ -96,6 +96,9 @@ fun WalcottApp(
         )
     }
     var childDetailId by remember { mutableStateOf<String?>(null) }
+    // Where "Special days" was opened from, so Back lands on the screen that sent the parent
+    // there instead of the hub. Null = reached from the hub itself.
+    var calendarReturnTo by remember { mutableStateOf<Screen?>(null) }
     // Which guided-setup preset is running (SETUP_WIZARD screen).
     var wizardPreset by remember { mutableStateOf<SetupPreset?>(null) }
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
@@ -184,8 +187,9 @@ fun WalcottApp(
                 } else {
                     Screen.FAMILY
                 }
+            Screen.CALENDAR -> calendarReturnTo?.also { calendarReturnTo = null } ?: Screen.FAMILY
             Screen.APPS, Screen.BUDGETS, Screen.CHILDREN, Screen.EARN,
-            Screen.CALENDAR, Screen.REPORT, Screen.LOCATION,
+            Screen.REPORT, Screen.LOCATION,
             -> Screen.FAMILY
             // Reached from the home gear on the parent, from the device hub on a child.
             Screen.APP_SETTINGS -> if (parentMode) Screen.FAMILIES else Screen.FAMILY
@@ -335,12 +339,17 @@ fun WalcottApp(
                             packageName = pkg,
                             onBack = ::back,
                             onOpenWebFilter = { overrideChildId = null; screen = Screen.WEBFILTER },
+                            onOpenSpecialDays = { calendarReturnTo = Screen.APP_DETAIL; screen = Screen.CALENDAR },
                         )
                     }
-                    Screen.BUDGETS -> BudgetsScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.BUDGETS -> BudgetsScreen(
+                        viewModel,
+                        onBack = { screen = Screen.FAMILY },
+                        onOpenSpecialDays = { calendarReturnTo = Screen.BUDGETS; screen = Screen.CALENDAR },
+                    )
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.EARN -> EarnRulesScreen(viewModel, onBack = { screen = Screen.FAMILY })
-                    Screen.CALENDAR -> CalendarScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.CALENDAR -> CalendarScreen(viewModel, onBack = ::back)
                     Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.WEBFILTER -> WebFilterScreen(
                         viewModel, onBack = ::back,

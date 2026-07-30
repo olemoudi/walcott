@@ -34,7 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.rules.DayType
-import dev.walcott.ui.DAY_TYPES
+import dev.walcott.ui.budgetDayTypes
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppIcon
 import dev.walcott.ui.components.ChoiceChip
@@ -59,6 +59,7 @@ fun AppDetailScreen(
     packageName: String,
     onBack: () -> Unit,
     onOpenWebFilter: () -> Unit,
+    onOpenSpecialDays: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -113,6 +114,8 @@ fun AppDetailScreen(
             item {
                 PerDayBudgetCard(
                     perDay = appPolicy?.budgets.orEmpty(),
+                    dayTypes = budgetDayTypes(settings.specialDaysOwnBudget),
+                    onOpenSpecialDays = onOpenSpecialDays,
                     onSetBudget = { dayType, minutes -> viewModel.setAppBudget(packageName, dayType, minutes) },
                     onSetAllDays = { minutes -> viewModel.setAppBudgetAllDays(packageName, minutes) },
                 )
@@ -223,6 +226,8 @@ private fun CategoryOptionRow(
 @Composable
 private fun PerDayBudgetCard(
     perDay: Map<String, Int>,
+    dayTypes: List<DayType>,
+    onOpenSpecialDays: () -> Unit,
     onSetBudget: (DayType, Int?) -> Unit,
     onSetAllDays: (Int?) -> Unit,
 ) {
@@ -256,10 +261,14 @@ private fun PerDayBudgetCard(
                 }
             }
 
-            DAY_TYPES.forEach { dayType ->
+            dayTypes.forEach { dayType ->
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
                 val minutes = perDay[dayType.name]
-                Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.titleSmall)
+                    // Which days count as special is set elsewhere; say so where it matters.
+                    if (dayType == DayType.HOLIDAY) SpecialDaysInfoButton(onOpenSpecialDays)
+                }
                 FlowRow(
                     Modifier.padding(top = spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),

@@ -91,6 +91,13 @@
     <string name="bedtime_start_title">Goes to sleep</string>
     <string name="bedtime_end_title">Wakes up</string>
     <string name="daily_budget_header">Daily budget per category</string>
+    <string name="budget_special_days_title">Special days have their own limits</string>
+    <string name="budget_special_days_off">They follow the weekend\'s limits.</string>
+    <string name="budget_special_days_on">Holidays and breaks get their own column, starting from the weekend\'s values.</string>
+    <string name="special_days_note_short">Which days those are is set in Special days.</string>
+    <string name="special_days_note_action">Info</string>
+    <string name="special_days_note_open">Open Special days</string>
+    <string name="special_days_note_long">A special-day limit only ever applies on the days you mark as special: the holidays and longer breaks on the Special days screen. With none marked, this column never comes into play.</string>
     <string name="no_limit">No limit</string>
     <string name="custom_value">Custom</string>
     <string name="custom_minutes_title">Custom minutes</string>

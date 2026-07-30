@@ -1,6 +1,7 @@
 package dev.walcott.data
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -86,5 +87,69 @@ class HolidayMirrorTest {
     fun `null child overrides stay null (inherit) instead of materializing`() {
         val out = PolicySettings(children = listOf(ChildEntry("c1", "Kid"))).withHolidayMirroringWeekend()
         assertTrue(out.children.single().overrides.isEmpty)
+    }
+
+    // --- Special days claiming their own budget column ---
+
+    @Test
+    fun `with the column on, budgets keep a distinct holiday value`() {
+        val out = PolicySettings(
+            specialDaysOwnBudget = true,
+            budgets = mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 120, "HOLIDAY" to 240)),
+        ).withHolidayMirroringWeekend()
+        assertEquals(240, out.budgets.getValue("games")["HOLIDAY"])
+    }
+
+    @Test
+    fun `schedules keep mirroring even with the column on`() {
+        // Opting into a special-day BUDGET must never cost a special day its bedtime and its
+        // screen-free windows: those have no third editor, so the mirror is all they have.
+        val out = PolicySettings(
+            specialDaysOwnBudget = true,
+            bedtime = mapOf("SCHOOL" to window, "WEEKEND" to window),
+            allAppsBlockedWindows = mapOf("SCHOOL" to listOf(window), "WEEKEND" to listOf(window)),
+            blockedWindows = mapOf("games" to mapOf("WEEKEND" to listOf(window))),
+        ).withHolidayMirroringWeekend()
+        assertEquals(window, out.bedtime["HOLIDAY"])
+        assertEquals(listOf(window), out.allAppsBlockedWindows["HOLIDAY"])
+        assertEquals(listOf(window), out.blockedWindows.getValue("games")["HOLIDAY"])
+    }
+
+    @Test
+    fun `turning the column on seeds it from the weekend, everywhere a budget lives`() {
+        // Nothing may change at the instant the parent takes control: dropping the mirror with
+        // no value behind it would read as "no limit on special days".
+        val before = PolicySettings(
+            budgets = mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 120)),
+            appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf("WEEKEND" to 45))),
+            children = listOf(
+                ChildEntry("c1", "Ana", ChildOverrides(budgets = mapOf("games" to mapOf("WEEKEND" to 90)))),
+            ),
+        )
+        val out = before.withSpecialDaysOwnBudget(true)
+        assertTrue(out.specialDaysOwnBudget)
+        assertEquals(120, out.budgets.getValue("games")["HOLIDAY"])
+        assertEquals(45, out.appPolicies.getValue("com.game").budgets["HOLIDAY"])
+        assertEquals(90, out.children.first().overrides.budgets?.getValue("games")?.get("HOLIDAY"))
+    }
+
+    @Test
+    fun `turning it off re-collapses the column on the next write`() {
+        val split = PolicySettings(
+            specialDaysOwnBudget = true,
+            budgets = mapOf("games" to mapOf("WEEKEND" to 120, "HOLIDAY" to 240)),
+        )
+        val out = split.withSpecialDaysOwnBudget(false).withHolidayMirroringWeekend()
+        assertFalse(out.specialDaysOwnBudget)
+        assertEquals(120, out.budgets.getValue("games")["HOLIDAY"])
+    }
+
+    @Test
+    fun `seeding a category with no weekend value leaves it unlimited on special days`() {
+        // Weekday-only limit: there is nothing to copy, and inventing one would tighten the
+        // rules behind the parent's back.
+        val out = PolicySettings(budgets = mapOf("games" to mapOf("SCHOOL" to 30)))
+            .withSpecialDaysOwnBudget(true)
+        assertNull(out.budgets.getValue("games")["HOLIDAY"])
     }
 }

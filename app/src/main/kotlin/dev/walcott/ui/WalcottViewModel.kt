@@ -8,6 +8,7 @@ import dev.walcott.data.InstalledApp
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.WalcottRepository
 import dev.walcott.data.withBudget
+import dev.walcott.data.withSpecialDaysOwnBudget
 import dev.walcott.rules.CategoryStatus
 import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
@@ -304,6 +305,14 @@ class WalcottViewModel(
         }
     }
 
+    /**
+     * Whether the calendar's special days carry their own daily limits. See
+     * [dev.walcott.data.withSpecialDaysOwnBudget] for why turning it on seeds the column.
+     */
+    fun setSpecialDaysOwnBudget(on: Boolean) = viewModelScope.launch {
+        repository.updateSettings { it.withSpecialDaysOwnBudget(on) }
+    }
+
     fun addHoliday(epochDay: Long) =
         viewModelScope.launch { repository.updateSettings { it.copy(holidays = it.holidays + epochDay) } }
 
@@ -594,7 +603,15 @@ class WalcottViewModel(
      * null clears the per-app limit entirely.
      */
     fun setAppBudgetAllDays(pkg: String, minutes: Int?) = mutateAppPolicy(pkg) { dto ->
-        dto.copy(budgets = if (minutes == null) emptyMap() else DAY_TYPES.associate { it.name to minutes })
+        // Every day type, special days included: with the column off, the write's mirror pass
+        // collapses HOLIDAY back onto WEEKEND, so this is correct either way.
+        dto.copy(
+            budgets = if (minutes == null) {
+                emptyMap()
+            } else {
+                dev.walcott.rules.DayType.entries.associate { it.name to minutes }
+            },
+        )
     }
 
     /** Set this app's own blocked windows (any number), applied to every day type. */

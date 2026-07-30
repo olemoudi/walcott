@@ -429,11 +429,15 @@ internal fun CategoryBudgetCard(
     /** False still expands to show the numbers; it only refuses to change them. */
     enabled: Boolean = true,
     position: CardPosition = CardPosition.Single,
+    /** The rows to offer — [dev.walcott.ui.budgetDayTypes] decides whether special days are one. */
+    dayTypes: List<DayType> = DAY_TYPES,
+    /** Shown beside the special-day row: which days those are is set on another screen. */
+    onOpenSpecialDays: (() -> Unit)? = null,
     onSetBudget: (DayType, Int?) -> Unit,
 ) {
     val spacing = Tokens.spacing
     var expanded by remember { mutableStateOf(false) }
-    val limitedDays = DAY_TYPES.count { perDay[it.name] != null }
+    val limitedDays = dayTypes.count { perDay[it.name] != null }
     val summary = if (limitedDays == 0) stringResource(R.string.no_limit)
     else pluralStringResource(R.plurals.days_with_limit, limitedDays, limitedDays)
 
@@ -464,9 +468,9 @@ internal fun CategoryBudgetCard(
                     Modifier.fillMaxWidth().padding(top = spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
-                    BudgetPreset(stringResource(R.string.no_limit), enabled) { DAY_TYPES.forEach { onSetBudget(it, null) } }
-                    BudgetPreset("1h", enabled) { DAY_TYPES.forEach { onSetBudget(it, 60) } }
-                    BudgetPreset("2h", enabled) { DAY_TYPES.forEach { onSetBudget(it, 120) } }
+                    BudgetPreset(stringResource(R.string.no_limit), enabled) { dayTypes.forEach { onSetBudget(it, null) } }
+                    BudgetPreset("1h", enabled) { dayTypes.forEach { onSetBudget(it, 60) } }
+                    BudgetPreset("2h", enabled) { dayTypes.forEach { onSetBudget(it, 120) } }
                     var customAll by remember { mutableStateOf(false) }
                     BudgetPreset(stringResource(R.string.custom_value), enabled) { customAll = true }
                     if (customAll) {
@@ -474,17 +478,22 @@ internal fun CategoryBudgetCard(
                             title = stringResource(R.string.custom_minutes_title),
                             initial = 60,
                             onDismiss = { customAll = false },
-                            onConfirm = { m -> DAY_TYPES.forEach { onSetBudget(it, m) }; customAll = false },
+                            onConfirm = { m -> dayTypes.forEach { onSetBudget(it, m) }; customAll = false },
                         )
                     }
                 }
-                DAY_TYPES.forEach { dayType ->
+                dayTypes.forEach { dayType ->
                     val minutes = perDay[dayType.name]
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = spacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(stringResource(dayType.labelRes()), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.bodyLarge)
+                        // The special-day row is the only one whose days live on another screen.
+                        if (dayType == DayType.HOLIDAY && onOpenSpecialDays != null) {
+                            SpecialDaysInfoButton(onOpenSpecialDays)
+                        }
+                        Spacer(Modifier.weight(1f))
                         Stepper(
                             valueLabel = minutes?.let { Duration.ofMinutes(it.toLong()).humanize() }
                                 ?: stringResource(R.string.no_limit),
