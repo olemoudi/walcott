@@ -320,10 +320,21 @@ data class PolicySettings(
     val bedtime: Map<String, WindowDto> = emptyMap(),
     /** dayType -> family-wide screen-free windows (block ALL apps, like bedtime). */
     val allAppsBlockedWindows: Map<String, List<WindowDto>> = emptyMap(),
-    /** One-off holidays (epochDay). */
+    /** One-off special days that apply to every child (epochDay). */
     val holidays: Set<Long> = emptySet(),
-    /** Vacation ranges (inclusive). */
+    /** Periods (inclusive) that apply to every child. */
     val vacations: List<VacationDto> = emptyList(),
+    /**
+     * Special days for one child only — a birthday is theirs, not the family's. childId -> days.
+     *
+     * A separate map rather than a scope field on [holidays], because that set is `Set<Long>` on
+     * the wire: changing its shape would make every not-yet-updated child fail to parse the policy
+     * and quietly stop adopting rules altogether. Additive, so an old child simply sees the
+     * family-wide days — fewer special days, which is the strict direction, never the lax one.
+     */
+    val childHolidays: Map<String, Set<Long>> = emptyMap(),
+    /** Periods for one child only (a camp, a trip). childId -> ranges. Same reasoning as above. */
+    val childVacations: Map<String, List<VacationDto>> = emptyMap(),
     /**
      * Whether the calendar's special days get their own time rules instead of following the
      * weekend's — budgets, bedtime, screen-free windows, per-app windows and earn windows alike.
@@ -409,8 +420,69 @@ data class PolicySettings(
             trackingIntervalMinutes = overrides.trackingIntervalMinutes ?: trackingIntervalMinutes,
             locationHistoryEnabled = overrides.locationHistoryEnabled ?: locationHistoryEnabled,
             updateWifiOnly = overrides.updateWifiOnly ?: updateWifiOnly,
+            // This child's own special days on top of the family's; the others' never travel here.
+            holidays = holidays + childHolidays[childId].orEmpty(),
+            vacations = vacations + childVacations[childId].orEmpty(),
         )
     }
+
+    /** Every special day this policy knows about, family-wide and per child, for the parent's UI. */
+    fun allHolidays(): Set<Long> = holidays + childHolidays.values.flatten()
+
+    /** Same for periods. */
+    fun allVacations(): List<VacationDto> = vacations + childVacations.values.flatten()
+
+    /** Which children [day] applies to; empty = the whole family. */
+    fun holidayScope(day: Long): Set<String> =
+        if (day in holidays) emptySet() else childHolidays.filterValues { day in it }.keys
+
+    /** Which children [period] applies to; empty = the whole family. */
+    fun vacationScope(period: VacationDto): Set<String> =
+        if (period in vacations) emptySet() else childVacations.filterValues { period in it }.keys
+
+    /**
+     * [day] scoped to [childIds] — empty meaning the whole family. Written as "remove it everywhere,
+     * then add it where it belongs" so a day can be moved between scopes without ever existing in
+     * two places at once.
+     */
+    fun withHolidayScope(day: Long, childIds: Set<String>): PolicySettings {
+        val cleared = copy(
+            holidays = holidays - day,
+            childHolidays = childHolidays.mapValues { it.value - day }.filterValues { it.isNotEmpty() },
+        )
+        if (childIds.isEmpty()) return cleared.copy(holidays = cleared.holidays + day)
+        return cleared.copy(
+            childHolidays = childIds.fold(cleared.childHolidays) { acc, id ->
+                acc + (id to acc[id].orEmpty() + day)
+            },
+        )
+    }
+
+    /** Same for a period. */
+    fun withVacationScope(period: VacationDto, childIds: Set<String>): PolicySettings {
+        val cleared = copy(
+            vacations = vacations - period,
+            childVacations = childVacations.mapValues { it.value - period }.filterValues { it.isNotEmpty() },
+        )
+        if (childIds.isEmpty()) return cleared.copy(vacations = cleared.vacations + period)
+        return cleared.copy(
+            childVacations = childIds.fold(cleared.childVacations) { acc, id ->
+                acc + (id to acc[id].orEmpty() + period)
+            },
+        )
+    }
+
+    /** [day] gone, whoever it belonged to. */
+    fun withoutHoliday(day: Long): PolicySettings = copy(
+        holidays = holidays - day,
+        childHolidays = childHolidays.mapValues { it.value - day }.filterValues { it.isNotEmpty() },
+    )
+
+    /** [period] gone, whoever it belonged to. */
+    fun withoutVacation(period: VacationDto): PolicySettings = copy(
+        vacations = vacations - period,
+        childVacations = childVacations.mapValues { it.value - period }.filterValues { it.isNotEmpty() },
+    )
 
     /** One-time migration: adopt [legacy] Room assignments only if none are set yet. */
     fun withLegacyAssignments(legacy: Map<String, String>): PolicySettings =

@@ -358,19 +358,29 @@ class WalcottViewModel(
         repository.updateSettings { it.withSpecialDaysOwnRules(on) }
     }
 
-    fun addHoliday(epochDay: Long) =
-        viewModelScope.launch { repository.updateSettings { it.copy(holidays = it.holidays + epochDay) } }
+    /** Adds a special day. [childIds] empty = the whole family; a birthday names one child. */
+    fun addHoliday(epochDay: Long, childIds: Set<String> = emptySet()) =
+        viewModelScope.launch { repository.updateSettings { it.withHolidayScope(epochDay, childIds) } }
+
+    /** Re-points an existing day at a different set of children (or back at the whole family). */
+    fun setHolidayScope(epochDay: Long, childIds: Set<String>) =
+        viewModelScope.launch { repository.updateSettings { it.withHolidayScope(epochDay, childIds) } }
 
     fun removeHoliday(epochDay: Long) =
-        viewModelScope.launch { repository.updateSettings { it.copy(holidays = it.holidays - epochDay) } }
+        viewModelScope.launch { repository.updateSettings { it.withoutHoliday(epochDay) } }
 
-    fun addVacation(startEpochDay: Long, endEpochDay: Long) = viewModelScope.launch {
-        repository.updateSettings { it.copy(vacations = it.vacations + dev.walcott.data.VacationDto(startEpochDay, endEpochDay)) }
-    }
+    fun addVacation(startEpochDay: Long, endEpochDay: Long, childIds: Set<String> = emptySet()) =
+        viewModelScope.launch {
+            repository.updateSettings {
+                it.withVacationScope(dev.walcott.data.VacationDto(startEpochDay, endEpochDay), childIds)
+            }
+        }
 
-    fun removeVacation(index: Int) = viewModelScope.launch {
-        repository.updateSettings { it.copy(vacations = it.vacations.filterIndexed { i, _ -> i != index }) }
-    }
+    fun setVacationScope(period: dev.walcott.data.VacationDto, childIds: Set<String>) =
+        viewModelScope.launch { repository.updateSettings { it.withVacationScope(period, childIds) } }
+
+    fun removeVacation(period: dev.walcott.data.VacationDto) =
+        viewModelScope.launch { repository.updateSettings { it.withoutVacation(period) } }
 
     /**
      * Moves the weekend edges. Minute-of-day, or null to leave the edge at midnight (the

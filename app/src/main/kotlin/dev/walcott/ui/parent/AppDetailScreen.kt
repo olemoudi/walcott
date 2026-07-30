@@ -42,8 +42,7 @@ import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.components.MinutesPickerDialog
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
-import dev.walcott.ui.RULE_DAY_TYPES
-import dev.walcott.ui.editableUnder
+import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.labelRes
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
@@ -267,35 +266,12 @@ private fun PerDayBudgetCard(
                 }
             }
 
-            RULE_DAY_TYPES.forEach { dayType ->
+            @Composable
+            fun budgetRow(dayType: DayType) {
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
                 val minutes = perDay[dayType.name]
-                val rowEnabled = dayType.editableUnder(specialDaysOwnRules)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(dayType.labelRes()),
-                        style = MaterialTheme.typography.titleSmall,
-                        // A mirrored row must not look like one you can set.
-                        color = MaterialTheme.colorScheme.onSurface
-                            .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
-                    )
-                    // Which days count as special is set elsewhere; say so where it matters.
-                    if (dayType == DayType.HOLIDAY) SpecialDaysInfoButton(onOpenSpecialDays)
-                }
-                if (!rowEnabled) {
-                    // Mirroring the weekend: show what actually applies rather than chips that
-                    // would silently write to a slot the next policy save overwrites.
-                    Text(
-                        when {
-                            minutes == null -> stringResource(R.string.no_limit)
-                            minutes == 0 -> stringResource(R.string.app_limit_blocked)
-                            else -> Duration.ofMinutes(minutes.toLong()).humanize()
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = spacing.xs),
-                    )
-                    return@forEach
+                    Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.titleSmall)
                 }
                 FlowRow(
                     Modifier.padding(top = spacing.xs),
@@ -330,11 +306,12 @@ private fun PerDayBudgetCard(
                     }
                 }
             }
-            SpecialDaysRulesToggle(
+            DAY_TYPES.forEach { budgetRow(it) }
+            SpecialDaysSection(
                 on = specialDaysOwnRules,
                 onOpenCalendar = onOpenSpecialDays,
                 onChange = onSetSpecialDaysOwnRules,
-            )
+            ) { budgetRow(DayType.HOLIDAY) }
         }
     }
 }

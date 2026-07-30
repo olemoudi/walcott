@@ -920,4 +920,10 @@
     <string name="special_days_own_rules_off">Los días especiales siguen las reglas del finde.</string>
     <string name="windows_none">Sin horarios</string>
     <string name="window_range">De %1$s a %2$s</string>
+    <string name="calendar_pick_holiday">Elige un día especial</string>
+    <string name="calendar_pick_start">Inicio del periodo</string>
+    <string name="calendar_pick_end">Fin del periodo</string>
+    <string name="calendar_scope_title">¿Para quién es este día?</string>
+    <string name="calendar_scope_hint">No marques a nadie para toda la familia, o elige los hijos a los que les toca — un cumpleaños es solo suyo.</string>
+    <string name="calendar_scope_everyone">Toda la familia</string>
 </resources>

@@ -1,5 +1,6 @@
 package dev.walcott.ui.parent
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,48 +82,57 @@ internal fun SpecialDaysNote(onOpenCalendar: () -> Unit) {
 }
 
 /**
- * The one control that claims special days, rendered identically at the foot of every time-based
- * editor: daily budgets, bedtime, screen-free windows, per-app windows, earn windows.
+ * The special-days section of a time-based editor: the switch that claims them, and — only once
+ * it is on — the rules themselves, right underneath it.
+ *
+ * Ordering is the whole point of it being a component. The switch comes first and the row it
+ * governs unfolds below it, so the control always reads before the thing it controls. Rendering
+ * the row greyed above the switch instead (the first attempt) put the answer before the question.
  *
  * It is deliberately one family-wide switch shown in many places rather than a switch per screen.
  * A parent editing an app's limit should not have to remember that the row they want was enabled
- * on a different screen — nor discover that flipping it here left the other editors behind. Same
- * state, same wording, wherever you happen to be standing.
+ * on a different screen — nor discover that flipping it here left the other editors behind.
  *
- * Off does not hide the special-day row; it greys it out, showing the weekend values it mirrors.
- * A row that vanishes reads as "not supported here", which is exactly the confusion this replaces.
+ * The info button lives on the switch, because "which days are special" is a question about the
+ * switch itself, not about any one row below it.
  */
 @Composable
-internal fun SpecialDaysRulesToggle(
+internal fun SpecialDaysSection(
     on: Boolean,
     onOpenCalendar: () -> Unit,
     enabled: Boolean = true,
     onChange: (Boolean) -> Unit,
+    content: @Composable () -> Unit,
 ) {
     val spacing = Tokens.spacing
     androidx.compose.material3.HorizontalDivider(Modifier.padding(top = spacing.sm))
-    Row(
-        Modifier.fillMaxWidth().padding(top = spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.special_days_own_rules_title),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                stringResource(
-                    if (on) R.string.special_days_own_rules_on else R.string.special_days_own_rules_off,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    androidx.compose.foundation.layout.Column(Modifier.animateContentSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.special_days_own_rules_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    SpecialDaysInfoButton(onOpenCalendar)
+                }
+                Text(
+                    stringResource(
+                        if (on) R.string.special_days_own_rules_on else R.string.special_days_own_rules_off,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Turning it on seeds every special-day slot from the weekend's, so nothing changes
+            // until the parent moves a value (see withSpecialDaysOwnRules).
+            androidx.compose.material3.Switch(checked = on, enabled = enabled, onCheckedChange = onChange)
         }
-        // Turning it on seeds every special-day slot from the weekend's, so nothing changes
-        // until the parent moves a value (see withSpecialDaysOwnRules).
-        androidx.compose.material3.Switch(checked = on, enabled = enabled, onCheckedChange = onChange)
+        if (on) content()
     }
-    if (on) SpecialDaysNote(onOpenCalendar)
 }
 
 /** Compact but still tappable, so the note stays one line next to a row label. */

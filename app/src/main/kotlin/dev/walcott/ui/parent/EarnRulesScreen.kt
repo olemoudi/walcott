@@ -31,8 +31,7 @@ import dev.walcott.R
 import dev.walcott.data.IdleEarnDto
 import dev.walcott.data.WindowDto
 import dev.walcott.rules.DayType
-import dev.walcott.ui.RULE_DAY_TYPES
-import dev.walcott.ui.editableUnder
+import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
@@ -209,22 +208,18 @@ private fun EarnWindowsCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            RULE_DAY_TYPES.forEach { dayType ->
+            @Composable
+            fun earnRow(dayType: DayType) {
                 val window = cfg.earnWindows[dayType.name]?.firstOrNull()
-                val rowEnabled = dayType.editableUnder(specialDaysOwnRules)
                 Column(Modifier.padding(top = spacing.md)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             stringResource(dayType.labelRes()),
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                                .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
                             modifier = Modifier.weight(1f),
                         )
-                        if (dayType == DayType.HOLIDAY) SpecialDaysInfoButton(onOpenSpecialDays)
                         Switch(
                             checked = window != null,
-                            enabled = rowEnabled,
                             onCheckedChange = { on ->
                                 onSetWindow(dayType, if (on) WindowDto(16 * 60, 21 * 60) else null)
                             },
@@ -234,8 +229,8 @@ private fun EarnWindowsCard(
                         val start = LocalTime.ofSecondOfDay(window.startMinute * 60L)
                         val end = LocalTime.ofSecondOfDay(window.endMinute * 60L)
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), modifier = Modifier.padding(top = spacing.xs)) {
-                            WindowChip(stringResource(R.string.from), start.hhmm(), rowEnabled) { editing = dayType to true }
-                            WindowChip(stringResource(R.string.to), end.hhmm(), rowEnabled) { editing = dayType to false }
+                            WindowChip(stringResource(R.string.from), start.hhmm()) { editing = dayType to true }
+                            WindowChip(stringResource(R.string.to), end.hhmm()) { editing = dayType to false }
                         }
                     } else {
                         Text(
@@ -246,11 +241,12 @@ private fun EarnWindowsCard(
                     }
                 }
             }
-            SpecialDaysRulesToggle(
+            DAY_TYPES.forEach { earnRow(it) }
+            SpecialDaysSection(
                 on = specialDaysOwnRules,
                 onOpenCalendar = onOpenSpecialDays,
                 onChange = onSetSpecialDaysOwnRules,
-            )
+            ) { earnRow(DayType.HOLIDAY) }
         }
     }
 

@@ -920,4 +920,10 @@
     <string name="special_days_own_rules_off">Special days follow the weekend rules.</string>
     <string name="windows_none">No windows</string>
     <string name="window_range">%1$s to %2$s</string>
+    <string name="calendar_pick_holiday">Pick a special day</string>
+    <string name="calendar_pick_start">Start of the period</string>
+    <string name="calendar_pick_end">End of the period</string>
+    <string name="calendar_scope_title">Who is this day for?</string>
+    <string name="calendar_scope_hint">Tick nobody for the whole family, or pick the children it belongs to — a birthday is only theirs.</string>
+    <string name="calendar_scope_everyone">Everyone</string>
 </resources>

@@ -10,11 +10,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -25,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.ChildEntry
+import dev.walcott.data.VacationDto
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
@@ -51,6 +56,10 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 
     var mode by remember { mutableStateOf<PickMode?>(null) }
     var vacationStart by remember { mutableStateOf<Long?>(null) }
+    // Which entry's "who does this apply to" is being edited, if any.
+    var scoping by remember { mutableStateOf<Scoping?>(null) }
+    // With one child, "the family" and "that child" are the same thing, so the question is noise.
+    val manyChildren = settings.children.size >= 2
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_calendar_title), onBack)
@@ -70,12 +79,16 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 
             item { SectionHeader(stringResource(R.string.calendar_holidays)) }
             item {
-                val holidays = settings.holidays.sorted()
+                val holidays = settings.allHolidays().sorted()
                 CardGroup {
                     holidays.forEachIndexed { index, day ->
-                        RowItem(fmt(day), position = cardPosition(index, holidays.size)) {
-                            viewModel.removeHoliday(day)
-                        }
+                        RowItem(
+                            label = fmt(day),
+                            scope = scopeLabel(settings.holidayScope(day), settings.children),
+                            position = cardPosition(index, holidays.size),
+                            onEditScope = { scoping = Scoping.Holiday(day) }.takeIf { manyChildren },
+                            onDelete = { viewModel.removeHoliday(day) },
+                        )
                     }
                 }
             }
@@ -88,12 +101,16 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 
             item { SectionHeader(stringResource(R.string.calendar_vacations)) }
             item {
+                val vacations = settings.allVacations().sortedBy { it.startEpochDay }
                 CardGroup {
-                    settings.vacations.forEachIndexed { index, vac ->
+                    vacations.forEachIndexed { index, vac ->
                         RowItem(
-                            "${fmt(vac.startEpochDay)} – ${fmt(vac.endEpochDay)}",
-                            position = cardPosition(index, settings.vacations.size),
-                        ) { viewModel.removeVacation(index) }
+                            label = "${fmt(vac.startEpochDay)} – ${fmt(vac.endEpochDay)}",
+                            scope = scopeLabel(settings.vacationScope(vac), settings.children),
+                            position = cardPosition(index, vacations.size),
+                            onEditScope = { scoping = Scoping.Period(vac) }.takeIf { manyChildren },
+                            onDelete = { viewModel.removeVacation(vac) },
+                        )
                     }
                 }
             }
@@ -119,31 +136,144 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
         }
     }
 
+    // Each branch closes itself: the picker no longer dismisses on confirm, which is what lets
+    // the two-step period flow hand over from the start date to the end date.
     when (mode) {
         PickMode.HOLIDAY -> WalcottDatePickerDialog(
             onDismiss = { mode = null },
-            onConfirm = { viewModel.addHoliday(it) },
+            // A new day belongs to everyone; who it is really for is one tap away on its row.
+            onConfirm = { day -> viewModel.addHoliday(day); mode = null; if (manyChildren) scoping = Scoping.Holiday(day) },
+            title = stringResource(R.string.calendar_pick_holiday),
         )
         PickMode.VACATION_START -> WalcottDatePickerDialog(
             onDismiss = { mode = null },
             onConfirm = { start -> vacationStart = start; mode = PickMode.VACATION_END },
+            title = stringResource(R.string.calendar_pick_start),
         )
         PickMode.VACATION_END -> WalcottDatePickerDialog(
-            onDismiss = { mode = null },
+            onDismiss = { mode = null; vacationStart = null },
+            // Opens on the start date, so picking a same-week end is a tap rather than a hunt.
+            initialEpochDay = vacationStart,
             onConfirm = { end ->
                 val start = vacationStart
-                if (start != null) viewModel.addVacation(minOf(start, end), maxOf(start, end))
+                // minOf/maxOf: picking the two dates backwards is a period, not an error.
+                if (start != null) {
+                    viewModel.addVacation(minOf(start, end), maxOf(start, end))
+                    if (manyChildren) {
+                        scoping = Scoping.Period(VacationDto(minOf(start, end), maxOf(start, end)))
+                    }
+                }
+                vacationStart = null
+                mode = null
             },
+            title = stringResource(R.string.calendar_pick_end),
         )
         null -> Unit
     }
+
+    scoping?.let { target ->
+        val current = when (target) {
+            is Scoping.Holiday -> settings.holidayScope(target.day)
+            is Scoping.Period -> settings.vacationScope(target.period)
+        }
+        ScopeDialog(
+            children = settings.children,
+            selected = current,
+            onDismiss = { scoping = null },
+            onConfirm = { picked ->
+                when (target) {
+                    is Scoping.Holiday -> viewModel.setHolidayScope(target.day, picked)
+                    is Scoping.Period -> viewModel.setVacationScope(target.period, picked)
+                }
+                scoping = null
+            },
+        )
+    }
 }
 
+/**
+ * Who a special day is for. Nothing ticked means the whole family, which is both the default and
+ * the honest reading of "no child in particular" — a birthday ticks one name, a bank holiday none.
+ */
 @Composable
-private fun RowItem(label: String, position: CardPosition = CardPosition.Single, onDelete: () -> Unit) {
-    WalcottCard(position = position) {
+private fun ScopeDialog(
+    children: List<ChildEntry>,
+    selected: Set<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (Set<String>) -> Unit,
+) {
+    var picked by remember(selected) { mutableStateOf(selected) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.calendar_scope_title)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(R.string.calendar_scope_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Tokens.spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = picked.isEmpty(), onCheckedChange = { picked = emptySet() })
+                    Text(stringResource(R.string.calendar_scope_everyone))
+                }
+                children.forEach { child ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = child.childId in picked,
+                            onCheckedChange = { on ->
+                                picked = if (on) picked + child.childId else picked - child.childId
+                            },
+                        )
+                        Text(child.name)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(picked) }) { Text(stringResource(R.string.action_ok)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/** Which entry the "applies to" chooser is open for. */
+private sealed interface Scoping {
+    data class Holiday(val day: Long) : Scoping
+    data class Period(val period: VacationDto) : Scoping
+}
+
+/** "Everyone", or the names of the children a day belongs to. */
+@Composable
+private fun scopeLabel(childIds: Set<String>, children: List<ChildEntry>): String =
+    if (childIds.isEmpty()) stringResource(R.string.calendar_scope_everyone)
+    else children.filter { it.childId in childIds }.joinToString { it.name }
+        .ifBlank { stringResource(R.string.calendar_scope_everyone) }
+
+@Composable
+private fun RowItem(
+    label: String,
+    scope: String,
+    position: CardPosition = CardPosition.Single,
+    /** Null when the family has fewer than two children and the question has no answer worth asking. */
+    onEditScope: (() -> Unit)?,
+    onDelete: () -> Unit,
+) {
+    WalcottCard(position = position, onClick = onEditScope ?: {}, enabled = onEditScope != null) {
         Row(Modifier.padding(start = Tokens.spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, Modifier.weight(1f))
+            Column(Modifier.weight(1f).padding(vertical = Tokens.spacing.sm)) {
+                Text(label)
+                if (onEditScope != null) {
+                    Text(
+                        scope,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_delete))
             }

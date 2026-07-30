@@ -113,40 +113,32 @@ internal fun BedtimeCard(
                 )
             }
             if (on) {
-                RULE_DAY_TYPES.forEach { dayType ->
+                @Composable
+                fun bedtimeRow(dayType: DayType) {
                     val (start, end) = windowOf(dayType)
-                    val rowEnabled = enabled && dayType.editableUnder(specialDaysOwnRules)
                     Row(
                         Modifier.fillMaxWidth().padding(top = spacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            stringResource(dayType.labelRes()),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                                .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
-                        )
-                        // The special-day row is the only one whose days live on another screen.
-                        if (dayType == DayType.HOLIDAY && onOpenSpecialDays != null) {
-                            SpecialDaysInfoButton(onOpenSpecialDays)
-                        }
+                        Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.bodyLarge)
                         Spacer(Modifier.weight(1f))
-                        TimeButton(stringResource(R.string.from), start.hhmm(), rowEnabled) {
+                        TimeButton(stringResource(R.string.from), start.hhmm(), enabled) {
                             editing = BedtimeEdit(dayType, isStart = true)
                         }
                         Spacer(Modifier.size(spacing.sm))
-                        TimeButton(stringResource(R.string.to), end.hhmm(), rowEnabled) {
+                        TimeButton(stringResource(R.string.to), end.hhmm(), enabled) {
                             editing = BedtimeEdit(dayType, isStart = false)
                         }
                     }
                 }
+                DAY_TYPES.forEach { bedtimeRow(it) }
                 if (onSetSpecialDaysOwnRules != null && onOpenSpecialDays != null) {
-                    SpecialDaysRulesToggle(
+                    SpecialDaysSection(
                         on = specialDaysOwnRules,
                         onOpenCalendar = onOpenSpecialDays,
                         enabled = enabled,
                         onChange = onSetSpecialDaysOwnRules,
-                    )
+                    ) { bedtimeRow(DayType.HOLIDAY) }
                 }
             }
         }
@@ -297,24 +289,17 @@ internal fun BlockedWindowsCard(
         Column(Modifier.padding(spacing.lg).animateContentSize()) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            RULE_DAY_TYPES.forEach { dayType ->
-                val editable = enabled && dayType.editableUnder(specialDaysOwnRules)
-                Row(
-                    Modifier.fillMaxWidth().padding(top = spacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(dayType.labelRes()),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    if (dayType == DayType.HOLIDAY && onOpenSpecialDays != null) {
-                        SpecialDaysInfoButton(onOpenSpecialDays)
-                    }
-                }
+            @Composable
+            fun dayGroup(dayType: DayType) {
+                Text(
+                    stringResource(dayType.labelRes()),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = spacing.md),
+                )
                 WindowsForDay(
                     windows = windowsByDay[dayType.name].orEmpty(),
-                    editable = editable,
+                    editable = enabled,
                     // Per-window "stand down on special days" only means anything while special
                     // days mirror the weekend. Once they have a list of their own, leaving the
                     // window out of it says the same thing, and two controls for one idea is
@@ -323,13 +308,14 @@ internal fun BlockedWindowsCard(
                     onChange = { onChange(dayType, it) },
                 )
             }
+            DAY_TYPES.forEach { dayGroup(it) }
             if (onSetSpecialDaysOwnRules != null && onOpenSpecialDays != null) {
-                SpecialDaysRulesToggle(
+                SpecialDaysSection(
                     on = specialDaysOwnRules,
                     onOpenCalendar = onOpenSpecialDays,
                     enabled = enabled,
                     onChange = onSetSpecialDaysOwnRules,
-                )
+                ) { dayGroup(DayType.HOLIDAY) }
             }
         }
     }
@@ -608,23 +594,14 @@ internal fun CategoryBudgetCard(
                         )
                     }
                 }
-                dayTypes.forEach { dayType ->
+                @Composable
+                fun budgetRow(dayType: DayType) {
                     val minutes = perDay[dayType.name]
-                    val rowEnabled = enabled && dayType.editableUnder(specialDaysOwnRules)
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = spacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            stringResource(dayType.labelRes()),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                                .let { if (rowEnabled) it else it.copy(alpha = 0.5f) },
-                        )
-                        // The special-day row is the only one whose days live on another screen.
-                        if (dayType == DayType.HOLIDAY && onOpenSpecialDays != null) {
-                            SpecialDaysInfoButton(onOpenSpecialDays)
-                        }
+                        Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.bodyLarge)
                         Spacer(Modifier.weight(1f))
                         Stepper(
                             valueLabel = minutes?.let { Duration.ofMinutes(it.toLong()).humanize() }
@@ -635,17 +612,18 @@ internal fun CategoryBudgetCard(
                                 onSetBudget(dayType, if (next < 15) null else next)
                             },
                             onIncrement = { onSetBudget(dayType, (minutes ?: 0) + 15) },
-                            enabled = rowEnabled,
+                            enabled = enabled,
                         )
                     }
                 }
+                DAY_TYPES.forEach { budgetRow(it) }
                 if (onSetSpecialDaysOwnRules != null && onOpenSpecialDays != null) {
-                    SpecialDaysRulesToggle(
+                    SpecialDaysSection(
                         on = specialDaysOwnRules,
                         onOpenCalendar = onOpenSpecialDays,
                         enabled = enabled,
                         onChange = onSetSpecialDaysOwnRules,
-                    )
+                    ) { budgetRow(DayType.HOLIDAY) }
                 }
             }
         }
