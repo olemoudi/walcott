@@ -81,7 +81,11 @@ object RuleEngine {
      * config without budgets can safely keep enforcing as usual.
      */
     fun requiresUsageCounting(config: FamilyConfig): Boolean =
-        config.policies.values.any { it.dailyBudget.isNotEmpty() }
+        config.policies.values.any { it.dailyBudget.isNotEmpty() } ||
+            // Per-app sub-caps count down off the same counter. Missing them here was a real
+            // bypass: a family that caps only individual apps ("WhatsApp, 30 min") kept
+            // enforcing "as usual" with the counter gone, which for a budget means forever.
+            config.perAppPolicies.values.any { it.dailyBudget.isNotEmpty() }
 
     /**
      * Whether this config depends on the device clock being right. Every rule this engine

@@ -1,6 +1,7 @@
 package dev.walcott.rules
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
@@ -125,5 +126,86 @@ class BlockedPackagesTest {
             blockedWindows = mapOf(DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(9, 0), LocalTime.of(14, 0)))),
         )
         assertTrue(RuleEngine.requiresTrustedClock(windowed))
+    }
+
+    // --- The two fail-closed guards, one clause at a time ---
+    //
+    // Both are OR-chains, so a config that trips an early clause proves nothing about the
+    // later ones: each rule a parent can configure ALONE has to trip the guard by itself, or
+    // that rule is walkable by revoking a permission or moving the clock.
+
+    private val window = TimeWindow(LocalTime.of(9, 0), LocalTime.of(14, 0))
+    private val bare = FamilyConfig(version = 1, assignments = mapOf(game to "games"), policies = emptyMap())
+
+    @Test
+    fun `a category budget alone requires the usage counter`() {
+        val cfg = bare.copy(policies = mapOf("games" to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1)))))
+        assertTrue(RuleEngine.requiresUsageCounting(cfg))
+        assertEquals(managed, RuleEngine.blockedPackages(cfg, managed, monday, usageCountingAvailable = false))
+    }
+
+    @Test
+    fun `a per-app budget alone requires the usage counter`() {
+        // The bypass this closes: capping only individual apps left the counter "optional",
+        // and a budget that can't count down never runs out.
+        val cfg = bare.copy(
+            perAppPolicies = mapOf(game to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))),
+        )
+        assertTrue(RuleEngine.requiresUsageCounting(cfg))
+        assertEquals(managed, RuleEngine.blockedPackages(cfg, managed, monday, usageCountingAvailable = false))
+    }
+
+    @Test
+    fun `windows and bedtime alone do not require the usage counter`() {
+        // They read the clock, not the counter: still enforceable with usage access revoked,
+        // so failing closed there would punish a family for nothing.
+        assertFalse(RuleEngine.requiresUsageCounting(bare.copy(bedtime = mapOf(DayType.SCHOOL to window))))
+        assertFalse(RuleEngine.requiresUsageCounting(bare.copy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window)))))
+        assertFalse(
+            RuleEngine.requiresUsageCounting(
+                bare.copy(perAppPolicies = mapOf(game to CategoryPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
+            ),
+        )
+        assertFalse(RuleEngine.requiresUsageCounting(bare))
+    }
+
+    @Test
+    fun `every kind of time rule alone requires a trusted clock`() {
+        assertFalse(RuleEngine.requiresTrustedClock(bare))
+        assertTrue(RuleEngine.requiresTrustedClock(bare.copy(bedtime = mapOf(DayType.SCHOOL to window))))
+        assertTrue(RuleEngine.requiresTrustedClock(bare.copy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window)))))
+        assertTrue(
+            RuleEngine.requiresTrustedClock(
+                bare.copy(policies = mapOf("games" to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1))))),
+            ),
+        )
+        assertTrue(
+            RuleEngine.requiresTrustedClock(
+                bare.copy(policies = mapOf("games" to CategoryPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
+            ),
+        )
+        assertTrue(
+            RuleEngine.requiresTrustedClock(
+                bare.copy(perAppPolicies = mapOf(game to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30))))),
+            ),
+        )
+        assertTrue(
+            RuleEngine.requiresTrustedClock(
+                bare.copy(perAppPolicies = mapOf(game to CategoryPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
+            ),
+        )
+    }
+
+    @Test
+    fun `an empty rule slot is not a rule`() {
+        // The editors leave keys behind: a category whose budget map is empty, a windows list
+        // emptied of its last window. Neither is a reason to lock a device down.
+        val emptyish = bare.copy(
+            policies = mapOf("games" to CategoryPolicy()),
+            perAppPolicies = mapOf(game to CategoryPolicy()),
+            blockedWindows = mapOf(DayType.SCHOOL to emptyList()),
+        )
+        assertFalse(RuleEngine.requiresUsageCounting(emptyish))
+        assertFalse(RuleEngine.requiresTrustedClock(emptyish))
     }
 }

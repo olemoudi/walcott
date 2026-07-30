@@ -84,19 +84,19 @@ class PolicySettingsTest {
 
     @Test
     fun `a window's day filter maps to the engine, and junk day numbers are dropped`() {
-        val window = WindowDto(17 * 60, 19 * 60, days = listOf(2, 4), skipSpecialDays = true).toTimeWindow()
+        val window = WindowDto(17 * 60, 19 * 60, days = listOf(2, 4), skipSpecialDays = true).toTimeWindowOrNull()!!
         assertEquals(setOf(java.time.DayOfWeek.TUESDAY, java.time.DayOfWeek.THURSDAY), window.days)
         assertTrue(window.skipSpecialDays)
 
         // A window written before the fields existed: every day, never stands down.
-        val legacy = WindowDto(17 * 60, 19 * 60).toTimeWindow()
+        val legacy = WindowDto(17 * 60, 19 * 60).toTimeWindowOrNull()!!
         assertTrue(legacy.days.isEmpty())
         assertFalse(legacy.skipSpecialDays)
 
         // Out-of-range numbers are ignored rather than thrown inside the enforcement loop.
         // All-junk collapses to "every day", which over-blocks rather than silently stopping.
-        assertEquals(setOf(java.time.DayOfWeek.MONDAY), WindowDto(0, 60, days = listOf(1, 9, -3)).toTimeWindow().days)
-        assertTrue(WindowDto(0, 60, days = listOf(0, 8)).toTimeWindow().days.isEmpty())
+        assertEquals(setOf(java.time.DayOfWeek.MONDAY), WindowDto(0, 60, days = listOf(1, 9, -3)).toTimeWindowOrNull()!!.days)
+        assertTrue(WindowDto(0, 60, days = listOf(0, 8)).toTimeWindowOrNull()!!.days.isEmpty())
     }
 
     @Test

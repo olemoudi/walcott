@@ -14,8 +14,9 @@ android {
         applicationId = "dev.walcott"
         minSdk = 29
         targetSdk = 35
-        versionCode = 60
-        versionName = "0.20.0"
+        versionCode = 61
+        versionName = "0.20.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -32,6 +33,18 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            // Coverage for the JVM unit tests: the policy layer (settings -> rules -> the set
+            // the loop suspends) lives in this module, and it was the one part of the app's
+            // brain the aggregated report couldn't see.
+            enableUnitTestCoverage = true
+            // The release key, on purpose. The instrumented tests exercise Device Owner
+            // behaviour, and a Device Owner can only be replaced by a build with its own
+            // signature — so a debug APK signed with the debug key cannot be installed over
+            // the app it is meant to test. (The keystore is committed for this family alpha;
+            // see the release signingConfig above.)
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -52,6 +65,12 @@ android {
 
     testOptions {
         unitTests.all { it.useJUnitPlatform() }
+    }
+
+    // The exported Room schemas, so MigrationTestHelper can open a v1 database and walk it up
+    // the real migration chain instead of trusting that the chain exists.
+    sourceSets.getByName("androidTest") {
+        assets.srcDir(files("$projectDir/schemas"))
     }
 }
 
@@ -90,4 +109,12 @@ dependencies {
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
+
+    // Instrumented tests: what only a real device can answer — Device Owner suspension, Room
+    // migrations against a real SQLite file, DataStore surviving a real read.
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.room.testing)
 }

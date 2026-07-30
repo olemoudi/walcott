@@ -46,14 +46,25 @@ data class WindowDto(
     /** Whether the window stands down on calendar special days (see [TimeWindow.skipSpecialDays]). */
     val skipSpecialDays: Boolean = false,
 ) {
-    fun toTimeWindow() = TimeWindow(
-        LocalTime.ofSecondOfDay(startMinute * 60L),
-        LocalTime.ofSecondOfDay(endMinute * 60L),
-        // Unparseable day numbers are dropped rather than thrown — this runs inside the
-        // enforcement loop, same reasoning as [byDayType].
-        days = days.mapNotNullTo(mutableSetOf()) { runCatching { DayOfWeek.of(it) }.getOrNull() },
-        skipSpecialDays = skipSpecialDays,
-    )
+    /**
+     * This window as the engine wants it, or null when either end isn't a minute of any day.
+     * Nullable on purpose: this conversion happens inside the enforcement loop, where an
+     * exception is not a broken rule but a device that crash-restarts every few seconds with
+     * its apps frozen and no way to say why. A malformed window is dropped instead — the same
+     * bargain [byDayType] strikes for a day-type key it doesn't know.
+     */
+    fun toTimeWindowOrNull(): TimeWindow? {
+        val start = startMinute.toTimeOfDayOrNull() ?: return null
+        val end = endMinute.toTimeOfDayOrNull() ?: return null
+        return TimeWindow(
+            start,
+            end,
+            // Unparseable day numbers are dropped rather than thrown — this runs inside the
+            // enforcement loop, same reasoning as [byDayType].
+            days = days.mapNotNullTo(mutableSetOf()) { runCatching { DayOfWeek.of(it) }.getOrNull() },
+            skipSpecialDays = skipSpecialDays,
+        )
+    }
 }
 
 /** Persistable earn-time rule (see [EarnRule]). */
@@ -95,7 +106,7 @@ data class IdleEarnDto(
         windowCapMinutes = windowCapMinutes,
         weeklyCapMinutes = weeklyCapMinutes,
         earnWindows = earnWindows.byDayType()
-            .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
+            .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
     )
 }
 
@@ -357,7 +368,7 @@ data class PolicySettings(
                     .mapValues { Duration.ofMinutes(it.value.toLong()) },
                 blockedWindows = blockedWindows[categoryId].orEmpty()
                     .byDayType()
-                    .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
+                    .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
             )
         }
         val perApp = appPolicies
@@ -369,7 +380,7 @@ data class PolicySettings(
                         .mapValues { Duration.ofMinutes(it.value.toLong()) },
                     blockedWindows = dto.blockedWindows
                         .byDayType()
-                        .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
+                        .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
                 )
             }
         return FamilyConfig(
@@ -377,10 +388,12 @@ data class PolicySettings(
             assignments = assignments,
             policies = policies,
             perAppPolicies = perApp,
-            bedtime = bedtime.byDayType().mapValues { it.value.toTimeWindow() },
+            bedtime = bedtime.byDayType()
+                .mapNotNull { (dayType, window) -> window.toTimeWindowOrNull()?.let { dayType to it } }
+                .toMap(),
             blockedWindows = allAppsBlockedWindows
                 .byDayType()
-                .mapValues { entry -> entry.value.map { it.toTimeWindow() } },
+                .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
             essentialPackages = essentials,
             calendar = SchoolCalendar(
                 holidays = holidays.map(LocalDate::ofEpochDay).toSet(),
