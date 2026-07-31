@@ -285,6 +285,10 @@
     <string name="remove_child_confirm">Remove %1$s? Their device keeps the family rules until it enrolls again.</string>
     <string name="override_section_title">This child\'s rules</string>
     <string name="override_inherited_hint">Inherited from the family unless you customize them here.</string>
+    <plurals name="override_fold_customized">
+        <item quantity="one">%d rule customized for this child</item>
+        <item quantity="other">%d rules customized for this child</item>
+    </plurals>
     <string name="override_inherited_row_hint">Inherited from the family — turn on to change it for this child</string>
     <string name="override_bedtime_title">Custom bedtime</string>
     <string name="override_budgets_title">Custom budgets</string>

@@ -285,6 +285,10 @@
     <string name="remove_child_confirm">¿Quitar a %1$s? Su dispositivo mantiene las reglas de la familia hasta que se vuelva a enrolar.</string>
     <string name="override_section_title">Reglas de este hijo</string>
     <string name="override_inherited_hint">Se heredan de la familia salvo que las personalices aquí.</string>
+    <plurals name="override_fold_customized">
+        <item quantity="one">%d regla personalizada para este hijo</item>
+        <item quantity="other">%d reglas personalizadas para este hijo</item>
+    </plurals>
     <string name="override_inherited_row_hint">Heredado de la familia: actívalo para cambiarlo solo a este hijo</string>
     <string name="override_bedtime_title">Hora de dormir personalizada</string>
     <string name="override_budgets_title">Límites personalizados</string>

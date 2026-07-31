@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -136,6 +137,12 @@ fun ChildDetailScreen(
     // The technical tail (remote fixes, live health, update transport) folded away: it is
     // rarely what the parent came for, and it used to push location and limits off-screen.
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
+    // Same for the per-child rule overrides: an all-inherited child used to open on a wall
+    // of greyed-out rules, which read as "settings to fix" instead of "nothing customized".
+    // Starts open only when something IS customized, so active state is never hidden.
+    val hasCustomRules = entry.overrides.bedtime != null || entry.overrides.budgets != null ||
+        entry.overrides.blockedDomains != null || entry.overrides.deviceRestrictions != null
+    var showRules by rememberSaveable { mutableStateOf(hasCustomRules) }
 
     // Location earns a prominent slot only when it can actually show something: tracking or
     // history on for this child, or a trail already reported. Otherwise the card (which is
@@ -314,101 +321,123 @@ fun ChildDetailScreen(
                 }
             }
 
-            // --- Per-child overrides ---
+            // --- Per-child overrides, behind a fold ---
             item {
-                SectionHeader(
-                    stringResource(R.string.override_section_title),
-                    supporting = stringResource(R.string.override_inherited_hint),
+                val customized = listOf(
+                    entry.overrides.bedtime, entry.overrides.budgets,
+                    entry.overrides.blockedDomains, entry.overrides.deviceRestrictions,
+                ).count { it != null }
+                FoldCard(
+                    icon = Icons.Outlined.Rule,
+                    title = stringResource(R.string.override_section_title),
+                    subtitle = if (customized > 0) {
+                        pluralStringResource(R.plurals.override_fold_customized, customized, customized)
+                    } else {
+                        stringResource(R.string.override_inherited_hint)
+                    },
+                    expanded = showRules,
+                    onToggle = { showRules = !showRules },
                 )
             }
-            // Each override is a connected pair: the switch that owns the rule on top, the
-            // rule itself (always rendered, refused while inherited) attached below it.
-            item {
-                CardGroup {
-                    OverrideSwitchRow(
-                        title = stringResource(R.string.override_bedtime_title),
-                        checked = entry.overrides.bedtime != null,
-                        position = CardPosition.First,
-                        onToggle = { on ->
-                            viewModel.setChildOverrides(
-                                childId,
-                                entry.overrides.copy(bedtime = if (on) settings.bedtime else null),
-                            )
-                        },
-                    )
-                    BedtimeCard(
-                        bedtime = entry.overrides.bedtime ?: settings.bedtime,
-                        enabled = entry.overrides.bedtime != null,
-                        position = CardPosition.Last,
-                    ) { updated ->
-                        viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
-                    }
-                }
-            }
-            item {
-                val categories = AppCategory.entries.toList()
-                CardGroup {
-                    OverrideSwitchRow(
-                        title = stringResource(R.string.override_budgets_title),
-                        checked = entry.overrides.budgets != null,
-                        position = CardPosition.First,
-                        onToggle = { on ->
-                            viewModel.setChildOverrides(
-                                childId,
-                                entry.overrides.copy(budgets = if (on) settings.budgets else null),
-                            )
-                        },
-                    )
-                    categories.forEachIndexed { index, category ->
-                        val budgets = entry.overrides.budgets ?: settings.budgets
-                        CategoryBudgetCard(
-                            category = category,
-                            perDay = budgets[category.id].orEmpty(),
-                            enabled = entry.overrides.budgets != null,
-                            position = cardPosition(index + 1, categories.size + 1),
-                            specialDaysOwnRules = settings.specialDaysOwnRules,
-                            onOpenSpecialDays = onOpenSpecialDays,
-                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                            onSetBudget = { dayType, minutes ->
+            if (showRules) {
+                // Each override is a connected pair: the switch that owns the rule on top, the
+                // rule itself (always rendered, refused while inherited) attached below it.
+                item {
+                    CardGroup {
+                        OverrideSwitchRow(
+                            title = stringResource(R.string.override_bedtime_title),
+                            checked = entry.overrides.bedtime != null,
+                            position = CardPosition.First,
+                            onToggle = { on ->
                                 viewModel.setChildOverrides(
                                     childId,
-                                    entry.overrides.copy(budgets = budgets.withBudget(category.id, dayType.name, minutes)),
+                                    entry.overrides.copy(bedtime = if (on) settings.bedtime else null),
                                 )
                             },
                         )
+                        BedtimeCard(
+                            bedtime = entry.overrides.bedtime ?: settings.bedtime,
+                            enabled = entry.overrides.bedtime != null,
+                            position = CardPosition.Last,
+                        ) { updated ->
+                            viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
+                        }
                     }
                 }
-            }
-            item {
-                OverrideSwitchRow(
-                    title = stringResource(R.string.override_webfilter_title),
-                    checked = entry.overrides.blockedDomains != null,
-                    onToggle = { on ->
-                        viewModel.setChildOverrides(
-                            childId,
-                            entry.overrides.copy(blockedDomains = if (on) settings.blockedDomains else null),
+                item {
+                    val categories = AppCategory.entries.toList()
+                    CardGroup {
+                        OverrideSwitchRow(
+                            title = stringResource(R.string.override_budgets_title),
+                            checked = entry.overrides.budgets != null,
+                            position = CardPosition.First,
+                            onToggle = { on ->
+                                viewModel.setChildOverrides(
+                                    childId,
+                                    entry.overrides.copy(budgets = if (on) settings.budgets else null),
+                                )
+                            },
                         )
-                    },
-                    onEdit = onEditWebFilter,
-                    editable = entry.overrides.blockedDomains != null,
-                )
+                        categories.forEachIndexed { index, category ->
+                            val budgets = entry.overrides.budgets ?: settings.budgets
+                            CategoryBudgetCard(
+                                category = category,
+                                perDay = budgets[category.id].orEmpty(),
+                                enabled = entry.overrides.budgets != null,
+                                position = cardPosition(index + 1, categories.size + 1),
+                                specialDaysOwnRules = settings.specialDaysOwnRules,
+                                onOpenSpecialDays = onOpenSpecialDays,
+                                onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                                onSetBudget = { dayType, minutes ->
+                                    viewModel.setChildOverrides(
+                                        childId,
+                                        entry.overrides.copy(budgets = budgets.withBudget(category.id, dayType.name, minutes)),
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    OverrideSwitchRow(
+                        title = stringResource(R.string.override_webfilter_title),
+                        checked = entry.overrides.blockedDomains != null,
+                        onToggle = { on ->
+                            viewModel.setChildOverrides(
+                                childId,
+                                entry.overrides.copy(blockedDomains = if (on) settings.blockedDomains else null),
+                            )
+                        },
+                        onEdit = onEditWebFilter,
+                        editable = entry.overrides.blockedDomains != null,
+                    )
+                }
+                item {
+                    OverrideSwitchRow(
+                        title = stringResource(R.string.override_protection_title),
+                        checked = entry.overrides.deviceRestrictions != null,
+                        onToggle = { on ->
+                            viewModel.setChildOverrides(
+                                childId,
+                                entry.overrides.copy(deviceRestrictions = if (on) settings.deviceRestrictions else null),
+                            )
+                        },
+                        onEdit = onEditProtection,
+                        editable = entry.overrides.deviceRestrictions != null,
+                    )
+                }
             }
-            item {
-                OverrideSwitchRow(
-                    title = stringResource(R.string.override_protection_title),
-                    checked = entry.overrides.deviceRestrictions != null,
-                    onToggle = { on ->
-                        viewModel.setChildOverrides(
-                            childId,
-                            entry.overrides.copy(deviceRestrictions = if (on) settings.deviceRestrictions else null),
-                        )
-                    },
-                    onEdit = onEditProtection,
-                    editable = entry.overrides.deviceRestrictions != null,
-                )
-            }
+
             // --- Additional settings: the technical tail, folded until asked for ---
-            item { AdvancedSettingsToggle(expanded = showAdvanced, onToggle = { showAdvanced = !showAdvanced }) }
+            item {
+                FoldCard(
+                    icon = Icons.Outlined.Tune,
+                    title = stringResource(R.string.child_more_title),
+                    subtitle = stringResource(R.string.child_more_subtitle),
+                    expanded = showAdvanced,
+                    onToggle = { showAdvanced = !showAdvanced },
+                )
+            }
             if (showAdvanced) {
                 // Remote fixes and live health are only meaningful once a device is linked.
                 if (snapshot != null) {
@@ -1400,31 +1429,37 @@ private fun OverrideSwitchRow(
 }
 
 /**
- * The fold behind which the technical cards live: remote fixes, live health/reports, update
- * transport, and location while unused. One tap opens it in place; the state survives
+ * A fold that keeps a group of rarely-needed cards out of the way (the child's rule
+ * overrides, the technical tail). One tap opens it in place; the state survives
  * recomposition but not leaving the screen, so the detail always opens compact.
  */
 @Composable
-private fun AdvancedSettingsToggle(expanded: Boolean, onToggle: () -> Unit) {
+private fun FoldCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
     val spacing = Tokens.spacing
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = tween(Tokens.motion.medium),
-        label = "advancedChevron",
+        label = "foldChevron",
     )
     WalcottCard(onClick = onToggle) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Outlined.Tune,
+                icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp),
             )
             Spacer(Modifier.width(spacing.md))
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.child_more_title), style = MaterialTheme.typography.titleMedium)
+                Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    stringResource(R.string.child_more_subtitle),
+                    subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
