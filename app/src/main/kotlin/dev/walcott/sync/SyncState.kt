@@ -79,6 +79,27 @@ data class ParentEvent(
 
         /** A child sent a selection of domains to block; [detail] is the app, [count] how many. */
         const val TYPE_DOMAINS = "domains"
+
+        /**
+         * Collapses runs of identical consecutive entries (same type, child, detail and count)
+         * into the run's first element plus how many it stands for. The feed can legitimately
+         * repeat itself — two equal bonuses in a row are two grants — but N identical adjacent
+         * lines read as noise, so the UI shows one line with a ×N mark instead.
+         */
+        fun collapseRepeats(events: List<ParentEvent>): List<Pair<ParentEvent, Int>> {
+            val collapsed = mutableListOf<Pair<ParentEvent, Int>>()
+            for (event in events) {
+                val last = collapsed.lastOrNull()
+                if (last != null && last.first.type == event.type && last.first.childId == event.childId &&
+                    last.first.detail == event.detail && last.first.count == event.count
+                ) {
+                    collapsed[collapsed.size - 1] = last.copy(second = last.second + 1)
+                } else {
+                    collapsed += event to 1
+                }
+            }
+            return collapsed
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 package dev.walcott.ui.parent
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,6 +30,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -129,6 +133,43 @@ fun ChildDetailScreen(
     var showRemove by remember { mutableStateOf(false) }
     var showBonus by remember { mutableStateOf(false) }
     var showCode by rememberSaveable { mutableStateOf(false) }
+    // The technical tail (remote fixes, live health, update transport) folded away: it is
+    // rarely what the parent came for, and it used to push location and limits off-screen.
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+
+    // Location earns a prominent slot only when it can actually show something: tracking or
+    // history on for this child, or a trail already reported. Otherwise the card (which is
+    // also where it gets switched on) lives under "Additional settings".
+    val resolvedForLocation = settings.resolveForChild(childId)
+    val locationActive = resolvedForLocation.trackingIntervalMinutes > 0 ||
+        resolvedForLocation.locationHistoryEnabled || snapshot?.locations?.isNotEmpty() == true
+
+    val locationCard: @Composable () -> Unit = {
+        val resolved = settings.resolveForChild(childId)
+        LocationCard(
+            customized = entry.overrides.trackingIntervalMinutes != null ||
+                entry.overrides.locationHistoryEnabled != null,
+            onSetCustomized = { on ->
+                viewModel.setChildOverrides(
+                    childId,
+                    entry.overrides.copy(
+                        trackingIntervalMinutes = if (on) resolved.trackingIntervalMinutes else null,
+                        locationHistoryEnabled = if (on) resolved.locationHistoryEnabled else null,
+                    ),
+                )
+            },
+            intervalMinutes = resolved.trackingIntervalMinutes,
+            onSetInterval = { viewModel.setTrackingInterval(childId, it) },
+            historyEnabled = resolved.locationHistoryEnabled,
+            onSetHistory = { viewModel.setLocationHistory(childId, it) },
+            hasDevice = snapshot != null,
+            // Live feedback: the button spins from tap until the device answers.
+            locating = snapshot != null &&
+                dev.walcott.sync.SyncEngine.locatePending(pendingOps, snapshot.deviceId),
+            onLocateNow = { snapshot?.let { viewModel.requestLocation(it.deviceId) } },
+            onOpenMap = { onOpenMap(childId) },
+        )
+    }
 
     Column(Modifier.fillMaxSize()) {
         DetailTopBar(
@@ -196,15 +237,16 @@ fun ChildDetailScreen(
                     } else {
                         emptyMap()
                     }
+                    val ledger = ledgers[dev.walcott.sync.UsageLedger.keyOf(snapshot.childId, snapshot.deviceId)].orEmpty()
                     ChildDashboardCard(
                         childName = entry.name,
                         usedToday = Duration.ofSeconds(usage.values.sumOf { it.seconds }),
-                        average = dev.walcott.sync.UsageLedger.averageDaily(
-                            ledgers[dev.walcott.sync.UsageLedger.keyOf(snapshot.childId, snapshot.deviceId)].orEmpty(),
-                            today,
-                        ),
+                        avg7 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 7),
+                        avg30 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 30),
                         remaining = dev.walcott.data.ChildStats.remainingToday(config, now, usage, extra),
-                        events = events.filter { it.childId == childId && eventRenderable(it) }.take(3),
+                        events = dev.walcott.sync.ParentEvent
+                            .collapseRepeats(events.filter { it.childId == childId && eventRenderable(it) })
+                            .take(3),
                         nowMs = nowMs,
                     )
                 }
@@ -249,6 +291,11 @@ fun ChildDetailScreen(
                 item { WrongPinCard(snapshot.pinWrongTotal, snapshot.lastWrongPinMs) }
             }
 
+            // --- Location, right under the day-at-a-glance while it's in use ---
+            if (locationActive) {
+                item { locationCard() }
+            }
+
             // --- Stats ---
             if (snapshot != null) {
                 item { SectionHeader(stringResource(R.string.child_section_activity)) }
@@ -265,56 +312,6 @@ fun ChildDetailScreen(
                         }
                     }
                 }
-            }
-
-            // --- Remote fixes (only meaningful once a device is actually linked) ---
-            if (snapshot != null) {
-                item { SectionHeader(stringResource(R.string.child_section_device)) }
-                item {
-                    CardGroup {
-                        RemoteFixCard(
-                            snapshot = snapshot,
-                            position = CardPosition.First,
-                            onCommand = { action -> viewModel.sendRemoteCommand(snapshot.deviceId, action) },
-                        )
-                        LiveHealthCard(
-                            snapshot = snapshot,
-                            lastSeenMs = lastSeen[snapshot.deviceId] ?: 0L,
-                            nowMs = nowMs,
-                            reportCount = diagHistory[snapshot.deviceId]?.size ?: 0,
-                            position = CardPosition.Last,
-                            onOpenReports = onOpenHealthReports,
-                        )
-                    }
-                }
-            }
-
-            // --- Location (inherits the family defaults unless customized) ---
-            item {
-                val resolved = settings.resolveForChild(childId)
-                LocationCard(
-                    customized = entry.overrides.trackingIntervalMinutes != null ||
-                        entry.overrides.locationHistoryEnabled != null,
-                    onSetCustomized = { on ->
-                        viewModel.setChildOverrides(
-                            childId,
-                            entry.overrides.copy(
-                                trackingIntervalMinutes = if (on) resolved.trackingIntervalMinutes else null,
-                                locationHistoryEnabled = if (on) resolved.locationHistoryEnabled else null,
-                            ),
-                        )
-                    },
-                    intervalMinutes = resolved.trackingIntervalMinutes,
-                    onSetInterval = { viewModel.setTrackingInterval(childId, it) },
-                    historyEnabled = resolved.locationHistoryEnabled,
-                    onSetHistory = { viewModel.setLocationHistory(childId, it) },
-                    hasDevice = snapshot != null,
-                    // Live feedback: the button spins from tap until the device answers.
-                    locating = snapshot != null &&
-                        dev.walcott.sync.SyncEngine.locatePending(pendingOps, snapshot.deviceId),
-                    onLocateNow = { snapshot?.let { viewModel.requestLocation(it.deviceId) } },
-                    onOpenMap = { onOpenMap(childId) },
-                )
             }
 
             // --- Per-child overrides ---
@@ -410,14 +407,44 @@ fun ChildDetailScreen(
                     editable = entry.overrides.deviceRestrictions != null,
                 )
             }
-            item {
-                UpdateWifiOverrideCard(
-                    override = entry.overrides.updateWifiOnly,
-                    familyValue = settings.updateWifiOnly,
-                    onSetOverride = { value ->
-                        viewModel.setChildOverrides(childId, entry.overrides.copy(updateWifiOnly = value))
-                    },
-                )
+            // --- Additional settings: the technical tail, folded until asked for ---
+            item { AdvancedSettingsToggle(expanded = showAdvanced, onToggle = { showAdvanced = !showAdvanced }) }
+            if (showAdvanced) {
+                // Remote fixes and live health are only meaningful once a device is linked.
+                if (snapshot != null) {
+                    item { SectionHeader(stringResource(R.string.child_section_device)) }
+                    item {
+                        CardGroup {
+                            RemoteFixCard(
+                                snapshot = snapshot,
+                                position = CardPosition.First,
+                                onCommand = { action -> viewModel.sendRemoteCommand(snapshot.deviceId, action) },
+                            )
+                            LiveHealthCard(
+                                snapshot = snapshot,
+                                lastSeenMs = lastSeen[snapshot.deviceId] ?: 0L,
+                                nowMs = nowMs,
+                                reportCount = diagHistory[snapshot.deviceId]?.size ?: 0,
+                                position = CardPosition.Last,
+                                onOpenReports = onOpenHealthReports,
+                            )
+                        }
+                    }
+                }
+                // Location switched off lives here: still reachable to turn it on, but not
+                // spending a prominent slot on a feature the family isn't using.
+                if (!locationActive) {
+                    item { locationCard() }
+                }
+                item {
+                    UpdateWifiOverrideCard(
+                        override = entry.overrides.updateWifiOnly,
+                        familyValue = settings.updateWifiOnly,
+                        onSetOverride = { value ->
+                            viewModel.setChildOverrides(childId, entry.overrides.copy(updateWifiOnly = value))
+                        },
+                    )
+                }
             }
 
             item { Spacer(Modifier.height(spacing.xl)) }
@@ -638,18 +665,20 @@ private fun LinkedCard(snapshot: ChildSnapshot, rulesSyncing: Boolean, onShowCod
 }
 
 /**
- * The child's day at a glance: screen time so far, budget left, and the daily average from
- * the parent-side ledger — plus this child's slice of the activity feed. Sits at the top of
- * the detail so the answer to "how are they doing?" needs no scrolling.
+ * The child's day at a glance: screen time so far, budget left, and the week/month averages
+ * from the parent-side ledger — plus this child's slice of the activity feed. Sits at the top
+ * of the detail so the answer to "how are they doing?" needs no scrolling.
  */
 @Composable
 private fun ChildDashboardCard(
     childName: String,
     usedToday: Duration,
-    average: dev.walcott.sync.UsageLedger.Average?,
+    avg7: dev.walcott.sync.UsageLedger.Average?,
+    avg30: dev.walcott.sync.UsageLedger.Average?,
     /** Budget left today across categories; null = nothing has a budget today ("no limit"). */
     remaining: Duration?,
-    events: List<dev.walcott.sync.ParentEvent>,
+    /** Collapsed feed entries: each with how many identical lines it stands for. */
+    events: List<Pair<dev.walcott.sync.ParentEvent, Int>>,
     nowMs: Long,
 ) {
     val spacing = Tokens.spacing
@@ -666,21 +695,31 @@ private fun ChildDashboardCard(
                     label = stringResource(R.string.dashboard_remaining),
                     modifier = Modifier.weight(1f),
                 )
-                StatTile(
-                    value = average?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
-                    label = stringResource(R.string.dashboard_avg),
-                    caption = average?.let {
-                        pluralStringResource(R.plurals.dashboard_avg_days, it.daysCounted, it.daysCounted)
-                    },
-                    modifier = Modifier.weight(1f),
-                )
+            }
+            Spacer(Modifier.height(spacing.md))
+            Row(Modifier.fillMaxWidth()) {
+                AvgTile(avg7, R.string.dashboard_avg7, Modifier.weight(1f))
+                AvgTile(avg30, R.string.dashboard_avg30, Modifier.weight(1f))
             }
             if (events.isNotEmpty()) {
                 HorizontalDivider(Modifier.padding(vertical = spacing.md))
-                events.forEach { event -> EventLine(event, childName, nowMs) }
+                events.forEach { (event, times) -> EventLine(event, childName, nowMs, repeat = times) }
             }
         }
     }
+}
+
+/** A [StatTile] for a ledger average, captioned with how many days actually back it. */
+@Composable
+private fun AvgTile(average: dev.walcott.sync.UsageLedger.Average?, labelRes: Int, modifier: Modifier = Modifier) {
+    StatTile(
+        value = average?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+        label = stringResource(labelRes),
+        caption = average?.let {
+            pluralStringResource(R.plurals.dashboard_avg_days, it.daysCounted, it.daysCounted)
+        },
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -1356,6 +1395,46 @@ private fun OverrideSwitchRow(
                 }
             }
             Switch(checked = checked, onCheckedChange = onToggle)
+        }
+    }
+}
+
+/**
+ * The fold behind which the technical cards live: remote fixes, live health/reports, update
+ * transport, and location while unused. One tap opens it in place; the state survives
+ * recomposition but not leaving the screen, so the detail always opens compact.
+ */
+@Composable
+private fun AdvancedSettingsToggle(expanded: Boolean, onToggle: () -> Unit) {
+    val spacing = Tokens.spacing
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(Tokens.motion.medium),
+        label = "advancedChevron",
+    )
+    WalcottCard(onClick = onToggle) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.Tune,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.child_more_title), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.child_more_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.rotate(rotation),
+            )
         }
     }
 }

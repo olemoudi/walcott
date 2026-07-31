@@ -103,6 +103,11 @@ fun WalcottApp(
     // Where "Special days" was opened from, so Back lands on the screen that sent the parent
     // there instead of the hub. Null = reached from the hub itself.
     var calendarReturnTo by remember { mutableStateOf<Screen?>(null) }
+    // Same for "Limits and schedules" and the child map: both are reachable straight from the
+    // home now, and Back must land where the parent came from. Null = the historical origin
+    // (the hub for budgets, the child detail for the map).
+    var budgetsReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var mapReturnTo by remember { mutableStateOf<Screen?>(null) }
     // Which guided-setup preset is running (SETUP_WIZARD screen).
     var wizardPreset by remember { mutableStateOf<SetupPreset?>(null) }
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
@@ -192,7 +197,8 @@ fun WalcottApp(
                     Screen.FAMILY
                 }
             Screen.CALENDAR -> calendarReturnTo?.also { calendarReturnTo = null } ?: Screen.FAMILY
-            Screen.APPS, Screen.BUDGETS, Screen.CHILDREN, Screen.EARN,
+            Screen.BUDGETS -> budgetsReturnTo?.also { budgetsReturnTo = null } ?: Screen.FAMILY
+            Screen.APPS, Screen.CHILDREN, Screen.EARN,
             Screen.REPORT, Screen.LOCATION,
             -> Screen.FAMILY
             // Reached from the home gear on the parent, from the device hub on a child.
@@ -202,7 +208,7 @@ fun WalcottApp(
             Screen.SETUP_PRESETS -> Screen.FAMILIES
             Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
-            Screen.CHILD_MAP -> Screen.CHILD_DETAIL
+            Screen.CHILD_MAP -> mapReturnTo?.also { mapReturnTo = null } ?: Screen.CHILD_DETAIL
             Screen.CHILD_HEALTH -> Screen.CHILD_DETAIL
             Screen.DOMAIN_MONITOR -> Screen.FAMILY
             Screen.DOMAIN_REVIEW -> Screen.FAMILIES
@@ -265,12 +271,18 @@ fun WalcottApp(
                         },
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
                         onOpenApps = { screen = Screen.APPS },
-                        onOpenBudgets = { screen = Screen.BUDGETS },
+                        onOpenBudgets = { budgetsReturnTo = Screen.FAMILIES; screen = Screen.BUDGETS },
                         onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
                         onOpenActivity = { screen = Screen.ACTIVITY },
                         onOpenDomainRequest = { batchId ->
                             domainBatchId = batchId
                             screen = Screen.DOMAIN_REVIEW
+                        },
+                        onOpenCalendar = { calendarReturnTo = Screen.FAMILIES; screen = Screen.CALENDAR },
+                        onOpenMap = { childId ->
+                            childDetailId = childId
+                            mapReturnTo = Screen.FAMILIES
+                            screen = Screen.CHILD_MAP
                         },
                     )
                     Screen.ACTIVITY -> ActivityScreen(
@@ -363,7 +375,7 @@ fun WalcottApp(
                     }
                     Screen.BUDGETS -> BudgetsScreen(
                         viewModel,
-                        onBack = { screen = Screen.FAMILY },
+                        onBack = ::back,
                         onOpenSpecialDays = { calendarReturnTo = Screen.BUDGETS; screen = Screen.CALENDAR },
                     )
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })

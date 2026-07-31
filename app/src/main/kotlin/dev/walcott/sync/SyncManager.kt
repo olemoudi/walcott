@@ -59,6 +59,14 @@ class SyncManager(
     @Volatile private var lastPublishAtMs: Long = 0
     /** Serializes remote-command execution across concurrently handled parent snapshots. */
     private val commandMutex = Mutex()
+    /**
+     * Serializes [applyChildSnapshot] across concurrently handled child snapshots. Its event
+     * gates ("this ack completes a queued command", "this request is new") are check-then-act
+     * against a state read before the store update: when an ntfy reconnect replays a backlog,
+     * the same snapshot content is in flight several times at once, and without the lock each
+     * copy passes the gate and appends a duplicate feed entry.
+     */
+    private val childSnapshotMutex = Mutex()
     /** Same, for the emergency-release checkpoints (see [evaluatePanic]). */
     private val panicMutex = Mutex()
     /** In-flight debounced auto-backup rewrite; replaced on every new trigger. */
@@ -1615,7 +1623,11 @@ class SyncManager(
         count = count,
     )
 
-    private suspend fun applyChildSnapshot(snapshot: ChildSnapshot) {
+    private suspend fun applyChildSnapshot(snapshot: ChildSnapshot) = childSnapshotMutex.withLock {
+        applyChildSnapshotLocked(snapshot)
+    }
+
+    private suspend fun applyChildSnapshotLocked(snapshot: ChildSnapshot) {
         val before = syncStore.current()
         val prevRequestIds = before.children.flatMap { it.requests }.map { it.requestId }.toSet()
         val prevAskIds = before.children.flatMap { it.asks }.map { it.requestId }.toSet()

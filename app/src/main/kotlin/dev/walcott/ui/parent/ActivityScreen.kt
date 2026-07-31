@@ -41,7 +41,8 @@ fun ActivityScreen(viewModel: WalcottViewModel, onOpenChild: (String) -> Unit, o
         }
     }
 
-    val feed = events.filter(::eventRenderable)
+    // Identical adjacent entries (a replayed ack, a repeated grant) fold into one ×N line.
+    val feed = dev.walcott.sync.ParentEvent.collapseRepeats(events.filter(::eventRenderable))
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.timeline_title), onBack)
@@ -67,11 +68,11 @@ fun ActivityScreen(viewModel: WalcottViewModel, onOpenChild: (String) -> Unit, o
                     modifier = Modifier.padding(bottom = spacing.xs),
                 )
             }
-            items(feed, key = { "ev-" + it.id.ifBlank { "${it.atMs}-${it.type}-${it.childId}" } }) { event ->
+            items(feed, key = { (event, _) -> "ev-" + event.id.ifBlank { "${event.atMs}-${event.type}-${event.childId}" } }) { (event, times) ->
                 val name = settings.children.firstOrNull { it.childId == event.childId }?.name
                     ?: event.childName.ifBlank { stringResource(R.string.family_default_name) }
                 val target = event.childId.takeIf { id -> settings.children.any { it.childId == id } }
-                EventRow(event, name, nowMs, onClick = target?.let { id -> { onOpenChild(id) } })
+                EventRow(event, name, nowMs, onClick = target?.let { id -> { onOpenChild(id) } }, repeat = times)
             }
             item { Text("", Modifier.padding(bottom = spacing.xl)) }
         }

@@ -268,7 +268,10 @@
     <string name="add_child">Añadir hijo</string>
     <string name="child_name_label">Nombre</string>
     <string name="device_not_linked">Aún sin vincular</string>
-    <string name="usage_today_summary">%1$s de pantalla hoy</string>
+    <string name="stat_today">Hoy</string>
+    <string name="stat_avg7">Media 7 días</string>
+    <string name="stat_avg30">Media 30 días</string>
+    <string name="home_section_manage">Gestión</string>
     <string name="legacy_devices_header">Otros dispositivos vinculados</string>
     <string name="legacy_device_hint">Vinculado con una versión antigua — sin ajustes por hijo</string>
     <string name="device_settings_title">Ajustes del dispositivo</string>
@@ -575,6 +578,8 @@
     <string name="budgets_section_schedules">Horarios</string>
     <string name="child_section_activity">Tiempo de pantalla</string>
     <string name="child_section_device">Dispositivo y salud</string>
+    <string name="child_more_title">Ajustes adicionales</string>
+    <string name="child_more_subtitle">Arreglos remotos, salud del dispositivo y actualizaciones</string>
     <string name="nav_location_title">Ubicación</string>
     <string name="nav_location_subtitle">Frecuencia de rastreo e historial de 48 horas para toda la familia</string>
     <string name="location_family_note">Valores por defecto de la familia. Cada hijo los hereda; puedes personalizar a un hijo desde su propia pantalla.</string>
@@ -756,6 +761,8 @@
     <string name="timeline_see_all">Ver toda la actividad</string>
     <string name="timeline_window">Los últimos 7 días.</string>
     <string name="timeline_empty">Aún no ha pasado nada.</string>
+    <!-- Edad de una línea del muro que representa varias entradas idénticas: "hace 2 h · ×3". -->
+    <string name="event_repeat_times">%1$s · ×%2$d</string>
     <plurals name="event_enforcement_gap">
         <item quantity="one">%1$s: %2$d app no está realmente bloqueada, se está reaplicando</item>
         <item quantity="other">%1$s: %2$d apps no están realmente bloqueadas, se está reaplicando</item>
@@ -781,7 +788,8 @@
     <!-- Dashboard del hijo (arriba del detalle) -->
     <string name="dashboard_used_today">Usado hoy</string>
     <string name="dashboard_remaining">Queda hoy</string>
-    <string name="dashboard_avg">Media diaria</string>
+    <string name="dashboard_avg7">Media 7 días</string>
+    <string name="dashboard_avg30">Media 30 días</string>
     <plurals name="dashboard_avg_days">
         <item quantity="one">último %d día</item>
         <item quantity="other">últimos %d días</item>

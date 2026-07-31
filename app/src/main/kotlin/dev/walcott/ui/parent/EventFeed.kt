@@ -66,11 +66,18 @@ private val RENDERABLE_TYPES = setOf(
 )
 
 @Composable
-internal fun EventRow(event: ParentEvent, childName: String, nowMs: Long, onClick: (() -> Unit)?) {
+internal fun EventRow(
+    event: ParentEvent,
+    childName: String,
+    nowMs: Long,
+    onClick: (() -> Unit)?,
+    /** How many identical consecutive entries this row stands for (see [ParentEvent.collapseRepeats]). */
+    repeat: Int = 1,
+) {
     val spacing = Tokens.spacing
     val text = eventText(event, childName) ?: return
     val (icon, tint) = eventBadge(event)
-    val age = DateUtils.getRelativeTimeSpanString(event.atMs, nowMs, DateUtils.MINUTE_IN_MILLIS).toString()
+    val age = eventAge(event, nowMs, repeat)
 
     WalcottCard(onClick = onClick ?: {}, enabled = onClick != null) {
         Row(
@@ -93,7 +100,7 @@ internal fun EventRow(event: ParentEvent, childName: String, nowMs: Long, onClic
 
 /** Compact, non-card feed line for embedding inside another card (the child dashboard). */
 @Composable
-internal fun EventLine(event: ParentEvent, childName: String, nowMs: Long) {
+internal fun EventLine(event: ParentEvent, childName: String, nowMs: Long, repeat: Int = 1) {
     val text = eventText(event, childName) ?: return
     val (icon, tint) = eventBadge(event)
     Row(
@@ -105,11 +112,18 @@ internal fun EventLine(event: ParentEvent, childName: String, nowMs: Long) {
         Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         Spacer(Modifier.width(Tokens.spacing.sm))
         Text(
-            DateUtils.getRelativeTimeSpanString(event.atMs, nowMs, DateUtils.MINUTE_IN_MILLIS).toString(),
+            eventAge(event, nowMs, repeat),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/** The relative age of [event], with a ×N mark when the line stands for [repeat] identical entries. */
+@Composable
+private fun eventAge(event: ParentEvent, nowMs: Long, repeat: Int): String {
+    val age = DateUtils.getRelativeTimeSpanString(event.atMs, nowMs, DateUtils.MINUTE_IN_MILLIS).toString()
+    return if (repeat > 1) stringResource(R.string.event_repeat_times, age, repeat) else age
 }
 
 @Composable

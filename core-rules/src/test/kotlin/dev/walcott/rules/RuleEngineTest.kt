@@ -379,6 +379,33 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `marking today a holiday mid-day switches the rules on the next evaluation, keeping usage spent`() {
+        // The "I just remembered today is special" flow: the parent adds TODAY to the calendar
+        // mid-morning. Nothing caches the day type, so the same instant must re-evaluate as
+        // HOLIDAY the moment the new config lands.
+        val games = config.policies.getValue("games")
+        val holidayAware = config.copy(
+            policies = config.policies +
+                ("games" to games.copy(dailyBudget = games.dailyBudget + (DayType.HOLIDAY to Duration.ofHours(2)))),
+        )
+        val used = mapOf("games" to Duration.ofMinutes(30))
+        // 10:00 on a school Monday: games sit inside the school-hours window.
+        assertEquals(
+            Verdict.Blocked(BlockReason.BLOCKED_WINDOW),
+            RuleEngine.evaluate(holidayAware, "com.game.fortnite", schoolMorning, usageToday = used),
+        )
+        // Today marked special: the school window stands down and the holiday budget applies,
+        // minus what the morning already burned (the counter is per calendar day, not per slot).
+        val markedToday = holidayAware.copy(
+            calendar = SchoolCalendar(holidays = setOf(schoolMorning.toLocalDate())),
+        )
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofMinutes(90)),
+            RuleEngine.evaluate(markedToday, "com.game.fortnite", schoolMorning, usageToday = used),
+        )
+    }
+
+    @Test
     fun `Friday night gets the weekend bedtime`() {
         val fridayNight = LocalDateTime.of(2026, 3, 13, 22, 0)
         // 22:00 is inside the school bedtime (21:30) but outside the weekend one (23:30).

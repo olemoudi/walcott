@@ -268,7 +268,10 @@
     <string name="add_child">Add child</string>
     <string name="child_name_label">Name</string>
     <string name="device_not_linked">Not linked yet</string>
-    <string name="usage_today_summary">%1$s of screen time today</string>
+    <string name="stat_today">Today</string>
+    <string name="stat_avg7">7-day avg</string>
+    <string name="stat_avg30">30-day avg</string>
+    <string name="home_section_manage">Manage</string>
     <string name="legacy_devices_header">Other linked devices</string>
     <string name="legacy_device_hint">Linked with an older app version — no per-child settings</string>
     <string name="device_settings_title">Device settings</string>
@@ -575,6 +578,8 @@
     <string name="budgets_section_schedules">Schedules</string>
     <string name="child_section_activity">Screen time</string>
     <string name="child_section_device">Device and health</string>
+    <string name="child_more_title">Additional settings</string>
+    <string name="child_more_subtitle">Remote fixes, device health and updates</string>
     <string name="nav_location_title">Location</string>
     <string name="nav_location_subtitle">Tracking interval and 48-hour history for the whole family</string>
     <string name="location_family_note">Family defaults. Each child inherits these; you can customize a child from their own screen.</string>
@@ -756,6 +761,8 @@
     <string name="timeline_see_all">See all activity</string>
     <string name="timeline_window">The last 7 days.</string>
     <string name="timeline_empty">Nothing has happened yet.</string>
+    <!-- Age of a feed line standing for several identical entries: "2 h ago · ×3". -->
+    <string name="event_repeat_times">%1$s · ×%2$d</string>
     <plurals name="event_enforcement_gap">
         <item quantity="one">%1$s: %2$d app isn\'t actually blocked — re-applying</item>
         <item quantity="other">%1$s: %2$d apps aren\'t actually blocked — re-applying</item>
@@ -781,7 +788,8 @@
     <!-- Child dashboard (top of the child detail) -->
     <string name="dashboard_used_today">Used today</string>
     <string name="dashboard_remaining">Left today</string>
-    <string name="dashboard_avg">Daily average</string>
+    <string name="dashboard_avg7">7-day average</string>
+    <string name="dashboard_avg30">30-day average</string>
     <plurals name="dashboard_avg_days">
         <item quantity="one">last %d day</item>
         <item quantity="other">last %d days</item>

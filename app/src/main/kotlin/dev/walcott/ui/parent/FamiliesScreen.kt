@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
@@ -32,9 +33,11 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sync
@@ -80,10 +83,12 @@ import dev.walcott.sync.PanicRequest
 import dev.walcott.sync.RemoteAction
 import dev.walcott.sync.Staleness
 import dev.walcott.sync.SyncEngine
+import dev.walcott.sync.UsageLedger
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.ModeBadge
+import dev.walcott.ui.components.NavCard
 import dev.walcott.ui.components.PermissionFixRow
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
@@ -113,6 +118,10 @@ fun FamiliesScreen(
     onOpenGuidedSetup: () -> Unit,
     onOpenActivity: () -> Unit,
     onOpenDomainRequest: (String) -> Unit,
+    // Day-to-day shortcuts: limits/schedules and special days are the two screens a settled
+    // family keeps coming back to, so they're one tap from home instead of behind the hub.
+    onOpenCalendar: () -> Unit,
+    onOpenMap: (String) -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
@@ -125,6 +134,7 @@ fun FamiliesScreen(
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
+    val ledgers by viewModel.usageLedgers.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
     val needsBackupPin by viewModel.localBackupNeedsPin.collectAsStateWithLifecycle()
@@ -181,6 +191,49 @@ fun FamiliesScreen(
             }
         }
 
+        // A child asking to be released outranks everything else on this screen: ignore it for
+        // 24 hours and the device leaves the family (see PanicProtocol).
+        items(snapshots.filter { it.panic != null }, key = { "panic-${it.deviceId}" }) { child ->
+            PanicHomeRow(
+                childName = childNameFor(child.deviceId, settings.children, snapshots),
+                request = child.panic!!,
+                onOpen = { if (child.childId in registryIds) onOpenChild(child.childId) },
+            )
+        }
+
+        // Everything a child is waiting on an answer for, always at the very top: a pending
+        // request is the one thing on this screen with a person on the other end of it.
+        if (requests.isNotEmpty() || asks.isNotEmpty() || domainRequests.isNotEmpty()) {
+            item { SectionHeader(stringResource(R.string.pending_requests)) }
+            items(requests, key = { "req-" + it.request.requestId }) { pending ->
+                // animateItem: resolved requests slide out instead of popping (and new ones in).
+                Box(Modifier.animateItem()) {
+                    ExtraTimeRequestCard(
+                        pending = pending,
+                        onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
+                        onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
+                    )
+                }
+            }
+            items(asks, key = { "ask-" + it.ask.requestId }) { pending ->
+                Box(Modifier.animateItem()) {
+                    AskCard(pending, viewModel)
+                }
+            }
+            // A domain selection a parent went and gathered on the child's phone: the parent is
+            // standing there having just done the work, so this is the moment worth answering.
+            items(domainRequests, key = { "domains-" + it.batchId }) { request ->
+                Box(Modifier.animateItem()) {
+                    DomainRequestHomeRow(
+                        childName = childNameFor(request.deviceId, settings.children, snapshots),
+                        appLabel = request.label.ifBlank { request.packageName },
+                        count = request.domains()?.size ?: 0,
+                        onOpen = { onOpenDomainRequest(request.batchId) },
+                    )
+                }
+            }
+        }
+
         // Every child alert (requests, tamper, stale) arrives as a notification; if the parent
         // turned them off, the whole alerting channel is silently dead — surface that here.
         if (!notificationsEnabled) {
@@ -198,65 +251,117 @@ fun FamiliesScreen(
             }
         }
 
-        // A child asking to be released outranks everything else on this screen: ignore it for
-        // 24 hours and the device leaves the family (see PanicProtocol).
-        items(snapshots.filter { it.panic != null }, key = { "panic-${it.deviceId}" }) { child ->
-            PanicHomeRow(
-                childName = childNameFor(child.deviceId, settings.children, snapshots),
-                request = child.panic!!,
-                onOpen = { if (child.childId in registryIds) onOpenChild(child.childId) },
-            )
-        }
-
-        // A domain selection a parent went and gathered on the child's phone. Highlighted like the
-        // other things a child asks for, and above the family card: the parent is standing there
-        // having just done the work, so this is the one moment it is worth answering.
-        items(domainRequests, key = { "domains-" + it.batchId }) { request ->
-            Box(Modifier.animateItem()) {
-                DomainRequestHomeRow(
-                    childName = childNameFor(request.deviceId, settings.children, snapshots),
-                    appLabel = request.label.ifBlank { request.packageName },
-                    count = request.domains()?.size ?: 0,
-                    onOpen = { onOpenDomainRequest(request.batchId) },
+        // Onboarding coach: a brand-new family enforces nothing until apps are classified and
+        // limits set. Show the remaining steps until they're done, then it disappears.
+        val childDone = settings.children.isNotEmpty()
+        val appsDone = settings.assignments.isNotEmpty()
+        val limitsDone = settings.budgets.isNotEmpty() || settings.bedtime.isNotEmpty()
+        val bedtimeDone = settings.bedtime.isNotEmpty()
+        if (!(childDone && appsDone && limitsDone && bedtimeDone)) {
+            // The guided wizards, front and center until the family is fully set up (they
+            // stay reachable afterwards from the family rules hub).
+            item { GuidedSetupCard(onOpenGuidedSetup) }
+            item {
+                SetupChecklistCard(
+                    steps = listOf(
+                        SetupStep(stringResource(R.string.setup_step_child), childDone) { showAddChild = true },
+                        SetupStep(stringResource(R.string.setup_step_apps), appsDone, onOpenApps),
+                        SetupStep(stringResource(R.string.setup_step_limits), limitsDone, onOpenBudgets),
+                        SetupStep(stringResource(R.string.setup_step_bedtime), bedtimeDone, onOpenBudgets),
+                    ),
                 )
             }
         }
 
-        // A family that existed before the on-device copies did has no key for them yet, and
-        // there is no reliable moment when it would appear: app lock is off by default, and with
-        // biometrics on the PIN is never typed at all. Left to a settings screen this would be
-        // the same opt-in nobody switches on that the copies exist to replace.
-        if (needsBackupPin) {
-            item { EnableLocalBackupCard(onEnable = { showBackupPin = true }) }
+        // The children, right under the requests: "how much have they used today, and this
+        // month" is the question the home answers first once the family is set up.
+        item { SectionHeader(stringResource(R.string.children_section)) }
+        if (settings.children.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.children_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-
         item {
-            FamilyCard(
-                name = settings.familyName.ifBlank { stringResource(R.string.family_default_name) },
-                childrenCount = settings.children.size,
-                pendingCount = requests.size + asks.size + domainRequests.size,
-                onClick = onOpenFamily,
-            )
-        }
-
-        // Pending child requests, actionable right from the home (they also arrive as a
-        // parent notification). Approving/denying here resolves them immediately.
-        if (requests.isNotEmpty() || asks.isNotEmpty()) {
-            item { SectionHeader(stringResource(R.string.pending_requests)) }
-            items(requests, key = { "req-" + it.request.requestId }) { pending ->
-                // animateItem: resolved requests slide out instead of popping (and new ones in).
-                Box(Modifier.animateItem()) {
-                    ExtraTimeRequestCard(
-                        pending = pending,
-                        onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
-                        onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
+            CardGroup {
+                val parentNow = LocalDateTime.now()
+                settings.children.forEachIndexed { index, entry ->
+                    val snapshot = snapshots.firstOrNull { it.childId == entry.childId }
+                    // Averages come from the parent-side ledger, dated by the child's clock
+                    // (a child in another timezone is on another calendar day).
+                    val ledger = snapshot?.let { ledgers[UsageLedger.keyOf(it.childId, it.deviceId)].orEmpty() }
+                    val childToday = snapshot?.let {
+                        dev.walcott.data.ChildStats.localNow(it.tzOffsetMinutes, nowMs, parentNow)
+                            .toLocalDate().toEpochDay()
+                    }
+                    // The map is only worth a slot when it can show something: tracking or
+                    // history on for this child, or a trail already reported.
+                    val resolved = settings.resolveForChild(entry.childId)
+                    val locationOn = resolved.trackingIntervalMinutes > 0 || resolved.locationHistoryEnabled ||
+                        snapshot?.locations?.isNotEmpty() == true
+                    ChildRow(
+                        entry = entry,
+                        snapshot = snapshot,
+                        lastSeenMs = snapshot?.let { lastSeen[it.deviceId] },
+                        nowMs = nowMs,
+                        parentVersion = parentVersion,
+                        avg7 = ledger?.let { UsageLedger.averageDaily(it, childToday!!, days = 7) },
+                        avg30 = ledger?.let { UsageLedger.averageDaily(it, childToday!!, days = 30) },
+                        showMap = snapshot != null && locationOn,
+                        position = cardPosition(index, settings.children.size),
+                        onClick = { onOpenChild(entry.childId) },
+                        onOpenMap = { onOpenMap(entry.childId) },
                     )
                 }
             }
-            items(asks, key = { "ask-" + it.ask.requestId }) { pending ->
-                Box(Modifier.animateItem()) {
-                    AskCard(pending, viewModel)
-                }
+        }
+        item {
+            OutlinedButton(onClick = { showAddChild = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(spacing.xs))
+                Text(stringResource(R.string.add_child))
+            }
+        }
+
+        // The two rule screens a running family actually revisits, one tap away. Everything
+        // else stays behind the family card below.
+        item { SectionHeader(stringResource(R.string.home_section_manage)) }
+        item {
+            CardGroup {
+                NavCard(
+                    Icons.Outlined.Schedule,
+                    stringResource(R.string.nav_limits_title),
+                    stringResource(R.string.nav_limits_subtitle),
+                    onOpenBudgets,
+                    position = CardPosition.First,
+                )
+                NavCard(
+                    Icons.Outlined.CalendarMonth,
+                    stringResource(R.string.nav_calendar_title),
+                    stringResource(R.string.nav_calendar_subtitle),
+                    onOpenCalendar,
+                    position = CardPosition.Last,
+                )
+            }
+        }
+
+        // The wall, in digest form: the last few lines in one compact card, with the full feed
+        // one tap away. A notification can be swiped away and lost; its message survives there.
+        val renderable = events.filter(::eventRenderable)
+        if (renderable.isNotEmpty()) {
+            item {
+                RecentActivityCard(
+                    events = dev.walcott.sync.ParentEvent.collapseRepeats(renderable).take(HOME_FEED_COUNT),
+                    childName = { event ->
+                        settings.children.firstOrNull { it.childId == event.childId }?.name
+                            ?: event.childName.ifBlank { stringResource(R.string.family_default_name) }
+                    },
+                    nowMs = nowMs,
+                    onSeeAll = onOpenActivity,
+                )
             }
         }
 
@@ -290,77 +395,23 @@ fun FamiliesScreen(
             }
         }
 
-        // The wall, in digest form: the last few lines in one compact card, with the full feed
-        // one tap away. A notification can be swiped away and lost; its message survives there.
-        val renderable = events.filter(::eventRenderable)
-        if (renderable.isNotEmpty()) {
-            item {
-                RecentActivityCard(
-                    events = renderable.take(HOME_FEED_COUNT),
-                    childName = { event ->
-                        settings.children.firstOrNull { it.childId == event.childId }?.name
-                            ?: event.childName.ifBlank { stringResource(R.string.family_default_name) }
-                    },
-                    nowMs = nowMs,
-                    onSeeAll = onOpenActivity,
-                )
-            }
+        // A family that existed before the on-device copies did has no key for them yet, and
+        // there is no reliable moment when it would appear: app lock is off by default, and with
+        // biometrics on the PIN is never typed at all. Left to a settings screen this would be
+        // the same opt-in nobody switches on that the copies exist to replace.
+        if (needsBackupPin) {
+            item { EnableLocalBackupCard(onEnable = { showBackupPin = true }) }
         }
 
-        // Onboarding coach: a brand-new family enforces nothing until apps are classified and
-        // limits set. Show the remaining steps until they're done, then it disappears.
-        val childDone = settings.children.isNotEmpty()
-        val appsDone = settings.assignments.isNotEmpty()
-        val limitsDone = settings.budgets.isNotEmpty() || settings.bedtime.isNotEmpty()
-        val bedtimeDone = settings.bedtime.isNotEmpty()
-        if (!(childDone && appsDone && limitsDone && bedtimeDone)) {
-            // The guided wizards, front and center until the family is fully set up (they
-            // stay reachable afterwards from the family rules hub).
-            item { GuidedSetupCard(onOpenGuidedSetup) }
-            item {
-                SetupChecklistCard(
-                    steps = listOf(
-                        SetupStep(stringResource(R.string.setup_step_child), childDone) { showAddChild = true },
-                        SetupStep(stringResource(R.string.setup_step_apps), appsDone, onOpenApps),
-                        SetupStep(stringResource(R.string.setup_step_limits), limitsDone, onOpenBudgets),
-                        SetupStep(stringResource(R.string.setup_step_bedtime), bedtimeDone, onOpenBudgets),
-                    ),
-                )
-            }
-        }
-
-        item { SectionHeader(stringResource(R.string.children_section)) }
-        if (settings.children.isEmpty()) {
-            item {
-                Text(
-                    stringResource(R.string.children_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        // The gateway to everything less-than-daily: apps, web filter, protection, location
+        // defaults, reports. Below the fold on purpose — it's setup, not routine.
         item {
-            CardGroup {
-                settings.children.forEachIndexed { index, entry ->
-                    val snapshot = snapshots.firstOrNull { it.childId == entry.childId }
-                    ChildRow(
-                        entry = entry,
-                        snapshot = snapshot,
-                        lastSeenMs = snapshot?.let { lastSeen[it.deviceId] },
-                        nowMs = nowMs,
-                        parentVersion = parentVersion,
-                        position = cardPosition(index, settings.children.size),
-                        onClick = { onOpenChild(entry.childId) },
-                    )
-                }
-            }
-        }
-        item {
-            OutlinedButton(onClick = { showAddChild = true }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(spacing.xs))
-                Text(stringResource(R.string.add_child))
-            }
+            FamilyCard(
+                name = settings.familyName.ifBlank { stringResource(R.string.family_default_name) },
+                childrenCount = settings.children.size,
+                pendingCount = requests.size + asks.size + domainRequests.size,
+                onClick = onOpenFamily,
+            )
         }
 
         if (legacyDevices.isNotEmpty()) {
@@ -469,8 +520,13 @@ private fun ChildRow(
     lastSeenMs: Long?,
     nowMs: Long,
     parentVersion: Long,
+    avg7: UsageLedger.Average?,
+    avg30: UsageLedger.Average?,
+    /** Show the map shortcut (location on for this child, or a trail already reported). */
+    showMap: Boolean,
     position: CardPosition = CardPosition.Single,
     onClick: () -> Unit,
+    onOpenMap: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     // Dated by the child's clock, not the parent's: a child in another timezone is on another
@@ -499,15 +555,30 @@ private fun ChildRow(
             Spacer(Modifier.width(spacing.md))
             Column(Modifier.weight(1f)) {
                 Text(entry.name, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (snapshot == null) {
-                        stringResource(R.string.device_not_linked)
-                    } else {
-                        stringResource(R.string.usage_today_summary, Duration.ofSeconds(usageToday).humanize())
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (snapshot == null) {
+                    Text(
+                        stringResource(R.string.device_not_linked),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    // Today plus the week/month averages: the home answers "how much?" at a
+                    // glance, without opening the detail.
+                    Row(
+                        Modifier.padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.lg),
+                    ) {
+                        MiniStat(stringResource(R.string.stat_today), Duration.ofSeconds(usageToday).humanize())
+                        MiniStat(
+                            stringResource(R.string.stat_avg7),
+                            avg7?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+                        )
+                        MiniStat(
+                            stringResource(R.string.stat_avg30),
+                            avg30?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+                        )
+                    }
+                }
                 if (tier != Staleness.Tier.FRESH) {
                     val silence = Duration.ofMillis(Staleness.silenceMs(lastSeenMs, nowMs) ?: 0).humanize()
                     Text(
@@ -525,12 +596,30 @@ private fun ChildRow(
                 }
                 if (snapshot != null) StatusChips(snapshot, parentVersion)
             }
+            if (showMap) {
+                IconButton(onClick = onOpenMap) {
+                    Icon(
+                        Icons.Outlined.Map,
+                        contentDescription = stringResource(R.string.view_on_map),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/** One number with its label under it, sized to sit three-in-a-row inside a child row. */
+@Composable
+private fun MiniStat(label: String, value: String) {
+    Column {
+        Text(value, style = MaterialTheme.typography.titleSmall)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -541,7 +630,8 @@ private fun ChildRow(
  */
 @Composable
 private fun RecentActivityCard(
-    events: List<dev.walcott.sync.ParentEvent>,
+    /** Collapsed feed entries: each with how many identical lines it stands for. */
+    events: List<Pair<dev.walcott.sync.ParentEvent, Int>>,
     childName: @Composable (dev.walcott.sync.ParentEvent) -> String,
     nowMs: Long,
     onSeeAll: () -> Unit,
@@ -551,7 +641,7 @@ private fun RecentActivityCard(
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.timeline_title), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(spacing.sm))
-            events.forEach { event -> EventLine(event, childName(event), nowMs) }
+            events.forEach { (event, times) -> EventLine(event, childName(event), nowMs, repeat = times) }
             TextButton(
                 onClick = onSeeAll,
                 modifier = Modifier.align(Alignment.End).padding(top = spacing.xs),
