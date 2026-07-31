@@ -20,7 +20,7 @@
     <string name="bedtime_subtitle">Apps rest until tomorrow</string>
     <string name="settings_content_desc">Parent mode</string>
 
-    <!-- Category status -->
+    <!-- App status -->
     <string name="status_available">Available</string>
     <string name="status_blocked">Blocked</string>
     <string name="label_remaining">remaining</string>
@@ -74,7 +74,7 @@
     <string name="apps_filter_all">All</string>
     <string name="nav_apps_subtitle">Every app your children have, and the daily limit each one has</string>
     <string name="nav_limits_title">Limits and schedules</string>
-    <string name="nav_limits_subtitle">Daily budget per category and bedtime</string>
+    <string name="nav_limits_subtitle">Bedtime, screen-free times and daily limits</string>
     <!-- App assignment -->
     <string name="apps_no_remote">No apps reported yet. They\'ll appear here once your children\'s devices sync.</string>
     <string name="search_app">Search app</string>
@@ -108,7 +108,6 @@
     <string name="decrement">Less</string>
     <string name="increment">More</string>
 
-    <!-- Categories -->
     <!-- The default bucket every unassigned app falls into (wire id stays "other"). -->
 
     <!-- Enforcement service -->
@@ -183,8 +182,6 @@
     <string name="earn_empty">No earn rules yet. Add one to reward learning with playtime.</string>
     <string name="earn_rule_summary">%1$d min of %2$s → %3$d min of %4$s</string>
     <string name="earn_cap">up to %1$d min/day</string>
-    <string name="earn_source">Learning category</string>
-    <string name="earn_target">Reward category</string>
     <string name="earn_per">Every (min)</string>
     <string name="earn_reward">Earns (min)</string>
     <string name="earn_daily_cap">Daily cap (min)</string>
@@ -376,7 +373,7 @@
     <string name="wizard_finish">Finish</string>
     <string name="step_bedtime_teach">From bedtime until morning every app is blocked. Calls still work, and it applies every night.</string>
     <string name="step_screen_time_title">Daily screen time</string>
-    <string name="step_screen_time_teach">A daily cap for games, social, video and other fun apps. Education and creative apps don\'t count against it, and the phone itself always works. You can fine-tune each category later.</string>
+    <string name="step_screen_time_teach">A daily limit every app gets unless you give it its own — each on its own clock, so an hour of one doesn\'t eat another\'s. The phone itself always works. Leave it off if you would rather limit apps one by one.</string>
     <string name="step_protection_teach">We also switch on the recommended anti-tamper protections: clock changes, VPNs, force-closing Walcott and sideloading.</string>
     <string name="step_protection_installs">Ask permission for new apps</string>
     <string name="step_protection_installs_desc">Installing from Play needs your approval; you can also send apps from your phone.</string>
@@ -642,9 +639,9 @@
     <string name="update_wifi_only_title">Update on Wi-Fi only</string>
     <string name="update_wifi_only_desc">Child devices download updates only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
     <string name="update_wifi_following_family">Following the family setting: %1$s</string>
-    <!-- Per-app settings (Apps & categories) -->
+    <!-- Per-app settings (Apps and limits) -->
     <string name="app_own_limit">This app\'s own daily limit</string>
-    <string name="app_own_limit_hint">On top of its category. Block it on some days, cap it on others, or leave it to the category — whichever runs out first wins.</string>
+    <string name="app_own_limit_hint">This app\'s own daily limit. Block it on some days, cap it on others, or leave it to the family default.</string>
     <string name="app_limit_blocked">Blocked</string>
     <string name="app_limit_timed">Limit</string>
     <string name="app_own_window">Block this app during set hours</string>

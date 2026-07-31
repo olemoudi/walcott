@@ -284,7 +284,11 @@ fun FamiliesScreen(
         // Classifying apps is no longer a step: new apps land in General, usable under the
         // general limit — categories are an optional refinement, not setup.
         val childDone = settings.children.isNotEmpty()
-        val limitsDone = settings.budgets.isNotEmpty() || settings.bedtime.isNotEmpty()
+        // Any limit at all counts: the family default, or a limit on one app. (It reads the
+        // new fields — `budgets` is the pre-0.35 category map and is always empty now.)
+        val limitsDone = settings.defaultAppBudget.isNotEmpty() ||
+            settings.appPolicies.values.any { it.budgets.isNotEmpty() } ||
+            settings.bedtime.isNotEmpty()
         val bedtimeDone = settings.bedtime.isNotEmpty()
         if (!(childDone && limitsDone && bedtimeDone)) {
             // The guided wizards, front and center until the family is fully set up (they
