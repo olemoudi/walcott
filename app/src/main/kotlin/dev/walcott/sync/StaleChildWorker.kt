@@ -4,9 +4,10 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import dev.walcott.data.SettingsStore
+import androidx.work.WorkManager
+import dev.walcott.FamilyScope
+import dev.walcott.WalcottApplication
 import dev.walcott.ui.format.humanize
 import java.time.Duration
 import java.util.concurrent.TimeUnit
@@ -15,17 +16,32 @@ import java.util.concurrent.TimeUnit
  * Parent-side watchdog: notifies when a child device hasn't checked in for a long time
  * (device off, offline, or protection tampered with). Local reads only — no network,
  * negligible battery. No-op on non-parent devices.
+ *
+ * Runs over EVERY family this device manages, not just the one on screen: a child going quiet
+ * matters exactly as much in the family the parent isn't currently looking at.
  */
 class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val context = applicationContext
-        if (IdentityStore(context).current().effectiveMode != DeviceMode.PARENT) return Result.success()
+        val app = context as? WalcottApplication ?: return Result.success()
+        if (app.identityStore.current().effectiveMode != DeviceMode.PARENT) return Result.success()
 
-        val syncStore = SyncStore(context)
+        val multi = app.hub.isMultiNow()
+        for (family in app.hub.allNow()) {
+            runCatching { checkFamily(context, family, multi) }
+                .onFailure { dev.walcott.debug.DebugLog.w(TAG, "stale check failed for ${family.id}", it) }
+        }
+        return Result.success()
+    }
+
+    private suspend fun checkFamily(context: Context, family: FamilyScope, multi: Boolean) {
+        val syncStore = family.syncStore
         val state = syncStore.current()
+        val settings = family.settingsStore.current()
         val now = System.currentTimeMillis()
-        val registry = SettingsStore(context).current().children
+        val registry = settings.children
+        val label = settings.familyName.takeIf { multi && it.isNotBlank() }
 
         val events = mutableListOf<ParentEvent>()
         fun feedEvent(type: String, childId: String, name: String, detail: String = "") {
@@ -42,7 +58,10 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 ?: snapshot?.displayName
                 ?: deviceId
             val silence = Duration.ofMillis(now - seenMs)
-            SyncNotifications.notifyStaleChild(context, name, silence.humanize(), deviceId, snapshot?.childId.orEmpty())
+            SyncNotifications.notifyStaleChild(
+                context, SyncNotifications.who(name, label), silence.humanize(), deviceId,
+                snapshot?.childId.orEmpty(),
+            )
             feedEvent(ParentEvent.TYPE_STALE, snapshot?.childId.orEmpty(), name, detail = silence.toMillis().toString())
         }
 
@@ -56,7 +75,7 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
         )
         for (childId in neverReported) {
             val name = registry.firstOrNull { it.childId == childId }?.name ?: childId
-            SyncNotifications.notifyNeverReported(context, name, childId)
+            SyncNotifications.notifyNeverReported(context, SyncNotifications.who(name, label), childId)
             feedEvent(ParentEvent.TYPE_NEVER_REPORTED, childId, name)
         }
 
@@ -75,12 +94,14 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val name = registry.firstOrNull { it.childId == snapshot.childId && it.childId.isNotBlank() }?.name
                 ?: snapshot.displayName
             val remaining = Duration.ofMillis(snapshot.installExemptionUntilMs - now).humanize()
-            SyncNotifications.notifyInstallWindowOpen(context, name, remaining, snapshot.deviceId, snapshot.childId)
+            SyncNotifications.notifyInstallWindowOpen(
+                context, SyncNotifications.who(name, label), remaining, snapshot.deviceId, snapshot.childId,
+            )
             feedEvent(ParentEvent.TYPE_INSTALL_WINDOW, snapshot.childId, name)
             reminded[snapshot.deviceId] = now
         }
 
-        if (toAlert.isEmpty() && neverReported.isEmpty() && reminded.isEmpty()) return Result.success()
+        if (toAlert.isEmpty() && neverReported.isEmpty() && reminded.isEmpty()) return
         syncStore.update {
             events.fold(
                 it.copy(
@@ -90,10 +111,10 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 ),
             ) { state, event -> state.plusEvent(event) }
         }
-        return Result.success()
     }
 
     companion object {
+        private const val TAG = "WalcottSync"
         private const val PERIODIC = "walcott-stale-child"
 
         /** Idempotent hourly check. */

@@ -61,6 +61,10 @@ DNS. You can see what a child's app is actually contacting and block it from the
 
 **Where they are.** Optional location, with a recent trail on your map.
 
+**More than one family.** One parent phone can manage several families — each with its own
+children, its own rules and its own private channel, kept completely apart. Add one from
+*Switch family*, or take one over from its backup file.
+
 **Emergency button.** A way out that doesn't depend on you being reachable — see below.
 
 The app is fully usable in **English** and **Spanish**, following your phone's language.

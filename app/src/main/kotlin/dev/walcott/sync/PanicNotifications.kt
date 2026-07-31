@@ -102,7 +102,9 @@ class PanicDenyReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val app = context.applicationContext as WalcottApplication
-                app.syncManager.denyPanicRequest(deviceId, requestId)
+                // The refusal must travel over the topic of the family that child belongs to.
+                val family = runCatching { app.hub.scopeForDevice(deviceId) }.getOrNull() ?: app.hub.own
+                family.syncManager.denyPanicRequest(deviceId, requestId)
                 NotificationManagerCompat.from(context).cancel(SyncNotifications.panicNotifId(deviceId))
             } finally {
                 pending.finish()

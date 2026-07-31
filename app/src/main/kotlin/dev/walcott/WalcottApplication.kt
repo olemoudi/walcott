@@ -2,7 +2,6 @@ package dev.walcott
 
 import android.app.Application
 import dev.walcott.data.AppInventory
-import dev.walcott.data.SettingsStore
 import dev.walcott.data.ThemeStore
 import dev.walcott.data.WalcottDatabase
 import dev.walcott.data.WalcottRepository
@@ -27,15 +26,23 @@ import kotlinx.coroutines.launch
 /** Process-wide dependency container (manual DI — no frameworks). */
 class WalcottApplication : Application() {
 
-    lateinit var repository: WalcottRepository
+    /** The families this device holds, all of them live (see [FamilyHub]). */
+    lateinit var hub: FamilyHub
         private set
-    lateinit var syncManager: SyncManager
-        private set
-    lateinit var identityStore: IdentityStore
-        private set
+
+    /**
+     * This device's OWN family — the one it enforces, is gated by, and boots into. Everything
+     * device-local (enforcement, watchdog, heartbeat, updates, the panic release) goes through
+     * these, and they never move: a device only ever enforces for one family, however many a
+     * parent phone happens to manage. The parent UI works on [FamilyHub.active] instead.
+     */
+    val repository: WalcottRepository get() = hub.own.repository
+    val syncManager: SyncManager get() = hub.own.syncManager
+    val identityStore: IdentityStore get() = hub.own.identityStore
+
     /** Exposed for the debug-only test seeder; the app itself goes through [syncManager]. */
-    lateinit var syncStore: SyncStore
-        private set
+    val syncStore: SyncStore get() = hub.own.syncStore
+
     /** Device-local light/dark preference (see [ThemeStore]). */
     lateinit var themeStore: ThemeStore
         private set
@@ -45,25 +52,17 @@ class WalcottApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         DebugLog.init(this)
-        val settingsStore = SettingsStore(this)
-        identityStore = IdentityStore(this)
         themeStore = ThemeStore(this)
-        repository = WalcottRepository(
-            db = WalcottDatabase.get(this),
-            settingsStore = settingsStore,
-            inventory = AppInventory(this),
-            ownPackage = packageName,
-        )
-        syncStore = SyncStore(this)
-        syncManager = SyncManager(
+        hub = FamilyHub(
             context = this,
-            repository = repository,
-            settingsStore = settingsStore,
-            identityStore = identityStore,
-            syncStore = syncStore,
+            db = WalcottDatabase.get(this),
+            inventory = AppInventory(this),
             scope = appScope,
         )
-        syncManager.start()
+        // Brings this device's own family online immediately (the child path depends on it) and
+        // every other family the parent holds as soon as the registry has been read.
+        hub.own
+        hub.start()
         observeModeTransitions()
 
         // One-time migrations/seeding on the parent (children receive these via sync).
@@ -125,8 +124,12 @@ class WalcottApplication : Application() {
      */
     fun pushAppInstall(deviceId: String, pkg: String, categoryId: String?) {
         appScope.launch {
-            if (categoryId != null) repository.assign(pkg, categoryId)
-            syncManager.sendCommand(deviceId, dev.walcott.sync.RemoteAction.INSTALL_APP, arg = pkg)
+            // The push has to leave from the family that device belongs to — its topic, its keys,
+            // its category map — which on a parent holding several is not necessarily the one on
+            // screen (the share sheet lists every family's children).
+            val family = hub.scopeForDevice(deviceId) ?: hub.active
+            if (categoryId != null) family.repository.assign(pkg, categoryId)
+            family.syncManager.sendCommand(deviceId, dev.walcott.sync.RemoteAction.INSTALL_APP, arg = pkg)
         }
     }
 

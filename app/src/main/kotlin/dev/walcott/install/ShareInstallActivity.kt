@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -74,7 +75,6 @@ class ShareInstallActivity : ComponentActivity() {
             dev.walcott.ui.theme.WalcottTheme {
                 val identity by app.syncManager.identity.collectAsStateWithLifecycle()
                 val settings by app.repository.settingsFlow.collectAsStateWithLifecycle(initialValue = null)
-                val snapshots by app.syncManager.state.collectAsStateWithLifecycle()
 
                 // Hold until the persisted identity actually loads: judging the mode (and
                 // initializing the PIN gate below) against the UNSET default would finish a
@@ -121,7 +121,7 @@ class ShareInstallActivity : ComponentActivity() {
                     toastAndFinish(R.string.install_share_parent_only)
                     return@WalcottTheme
                 }
-                val loaded = settings ?: return@WalcottTheme
+                settings ?: return@WalcottTheme // hold until the policy (and the PIN gate) is real
 
                 // Gate policy-writing entry points behind the parent PIN whenever app lock is on:
                 // the share sheet bypasses the main app's lock, so re-assert it here.
@@ -145,18 +145,31 @@ class ShareInstallActivity : ComponentActivity() {
                     return@WalcottTheme
                 }
 
-                val childrenById = snapshots.children.associateBy { it.childId }
-                val targets = loaded.children.mapNotNull { entry ->
-                    childrenById[entry.childId]?.let { snap -> InstallTarget(entry.name, snap.deviceId) }
+                // Every family's children, not just the one on screen: a share sheet has no
+                // notion of "the family I was last looking at", and the push is routed by device
+                // id anyway (see WalcottApplication.pushAppInstall).
+                val families by app.hub.families.collectAsStateWithLifecycle()
+                // Null while the (cross-family) list is still being read, so "nobody is enrolled"
+                // is never mistaken for "not loaded yet" and the share silently cancelled.
+                val targets by produceState<List<InstallTarget>?>(initialValue = null, families) {
+                    value = app.hub.allChildTargets().map { target ->
+                        val name = if (families.isMulti && target.familyName.isNotBlank()) {
+                            "${target.name} · ${target.familyName}"
+                        } else {
+                            target.name
+                        }
+                        InstallTarget(name, target.deviceId)
+                    }
                 }
-                if (targets.isEmpty()) {
+                val enrolled = targets ?: return@WalcottTheme
+                if (enrolled.isEmpty()) {
                     toastAndFinish(R.string.install_share_no_children)
                     return@WalcottTheme
                 }
 
                 InstallDialog(
                     pkg = pkg,
-                    targets = targets,
+                    targets = enrolled,
                     onDismiss = { finish() },
                     onConfirm = { target, categoryId ->
                         app.pushAppInstall(target.deviceId, pkg, categoryId)

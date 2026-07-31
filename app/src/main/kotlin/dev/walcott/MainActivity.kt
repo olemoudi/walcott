@@ -8,7 +8,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,8 +61,21 @@ class MainActivity : ComponentActivity() {
                 initialValue = dev.walcott.data.ThemeMode.SYSTEM,
             )
             WalcottTheme(darkTheme = themeMode.resolvesToDark()) {
+                // One ViewModel per family, keyed by it: switching families rebuilds every flow
+                // from that family's stores instead of trying to re-point the live ones, so no
+                // screen can ever show one family's children beside another's rules.
+                val familyId by app.hub.activeId.collectAsStateWithLifecycle()
+                val family = familyId
+                if (family == null) {
+                    // Same hold as WalcottApp's own: paint the background rather than nothing,
+                    // so the one DataStore read this needs can't flash a white frame.
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
+                    return@WalcottTheme
+                }
+                val scope = remember(family) { app.hub.scopeOf(family) }
                 val vm: WalcottViewModel = viewModel(
-                    factory = WalcottViewModel.Factory(app.repository, app.syncManager),
+                    key = family,
+                    factory = WalcottViewModel.Factory(scope.repository, scope.syncManager, app.hub),
                 )
                 val deviceOwner = remember { Enforcer(this).isDeviceOwner() }
                 // Deep-link target from a notification tap (e.g. "new app" -> Apps screen).

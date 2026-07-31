@@ -974,5 +974,34 @@
     <string name="budgets_categories_fold_subtitle">Optional: separate budgets for games, social, video…</string>
     <string name="nav_family_settings_title">All family settings</string>
     <string name="nav_family_settings_subtitle">Apps, web filter, protection, location, reports…</string>
-    <string name="add_family_soon">Add family — coming soon</string>
+    <!-- Several families on one parent phone -->
+    <string name="add_family">Add family</string>
+    <string name="switch_family">Switch family (%1$d)</string>
+    <string name="families_title">Families</string>
+    <string name="families_section">On this phone</string>
+    <string name="families_subtitle">Tap one to manage it.</string>
+    <string name="family_active">Showing now</string>
+    <plurals name="family_children_count">
+        <item quantity="one">%1$d child</item>
+        <item quantity="other">%1$d children</item>
+    </plurals>
+    <plurals name="family_pending_count">
+        <item quantity="one">%1$d request waiting</item>
+        <item quantity="other">%1$d requests waiting</item>
+    </plurals>
+    <plurals name="family_alerts_count">
+        <item quantity="one">%1$d alert</item>
+        <item quantity="other">%1$d alerts</item>
+    </plurals>
+    <string name="add_family_section">Add a family</string>
+    <string name="add_family_new">Create a new family</string>
+    <string name="add_family_new_desc">Its own rules and its own children, on its own private channel.</string>
+    <string name="add_family_new_hint">Your PIN is the same for every family on this phone.</string>
+    <string name="add_family_restore">Add from a backup</string>
+    <string name="add_family_restore_desc">Take over a family from its backup file. The families already here are untouched.</string>
+    <string name="add_family_duplicate">This phone already manages that family.</string>
+    <string name="action_create">Create</string>
+    <string name="remove_family_title">Stop managing %1$s?</string>
+    <string name="remove_family_text">This phone forgets the family: its rules, its children and its history. It does NOT free the children — their phones keep enforcing the rules they last received, and nobody will be able to change them from here. Save a backup first if you might want the family back.</string>
+    <string name="remove_family_action">Stop managing</string>
 </resources>

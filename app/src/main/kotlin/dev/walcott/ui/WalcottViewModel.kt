@@ -60,9 +60,15 @@ data class AppRow(
     val owners: List<dev.walcott.data.AppCatalog.Owner> = emptyList(),
 )
 
+/**
+ * One family's screens. A parent holding several has one of these per family (keyed by family id
+ * where it is created), so nothing on screen can accidentally mix two households; the handful of
+ * genuinely device-wide actions — the PIN, the app lock — go through [hub] to reach them all.
+ */
 class WalcottViewModel(
     val repository: WalcottRepository,
     private val sync: SyncManager,
+    private val hub: dev.walcott.FamilyHub,
 ) : ViewModel() {
 
     val identity: StateFlow<FamilyIdentity> = sync.identity
@@ -148,8 +154,42 @@ class WalcottViewModel(
     suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)
     fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }
     fun resetDeviceMode() = viewModelScope.launch { sync.resetDeviceMode() }
-    fun setAppLock(enabled: Boolean) = viewModelScope.launch { sync.setAppLock(enabled) }
-    fun setAppLockBiometric(enabled: Boolean) = viewModelScope.launch { sync.setAppLockBiometric(enabled) }
+    // Device-level, so they are written to every family (each stores its own copy — see
+    // FamilyHub.updateEveryIdentity): locking "the app" cannot mean locking one household.
+    fun setAppLock(enabled: Boolean) =
+        viewModelScope.launch { hub.updateEveryIdentity { it.copy(appLock = enabled) } }
+
+    fun setAppLockBiometric(enabled: Boolean) =
+        viewModelScope.launch { hub.updateEveryIdentity { it.copy(appLockBiometric = enabled) } }
+
+    // --- Families held by this device (parent mode) ---
+
+    /** One card per family for the chooser: name, children, what is waiting, what is wrong. */
+    val familySummaries: StateFlow<List<dev.walcott.FamilySummary>> = hub.summaries
+
+    /** Which family the screens are showing; null only before the registry has been read. */
+    val activeFamilyId: StateFlow<String?> = hub.activeId
+
+    fun switchFamily(id: String) = viewModelScope.launch { hub.setActive(id) }
+
+    /**
+     * Shows the family [childId] belongs to, if some other family has them. What makes a
+     * notification tap land on the right child on a phone managing several families: the alert
+     * only carries the child, and the child is enough to find their family.
+     */
+    fun switchToFamilyOf(childId: String) = viewModelScope.launch {
+        hub.scopeForChild(childId)?.let { if (it.id != hub.activeId.value) hub.setActive(it.id) }
+    }
+
+    /** Creates a family and returns its id (runs on the app scope; safe if the dialog closes). */
+    suspend fun createFamily(name: String): String = hub.createFamily(name)
+
+    /** Adopts a backup as an ADDITIONAL family, leaving the ones already here alone. */
+    suspend fun addFamilyFromBackup(fileJson: String, passphrase: CharArray): dev.walcott.FamilyHub.AddResult =
+        hub.addFamilyFromBackup(fileJson, passphrase)
+
+    /** Stops managing a family (its children keep the last rules they received — see the dialog). */
+    fun removeFamily(id: String) = viewModelScope.launch { hub.removeFamily(id) }
 
     // --- Children registry (parent mode) ---
 
@@ -557,8 +597,9 @@ class WalcottViewModel(
     /** Derives and caches the on-device backup key from a PIN the parent just re-entered. */
     suspend fun enableLocalBackup(pin: String) = sync.cacheLocalBackupKey(pin)
 
-    /** Toggle the "your backup is missing/stale" nudge notifications. */
-    fun setBackupReminders(enabled: Boolean) = viewModelScope.launch { sync.setBackupReminders(enabled) }
+    /** Toggle the "your backup is missing/stale" nudge notifications (all families). */
+    fun setBackupReminders(enabled: Boolean) =
+        viewModelScope.launch { hub.updateEveryIdentity { it.copy(backupReminders = enabled) } }
 
     // --- Emergency release (see dev.walcott.sync.PanicProtocol) ---
 
@@ -765,13 +806,16 @@ class WalcottViewModel(
     fun grantExtra(categoryId: String, minutes: Long) =
         viewModelScope.launch { repository.grantExtraMinutes(categoryId, minutes) }
 
-    /** Sets the parent PIN: creating it during setup, or replacing it from app settings. */
-    fun setPin(pin: String) = viewModelScope.launch {
-        repository.setPin(pin)
-        // Re-derive rather than keep the old key: a changed PIN must be the one that opens the
-        // next on-device backup, or restore would ask for a PIN the parent no longer knows.
-        sync.cacheLocalBackupKey(pin)
-    }
+    /**
+     * Sets the parent PIN: creating it during setup, or replacing it from app settings.
+     *
+     * Written to EVERY family this device holds. The PIN belongs to the parent, not to a
+     * household — they type the same one on their own phone and on every child's — but each
+     * family carries its own copy because that is how its children come to know it. The
+     * on-device backup key is re-derived with it, per family: a changed PIN must be the one
+     * that opens the next backup, or a restore would ask for a PIN nobody remembers.
+     */
+    fun setPin(pin: String) = viewModelScope.launch { hub.setPinEverywhere(pin) }
 
     /** PIN check with brute-force lockout. */
     suspend fun verifyPin(pin: String): dev.walcott.data.PinResult = sync.verifyPinGuarded(pin)
@@ -779,10 +823,11 @@ class WalcottViewModel(
     class Factory(
         private val repository: WalcottRepository,
         private val sync: SyncManager,
+        private val hub: dev.walcott.FamilyHub,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            WalcottViewModel(repository, sync) as T
+            WalcottViewModel(repository, sync, hub) as T
     }
 
     companion object {

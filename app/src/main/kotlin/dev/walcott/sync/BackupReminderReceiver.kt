@@ -16,9 +16,20 @@ class BackupReminderReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val store = IdentityStore(context.applicationContext)
-                store.save(store.current().copy(backupReminders = false))
-                NotificationManagerCompat.from(context).cancel(SyncNotifications.NOTIF_BACKUP_REMINDER)
+                // "Stop nagging me" is about the person, not about one family: mute every one
+                // this device holds, whichever family's reminder they happened to tap.
+                val app = context.applicationContext as dev.walcott.WalcottApplication
+                for (family in app.hub.allNow()) {
+                    val store = family.identityStore
+                    store.save(store.current().copy(backupReminders = false))
+                    NotificationManagerCompat.from(context).cancel(
+                        if (family.id == dev.walcott.data.FamilyIds.DEFAULT) {
+                            SyncNotifications.NOTIF_BACKUP_REMINDER
+                        } else {
+                            SyncNotifications.NOTIF_BACKUP_REMINDER + family.id.hashCode()
+                        },
+                    )
+                }
             } finally {
                 pending.finish()
             }

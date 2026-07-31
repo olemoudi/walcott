@@ -32,6 +32,15 @@ object SyncNotifications {
     private fun childDest(childId: String): String? =
         childId.takeIf { it.isNotBlank() }?.let { DEST_CHILD_PREFIX + it }
 
+    /**
+     * Who an alert is about: "Ana", or "Ana · Obiols" on a device that manages more than one
+     * family. Notifications are the one surface shared by every family — the screens are all
+     * per-family — so this is where a name that exists twice has to be told apart. [family] is
+     * null (and the suffix absent) whenever the device holds a single family.
+     */
+    fun who(childName: String, family: String?): String =
+        if (family.isNullOrBlank()) childName else "$childName · $family"
+
     /** Alert when a child device has been silent for a long time (see [Staleness]). */
     fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String, childId: String = "") =
         post(
@@ -291,22 +300,38 @@ object SyncNotifications {
         notifId = NOTIF_ID,
     )
 
-    /** Nudge to create/refresh the family backup; its action mutes the reminders for good. */
-    fun notifyBackupReminder(context: Context, neverBackedUp: Boolean) {
+    /**
+     * Nudge to create/refresh the family backup; its action mutes the reminders for good.
+     * One reminder per family (each has its own backup file), so the id carries the family.
+     */
+    fun notifyBackupReminder(
+        context: Context,
+        neverBackedUp: Boolean,
+        family: String? = null,
+        familyId: String = dev.walcott.data.FamilyIds.DEFAULT,
+    ) {
+        val notifId = if (familyId == dev.walcott.data.FamilyIds.DEFAULT) {
+            NOTIF_BACKUP_REMINDER
+        } else {
+            NOTIF_BACKUP_REMINDER + familyId.hashCode()
+        }
         val mute = PendingIntent.getBroadcast(
-            context, NOTIF_BACKUP_REMINDER,
+            context, notifId,
             Intent(context, BackupReminderReceiver::class.java).setAction(BackupReminderReceiver.ACTION_MUTE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         post(
             context, ALERT_CHANNEL, R.string.stale_channel_name,
-            title = context.getString(
-                if (neverBackedUp) R.string.backup_reminder_title_never else R.string.backup_reminder_title_stale,
+            title = who(
+                context.getString(
+                    if (neverBackedUp) R.string.backup_reminder_title_never else R.string.backup_reminder_title_stale,
+                ),
+                family,
             ),
             text = context.getString(
                 if (neverBackedUp) R.string.backup_reminder_text_never else R.string.backup_reminder_text_stale,
             ),
-            notifId = NOTIF_BACKUP_REMINDER,
+            notifId = notifId,
             dest = DEST_APP_SETTINGS,
             action = NotificationCompat.Action(0, context.getString(R.string.backup_reminder_mute), mute),
         )

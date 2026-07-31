@@ -32,11 +32,19 @@ object LocalBackupStore {
     /** Where the copies live. Visible in any file manager, which is the point. */
     val FOLDER = "${Environment.DIRECTORY_DOCUMENTS}/Walcott"
 
-    /** One file per rotation slot; each is overwritten in place rather than accumulating. */
-    fun fileNameFor(slot: BackupRotation.Slot): String = when (slot) {
-        BackupRotation.Slot.DAILY -> "walcott-backup-daily.json"
-        BackupRotation.Slot.WEEKLY -> "walcott-backup-weekly.json"
-        BackupRotation.Slot.MONTHLY -> "walcott-backup-monthly.json"
+    /**
+     * One file per rotation slot AND per family; each is overwritten in place rather than
+     * accumulating. The first family keeps the bare names it has always written to — those files
+     * already exist on parents' phones and are what a restore reaches for — so only the families
+     * added afterwards carry their id.
+     */
+    fun fileNameFor(slot: BackupRotation.Slot, familyId: String = dev.walcott.data.FamilyIds.DEFAULT): String {
+        val base = when (slot) {
+            BackupRotation.Slot.DAILY -> "walcott-backup-daily"
+            BackupRotation.Slot.WEEKLY -> "walcott-backup-weekly"
+            BackupRotation.Slot.MONTHLY -> "walcott-backup-monthly"
+        }
+        return if (familyId == dev.walcott.data.FamilyIds.DEFAULT) "$base.json" else "$base-$familyId.json"
     }
 
     /**
@@ -50,12 +58,18 @@ object LocalBackupStore {
      * to insert a name that MediaStore still has a row for and get a UNIQUE violation on
      * `files._data` for ever. Hence the disambiguated retry below.
      */
-    fun write(context: Context, slot: BackupRotation.Slot, content: String, knownUri: String? = null): Uri? {
+    fun write(
+        context: Context,
+        slot: BackupRotation.Slot,
+        content: String,
+        knownUri: String? = null,
+        familyId: String = dev.walcott.data.FamilyIds.DEFAULT,
+    ): Uri? {
         val resolver = context.contentResolver
         val target = knownUri?.let { runCatching { Uri.parse(it) }.getOrNull() }?.takeIf { writeTo(resolver, it, content) }
         if (target != null) return target
 
-        val name = fileNameFor(slot)
+        val name = fileNameFor(slot, familyId)
         findOwn(context, name)?.let { if (writeTo(resolver, it, content)) return it }
 
         // Fresh install, or the previous document was deleted from under us. Claim a name,

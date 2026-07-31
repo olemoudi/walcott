@@ -46,6 +46,7 @@ import dev.walcott.ui.parent.DebugLogScreen
 import dev.walcott.ui.parent.DeviceProtectionScreen
 import dev.walcott.ui.parent.EarnRulesScreen
 import dev.walcott.ui.parent.FamiliesScreen
+import dev.walcott.ui.parent.FamilyChooserScreen
 import dev.walcott.ui.parent.DomainMonitorScreen
 import dev.walcott.ui.parent.DomainReviewScreen
 import dev.walcott.ui.parent.HealthReportsScreen
@@ -63,7 +64,8 @@ private fun overrideChildName(settings: PolicySettings, childId: String?): Strin
     childId?.let { id -> settings.children.firstOrNull { it.childId == id }?.name }
 
 private enum class Screen {
-    MODE_SELECT, CHILD, GATE, FAMILIES, SETUP_PRESETS, SETUP_WIZARD, FAMILY, CHILD_DETAIL, CHILD_MAP,
+    MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY_CHOOSER, SETUP_PRESETS, SETUP_WIZARD, FAMILY,
+    CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
     APP_SETTINGS, DEBUG_LOGS, PANIC, ACTIVITY, CHILD_HEALTH, DOMAIN_MONITOR, DOMAIN_REVIEW,
 }
@@ -140,6 +142,11 @@ fun WalcottApp(
                 childDetailId = childId
                 screen = Screen.CHILD_DETAIL
                 onDestConsumed()
+            } else {
+                // Not one of THIS family's children: on a phone managing several, the alert
+                // belongs to another one. Switch to it and leave the destination unconsumed —
+                // this effect re-runs against the new family's registry and lands properly.
+                viewModel.switchToFamilyOf(childId)
             }
         }
     }
@@ -215,6 +222,7 @@ fun WalcottApp(
             Screen.APP_SETTINGS -> if (parentMode) Screen.FAMILIES else Screen.FAMILY
             Screen.DEBUG_LOGS -> Screen.APP_SETTINGS
             Screen.APP_DETAIL -> Screen.APPS
+            Screen.FAMILY_CHOOSER -> Screen.FAMILIES
             Screen.SETUP_PRESETS -> Screen.FAMILIES
             Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
@@ -293,6 +301,14 @@ fun WalcottApp(
                             mapReturnTo = Screen.FAMILIES
                             screen = Screen.CHILD_MAP
                         },
+                        onOpenFamilies = { screen = Screen.FAMILY_CHOOSER },
+                    )
+                    Screen.FAMILY_CHOOSER -> FamilyChooserScreen(
+                        viewModel,
+                        // Switching rebuilds the whole screen tree against the other family's
+                        // stores (see MainActivity), so landing on its home is the only sane exit.
+                        onOpenFamily = { screen = Screen.FAMILIES },
+                        onBack = ::back,
                     )
                     Screen.ACTIVITY -> ActivityScreen(
                         viewModel,

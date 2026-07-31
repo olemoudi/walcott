@@ -27,12 +27,21 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
 
     override suspend fun doWork(): Result {
         val context = applicationContext
-        val id = IdentityStore(context).current()
-        if (id.effectiveMode != DeviceMode.PARENT || !id.isPaired) return Result.success()
-
         val app = context as? WalcottApplication ?: return Result.success()
-        val syncStore = SyncStore(context)
-        val since = syncStore.current().ntfySinceSec
+        if (app.identityStore.current().effectiveMode != DeviceMode.PARENT) return Result.success()
+
+        // One poll per family: each has its own topic, cursor and apply path.
+        for (family in app.hub.allNow()) {
+            runCatching { pollFamily(family) }
+                .onFailure { DebugLog.w(TAG, "poll failed for ${family.id}", it) }
+        }
+        return Result.success() // best-effort: the next periodic run retries anyway
+    }
+
+    private suspend fun pollFamily(family: dev.walcott.FamilyScope) {
+        val id = family.identityStore.current()
+        if (!id.isPaired) return
+        val since = family.syncStore.current().ntfySinceSec
         val sinceParam = if (since > 0) since.toString() else "all"
         val url = "${id.ntfyServer.trimEnd('/')}/${id.topic}/json?poll=1&since=$sinceParam"
 
@@ -55,11 +64,10 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
             if (event["event"]?.jsonPrimitive?.content != "message") continue
             val body = event["message"]?.jsonPrimitive?.content ?: continue
             val timeSec = event["time"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-            app.syncManager.applyIncoming(body, timeSec)
+            family.syncManager.applyIncoming(body, timeSec)
             applied++
         }
-        if (applied > 0) DebugLog.i(TAG, "poll applied $applied message(s)")
-        return Result.success() // best-effort: the next periodic run retries anyway
+        if (applied > 0) DebugLog.i(TAG, "poll applied $applied message(s) to ${family.id}")
     }
 
     companion object {

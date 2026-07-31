@@ -974,5 +974,34 @@
     <string name="budgets_categories_fold_subtitle">Opcional: presupuestos separados para juegos, social, vídeo…</string>
     <string name="nav_family_settings_title">Todos los ajustes de la familia</string>
     <string name="nav_family_settings_subtitle">Apps, filtro web, protección, ubicación, informes…</string>
-    <string name="add_family_soon">Añadir familia — próximamente</string>
+    <!-- Varias familias en un mismo móvil del padre -->
+    <string name="add_family">Añadir familia</string>
+    <string name="switch_family">Cambiar de familia (%1$d)</string>
+    <string name="families_title">Familias</string>
+    <string name="families_section">En este móvil</string>
+    <string name="families_subtitle">Toca una para gestionarla.</string>
+    <string name="family_active">En pantalla</string>
+    <plurals name="family_children_count">
+        <item quantity="one">%1$d hijo</item>
+        <item quantity="other">%1$d hijos</item>
+    </plurals>
+    <plurals name="family_pending_count">
+        <item quantity="one">%1$d petición pendiente</item>
+        <item quantity="other">%1$d peticiones pendientes</item>
+    </plurals>
+    <plurals name="family_alerts_count">
+        <item quantity="one">%1$d aviso</item>
+        <item quantity="other">%1$d avisos</item>
+    </plurals>
+    <string name="add_family_section">Añadir una familia</string>
+    <string name="add_family_new">Crear una familia nueva</string>
+    <string name="add_family_new_desc">Con sus propias reglas y sus propios hijos, en su propio canal privado.</string>
+    <string name="add_family_new_hint">El PIN es el mismo para todas las familias de este móvil.</string>
+    <string name="add_family_restore">Añadir desde una copia</string>
+    <string name="add_family_restore_desc">Recupera una familia desde su fichero de copia. Las familias que ya están aquí no se tocan.</string>
+    <string name="add_family_duplicate">Este móvil ya gestiona esa familia.</string>
+    <string name="action_create">Crear</string>
+    <string name="remove_family_title">¿Dejar de gestionar %1$s?</string>
+    <string name="remove_family_text">Este móvil olvida la familia: sus reglas, sus hijos y su historial. NO libera a los hijos — sus móviles siguen aplicando las últimas reglas que recibieron y nadie podrá cambiarlas desde aquí. Guarda antes una copia de seguridad por si algún día la quieres de vuelta.</string>
+    <string name="remove_family_action">Dejar de gestionar</string>
 </resources>

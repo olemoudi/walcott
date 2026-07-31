@@ -204,7 +204,7 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
  * small lie that makes someone give up on a recovery that would have worked.
  */
 @Composable
-private fun RestorePassphraseDialog(
+internal fun RestorePassphraseDialog(
     fromPin: Boolean,
     onDismiss: () -> Unit,
     onRestore: (String, onError: () -> Unit) -> Unit,
@@ -292,7 +292,7 @@ private fun ModeCard(
  * backups live in. The hint is advisory — providers may ignore it — so the flow still works
  * unchanged when it lands somewhere else.
  */
-private class OpenBackupDocument : androidx.activity.result.contract.ActivityResultContracts.OpenDocument() {
+internal class OpenBackupDocument : androidx.activity.result.contract.ActivityResultContracts.OpenDocument() {
     override fun createIntent(context: android.content.Context, input: Array<String>): android.content.Intent =
         super.createIntent(context, input).apply {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {

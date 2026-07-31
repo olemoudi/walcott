@@ -1,21 +1,23 @@
 package dev.walcott.sync
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import dev.walcott.data.FamilyIds
+import dev.walcott.data.WalcottDataStores
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 
-private val Context.identityDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_identity")
+/**
+ * Persists this device's [FamilyIdentity] within one family, as JSON in DataStore. A parent
+ * holding several families has one of these per family (its own topic, keys and device id);
+ * a child device only ever has the default one.
+ */
+class IdentityStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
 
-/** Persists this device's [FamilyIdentity] as JSON in DataStore. */
-class IdentityStore(private val context: Context) {
-
+    private val dataStore = WalcottDataStores.get(context, WalcottDataStores.fileName(FILE, familyId))
     private val key = stringPreferencesKey("identity_json")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = FamilyIdentity.serializer()
@@ -23,11 +25,15 @@ class IdentityStore(private val context: Context) {
     private fun decode(raw: String?): FamilyIdentity =
         raw?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() } ?: FamilyIdentity()
 
-    val identity: Flow<FamilyIdentity> = context.identityDataStore.data.map { decode(it[key]) }
+    val identity: Flow<FamilyIdentity> = dataStore.data.map { decode(it[key]) }
 
     suspend fun current(): FamilyIdentity = identity.first()
 
     suspend fun save(identity: FamilyIdentity) {
-        context.identityDataStore.edit { it[key] = json.encodeToString(serializer, identity) }
+        dataStore.edit { it[key] = json.encodeToString(serializer, identity) }
+    }
+
+    private companion object {
+        const val FILE = "walcott_identity"
     }
 }

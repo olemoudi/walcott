@@ -1,11 +1,8 @@
 package dev.walcott.sync
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -319,10 +316,16 @@ data class SyncState(
     }
 }
 
-private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_sync")
+/**
+ * One family's sync bookkeeping. [familyId] picks the file; a parent holding several families
+ * keeps their children, feeds and alert state strictly apart (see [dev.walcott.data.FamilyIds]).
+ */
+class SyncStore(context: Context, familyId: String = dev.walcott.data.FamilyIds.DEFAULT) {
 
-class SyncStore(private val context: Context) {
-
+    private val dataStore = dev.walcott.data.WalcottDataStores.get(
+        context,
+        dev.walcott.data.WalcottDataStores.fileName(FILE, familyId),
+    )
     private val key = stringPreferencesKey("sync_json")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = SyncState.serializer()
@@ -330,11 +333,15 @@ class SyncStore(private val context: Context) {
     private fun decode(raw: String?): SyncState =
         raw?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() } ?: SyncState()
 
-    val state: Flow<SyncState> = context.syncDataStore.data.map { decode(it[key]) }
+    val state: Flow<SyncState> = dataStore.data.map { decode(it[key]) }
 
     suspend fun current(): SyncState = state.first()
 
     suspend fun update(transform: (SyncState) -> SyncState) {
-        context.syncDataStore.edit { it[key] = json.encodeToString(serializer, transform(decode(it[key]))) }
+        dataStore.edit { it[key] = json.encodeToString(serializer, transform(decode(it[key]))) }
+    }
+
+    private companion object {
+        const val FILE = "walcott_sync"
     }
 }

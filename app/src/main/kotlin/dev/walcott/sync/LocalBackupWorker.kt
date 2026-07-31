@@ -25,11 +25,15 @@ class LocalBackupWorker(context: Context, params: WorkerParameters) : CoroutineW
 
     override suspend fun doWork(): Result {
         val app = applicationContext as? WalcottApplication ?: return Result.success()
-        if (IdentityStore(applicationContext).current().role != Role.PARENT) return Result.success()
-        val written = runCatching { app.syncManager.writeDueLocalBackups(LocalDate.now()) }
-            .onFailure { DebugLog.w(TAG, "local backup run failed", it) }
-            .getOrDefault(emptySet())
-        if (written.isNotEmpty()) DebugLog.i(TAG, "local backup rewrote $written")
+        // Every family gets its own copies (its own files — see LocalBackupStore.fileNameFor):
+        // losing the phone must not be recoverable for only whichever family was on screen.
+        for (family in app.hub.allNow()) {
+            if (family.identityStore.current().role != Role.PARENT) continue
+            val written = runCatching { family.syncManager.writeDueLocalBackups(LocalDate.now()) }
+                .onFailure { DebugLog.w(TAG, "local backup run failed for ${family.id}", it) }
+                .getOrDefault(emptySet())
+            if (written.isNotEmpty()) DebugLog.i(TAG, "local backup rewrote $written for ${family.id}")
+        }
         // Always success: a periodic worker that retries would just try again before the day
         // rolls over, and the next night's run covers anything missed anyway.
         return Result.success()

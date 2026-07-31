@@ -40,16 +40,25 @@ class PolicySeedReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // `--es family_new "Name"` creates an ADDITIONAL family and logs its id; passing
+                // that id back as `--es family <id>` aims every other extra at it. Together they
+                // let one emulator play a parent who manages two families, which is otherwise a
+                // two-phone scenario.
+                intent.getStringExtra("family_new")?.let { name ->
+                    val id = app.hub.createFamily(name)
+                    DebugLog.i("WalcottSeed", "family created: id=$id name=$name")
+                }
+                val target = intent.getStringExtra("family")?.let { app.hub.scopeOf(it) } ?: app.hub.own
                 if (policyJson != null) {
                     val decoded = Json { ignoreUnknownKeys = true }
                         .decodeFromString(PolicySettings.serializer(), policyJson)
-                    app.repository.updateSettings { decoded }
+                    target.repository.updateSettings { decoded }
                 }
                 when (mode) {
                     // Mark it a paired child (role=CHILD) so child-only UI (requests, asks) shows;
                     // a generated family key keeps the sync layer from choking on empty crypto.
-                    "child" -> app.identityStore.save(
-                        app.identityStore.current().copy(
+                    "child" -> target.identityStore.save(
+                        target.identityStore.current().copy(
                             mode = DeviceMode.CHILD,
                             role = dev.walcott.sync.Role.CHILD,
                             topic = "debug-topic",
@@ -58,15 +67,15 @@ class PolicySeedReceiver : BroadcastReceiver() {
                             ),
                         ),
                     )
-                    "parent" -> app.identityStore.save(app.identityStore.current().copy(mode = DeviceMode.PARENT))
+                    "parent" -> target.identityStore.save(target.identityStore.current().copy(mode = DeviceMode.PARENT))
                     // `--es mode pair --es pair_with "walcott1:…"`: joins this device to a family
                     // as a real child, through the same code path the QR uses — so one emulator
                     // can play the parent, publish, and then become the child that receives it.
                     "pair" -> {
-                        val ok = app.syncManager.pairAsChild(intent.getStringExtra("pair_with").orEmpty())
+                        val ok = target.syncManager.pairAsChild(intent.getStringExtra("pair_with").orEmpty())
                         DebugLog.i("WalcottSeed", "pairAsChild ok=$ok")
                     }
-                    "reset" -> app.identityStore.save(dev.walcott.sync.FamilyIdentity())
+                    "reset" -> target.identityStore.save(dev.walcott.sync.FamilyIdentity())
                     // `--es mode local_backup [--es local_backup_slots daily,weekly,monthly]`:
                     // writes the shared-storage copies now, and logs what this install can see
                     // afterwards. Exists to answer the scoped-storage question on a device rather
@@ -77,13 +86,13 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     // through the real path — so the resulting file can be pulled off the device
                     // and decrypted elsewhere to prove it is genuinely restorable.
                     "local_backup" -> {
-                        if (app.identityStore.current().role != dev.walcott.sync.Role.PARENT) {
-                            app.syncManager.becomeParent("DebugFamily")
+                        if (target.identityStore.current().role != dev.walcott.sync.Role.PARENT) {
+                            target.syncManager.becomeParent("DebugFamily")
                         }
                         val pin = intent.getStringExtra("local_backup_pin") ?: "4291"
-                        app.repository.setPin(pin)
-                        app.syncManager.cacheLocalBackupKey(pin)
-                        val written = app.syncManager.writeDueLocalBackups(java.time.LocalDate.now())
+                        target.repository.setPin(pin)
+                        target.syncManager.cacheLocalBackupKey(pin)
+                        val written = target.syncManager.writeDueLocalBackups(java.time.LocalDate.now())
                         DebugLog.i("WalcottSeed", "local backup wrote=$written pin=$pin")
                         DebugLog.i("WalcottSeed", "visible to this install: ${dev.walcott.sync.LocalBackupStore.listOwn(app)}")
                     }
@@ -101,11 +110,11 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     // sees the first time they update, which is the only way to check that the
                     // "turn it on" card actually shows up for them.
                     "upgraded_parent" -> {
-                        if (app.identityStore.current().role != dev.walcott.sync.Role.PARENT) {
-                            app.syncManager.becomeParent("DebugFamily")
+                        if (target.identityStore.current().role != dev.walcott.sync.Role.PARENT) {
+                            target.syncManager.becomeParent("DebugFamily")
                         }
-                        app.repository.setPin(intent.getStringExtra("local_backup_pin") ?: "4291")
-                        app.syncManager.clearLocalBackupKeyForDebug()
+                        target.repository.setPin(intent.getStringExtra("local_backup_pin") ?: "4291")
+                        target.syncManager.clearLocalBackupKeyForDebug()
                         DebugLog.i("WalcottSeed", "upgraded parent: pin set, local backup key cleared")
                     }
                     // `--es mode local_backup_list`: only enumerates, so a freshly installed app
@@ -116,10 +125,10 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 // `--es ntfy_server http://10.0.2.2:8099`: points this device's channel at a local
                 // sink, so a parent->child exchange can be exercised when ntfy.sh is rate-limiting.
                 intent.getStringExtra("ntfy_server")?.let { url ->
-                    app.identityStore.save(app.identityStore.current().copy(ntfyServer = url))
+                    target.identityStore.save(target.identityStore.current().copy(ntfyServer = url))
                     // Reconnect on the spot: the transport captures its URL when it is built, and
                     // a Device Owner refuses `am force-stop`, so there is no restarting into it.
-                    app.syncManager.start()
+                    target.syncManager.start()
                     DebugLog.i("WalcottSeed", "ntfy server -> $url")
                 }
                 // `--es apply_msg_b64 <base64 of an envelope>`: feeds one message into the real
@@ -127,7 +136,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 // parent->child half be verified without depending on the public server's mood.
                 intent.getStringExtra("apply_msg_b64")?.let { b64 ->
                     val raw = String(java.util.Base64.getDecoder().decode(b64))
-                    app.syncManager.applyIncoming(raw, System.currentTimeMillis() / 1000)
+                    target.syncManager.applyIncoming(raw, System.currentTimeMillis() / 1000)
                     DebugLog.i("WalcottSeed", "applied incoming message (${raw.length} bytes)")
                 }
                 // `--ez legacy_keys true` converts this parent family to a pre-v0.11 one
@@ -136,8 +145,8 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 // key — can be exercised end-to-end on one emulator.
                 if (intent.getBooleanExtra("legacy_keys", false)) {
                     dev.walcott.sync.ParentKeystore.ensureKeyPair()
-                    app.identityStore.save(
-                        app.identityStore.current().copy(
+                    target.identityStore.save(
+                        target.identityStore.current().copy(
                             parentPublicKeyB64 = dev.walcott.sync.FamilyCrypto.toB64(
                                 dev.walcott.sync.ParentKeystore.publicKey().encoded,
                             ),
@@ -154,33 +163,33 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 intent.getStringExtra("backup_pass")?.let { pass ->
                     // Basename only: the receiver is exported (adb), don't allow traversal.
                     val name = (intent.getStringExtra("backup_to") ?: "debug-backup.json").substringAfterLast('/')
-                    val text = app.syncManager.createBackup(pass.toCharArray())
+                    val text = target.syncManager.createBackup(pass.toCharArray())
                     java.io.File(context.filesDir, name).writeText(text)
                     DebugLog.i("WalcottSeed", "backup written: $name (${text.length} bytes)")
                 }
                 intent.getStringExtra("restore_from")?.let { rawName ->
                     val name = rawName.substringAfterLast('/')
                     val pass = intent.getStringExtra("restore_pass") ?: ""
-                    val ok = app.syncManager.restoreBackup(
+                    val ok = target.syncManager.restoreBackup(
                         java.io.File(context.filesDir, name).readText(),
                         pass.toCharArray(),
                     )
                     DebugLog.i("WalcottSeed", "restore from $name -> ok=$ok")
                 }
-                if (childApps != null) seedChild(app, childApps, intent)
+                if (childApps != null) seedChild(target, childApps, intent)
                 // Optional: back-date the child-side channel-health stamp (--el channel_ok_ago_ms N)
                 // so the "no connection with your family" card can be exercised without cutting
                 // the network and waiting hours.
                 val channelAgo = intent.getLongExtra("channel_ok_ago_ms", -1)
                 if (channelAgo >= 0) {
-                    app.syncStore.update { it.copy(lastChannelOkMs = System.currentTimeMillis() - channelAgo) }
+                    target.syncStore.update { it.copy(lastChannelOkMs = System.currentTimeMillis() - channelAgo) }
                 }
                 // `--el self_skew_ms N` fakes THIS device's measured clock drift, so the
                 // fail-closed-on-a-wrong-clock path (and the child's card for it) can be driven
                 // without actually moving the clock and waiting for a server timestamp.
                 val selfSkew = intent.getLongExtra("self_skew_ms", Long.MIN_VALUE)
                 if (selfSkew != Long.MIN_VALUE) {
-                    app.syncStore.update { it.copy(clockSkewMs = selfSkew) }
+                    target.syncStore.update { it.copy(clockSkewMs = selfSkew) }
                 }
                 // Emergency-release hooks (see PanicProtocol). `--ei panic_self N` puts THIS
                 // device N checkpoints into a request, with the gates satisfied (fresh channel
@@ -192,7 +201,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (panicSelf >= 0) {
                     val nowSec = System.currentTimeMillis() / 1000
                     val dueAgo = intent.getLongExtra("panic_due_ago_sec", 0)
-                    app.syncStore.update {
+                    target.syncStore.update {
                         it.copy(
                             panic = dev.walcott.sync.PanicRequest(
                                 id = "debug-panic",
@@ -208,12 +217,12 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 }
                 // `--ez panic_clear true` drops a seeded request and any standing lockout.
                 if (intent.getBooleanExtra("panic_clear", false)) {
-                    app.syncStore.update { it.copy(panic = null, panicBlockedUntilSec = 0) }
+                    target.syncStore.update { it.copy(panic = null, panicBlockedUntilSec = 0) }
                 }
                 // `--ez panic_ready true` just satisfies the start gates (channel + parent build),
                 // for exercising the child's "Request release" button itself.
                 if (intent.getBooleanExtra("panic_ready", false)) {
-                    app.syncStore.update {
+                    target.syncStore.update {
                         it.copy(
                             ntfySinceSec = System.currentTimeMillis() / 1000,
                             lastChannelOkMs = System.currentTimeMillis(),
@@ -244,7 +253,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * `--ez child_feed true` (a handful of activity-feed entries for the wall),
      * `--ei child_tz_offset_min N` (a child in another timezone, reporting its own day).
      */
-    private suspend fun seedChild(app: WalcottApplication, spec: String, intent: Intent) {
+    private suspend fun seedChild(target: dev.walcott.FamilyScope, spec: String, intent: Intent) {
         val (childId, name, appsPart) = spec.split(":", limit = 3).let {
             Triple(it.getOrElse(0) { "c1" }, it.getOrElse(1) { "Device" }, it.getOrElse(2) { "" })
         }
@@ -315,7 +324,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 )
             },
         )
-        app.syncStore.update { s ->
+        target.syncStore.update { s ->
             s.copy(
                 children = s.children.filterNot { it.deviceId == snapshot.deviceId } + snapshot,
                 lastSeen = s.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
@@ -331,7 +340,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 )
             }
             val key = dev.walcott.sync.UsageLedger.keyOf(childId, snapshot.deviceId)
-            app.syncStore.update { s ->
+            target.syncStore.update { s ->
                 s.copy(
                     usageHistory = s.usageHistory + (
                         key to dev.walcott.sync.UsageLedger.merge(
@@ -356,7 +365,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
             } else {
                 slices
             }
-            app.syncStore.update { s ->
+            target.syncStore.update { s ->
                 s.copy(
                     domainInbox = dev.walcott.sync.DomainInbox.merge(
                         inbox = s.domainInbox,
@@ -385,7 +394,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 entry(dev.walcott.sync.ParentEvent.TYPE_NEW_APP, 2 * 3_600_000L, detail = "Instagram"),
                 entry(dev.walcott.sync.ParentEvent.TYPE_TIME_REQUEST, 20 * 60_000L, count = 30),
             )
-            app.syncStore.update { s -> feed.fold(s) { acc, e -> acc.plusEvent(e) } }
+            target.syncStore.update { s -> feed.fold(s) { acc, e -> acc.plusEvent(e) } }
         }
         if (intent.getBooleanExtra("child_diag", false)) {
             val report = dev.walcott.sync.DiagPayload(
@@ -405,7 +414,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 appVersionName = dev.walcott.BuildConfig.VERSION_NAME,
                 logLines = DebugLog.tail(20).ifEmpty { listOf("(empty log)") },
             )
-            app.syncStore.update { it.copy(diagReports = it.diagReports + (snapshot.deviceId to report)) }
+            target.syncStore.update { it.copy(diagReports = it.diagReports + (snapshot.deviceId to report)) }
         }
     }
 

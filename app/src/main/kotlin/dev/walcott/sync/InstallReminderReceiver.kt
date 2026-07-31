@@ -23,7 +23,9 @@ class InstallReminderReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                runCatching { app.syncManager.sendCommand(deviceId, RemoteAction.REAPPLY_POLICY) }
+                // The command has to go out over the topic of the family that device belongs to.
+                val family = runCatching { app.hub.scopeForDevice(deviceId) }.getOrNull() ?: app.hub.own
+                runCatching { family.syncManager.sendCommand(deviceId, RemoteAction.REAPPLY_POLICY) }
                 SyncNotifications.cancelInstallWindowOpen(context, deviceId)
             } finally {
                 pending.finish()

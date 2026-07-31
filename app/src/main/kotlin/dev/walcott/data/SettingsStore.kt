@@ -1,21 +1,20 @@
 package dev.walcott.data
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_policy")
+/**
+ * Persists one family's [PolicySettings] as a single JSON blob in Preferences DataStore.
+ * [familyId] picks the file; the first family keeps the original name (see [FamilyIds.DEFAULT]).
+ */
+class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
 
-/** Persists [PolicySettings] as a single JSON blob in Preferences DataStore. */
-class SettingsStore(private val context: Context) {
-
+    private val dataStore = WalcottDataStores.get(context, WalcottDataStores.fileName(FILE, familyId))
     private val key = stringPreferencesKey("policy_json")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = PolicySettings.serializer()
@@ -48,17 +47,18 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    val settings: Flow<PolicySettings> = context.dataStore.data.map { prefs -> decode(prefs[key]) }
+    val settings: Flow<PolicySettings> = dataStore.data.map { prefs -> decode(prefs[key]) }
 
     suspend fun current(): PolicySettings = settings.first()
 
     suspend fun update(transform: (PolicySettings) -> PolicySettings) {
-        context.dataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[key] = json.encodeToString(serializer, transform(decode(prefs[key])))
         }
     }
 
     private companion object {
         const val TAG = "WalcottPolicy"
+        const val FILE = "walcott_policy"
     }
 }

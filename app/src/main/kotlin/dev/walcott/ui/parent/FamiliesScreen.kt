@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
@@ -123,6 +124,8 @@ fun FamiliesScreen(
     // family keeps coming back to, so they're one tap from home instead of behind the hub.
     onOpenCalendar: () -> Unit,
     onOpenMap: (String) -> Unit,
+    /** The chooser: switching between families, adding one, letting one go. */
+    onOpenFamilies: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
@@ -140,6 +143,8 @@ fun FamiliesScreen(
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
     val needsBackupPin by viewModel.localBackupNeedsPin.collectAsStateWithLifecycle()
     var showBackupPin by remember { mutableStateOf(false) }
+    val families by viewModel.familySummaries.collectAsStateWithLifecycle()
+    val multiFamily = families.size > 1
 
     // Re-check when the user comes back from the notification settings we deep-link into.
     var notificationsEnabled by remember { mutableStateOf(true) }
@@ -194,13 +199,23 @@ fun FamiliesScreen(
             }
         }
 
-        // Placeholder on purpose: managing several families needs per-family identities in
-        // the sync layer first. Kept visible (disabled) as the roadmap marker it is.
+        // The way out of this family: to the chooser when there are others, straight to
+        // "add one" when this is still the only family the phone manages.
         item {
-            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            OutlinedButton(onClick = onOpenFamilies, modifier = Modifier.fillMaxWidth()) {
+                Icon(
+                    if (multiFamily) Icons.Outlined.SwapHoriz else Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
                 Spacer(Modifier.width(spacing.xs))
-                Text(stringResource(R.string.add_family_soon))
+                Text(
+                    if (multiFamily) {
+                        stringResource(R.string.switch_family, families.size)
+                    } else {
+                        stringResource(R.string.add_family)
+                    },
+                )
             }
         }
 

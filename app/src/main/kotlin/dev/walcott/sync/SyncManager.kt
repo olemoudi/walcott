@@ -47,6 +47,18 @@ class SyncManager(
     private val syncStore: SyncStore,
     private val scope: CoroutineScope,
     private val iconStore: IconStore = IconStore(context),
+    /**
+     * Which family this manager speaks for. Only ever visible where two families would otherwise
+     * collide outside their own stores — the on-device backup files, so far. The wire has no
+     * notion of it: a family IS its topic and key (see [dev.walcott.data.FamilyIds]).
+     */
+    private val familyId: String = dev.walcott.data.FamilyIds.DEFAULT,
+    /**
+     * This family's name when alerts need to say which family they are about (a parent holding
+     * more than one), null otherwise. A lambda because both halves of that answer — the family
+     * count and the name — change while the app runs.
+     */
+    private val familyLabel: suspend () -> String? = { null },
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var transport: SyncTransport? = null
@@ -248,6 +260,31 @@ class SyncManager(
 
     /** Unlink from the family and forget the mode choice; local policy and usage stay. */
     suspend fun resetDeviceMode() = unlink(FamilyIdentity())
+
+    /**
+     * This parent stops managing this family for good (see [dev.walcott.FamilyHub.removeFamily]):
+     * the transport goes down and every trace of the family is erased from this device.
+     *
+     * The identity that stays behind keeps [DeviceMode.PARENT]. It is not cosmetic: an UNSET
+     * identity enforces by default (see [FamilyIdentity.enforcesLocally]), so a blank one would
+     * have the boot receiver start blocking apps on the parent's own phone.
+     */
+    suspend fun forgetFamily() {
+        val before = identityStore.current()
+        unlink(
+            FamilyIdentity(
+                mode = DeviceMode.PARENT,
+                // Device-level preferences, not family ones: they happen to be stored per family
+                // (every family needs its own copy), so dropping them here would silently turn
+                // the app lock off on a parent who removed the family it was recorded in.
+                appLock = before.appLock,
+                appLockBiometric = before.appLockBiometric,
+                backupReminders = before.backupReminders,
+            ),
+        )
+        settingsStore.update { PolicySettings() }
+        syncStore.update { SyncState() }
+    }
 
     /**
      * Emergency release ([dev.walcott.enforcement.PanicRelease]): unlink AND remember that this
@@ -1059,7 +1096,8 @@ class SyncManager(
         // One ciphertext for every slot due tonight: they are copies of the same state, and
         // re-sealing per slot would only burn CPU for three different nonces.
         val written = due.mapNotNull { slot ->
-            LocalBackupStore.write(context, slot, text, s.localBackupUris[slot.name])?.let { slot to it.toString() }
+            LocalBackupStore.write(context, slot, text, s.localBackupUris[slot.name], familyId)
+                ?.let { slot to it.toString() }
         }.toMap()
         // Deliberately does NOT touch lastBackupAtMs: that drives the reminder to set up a backup
         // that lives somewhere else, and a copy on the same phone is no answer to losing the
@@ -1730,6 +1768,12 @@ class SyncManager(
 
     private suspend fun applyChildSnapshotLocked(snapshot: ChildSnapshot) {
         val before = syncStore.current()
+        // Alerts are the only thing that leaves this family's screens, so on a device holding
+        // several families they say which one they came from. The feed doesn't need it — each
+        // family has its own — and neither does a device with a single family, where the suffix
+        // would be pure noise (familyLabel returns null there).
+        val family = familyLabel()
+        val who = SyncNotifications.who(snapshot.displayName, family)
         val prevRequestIds = before.children.flatMap { it.requests }.map { it.requestId }.toSet()
         val prevAskIds = before.children.flatMap { it.asks }.map { it.requestId }.toSet()
         val merged = SyncEngine.mergeChild(before.children.associateBy { it.deviceId }, snapshot).values.toList()
@@ -1789,7 +1833,7 @@ class SyncManager(
         // accessibility blocker); clear the flag when it recovers so a later lapse re-alerts.
         val nowInactive = snapshot.enforcement == EnforcementStatus.NONE
         if (nowInactive && snapshot.deviceId !in before.enforcementNotified) {
-            SyncNotifications.notifyEnforcementInactive(context, snapshot.displayName, snapshot.deviceId, snapshot.childId)
+            SyncNotifications.notifyEnforcementInactive(context, who, snapshot.deviceId, snapshot.childId)
             syncStore.update {
                 it.copy(enforcementNotified = it.enforcementNotified + snapshot.deviceId)
                     .plusEvent(event(ParentEvent.TYPE_UNPROTECTED, snapshot))
@@ -1813,7 +1857,7 @@ class SyncManager(
             (prevChild?.lastCommand?.completedAtMs ?: 0L) != wrongAppAck.completedAtMs
         ) {
             SyncNotifications.notifyWrongApp(
-                context, snapshot.displayName, wrongAppAck.arg, snapshot.deviceId, snapshot.childId,
+                context, who, wrongAppAck.arg, snapshot.deviceId, snapshot.childId,
             )
             syncStore.update {
                 it.plusEvent(event(ParentEvent.TYPE_WRONG_APP, snapshot, detail = wrongAppAck.arg))
@@ -1824,7 +1868,7 @@ class SyncManager(
             snapshot.enforcement != EnforcementStatus.UNKNOWN &&
             snapshot.version >= prevChild.version
         ) {
-            SyncNotifications.notifyEnforcementDegraded(context, snapshot.displayName, snapshot.deviceId, snapshot.childId)
+            SyncNotifications.notifyEnforcementDegraded(context, who, snapshot.deviceId, snapshot.childId)
             syncStore.update { it.plusEvent(event(ParentEvent.TYPE_PROTECTION_DEGRADED, snapshot)) }
         }
 
@@ -1838,7 +1882,7 @@ class SyncManager(
         if (panic != null && before.panicAlerted[snapshot.deviceId] != panicKey) {
             val released = panic.checkpoints >= PanicProtocol.REQUIRED_CHECKPOINTS
             SyncNotifications.notifyPanicRequest(
-                context, snapshot.displayName, panic, snapshot.deviceId, snapshot.childId,
+                context, who, panic, snapshot.deviceId, snapshot.childId,
             )
             syncStore.update {
                 it.copy(panicAlerted = it.panicAlerted + (snapshot.deviceId to panicKey!!))
@@ -1861,7 +1905,7 @@ class SyncManager(
         // Alert once when usage access is off (budgets silently stop counting); re-alert on relapse.
         val usageOff = !snapshot.usageAccessOn
         if (usageOff && snapshot.deviceId !in before.usageAccessNotified) {
-            SyncNotifications.notifyUsageAccessLost(context, snapshot.displayName, snapshot.deviceId, snapshot.childId)
+            SyncNotifications.notifyUsageAccessLost(context, who, snapshot.deviceId, snapshot.childId)
             syncStore.update {
                 it.copy(usageAccessNotified = it.usageAccessNotified + snapshot.deviceId)
                     .plusEvent(event(ParentEvent.TYPE_USAGE_ACCESS_OFF, snapshot))
@@ -1873,7 +1917,7 @@ class SyncManager(
         // Alert once when mock (spoofed) fixes appear in the trail; clear when it's clean again.
         val hasMock = snapshot.locations.any { it.mock }
         if (hasMock && snapshot.deviceId !in before.mockLocationNotified) {
-            SyncNotifications.notifyMockLocation(context, snapshot.displayName, snapshot.deviceId, snapshot.childId)
+            SyncNotifications.notifyMockLocation(context, who, snapshot.deviceId, snapshot.childId)
             syncStore.update {
                 it.copy(mockLocationNotified = it.mockLocationNotified + snapshot.deviceId)
                     .plusEvent(event(ParentEvent.TYPE_MOCK_LOCATION, snapshot))
@@ -1887,7 +1931,7 @@ class SyncManager(
         val alreadyLow = snapshot.deviceId in before.lowBatteryNotified
         if (HealthAlerts.shouldAlertLowBattery(snapshot.batteryPercent, snapshot.charging, alreadyLow)) {
             SyncNotifications.notifyLowBattery(
-                context, snapshot.displayName, snapshot.batteryPercent, snapshot.deviceId, snapshot.childId,
+                context, who, snapshot.batteryPercent, snapshot.deviceId, snapshot.childId,
             )
             syncStore.update {
                 it.copy(lowBatteryNotified = it.lowBatteryNotified + snapshot.deviceId)
@@ -1903,7 +1947,7 @@ class SyncManager(
         val hasGap = snapshot.enforcementGaps.isNotEmpty()
         if (hasGap && snapshot.deviceId !in before.selfTestNotified) {
             SyncNotifications.notifyEnforcementGap(
-                context, snapshot.displayName, snapshot.enforcementGaps.size, snapshot.deviceId, snapshot.childId,
+                context, who, snapshot.enforcementGaps.size, snapshot.deviceId, snapshot.childId,
             )
             syncStore.update {
                 it.copy(selfTestNotified = it.selfTestNotified + snapshot.deviceId)
@@ -1923,7 +1967,7 @@ class SyncManager(
         val alreadyClockAlerted = snapshot.deviceId in before.clockTamperNotified
         if (ClockGuard.shouldAlert(snapshot.clockSkewMs, alreadyClockAlerted)) {
             SyncNotifications.notifyClockTamper(
-                context, snapshot.displayName, snapshot.clockSkewMs, snapshot.deviceId, snapshot.childId,
+                context, who, snapshot.clockSkewMs, snapshot.deviceId, snapshot.childId,
             )
             syncStore.update {
                 it.copy(clockTamperNotified = it.clockTamperNotified + snapshot.deviceId)
@@ -1937,7 +1981,7 @@ class SyncManager(
         // clear when it comes back. Defaults true, so legacy children never false-alarm.
         val netLocOff = !snapshot.networkLocationOn
         if (netLocOff && snapshot.deviceId !in before.networkLocationNotified) {
-            SyncNotifications.notifyNetworkLocationOff(context, snapshot.displayName, snapshot.deviceId, snapshot.childId)
+            SyncNotifications.notifyNetworkLocationOff(context, who, snapshot.deviceId, snapshot.childId)
             syncStore.update {
                 it.copy(networkLocationNotified = it.networkLocationNotified + snapshot.deviceId)
                     .plusEvent(event(ParentEvent.TYPE_INDOOR_LOCATION_OFF, snapshot))
@@ -1962,7 +2006,7 @@ class SyncManager(
                 // is unconditional — a new, still-blocked app is always worth a durable trace.
                 if (settingsStore.current().newAppAlerts) {
                     SyncNotifications.notifyNewApp(
-                        context, snapshot.displayName, newApps.first().label, newApps.size - 1, snapshot.deviceId,
+                        context, who, newApps.first().label, newApps.size - 1, snapshot.deviceId,
                     )
                 }
                 syncStore.update {
@@ -1981,7 +2025,7 @@ class SyncManager(
         val prevPinTotal = before.pinAlertedTotal[snapshot.deviceId] ?: 0
         if (snapshot.pinWrongTotal > prevPinTotal) {
             SyncNotifications.notifyWrongPin(
-                context, snapshot.displayName, snapshot.pinWrongTotal, snapshot.deviceId, snapshot.childId,
+                context, who, snapshot.pinWrongTotal, snapshot.deviceId, snapshot.childId,
             )
             syncStore.update {
                 it.copy(pinAlertedTotal = it.pinAlertedTotal + (snapshot.deviceId to snapshot.pinWrongTotal))
@@ -1993,7 +2037,7 @@ class SyncManager(
         val newlyPending = snapshot.requests.map { it.requestId }.toSet() - prevRequestIds - resolved
         if (newlyPending.isNotEmpty()) {
             val req = snapshot.requests.first { it.requestId in newlyPending }
-            SyncNotifications.notifyRequest(context, snapshot.displayName, req.minutes)
+            SyncNotifications.notifyRequest(context, who, req.minutes)
         }
         for (req in snapshot.requests.filter { it.requestId in newlyPending }) {
             syncStore.update {
@@ -2007,9 +2051,9 @@ class SyncManager(
             // Install requests get their own wording — "asks for something" undersells the
             // one ask the parent can answer entirely from the notification shade's tap.
             if (ask.kind == ChildRequest.KIND_INSTALL) {
-                SyncNotifications.notifyInstallAsk(context, snapshot.displayName, ask.text, ask.requestId)
+                SyncNotifications.notifyInstallAsk(context, who, ask.text, ask.requestId)
             } else {
-                SyncNotifications.notifyAsk(context, snapshot.displayName, ask.text, ask.requestId)
+                SyncNotifications.notifyAsk(context, who, ask.text, ask.requestId)
             }
             syncStore.update { it.plusEvent(event(ParentEvent.TYPE_ASK, snapshot, detail = ask.text)) }
         }
@@ -2040,7 +2084,7 @@ class SyncManager(
             for (entry in syncStore.current().domainInbox) {
                 if (!entry.complete || entry.batchId in wasComplete || entry.batchId in handledBefore) continue
                 val count = entry.domains()?.size ?: continue
-                SyncNotifications.notifyDomainRequest(context, entry.childName, entry.label, count, entry.childId)
+                SyncNotifications.notifyDomainRequest(context, SyncNotifications.who(entry.childName, family), entry.label, count, entry.childId)
                 syncStore.update {
                     it.plusEvent(
                         event(ParentEvent.TYPE_DOMAINS, snapshot, detail = entry.label, count = count),
