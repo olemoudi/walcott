@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -513,6 +515,7 @@ private fun FamilyCard(name: String, childrenCount: Int, pendingCount: Int, onCl
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChildRow(
     entry: ChildEntry,
@@ -563,8 +566,9 @@ private fun ChildRow(
                     )
                 } else {
                     // Today plus the week/month averages: the home answers "how much?" at a
-                    // glance, without opening the detail.
-                    Row(
+                    // glance, without opening the detail. FlowRow for the same reason as the
+                    // chips: long values in the long locale must wrap, never crush a column.
+                    FlowRow(
                         Modifier.padding(top = 2.dp),
                         horizontalArrangement = Arrangement.spacedBy(spacing.lg),
                     ) {
@@ -618,8 +622,13 @@ private fun ChildRow(
 @Composable
 private fun MiniStat(label: String, value: String) {
     Column {
-        Text(value, style = MaterialTheme.typography.titleSmall)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleSmall, softWrap = false)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            softWrap = false,
+        )
     }
 }
 
@@ -808,6 +817,7 @@ private fun SetupChecklistCard(steps: List<SetupStep>) {
 }
 
 /** At-a-glance health of a linked child: a green shield when all good, warning chips otherwise. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
     val spacing = Tokens.spacing
@@ -834,10 +844,13 @@ private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
         }
     }
     if (chips.isEmpty()) return
-    Row(
+    // FlowRow, not Row: with the longer locale and several warnings at once the chips outgrow
+    // the column, and a plain Row squeezes the last one into a zero-width, letter-per-line
+    // tower that stretches the whole card. Overflowing chips wrap to the next line instead.
+    FlowRow(
         Modifier.padding(top = spacing.xs),
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
         chips.forEach { (icon, label, color) ->
             Surface(shape = RoundedCornerShape(50), color = color.copy(alpha = 0.14f)) {
@@ -847,7 +860,7 @@ private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
                 ) {
                     Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(13.dp))
                     Spacer(Modifier.width(3.dp))
-                    Text(label, style = MaterialTheme.typography.labelSmall, color = color)
+                    Text(label, style = MaterialTheme.typography.labelSmall, color = color, softWrap = false)
                 }
             }
         }

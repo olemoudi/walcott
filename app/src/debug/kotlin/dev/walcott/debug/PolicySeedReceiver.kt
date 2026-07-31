@@ -281,6 +281,13 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 ?: emptyList(),
             clockSkewMs = intent.getLongExtra("child_skew_ms", 0),
             updateError = intent.getStringExtra("child_update_error") ?: "",
+            // `--ei child_app_version N`: report an app build for this fake child (N below the
+            // parent's own drives the "outdated" chip and the Update-now emphasis).
+            appVersionCode = intent.getIntExtra("child_app_version", 0),
+            appVersionName = if (intent.getIntExtra("child_app_version", 0) > 0) "seeded" else "",
+            // `--el child_applied_version N`: the policy version this fake child claims to run
+            // (N >= 1 but below the parent's own drives the "updating rules" chip).
+            appliedPolicyVersion = intent.getLongExtra("child_applied_version", 0),
             // `--ei child_panic N`: this fake child is N checkpoints into an emergency release,
             // so the parent's alert card, home banner and refusal can be driven on one emulator.
             panic = intent.getIntExtra("child_panic", -1).takeIf { it >= 0 }?.let { checkpoints ->
