@@ -801,16 +801,15 @@ class SyncManager(
     }
 
     /**
-     * Approves a child's install request ([ChildRequest.KIND_INSTALL]): classifies the app
-     * first when a category was picked (so it isn't born blocked), resolves the ask, and
-     * pushes the tight single-app install to the device that asked — installs of anything
-     * else stay blocked throughout.
+     * Approves a child's install request ([ChildRequest.KIND_INSTALL]): resolves the ask and
+     * pushes the tight single-app install to the device that asked — installs of anything else
+     * stay blocked throughout. The app arrives with no limit, like any other new app; setting
+     * one is a separate, deliberate act.
      */
-    suspend fun approveInstallAsk(requestId: String, categoryId: String?) {
+    suspend fun approveInstallAsk(requestId: String) {
         val owner = syncStore.current().children.firstOrNull { c -> c.asks.any { it.requestId == requestId } }
         val ask = owner?.asks?.firstOrNull { it.requestId == requestId }
         if (owner == null || ask == null || ask.pkg.isBlank()) return
-        if (categoryId != null) repository.assign(ask.pkg, categoryId)
         resolveRequest(requestId, approved = true, grantedMinutes = 0)
         sendCommand(owner.deviceId, RemoteAction.INSTALL_APP, arg = ask.pkg)
     }
@@ -1205,7 +1204,10 @@ class SyncManager(
         val grant = IdleEarnEngine.grantableMinutes(config, ledger, s.idleEarnBankSeconds / 60, now)
         if (grant <= 0) return 0
 
-        repository.grantExtraMinutes(config.targetCategoryId, grant.toLong())
+        // Earned minutes widen every app's allowance (see RuleEngine's ALL_APPS handling):
+        // with no categories left there is no single target to send them to, and "you earned
+        // more screen time" is what a child was promised anyway.
+        repository.grantExtraMinutes(dev.walcott.rules.ExtraTime.ALL_APPS, grant.toLong())
         val consumedSeconds = IdleEarnEngine.idleConsumedFor(config, grant) * 60
         val pruned = IdleEarnEngine.prune(ledger + EarnGrant(now, grant), now)
             .map { EarnGrantEntry(it.epochMs, it.minutes) }
@@ -1215,7 +1217,7 @@ class SyncManager(
                 earnGrants = pruned,
             )
         }
-        dev.walcott.debug.DebugLog.i(TAG, "idle-earn granted $grant min to ${config.targetCategoryId}")
+        dev.walcott.debug.DebugLog.i(TAG, "idle-earn granted $grant min to every app")
         return grant
     }
 

@@ -65,9 +65,8 @@ class WalcottApplication : Application() {
         hub.start()
         observeModeTransitions()
 
-        // One-time migrations/seeding on the parent (children receive these via sync).
+        // One-time seeding on the parent (children receive it via sync).
         appScope.launch {
-            repository.migrateLocalAssignmentsToSettings()
             if (identityStore.current().role == Role.PARENT) repository.seedHardeningIfNeeded()
         }
 
@@ -120,15 +119,13 @@ class WalcottApplication : Application() {
     /**
      * Pushes an assisted app install to a child from the share-sheet flow. Runs on the app
      * scope (not the launching activity's) so it survives the activity finishing immediately.
-     * Classifies the app first, when a category was chosen, so it isn't blocked on install.
      */
-    fun pushAppInstall(deviceId: String, pkg: String, categoryId: String?) {
+    fun pushAppInstall(deviceId: String, pkg: String) {
         appScope.launch {
-            // The push has to leave from the family that device belongs to — its topic, its keys,
-            // its category map — which on a parent holding several is not necessarily the one on
-            // screen (the share sheet lists every family's children).
+            // The push has to leave from the family that device belongs to — its topic and its
+            // keys — which on a parent holding several is not necessarily the one on screen
+            // (the share sheet lists every family's children).
             val family = hub.scopeForDevice(deviceId) ?: hub.active
-            if (categoryId != null) family.repository.assign(pkg, categoryId)
             family.syncManager.sendCommand(deviceId, dev.walcott.sync.RemoteAction.INSTALL_APP, arg = pkg)
         }
     }

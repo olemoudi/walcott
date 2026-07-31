@@ -22,14 +22,11 @@
 
     <!-- Estado de categoría -->
     <string name="status_available">Disponible</string>
-    <string name="status_free">Libre</string>
     <string name="status_blocked">Bloqueado</string>
     <string name="label_remaining">restante</string>
-    <string name="no_limit_today">Sin límite hoy</string>
     <string name="reason_bedtime">Es hora de dormir</string>
     <string name="reason_blocked_window">No disponible en este horario</string>
     <string name="reason_budget_exhausted">Se acabó el tiempo de hoy</string>
-    <string name="reason_unclassified">Pendiente de configurar</string>
     <string name="reason_fail_closed">Bloqueado hasta arreglar este móvil</string>
     <string name="request_more_time">Pedir más tiempo</string>
 
@@ -73,23 +70,21 @@
     <string name="parent_mode">Modo padre</string>
     <string name="protection_active">Protección activa (Device Owner)</string>
     <string name="protection_inactive">Sin Device Owner: el bloqueo no está garantizado</string>
-    <string name="nav_apps_title">Apps y categorías</string>
+    <string name="nav_apps_title">Apps y límites</string>
     <string name="apps_filter_all">Todos</string>
-    <string name="nav_apps_subtitle">Todas las apps; las nuevas caen en General, usables bajo el límite general</string>
+    <string name="nav_apps_subtitle">Todas las apps de tus hijos y el límite diario de cada una</string>
     <string name="nav_limits_title">Límites y horarios</string>
     <string name="nav_limits_subtitle">Presupuesto diario por categoría y hora de dormir</string>
     <!-- Asignación de apps -->
     <string name="apps_no_remote">Aún no hay apps reportadas. Aparecerán aquí cuando los dispositivos de los hijos se sincronicen.</string>
     <string name="search_app">Buscar app</string>
-    <string name="unclassified_blocked">General</string>
-    <string name="classify_into">Clasificar en…</string>
 
     <!-- Presupuestos y horarios -->
     <string name="from">Desde</string>
     <string name="to">Hasta</string>
     <string name="bedtime_start_title">Empieza a dormir</string>
     <string name="bedtime_end_title">Se levanta</string>
-    <string name="daily_budget_header">Límite diario general</string>
+    <string name="daily_budget_header">Límite diario por app</string>
     <string name="special_days_note_short">Qué días son se elige en Días especiales.</string>
     <string name="special_days_note_action">Info</string>
     <string name="special_days_note_open">Abrir Días especiales</string>
@@ -114,13 +109,7 @@
     <string name="increment">Más</string>
 
     <!-- Categorías -->
-    <string name="category_games">Juegos</string>
-    <string name="category_social">Redes</string>
-    <string name="category_video">Vídeo</string>
-    <string name="category_education">Educación</string>
-    <string name="category_creative">Creatividad</string>
     <!-- La categoría por defecto de toda app sin clasificar (el id de wire sigue siendo "other"). -->
-    <string name="category_other">General</string>
 
     <!-- Servicio de enforcement -->
     <string name="service_channel_name">Protección Walcott</string>
@@ -184,7 +173,6 @@
     <string name="reason_optional">Motivo (opcional)</string>
 
     <!-- Fase 3: tiempo ganado, calendario, informe semanal -->
-    <string name="earned_bonus">🎁 +%1$s ganado</string>
     <string name="nav_earn_title">Tiempo ganado</string>
     <string name="nav_earn_subtitle">Convierte tiempo de estudio en tiempo de ocio</string>
     <string name="nav_calendar_title">Días especiales</string>
@@ -285,7 +273,6 @@
     <string name="override_budgets_title">Límites personalizados</string>
     <string name="override_apps_title">Límites por app personalizados</string>
     <string name="override_windows_title">Horarios sin pantalla personalizados</string>
-    <string name="app_category_family_note">La categoría es de toda la familia; solo los límites de abajo son propios de este hijo.</string>
     <string name="last_7_days">Últimos 7 días</string>
 
     <!-- Tracking de localización -->
@@ -611,7 +598,6 @@
     <string name="install_share_title">Instalar en un hijo</string>
     <string name="install_share_app">App: %1$s</string>
     <string name="install_share_pick_child">¿En qué hijo?</string>
-    <string name="install_share_pick_category">Categoría (opcional)</string>
     <string name="install_share_send">Enviar</string>
     <string name="install_share_sent">Enviado a %1$s</string>
     <string name="install_share_bad_link">No pude leer el enlace de la app. Comparte la ficha completa de Play Store.</string>
@@ -634,7 +620,6 @@
     <string name="wrong_app_text">Instaló %1$s en vez de la app aprobada. Se ha eliminado.</string>
     <string name="event_wrong_app">%1$s instaló %2$s sin permiso — se ha eliminado</string>
     <!-- Home del hijo: tarjetas de límite por app -->
-    <string name="app_card_remaining">Quedan %1$s hoy</string>
     <string name="app_card_blocked">No disponible ahora mismo</string>
     <string name="ask_install_hint">Aprobar instala solo esta app; todo lo demás sigue bloqueado.</string>
     <string name="install_channel_name">Peticiones de instalación</string>
@@ -684,7 +669,6 @@
     <string name="earn_window_hours">Ventana rodante</string>
     <string name="earn_window_cap">Máximo por ventana</string>
     <string name="earn_weekly_cap">Máximo por semana</string>
-    <string name="earn_target_title">El tiempo extra va a</string>
     <string name="earn_windows_title">¿Cuándo puede ganar?</string>
     <string name="earn_windows_hint">Activa un día para ganar solo en ese horario (p. ej. después de clase). Apagado = gana a cualquier hora ese día.</string>
     <string name="earn_window_all_day">Gana a cualquier hora</string>
@@ -819,7 +803,6 @@
     <string name="event_remote_failed">%1$s: falló — %2$s</string>
     <!-- Dashboard del hijo (arriba del detalle) -->
     <string name="dashboard_used_today">Usado hoy</string>
-    <string name="dashboard_remaining">Queda hoy</string>
     <string name="dashboard_avg7">Media 7 días</string>
     <string name="dashboard_avg30">Media 30 días</string>
     <plurals name="dashboard_avg_days">
@@ -969,9 +952,6 @@
     <string name="calendar_scope_title">¿Para quién es este día?</string>
     <string name="calendar_scope_hint">No marques a nadie para toda la familia, o elige los hijos a los que les toca — un cumpleaños es solo suyo.</string>
     <string name="calendar_scope_everyone">Toda la familia</string>
-    <string name="general_budget_hint">Cuenta toda app que no esté en una categoría propia.</string>
-    <string name="budgets_categories_fold_title">Límites por categoría</string>
-    <string name="budgets_categories_fold_subtitle">Opcional: presupuestos separados para juegos, social, vídeo…</string>
     <string name="nav_family_settings_title">Todos los ajustes de la familia</string>
     <string name="nav_family_settings_subtitle">Apps, filtro web, protección, ubicación, informes…</string>
     <!-- Varias familias en un mismo móvil del padre -->
@@ -1004,4 +984,13 @@
     <string name="remove_family_title">¿Dejar de gestionar %1$s?</string>
     <string name="remove_family_text">Este móvil olvida la familia: sus reglas, sus hijos y su historial. NO libera a los hijos — sus móviles siguen aplicando las últimas reglas que recibieron y nadie podrá cambiarlas desde aquí. Guarda antes una copia de seguridad por si algún día la quieres de vuelta.</string>
     <string name="remove_family_action">Dejar de gestionar</string>
+    <string name="default_budget_title">Cada app</string>
+    <string name="default_budget_hint">Opcional y apagado por defecto. Cada app tiene ese tiempo al día con su propio contador — una hora de una no le quita tiempo a otra. Las apps con límite propio lo ignoran.</string>
+    <string name="app_limit_own">Límite propio: %1$s al día</string>
+    <string name="app_limit_default">Por defecto de la familia: %1$s al día</string>
+    <string name="app_limit_none">Sin límite</string>
+    <string name="app_limit_none_ever">Sin límite, nunca</string>
+    <string name="app_no_limit_ever">No limitar nunca esta app</string>
+    <string name="app_no_limit_ever_hint">Ignora el límite por defecto de la familia. La hora de dormir y los horarios sin pantalla siguen aplicando.</string>
+    <string name="dashboard_default_limit">Límite por app</string>
 </resources>

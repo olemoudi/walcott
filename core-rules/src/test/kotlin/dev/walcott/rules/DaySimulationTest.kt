@@ -21,7 +21,6 @@ import java.time.LocalTime
 class DaySimulationTest {
 
     private companion object {
-        const val GAMES = "games"
         const val GAME_APP = "com.example.game"
         /** A Monday, so the calendar resolves SCHOOL; weekend tests start on a Friday. */
         val MONDAY: LocalDate = LocalDate.of(2026, 3, 2)
@@ -44,11 +43,8 @@ class DaySimulationTest {
         /** Ticks one minute with the child glued to [pkg]; usage accrues only if allowed. */
         fun tickUsing(pkg: String): Verdict {
             val v = verdict(pkg)
-            if (v !is Verdict.Blocked) {
-                val categoryId = config.assignments[pkg]
-                if (categoryId != null) usage.merge(categoryId, Duration.ofMinutes(1), Duration::plus)
-                if (pkg in config.perAppPolicies) usage.merge(pkg, Duration.ofMinutes(1), Duration::plus)
-            }
+            // Time is credited under the package, always: that is the only counter there is now.
+            if (v !is Verdict.Blocked) usage.merge(pkg, Duration.ofMinutes(1), Duration::plus)
             now = now.plusMinutes(1)
             return v
         }
@@ -62,16 +58,15 @@ class DaySimulationTest {
             now = LocalDateTime.of(now.toLocalDate(), time)
         }
 
-        fun grantExtra(categoryId: String, minutes: Long) {
-            extra.merge(categoryId, Duration.ofMinutes(minutes), Duration::plus)
+        fun grantExtra(target: String, minutes: Long) {
+            extra.merge(target, Duration.ofMinutes(minutes), Duration::plus)
         }
     }
 
     private fun schoolDayConfig() = FamilyConfig(
         version = 1,
-        assignments = mapOf(GAME_APP to GAMES),
-        policies = mapOf(
-            GAMES to CategoryPolicy(
+        perAppPolicies = mapOf(
+            GAME_APP to AppPolicy(
                 dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(240), DayType.WEEKEND to Duration.ofMinutes(300)),
                 blockedWindows = mapOf(
                     DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(9, 0), LocalTime.of(14, 0))),
@@ -141,7 +136,7 @@ class DaySimulationTest {
         repeat(240) { device.tickUsing(GAME_APP) } // burn the whole budget → 18:00
         assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), device.verdict(GAME_APP))
 
-        device.grantExtra(GAMES, 30)
+        device.grantExtra(GAME_APP, 30)
         assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(30)), device.verdict(GAME_APP))
 
         repeat(30) { device.tickUsing(GAME_APP) }
@@ -151,7 +146,7 @@ class DaySimulationTest {
     @Test
     fun `bedtime outranks granted extra time`() {
         val device = SimDevice(schoolDayConfig(), LocalDateTime.of(MONDAY, LocalTime.of(21, 30)))
-        device.grantExtra(GAMES, 120)
+        device.grantExtra(GAME_APP, 120)
         assertEquals(Verdict.Blocked(BlockReason.BEDTIME), device.verdict(GAME_APP))
     }
 
@@ -177,11 +172,12 @@ class DaySimulationTest {
     @Test
     fun `a holiday on a monday uses holiday rules, not school rules`() {
         val config = schoolDayConfig().let {
+            val game = it.perAppPolicies.getValue(GAME_APP)
             it.copy(
                 calendar = SchoolCalendar(holidays = setOf(MONDAY)),
-                policies = mapOf(
-                    GAMES to it.policies.getValue(GAMES).copy(
-                        dailyBudget = it.policies.getValue(GAMES).dailyBudget + (DayType.HOLIDAY to Duration.ofMinutes(180)),
+                perAppPolicies = mapOf(
+                    GAME_APP to game.copy(
+                        dailyBudget = game.dailyBudget + (DayType.HOLIDAY to Duration.ofMinutes(180)),
                     ),
                 ),
             )
@@ -192,22 +188,37 @@ class DaySimulationTest {
         assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(180)), device.verdict(GAME_APP))
     }
 
-    // --- Per-app sub-cap over a day ---
+    // --- The family default and an app's own cap, over a day ---
 
     @Test
-    fun `the per-app sub-cap bites before the category budget and ignores extra time`() {
+    fun `an app's own cap bites before the family default and an all-apps grant cannot lift it`() {
         val config = schoolDayConfig().copy(
+            defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(240)),
             perAppPolicies = mapOf(
-                GAME_APP to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(45))),
+                GAME_APP to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(45))),
             ),
         )
         val device = SimDevice(config, LocalDateTime.of(MONDAY, LocalTime.of(14, 0)))
         repeat(45) { device.tickUsing(GAME_APP) }
-        // Category still has 195m, but this app's own 45m cap is spent.
+        // Everything else still has its 240 min, but this app's own 45 are spent.
         assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), device.verdict(GAME_APP))
-        // Extra time widens the CATEGORY only; the per-app cap is a hard ceiling.
-        device.grantExtra(GAMES, 60)
+        assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(240)), device.verdict("com.other.app"))
+        // A blanket grant reaches the apps on the default, not the one capped on purpose.
+        device.grantExtra(ExtraTime.ALL_APPS, 60)
         assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), device.verdict(GAME_APP))
+        assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(300)), device.verdict("com.other.app"))
+    }
+
+    @Test
+    fun `two apps on the family default spend their own allowances, not a shared one`() {
+        val config = FamilyConfig(
+            version = 1,
+            defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(60)),
+        )
+        val device = SimDevice(config, LocalDateTime.of(MONDAY, LocalTime.of(14, 0)))
+        repeat(60) { device.tickUsing("com.first") }
+        assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), device.verdict("com.first"))
+        assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(60)), device.verdict("com.second"))
     }
 
     // --- Idle-earn across a day and a week ---
@@ -249,7 +260,6 @@ class DaySimulationTest {
     }
 
     private val earnConfig = IdleEarnConfig(
-        targetCategoryId = GAMES,
         minutesIdlePerReward = 30, // half an hour off the phone…
         rewardMinutes = 10, // …earns 10 minutes of games
         windowHours = 2,
@@ -314,16 +324,18 @@ class DaySimulationTest {
         assertEquals(20, earned)
 
         val device = SimDevice(schoolDayConfig(), LocalDateTime.of(MONDAY, LocalTime.of(17, 0)))
-        repeat(240) { device.tickUsing(GAME_APP) } // category budget fully spent
+        repeat(240) { device.tickUsing(GAME_APP) } // the app's budget fully spent
         assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), device.verdict(GAME_APP))
-        device.grantExtra(GAMES, earned.toLong())
+        // Idle-earned minutes are granted to every app (see SyncManager.accrueAndConvertIdle),
+        // and this app is on a budget of its own — so the grant has to name it.
+        device.grantExtra(GAME_APP, earned.toLong())
         assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(20)), device.verdict(GAME_APP))
     }
 
-    // --- The unclassified default over a day ---
+    // --- An app nobody set a rule for, over a day ---
 
     @Test
-    fun `an app the parent never classified lives under General - usable by day, bedtime still bites`() {
+    fun `an app nobody touched is usable by day, and bedtime still bites`() {
         val config = schoolDayConfig().copy(essentialPackages = setOf("com.android.dialer"))
         val stranger = "com.random.new.app"
         val device = SimDevice(config, LocalDateTime.of(MONDAY, LocalTime.of(12, 0)))

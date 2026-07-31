@@ -1,5 +1,6 @@
 package dev.walcott.policy
 
+import dev.walcott.data.AppPolicyDto
 import dev.walcott.data.ChildEntry
 import dev.walcott.data.ChildOverrides
 import dev.walcott.data.DomainAppRuleDto
@@ -37,9 +38,8 @@ class PolicyCompositionTest {
         // unknown id resolved to "no overrides found, therefore no rules", such a device would
         // silently stop being limited.
         val settings = PolicySettings(
-            assignments = mapOf(game to "games"),
-            budgets = mapOf("games" to mapOf(DayType.SCHOOL.name to 0)),
-            children = listOf(ChildEntry("known", "Ana", ChildOverrides(budgets = emptyMap()))),
+            appPolicies = mapOf(game to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 0))),
+            children = listOf(ChildEntry("known", "Ana", ChildOverrides(appPolicies = emptyMap()))),
         )
         val family = config(settings, childId = null)
         for (id in listOf(null, "", "not-a-child")) {
@@ -55,10 +55,9 @@ class PolicyCompositionTest {
     @Test
     fun `two children under one family policy get their own verdicts`() {
         val settings = PolicySettings(
-            assignments = mapOf(game to "games"),
-            budgets = mapOf("games" to mapOf(DayType.SCHOOL.name to 60)),
+            appPolicies = mapOf(game to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 60))),
             children = listOf(
-                ChildEntry("strict", "Ana", ChildOverrides(budgets = mapOf("games" to mapOf(DayType.SCHOOL.name to 0)))),
+                ChildEntry("strict", "Ana", ChildOverrides(appPolicies = mapOf(game to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 0))))),
                 ChildEntry("loose", "Luis", ChildOverrides()),
             ),
         )
@@ -78,9 +77,8 @@ class PolicyCompositionTest {
         // The documented shape: null inherits, non-null replaces wholesale. An empty map is a
         // deliberate "this child has no budgets", not a mistake to be filled in from the family.
         val settings = PolicySettings(
-            assignments = mapOf(game to "games"),
-            budgets = mapOf("games" to mapOf(DayType.SCHOOL.name to 0)),
-            children = listOf(ChildEntry("free", "Ana", ChildOverrides(budgets = emptyMap()))),
+            appPolicies = mapOf(game to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 0))),
+            children = listOf(ChildEntry("free", "Ana", ChildOverrides(appPolicies = emptyMap()))),
         )
         assertEquals(Verdict.Allowed, RuleEngine.evaluate(config(settings, "free"), game, monday.atTime(18, 0)))
     }
@@ -88,13 +86,12 @@ class PolicyCompositionTest {
     @Test
     fun `a child's own blocked windows replace the family's`() {
         val settings = PolicySettings(
-            assignments = mapOf(game to "games"),
-            blockedWindows = mapOf("games" to mapOf(DayType.SCHOOL.name to listOf(WindowDto(9 * 60, 12 * 60)))),
+            appPolicies = mapOf(game to AppPolicyDto(blockedWindows = mapOf(DayType.SCHOOL.name to listOf(WindowDto(9 * 60, 12 * 60))))),
             children = listOf(
                 ChildEntry(
                     "afternoon", "Ana",
                     ChildOverrides(
-                        blockedWindows = mapOf("games" to mapOf(DayType.SCHOOL.name to listOf(WindowDto(17 * 60, 19 * 60)))),
+                        appPolicies = mapOf(game to AppPolicyDto(blockedWindows = mapOf(DayType.SCHOOL.name to listOf(WindowDto(17 * 60, 19 * 60))))),
                     ),
                 ),
             ),
@@ -112,9 +109,10 @@ class PolicyCompositionTest {
         // is a special day, and which budget that means depends on whether the family claimed
         // the column. All three settings meet on one instant.
         val base = PolicySettings(
-            assignments = mapOf(game to "games"),
-            budgets = mapOf(
-                "games" to mapOf(DayType.SCHOOL.name to 30, DayType.WEEKEND.name to 120, DayType.HOLIDAY.name to 240),
+            defaultAppBudget = mapOf(
+                DayType.SCHOOL.name to 30,
+                DayType.WEEKEND.name to 120,
+                DayType.HOLIDAY.name to 240,
             ),
             weekendStartsFridayAtMinute = 14 * 60,
             holidays = setOf(friday.toEpochDay()),
@@ -135,7 +133,6 @@ class PolicyCompositionTest {
         // The time pickers happily produce From 17:00 To 17:00. Half-open means it covers no
         // instant at all — which must read as "no window", not "all day".
         val settings = PolicySettings(
-            assignments = mapOf(game to "games"),
             allAppsBlockedWindows = DayType.entries.associate { it.name to listOf(WindowDto(17 * 60, 17 * 60)) },
         )
         val config = config(settings, null)
@@ -153,7 +150,6 @@ class PolicyCompositionTest {
         // Friday's late window runs into Saturday, and Saturday is a different day type. The
         // window has to keep applying from the slot it started in, or the rule dies at midnight.
         val settings = PolicySettings(
-            assignments = mapOf(game to "games"),
             allAppsBlockedWindows = DayType.entries.associate {
                 it.name to listOf(WindowDto(23 * 60, 2 * 60, days = listOf(5))) // Friday only
             },
@@ -173,11 +169,10 @@ class PolicyCompositionTest {
         // The counter is keyed by day: yesterday's exhausted budget must not follow the child
         // into today, and today's must not be forgiven by a day-type flip at midnight.
         val settings = PolicySettings(
-            assignments = mapOf(game to "games"),
-            budgets = mapOf("games" to mapOf(DayType.SCHOOL.name to 60, DayType.WEEKEND.name to 60)),
+            appPolicies = mapOf(game to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 60, DayType.WEEKEND.name to 60))),
         )
         val config = config(settings, null)
-        val spent = mapOf("games" to Duration.ofHours(1))
+        val spent = mapOf(game to Duration.ofHours(1))
         assertEquals(
             Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED),
             RuleEngine.evaluate(config, game, friday.atTime(23, 59), spent),

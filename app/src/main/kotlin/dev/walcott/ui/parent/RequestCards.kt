@@ -20,7 +20,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.install.PlayIntents
 import dev.walcott.sync.ChildRequest
@@ -39,11 +38,9 @@ import dev.walcott.ui.theme.Tokens
 fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> Unit, onDeny: () -> Unit) {
     val spacing = Tokens.spacing
     val key = pending.request.categoryId
-    val category = AppCategory.byId(key)
-    // The target can be a category, a single app, or "all apps" — name it the way the child chose.
+    // The target is one app or all of them — name it the way the child chose.
     val targetName = when {
         key == dev.walcott.rules.ExtraTime.ALL_APPS -> stringResource(R.string.request_all_apps)
-        category != null -> stringResource(category.nameRes)
         pending.request.targetLabel.isNotBlank() -> pending.request.targetLabel
         else -> key
     }
@@ -53,7 +50,7 @@ fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> U
             Text(pending.childName, style = MaterialTheme.typography.titleMedium)
             Text(
                 stringResource(R.string.request_summary, targetName, pending.request.minutes),
-                color = category?.color ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (pending.request.reason.isNotBlank()) {
                 Text(
@@ -137,7 +134,7 @@ fun AskCard(pending: SyncManager.PendingAsk, viewModel: dev.walcott.ui.WalcottVi
     } else if (pending.ask.kind == ChildRequest.KIND_INSTALL && pending.ask.pkg.isNotBlank()) {
         InstallAskCard(
             pending = pending,
-            onApprove = { categoryId -> viewModel.approveInstallAsk(pending.ask.requestId, categoryId) },
+            onApprove = { viewModel.approveInstallAsk(pending.ask.requestId) },
             onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
         )
     } else {
@@ -150,20 +147,18 @@ fun AskCard(pending: SyncManager.PendingAsk, viewModel: dev.walcott.ui.WalcottVi
 }
 
 /**
- * A child's one-app install request, shared from its Play page: title + package, a look at
- * the store listing before deciding, and an optional category so the app isn't born
- * unclassified. Approving installs only this package — installs stay blocked throughout.
+ * A child's one-app install request, shared from its Play page: title + package, and a look at
+ * the store listing before deciding. Approving installs only this package — installs stay
+ * blocked throughout — and the app arrives with no limit, like any other new app.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InstallAskCard(
     pending: SyncManager.PendingAsk,
-    onApprove: (categoryId: String?) -> Unit,
+    onApprove: () -> Unit,
     onDeny: () -> Unit,
 ) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
-    var category by remember(pending.ask.requestId) { mutableStateOf<AppCategory?>(null) }
 
     WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -177,21 +172,12 @@ fun InstallAskCard(
             TextButton(onClick = {
                 runCatching { context.startActivity(PlayIntents.storePage(context, pending.ask.pkg)) }
             }) { Text(stringResource(R.string.ask_install_view_play)) }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                AppCategory.entries.forEach { cat ->
-                    ChoiceChip(
-                        selected = category == cat,
-                        onClick = { category = if (category == cat) null else cat },
-                        label = stringResource(cat.nameRes),
-                    )
-                }
-            }
             Text(
                 stringResource(R.string.ask_install_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            ApproveDenyRow(onApprove = { onApprove(category?.id) }, onDeny = onDeny)
+            ApproveDenyRow(onApprove = onApprove, onDeny = onDeny)
         }
     }
 }

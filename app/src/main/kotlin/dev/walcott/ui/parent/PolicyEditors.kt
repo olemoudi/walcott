@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.data.WindowDto
 import dev.walcott.data.toTimeOfDayOrNull
@@ -529,8 +529,10 @@ private fun BudgetPreset(label: String, enabled: Boolean = true, onClick: () -> 
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun CategoryBudgetCard(
-    category: AppCategory,
+internal fun DailyBudgetCard(
+    title: String,
+    subtitle: String? = null,
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.Schedule,
     perDay: Map<String, Int>,
     /** False still expands to show the numbers; it only refuses to change them. */
     enabled: Boolean = true,
@@ -557,12 +559,16 @@ internal fun CategoryBudgetCard(
         Column(Modifier.animateContentSize().clickable { expanded = !expanded }.padding(spacing.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                    Icon(category.icon, contentDescription = null, tint = category.color)
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
                 Spacer(Modifier.width(spacing.md))
                 Column(Modifier.weight(1f)) {
-                    Text(stringResource(category.nameRes), style = MaterialTheme.typography.titleMedium)
-                    Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        subtitle?.let { "$it · $summary" } ?: summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             if (expanded) {

@@ -19,13 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
-import dev.walcott.ui.CategoryStatusUi
+import dev.walcott.ui.AppStatusUi
 import dev.walcott.ui.components.MinutesChips
 
 /** Child-side: send a time request to the parent over the sync bus (no local PIN). */
 @Composable
 fun RemoteRequestDialog(
-    card: CategoryStatusUi,
+    card: AppStatusUi,
     onDismiss: () -> Unit,
     onSend: (minutes: Int, reason: String) -> Unit,
 ) {
@@ -34,7 +34,7 @@ fun RemoteRequestDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.extra_title, stringResource(card.category.nameRes))) },
+        title = { Text(stringResource(R.string.extra_title, card.label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.extra_how_much), style = MaterialTheme.typography.bodyMedium)

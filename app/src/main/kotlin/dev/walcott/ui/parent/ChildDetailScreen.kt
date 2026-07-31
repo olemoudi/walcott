@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -62,7 +63,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.walcott.AppCategory
 import dev.walcott.BuildConfig
 import dev.walcott.Distribution
 import dev.walcott.R
@@ -253,7 +253,7 @@ fun ChildDetailScreen(
                         usedToday = Duration.ofSeconds(usage.values.sumOf { it.seconds }),
                         avg7 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 7),
                         avg30 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 30),
-                        remaining = dev.walcott.data.ChildStats.remainingToday(config, now, usage, extra),
+                        defaultBudget = dev.walcott.data.ChildStats.defaultBudgetToday(config, now),
                         events = dev.walcott.sync.ParentEvent
                             .collapseRepeats(events.filter { it.childId == childId && eventRenderable(it) })
                             .take(3),
@@ -415,39 +415,36 @@ fun ChildDetailScreen(
                     }
                 }
                 item {
-                    // General first: under the general-first posture it is the budget that
-                    // matters; the per-category refinements follow.
-                    val categories = listOf(AppCategory.OTHER) + AppCategory.entries.filterNot { it == AppCategory.OTHER }
+                    // This child's own version of the family default: the same one number, so
+                    // "Ana gets two hours an app, her brother one" needs no new concept.
+                    val budget = entry.overrides.defaultAppBudget ?: settings.defaultAppBudget
                     CardGroup {
                         OverrideSwitchRow(
                             title = stringResource(R.string.override_budgets_title),
-                            checked = entry.overrides.budgets != null,
+                            checked = entry.overrides.defaultAppBudget != null,
                             position = CardPosition.First,
                             onToggle = { on ->
                                 viewModel.setChildOverrides(
                                     childId,
-                                    entry.overrides.copy(budgets = if (on) settings.budgets else null),
+                                    entry.overrides.copy(
+                                        defaultAppBudget = if (on) settings.defaultAppBudget else null,
+                                    ),
                                 )
                             },
                         )
-                        categories.forEachIndexed { index, category ->
-                            val budgets = entry.overrides.budgets ?: settings.budgets
-                            CategoryBudgetCard(
-                                category = category,
-                                perDay = budgets[category.id].orEmpty(),
-                                enabled = entry.overrides.budgets != null,
-                                position = cardPosition(index + 1, categories.size + 1),
-                                specialDaysOwnRules = settings.specialDaysOwnRules,
-                                onOpenSpecialDays = onOpenSpecialDays,
-                                onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                                onSetBudget = { dayType, minutes ->
-                                    viewModel.setChildOverrides(
-                                        childId,
-                                        entry.overrides.copy(budgets = budgets.withBudget(category.id, dayType.name, minutes)),
-                                    )
-                                },
-                            )
-                        }
+                        DailyBudgetCard(
+                            title = stringResource(R.string.default_budget_title),
+                            icon = Icons.Outlined.Apps,
+                            perDay = budget,
+                            enabled = entry.overrides.defaultAppBudget != null,
+                            position = CardPosition.Last,
+                            specialDaysOwnRules = settings.specialDaysOwnRules,
+                            onOpenSpecialDays = onOpenSpecialDays,
+                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                            onSetBudget = { dayType, minutes ->
+                                viewModel.setDefaultBudget(dayType, minutes, childId)
+                            },
+                        )
                     }
                 }
                 item {
@@ -574,6 +571,7 @@ fun ChildDetailScreen(
     }
     if (showBonus && snapshot != null) {
         BonusDialog(
+            apps = snapshot.apps.map { it.packageName to it.label },
             onDismiss = { showBonus = false },
             onGrant = { categoryId, minutes ->
                 viewModel.giveBonus(snapshot.deviceId, categoryId, minutes)
@@ -772,7 +770,7 @@ private fun ChildDashboardCard(
     avg7: dev.walcott.sync.UsageLedger.Average?,
     avg30: dev.walcott.sync.UsageLedger.Average?,
     /** Budget left today across categories; null = nothing has a budget today ("no limit"). */
-    remaining: Duration?,
+    defaultBudget: Duration?,
     /** Collapsed feed entries: each with how many identical lines it stands for. */
     events: List<Pair<dev.walcott.sync.ParentEvent, Int>>,
     nowMs: Long,
@@ -787,8 +785,8 @@ private fun ChildDashboardCard(
                     modifier = Modifier.weight(1f),
                 )
                 StatTile(
-                    value = remaining?.humanize() ?: stringResource(R.string.no_limit),
-                    label = stringResource(R.string.dashboard_remaining),
+                    value = defaultBudget?.humanize() ?: stringResource(R.string.no_limit),
+                    label = stringResource(R.string.dashboard_default_limit),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -839,14 +837,12 @@ private fun UsageTodayCard(snapshot: ChildSnapshot, position: CardPosition = Car
                 Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
-                snapshot.usage.forEach { entry ->
-                    val category = AppCategory.byId(entry.categoryId)
+                // Usage is per app now; the child's own reported app list names each package,
+                // and only the busiest few are worth a row.
+                val labels = snapshot.apps.associate { it.packageName to it.label }
+                snapshot.usage.sortedByDescending { it.seconds }.take(USAGE_ROWS).forEach { entry ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            category?.let { stringResource(it.nameRes) } ?: entry.categoryId,
-                            Modifier.weight(1f),
-                            color = category?.color ?: MaterialTheme.colorScheme.onSurface,
-                        )
+                        Text(labels[entry.categoryId] ?: entry.categoryId, Modifier.weight(1f))
                         Text(Duration.ofSeconds(entry.seconds).humanize(), style = MaterialTheme.typography.bodyMedium)
                     }
                 }

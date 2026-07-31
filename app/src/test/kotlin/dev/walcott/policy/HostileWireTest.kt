@@ -40,7 +40,7 @@ class HostileWireTest {
         // the loop, so an unguarded conversion is a crash-loop rather than a broken rule.
         val verdict = enforce(
             """
-            {"version":9,"assignments":{"$game":"games"},
+            {"version":9,
              "allAppsBlockedWindows":{"SCHOOL":[{"startMinute":1500,"endMinute":1600}],
                                       "WEEKEND":[],"HOLIDAY":[]}}
             """.trimIndent(),
@@ -52,7 +52,7 @@ class HostileWireTest {
     fun `a negative minute is refused the same way`() {
         enforce(
             """
-            {"version":9,"assignments":{"$game":"games"},
+            {"version":9,
              "appPolicies":{"$game":{"blockedWindows":{"SCHOOL":[{"startMinute":-30,"endMinute":60}]}}}}
             """.trimIndent(),
         )
@@ -65,8 +65,8 @@ class HostileWireTest {
         val config = PolicyFuzz.configFor(
             decode(
                 """
-                {"version":9,"assignments":{"$game":"games"},
-                 "budgets":{"games":{"SCHOOL":0}},
+                {"version":9,
+                 "appPolicies":{"$game":{"budgets":{"SCHOOL":0}}},
                  "bedtime":{"SCHOOL":{"startMinute":99999,"endMinute":7}}}
                 """.trimIndent(),
             ),
@@ -82,8 +82,8 @@ class HostileWireTest {
         val config = PolicyFuzz.configFor(
             decode(
                 """
-                {"version":9,"assignments":{"$game":"games"},
-                 "budgets":{"games":{"SCHOOL":0,"EXAM_WEEK":15}}}
+                {"version":9,
+                 "appPolicies":{"$game":{"budgets":{"SCHOOL":0,"EXAM_WEEK":15}}}}
                 """.trimIndent(),
             ),
             childId = null,
@@ -98,7 +98,7 @@ class HostileWireTest {
         val config = PolicyFuzz.configFor(
             decode(
                 """
-                {"version":9,"assignments":{"$game":"games"},
+                {"version":9,
                  "allAppsBlockedWindows":{"SCHOOL":[{"startMinute":0,"endMinute":1439,"days":[0,9,-2]}],
                                           "WEEKEND":[],"HOLIDAY":[]}}
                 """.trimIndent(),
@@ -113,7 +113,7 @@ class HostileWireTest {
         val config = PolicyFuzz.configFor(
             decode(
                 """
-                {"version":9,"assignments":{"$game":"games"},
+                {"version":9,
                  "weekendStartsFridayAtMinute":5000,"weekendEndsSundayAtMinute":-1}
                 """.trimIndent(),
             ),

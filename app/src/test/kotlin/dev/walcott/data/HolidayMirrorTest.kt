@@ -17,31 +17,23 @@ class HolidayMirrorTest {
     private val window = WindowDto(16 * 60, 18 * 60)
 
     @Test
-    fun `budgets copy the weekend value into the holiday slot`() {
+    fun `the default budget copies the weekend value into the holiday slot`() {
         val out = PolicySettings(
-            budgets = mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 120)),
+            defaultAppBudget = mapOf("SCHOOL" to 30, "WEEKEND" to 120),
         ).withHolidayMirroringWeekend()
-        assertEquals(mapOf("SCHOOL" to 30, "WEEKEND" to 120, "HOLIDAY" to 120), out.budgets.getValue("games"))
+        assertEquals(mapOf("SCHOOL" to 30, "WEEKEND" to 120, "HOLIDAY" to 120), out.defaultAppBudget)
     }
 
     @Test
     fun `a stale distinct holiday value is overwritten and a weekendless map loses it`() {
         val out = PolicySettings(
-            budgets = mapOf(
-                "games" to mapOf("WEEKEND" to 60, "HOLIDAY" to 999),
-                "video" to mapOf("SCHOOL" to 30, "HOLIDAY" to 999),
-            ),
+            defaultAppBudget = mapOf("WEEKEND" to 60, "HOLIDAY" to 999),
         ).withHolidayMirroringWeekend()
-        assertEquals(60, out.budgets.getValue("games")["HOLIDAY"])
-        assertNull(out.budgets.getValue("video")["HOLIDAY"])
-    }
-
-    @Test
-    fun `a category left with no per-day entries is dropped entirely`() {
-        val out = PolicySettings(
-            budgets = mapOf("games" to mapOf("HOLIDAY" to 999)),
+        assertEquals(60, out.defaultAppBudget["HOLIDAY"])
+        val weekendless = PolicySettings(
+            defaultAppBudget = mapOf("SCHOOL" to 30, "HOLIDAY" to 999),
         ).withHolidayMirroringWeekend()
-        assertTrue(out.budgets.isEmpty())
+        assertNull(weekendless.defaultAppBudget["HOLIDAY"])
     }
 
     @Test
@@ -58,12 +50,19 @@ class HolidayMirrorTest {
     fun `per-app policies, earn windows and child overrides mirror too`() {
         val out = PolicySettings(
             appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf("WEEKEND" to 45))),
-            idleEarn = IdleEarnDto("games", 10, 5, 4, 20, 120, earnWindows = mapOf("WEEKEND" to listOf(window))),
+            idleEarn = IdleEarnDto(
+                minutesIdlePerReward = 10,
+                rewardMinutes = 5,
+                windowHours = 4,
+                windowCapMinutes = 20,
+                weeklyCapMinutes = 120,
+                earnWindows = mapOf("WEEKEND" to listOf(window)),
+            ),
             children = listOf(
                 ChildEntry(
                     "c1", "Kid",
                     overrides = ChildOverrides(
-                        budgets = mapOf("games" to mapOf("WEEKEND" to 90, "HOLIDAY" to 999)),
+                        defaultAppBudget = mapOf("WEEKEND" to 90, "HOLIDAY" to 999),
                         bedtime = mapOf("WEEKEND" to window),
                         appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf("WEEKEND" to 30))),
                         allAppsBlockedWindows = mapOf("WEEKEND" to listOf(window)),
@@ -74,7 +73,7 @@ class HolidayMirrorTest {
         assertEquals(45, out.appPolicies.getValue("com.game").budgets["HOLIDAY"])
         assertEquals(listOf(window), out.idleEarn!!.earnWindows["HOLIDAY"])
         val overrides = out.children.single().overrides
-        assertEquals(90, overrides.budgets!!.getValue("games")["HOLIDAY"])
+        assertEquals(90, overrides.defaultAppBudget!!["HOLIDAY"])
         assertEquals(window, overrides.bedtime!!["HOLIDAY"])
         assertEquals(30, overrides.appPolicies!!.getValue("com.game").budgets["HOLIDAY"])
         assertEquals(listOf(window), overrides.allAppsBlockedWindows!!["HOLIDAY"])
@@ -97,12 +96,12 @@ class HolidayMirrorTest {
     // --- Special days claiming their own budget column ---
 
     @Test
-    fun `with the column on, budgets keep a distinct holiday value`() {
+    fun `with the column on, the default budget keeps a distinct holiday value`() {
         val out = PolicySettings(
             specialDaysOwnRules = true,
-            budgets = mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 120, "HOLIDAY" to 240)),
+            defaultAppBudget = mapOf("SCHOOL" to 30, "WEEKEND" to 120, "HOLIDAY" to 240),
         ).withHolidayMirroringWeekend()
-        assertEquals(240, out.budgets.getValue("games")["HOLIDAY"])
+        assertEquals(240, out.defaultAppBudget["HOLIDAY"])
     }
 
     @Test
@@ -115,7 +114,6 @@ class HolidayMirrorTest {
             specialDaysOwnRules = true,
             bedtime = mapOf("SCHOOL" to window, "WEEKEND" to window, "HOLIDAY" to other),
             allAppsBlockedWindows = mapOf("WEEKEND" to listOf(window), "HOLIDAY" to listOf(other)),
-            blockedWindows = mapOf("games" to mapOf("WEEKEND" to listOf(window), "HOLIDAY" to listOf(other))),
             appPolicies = mapOf(
                 "com.game" to AppPolicyDto(
                     blockedWindows = mapOf("WEEKEND" to listOf(window), "HOLIDAY" to listOf(other)),
@@ -124,7 +122,6 @@ class HolidayMirrorTest {
         ).withHolidayMirroringWeekend()
         assertEquals(other, out.bedtime["HOLIDAY"])
         assertEquals(listOf(other), out.allAppsBlockedWindows["HOLIDAY"])
-        assertEquals(listOf(other), out.blockedWindows.getValue("games")["HOLIDAY"])
         assertEquals(listOf(other), out.appPolicies.getValue("com.game").blockedWindows["HOLIDAY"])
     }
 
@@ -149,7 +146,6 @@ class HolidayMirrorTest {
             allAppsBlockedWindows = mapOf("SCHOOL" to listOf(window), "WEEKEND" to listOf(window)),
             appPolicies = mapOf("com.game" to AppPolicyDto(blockedWindows = mapOf("WEEKEND" to listOf(window)))),
             idleEarn = IdleEarnDto(
-                targetCategoryId = "games",
                 minutesIdlePerReward = 30,
                 rewardMinutes = 10,
                 windowHours = 4,
@@ -169,28 +165,28 @@ class HolidayMirrorTest {
         // Nothing may change at the instant the parent takes control: dropping the mirror with
         // no value behind it would read as "no limit on special days".
         val before = PolicySettings(
-            budgets = mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 120)),
+            defaultAppBudget = mapOf("SCHOOL" to 30, "WEEKEND" to 120),
             appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf("WEEKEND" to 45))),
             children = listOf(
-                ChildEntry("c1", "Ana", ChildOverrides(budgets = mapOf("games" to mapOf("WEEKEND" to 90)))),
+                ChildEntry("c1", "Ana", ChildOverrides(defaultAppBudget = mapOf("WEEKEND" to 90))),
             ),
         )
         val out = before.withSpecialDaysOwnRules(true)
         assertTrue(out.specialDaysOwnRules)
-        assertEquals(120, out.budgets.getValue("games")["HOLIDAY"])
+        assertEquals(120, out.defaultAppBudget["HOLIDAY"])
         assertEquals(45, out.appPolicies.getValue("com.game").budgets["HOLIDAY"])
-        assertEquals(90, out.children.first().overrides.budgets?.getValue("games")?.get("HOLIDAY"))
+        assertEquals(90, out.children.first().overrides.defaultAppBudget?.get("HOLIDAY"))
     }
 
     @Test
     fun `turning it off re-collapses the column on the next write`() {
         val split = PolicySettings(
             specialDaysOwnRules = true,
-            budgets = mapOf("games" to mapOf("WEEKEND" to 120, "HOLIDAY" to 240)),
+            defaultAppBudget = mapOf("WEEKEND" to 120, "HOLIDAY" to 240),
         )
         val out = split.withSpecialDaysOwnRules(false).withHolidayMirroringWeekend()
         assertFalse(out.specialDaysOwnRules)
-        assertEquals(120, out.budgets.getValue("games")["HOLIDAY"])
+        assertEquals(120, out.defaultAppBudget["HOLIDAY"])
     }
 
     @Test
@@ -208,11 +204,10 @@ class HolidayMirrorTest {
     }
 
     @Test
-    fun `seeding a category with no weekend value leaves it unlimited on special days`() {
+    fun `seeding a budget with no weekend value leaves it unlimited on special days`() {
         // Weekday-only limit: there is nothing to copy, and inventing one would tighten the
         // rules behind the parent's back.
-        val out = PolicySettings(budgets = mapOf("games" to mapOf("SCHOOL" to 30)))
-            .withSpecialDaysOwnRules(true)
-        assertNull(out.budgets.getValue("games")["HOLIDAY"])
+        val out = PolicySettings(defaultAppBudget = mapOf("SCHOOL" to 30)).withSpecialDaysOwnRules(true)
+        assertNull(out.defaultAppBudget["HOLIDAY"])
     }
 }

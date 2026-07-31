@@ -39,7 +39,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.WalcottApplication
 import dev.walcott.data.PinResult
@@ -48,8 +47,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Share-sheet target for a Play Store page, with one behavior per mode:
- *  - **Parent**: push an assisted install to one of the children — pick the child and
- *    (optionally) a category, classify, send the install command.
+ *  - **Parent**: push an assisted install to one of the children — pick the child and send
+ *    the install command. The app arrives with no limit, like any other new app.
  *  - **Child** (paired): ask the parents for exactly this app. The request travels with the
  *    app's title, package and Play link; approval installs only that package.
  * A lightweight standalone activity that finishes as soon as it has sent — sends run on the
@@ -171,8 +170,8 @@ class ShareInstallActivity : ComponentActivity() {
                     pkg = pkg,
                     targets = enrolled,
                     onDismiss = { finish() },
-                    onConfirm = { target, categoryId ->
-                        app.pushAppInstall(target.deviceId, pkg, categoryId)
+                    onConfirm = { target ->
+                        app.pushAppInstall(target.deviceId, pkg)
                         Toast.makeText(this, getString(R.string.install_share_sent, target.name), Toast.LENGTH_SHORT).show()
                         finish()
                     },
@@ -258,16 +257,15 @@ private fun PinGate(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InstallDialog(
     pkg: String,
     targets: List<InstallTarget>,
     onDismiss: () -> Unit,
-    onConfirm: (InstallTarget, categoryId: String?) -> Unit,
+    onConfirm: (InstallTarget) -> Unit,
 ) {
     var selected by remember { mutableStateOf(targets.first()) }
-    var category by remember { mutableStateOf<AppCategory?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -285,20 +283,10 @@ private fun InstallDialog(
                         Text(target.name)
                     }
                 }
-                Text(stringResource(R.string.install_share_pick_category), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AppCategory.entries.forEach { cat ->
-                        dev.walcott.ui.components.ChoiceChip(
-                            selected = category == cat,
-                            onClick = { category = if (category == cat) null else cat },
-                            label = stringResource(cat.nameRes),
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(selected, category?.id) }) {
+            TextButton(onClick = { onConfirm(selected) }) {
                 Text(stringResource(R.string.install_share_send))
             }
         },

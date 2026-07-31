@@ -11,16 +11,15 @@ class ChildOverridesTest {
 
     private val family = PolicySettings(
         version = 7,
-        budgets = mapOf("games" to mapOf("SCHOOL" to 30)),
+        defaultAppBudget = mapOf("SCHOOL" to 30),
         bedtime = mapOf("SCHOOL" to WindowDto(21 * 60, 7 * 60)),
-        earnRules = listOf(EarnRuleDto("education", "games", 30, 10, 60)),
         blockedDomains = setOf("youtube.com"),
         deviceRestrictions = setOf("vpn", "datetime"),
         pinHash = "hash",
         pinSalt = "salt",
         familyName = "Moudis",
         children = listOf(
-            ChildEntry("child-a", "Ana", ChildOverrides(budgets = mapOf("games" to mapOf("SCHOOL" to 60)))),
+            ChildEntry("child-a", "Ana", ChildOverrides(defaultAppBudget = mapOf("SCHOOL" to 60))),
             ChildEntry("child-b", "Bea"),
         ),
     )
@@ -35,14 +34,13 @@ class ChildOverridesTest {
     @Test
     fun `an overridden field replaces the family value wholesale`() {
         val resolved = family.resolveForChild("child-a")
-        assertEquals(mapOf("games" to mapOf("SCHOOL" to 60)), resolved.budgets)
+        assertEquals(mapOf("SCHOOL" to 60), resolved.defaultAppBudget)
     }
 
     @Test
     fun `null override fields inherit the family value`() {
         val resolved = family.resolveForChild("child-a")
         assertEquals(family.bedtime, resolved.bedtime)
-        assertEquals(family.earnRules, resolved.earnRules)
         assertEquals(family.blockedDomains, resolved.blockedDomains)
         assertEquals(family.deviceRestrictions, resolved.deviceRestrictions)
     }
@@ -58,7 +56,7 @@ class ChildOverridesTest {
 
     @Test
     fun `a child without overrides gets the family policy`() {
-        assertEquals(family.budgets, family.resolveForChild("child-b").budgets)
+        assertEquals(family.defaultAppBudget, family.resolveForChild("child-b").defaultAppBudget)
     }
 
     @Test
@@ -73,12 +71,8 @@ class ChildOverridesTest {
 
     @Test
     fun `resolved settings flow through toFamilyConfig`() {
-        val config = family.copy(assignments = mapOf("com.game" to "games"))
-            .resolveForChild("child-a")
-            .toFamilyConfig(essentials = emptySet())
-        assertEquals(Duration.ofMinutes(60), config.policies.getValue("games").dailyBudget[DayType.SCHOOL])
-        // Assignments are family-wide: they survive the per-child resolve.
-        assertEquals("games", config.assignments["com.game"])
+        val config = family.resolveForChild("child-a").toFamilyConfig(essentials = emptySet())
+        assertEquals(Duration.ofMinutes(60), config.defaultAppBudget[DayType.SCHOOL])
     }
 
     @Test
@@ -112,7 +106,6 @@ class ChildOverridesTest {
     @Test
     fun `per-app policies resolve per-child override over the family map`() {
         val fam = family.copy(
-            assignments = mapOf("com.game" to "games"),
             appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 60))),
             children = listOf(
                 // This child gets a tighter per-app cap; the override replaces the whole map.

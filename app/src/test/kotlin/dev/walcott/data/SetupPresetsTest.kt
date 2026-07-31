@@ -1,6 +1,5 @@
 package dev.walcott.data
 
-import dev.walcott.AppCategory
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.rules.DayType
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -21,55 +20,49 @@ class SetupPresetsTest {
     }
 
     @Test
-    fun `leisure budget caps games social video and other for all day types`() {
-        val out = SetupPresets.withLeisureBudget(PolicySettings(), 90)
-        for (categoryId in SetupPresets.LEISURE_CATEGORY_IDS) {
-            for (day in DayType.entries) {
-                assertEquals(90, out.budgets[categoryId]?.get(day.name))
-            }
-        }
-        // The exceptions stay open: no budget entry at all for education/creative.
-        assertFalse(AppCategory.EDUCATION.id in out.budgets)
-        assertFalse(AppCategory.CREATIVE.id in out.budgets)
+    fun `the default budget applies to every day type at once`() {
+        val out = SetupPresets.withDefaultBudget(PolicySettings(), 90)
+        for (day in DayType.entries) assertEquals(90, out.defaultAppBudget[day.name])
     }
 
     @Test
-    fun `a null leisure budget clears what the wizard previously set`() {
-        val set = SetupPresets.withLeisureBudget(PolicySettings(), 60)
-        val cleared = SetupPresets.withLeisureBudget(set, null)
-        assertTrue(cleared.budgets.isEmpty())
+    fun `a null default budget clears what the wizard previously set`() {
+        val set = SetupPresets.withDefaultBudget(PolicySettings(), 60)
+        assertTrue(SetupPresets.withDefaultBudget(set, null).defaultAppBudget.isEmpty())
     }
 
     @Test
-    fun `clearing the leisure budget leaves manually configured categories alone`() {
-        val manual = PolicySettings(budgets = mapOf(AppCategory.EDUCATION.id to mapOf(DayType.SCHOOL.name to 45)))
-        val cleared = SetupPresets.withLeisureBudget(SetupPresets.withLeisureBudget(manual, 60), null)
-        assertEquals(45, cleared.budgets[AppCategory.EDUCATION.id]?.get(DayType.SCHOOL.name))
+    fun `the wizard's budget never touches a limit set on one app`() {
+        // The two instruments are independent: the wizard sets the fallback, the parent sets
+        // an app's own limit, and neither may quietly rewrite the other.
+        val manual = PolicySettings(
+            appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 45))),
+        )
+        val out = SetupPresets.withDefaultBudget(SetupPresets.withDefaultBudget(manual, 60), null)
+        assertEquals(45, out.appPolicies["com.game"]?.budgets?.get(DayType.SCHOOL.name))
     }
 
     // --- The weekend question the wizard asks ---
 
     @Test
     fun `the weekday cap leaves the weekend alone and vice versa`() {
-        val split = SetupPresets.withWeekendLeisureBudget(
-            SetupPresets.withWeekdayLeisureBudget(PolicySettings(), 60),
+        val split = SetupPresets.withWeekendDefaultBudget(
+            SetupPresets.withWeekdayDefaultBudget(PolicySettings(), 60),
             180,
         )
-        for (categoryId in SetupPresets.LEISURE_CATEGORY_IDS) {
-            assertEquals(60, split.budgets[categoryId]?.get(DayType.SCHOOL.name))
-            assertEquals(180, split.budgets[categoryId]?.get(DayType.WEEKEND.name))
-        }
+        assertEquals(60, split.defaultAppBudget[DayType.SCHOOL.name])
+        assertEquals(180, split.defaultAppBudget[DayType.WEEKEND.name])
         // HOLIDAY is left to the parent-write mirror, not written here.
-        assertEquals(null, split.budgets[AppCategory.GAMES.id]?.get(DayType.HOLIDAY.name))
+        assertEquals(null, split.defaultAppBudget[DayType.HOLIDAY.name])
     }
 
     @Test
     fun `a policy only counts as weekend-aware once a cap or an edge differs`() {
         assertFalse(SetupPresets.hasWeekendDistinction(PolicySettings()))
-        assertFalse(SetupPresets.hasWeekendDistinction(SetupPresets.withLeisureBudget(PolicySettings(), 90)))
+        assertFalse(SetupPresets.hasWeekendDistinction(SetupPresets.withDefaultBudget(PolicySettings(), 90)))
         assertTrue(
             SetupPresets.hasWeekendDistinction(
-                SetupPresets.withWeekendLeisureBudget(SetupPresets.withLeisureBudget(PolicySettings(), 90), 180),
+                SetupPresets.withWeekendDefaultBudget(SetupPresets.withDefaultBudget(PolicySettings(), 90), 180),
             ),
         )
         // An edge on its own counts, even with identical caps.
@@ -80,13 +73,11 @@ class SetupPresetsTest {
     @Test
     fun `dropping the distinction copies the weekday cap over and resets both edges`() {
         val split = SetupPresets
-            .withWeekendLeisureBudget(SetupPresets.withWeekdayLeisureBudget(PolicySettings(), 60), 180)
+            .withWeekendDefaultBudget(SetupPresets.withWeekdayDefaultBudget(PolicySettings(), 60), 180)
             .copy(weekendStartsFridayAtMinute = 14 * 60, weekendEndsSundayAtMinute = 20 * 60)
 
         val merged = SetupPresets.withoutWeekendDistinction(split)
-        for (day in DayType.entries) {
-            assertEquals(60, merged.budgets[AppCategory.GAMES.id]?.get(day.name))
-        }
+        for (day in DayType.entries) assertEquals(60, merged.defaultAppBudget[day.name])
         assertEquals(null, merged.weekendStartsFridayAtMinute)
         assertEquals(null, merged.weekendEndsSundayAtMinute)
         assertFalse(SetupPresets.hasWeekendDistinction(merged))
@@ -94,9 +85,9 @@ class SetupPresetsTest {
 
     @Test
     fun `dropping the distinction from an unlimited weekday means unlimited everywhere`() {
-        val weekendOnly = SetupPresets.withWeekendLeisureBudget(PolicySettings(), 180)
+        val weekendOnly = SetupPresets.withWeekendDefaultBudget(PolicySettings(), 180)
         val merged = SetupPresets.withoutWeekendDistinction(weekendOnly)
-        assertTrue(merged.budgets.isEmpty())
+        assertTrue(merged.defaultAppBudget.isEmpty())
     }
 
     @Test
@@ -107,7 +98,6 @@ class SetupPresetsTest {
         // would enable a feature that can never grant anything.
         assertTrue(earn.windowCapMinutes >= earn.rewardMinutes)
         assertTrue(earn.weeklyCapMinutes >= earn.windowCapMinutes)
-        assertEquals(AppCategory.GAMES.id, earn.targetCategoryId)
     }
 
     @Test

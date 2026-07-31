@@ -14,17 +14,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.theme.Tokens
 
-/** Target + minutes picker for granting unsolicited bonus time to a child device. */
+/**
+ * Target + minutes picker for granting unsolicited bonus time to a child device: every app, or
+ * one of the ones that child actually has.
+ */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun BonusDialog(onDismiss: () -> Unit, onGrant: (String, Int) -> Unit) {
+internal fun BonusDialog(
+    /** The child's apps (package -> label), so a grant can name one of them. */
+    apps: List<Pair<String, String>> = emptyList(),
+    onDismiss: () -> Unit,
+    onGrant: (String, Int) -> Unit,
+) {
     val spacing = Tokens.spacing
-    // Target key: "all apps" is the simple default; categories are the optional power tool.
     var target by remember { mutableStateOf(dev.walcott.rules.ExtraTime.ALL_APPS) }
     var minutes by remember { mutableIntStateOf(15) }
     val allApps = stringResource(R.string.request_all_apps)
@@ -39,8 +45,8 @@ internal fun BonusDialog(onDismiss: () -> Unit, onGrant: (String, Int) -> Unit) 
                         onClick = { target = dev.walcott.rules.ExtraTime.ALL_APPS },
                         label = allApps,
                     )
-                    AppCategory.entries.forEach { c ->
-                        ChoiceChip(selected = target == c.id, onClick = { target = c.id }, label = stringResource(c.nameRes))
+                    apps.forEach { (pkg, label) ->
+                        ChoiceChip(selected = target == pkg, onClick = { target = pkg }, label = label)
                     }
                 }
                 dev.walcott.ui.components.MinutesChips(value = minutes, onSelect = { minutes = it })

@@ -193,13 +193,8 @@ class RuleEngineTest {
 
     private val config = FamilyConfig(
         version = 1,
-        assignments = mapOf(
-            "com.game.fortnite" to "games",
-            "org.duolingo" to "edu",
-            "com.whatsapp" to "social",
-        ),
-        policies = mapOf(
-            "games" to CategoryPolicy(
+        perAppPolicies = mapOf(
+            "com.game.fortnite" to AppPolicy(
                 dailyBudget = mapOf(
                     DayType.SCHOOL to Duration.ofMinutes(30),
                     DayType.WEEKEND to Duration.ofHours(2),
@@ -208,10 +203,8 @@ class RuleEngineTest {
                     DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(8, 30), LocalTime.of(14, 30))),
                 ),
             ),
-            // "edu" has no policy: unrestricted
-            "social" to CategoryPolicy(
-                dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(45)),
-            ),
+            "com.whatsapp" to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(45))),
+            // org.duolingo has nothing set: it answers to the family default, and there is none.
         ),
         bedtime = mapOf(
             DayType.SCHOOL to TimeWindow(LocalTime.of(21, 30), LocalTime.of(7, 30)),
@@ -231,50 +224,92 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `bedtime blocks non-essential, even unrestricted apps`() {
+    fun `bedtime blocks non-essential, even apps nobody set a rule for`() {
         assertEquals(
             Verdict.Blocked(BlockReason.BEDTIME),
             RuleEngine.evaluate(config, "org.duolingo", schoolNight),
         )
-    }
-
-    @Test
-    fun `bedtime takes precedence over the unclassified rule`() {
-        // An unclassified app at night reports BEDTIME, not UNCLASSIFIED.
         assertEquals(
             Verdict.Blocked(BlockReason.BEDTIME),
-            RuleEngine.evaluate(config, "com.unknown.app", schoolNight),
+            RuleEngine.evaluate(config, "com.brand.new", schoolNight),
         )
     }
 
     @Test
-    fun `an unassigned app falls into General - usable, and capped by the general budget`() {
-        // No general budget configured: the new app is simply usable.
-        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "com.random.newapp", schoolAfternoon))
-        // With a general budget, the unassigned app counts against it like any General app.
-        val withGeneral = config.copy(
-            policies = config.policies +
-                (FamilyConfig.DEFAULT_CATEGORY to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))),
-        )
+    fun `an app nobody has touched has no limit at all`() {
+        // The promise behind removing categories: installing something new must not make it
+        // arrive already restricted by a rule that predates it.
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "com.brand.new", schoolAfternoon))
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "org.duolingo", schoolAfternoon))
+    }
+
+    @Test
+    fun `with a family default set, an untouched app answers to it`() {
+        val withDefault = config.copy(defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))
         assertEquals(
             Verdict.AllowedWithBudget(Duration.ofMinutes(10)),
             RuleEngine.evaluate(
-                withGeneral, "com.random.newapp", schoolAfternoon,
-                usageToday = mapOf(FamilyConfig.DEFAULT_CATEGORY to Duration.ofMinutes(20)),
+                withDefault, "com.brand.new", schoolAfternoon,
+                usageToday = mapOf("com.brand.new" to Duration.ofMinutes(20)),
             ),
         )
         assertEquals(
             Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED),
             RuleEngine.evaluate(
-                withGeneral, "com.random.newapp", schoolAfternoon,
-                usageToday = mapOf(FamilyConfig.DEFAULT_CATEGORY to Duration.ofMinutes(30)),
+                withDefault, "com.brand.new", schoolAfternoon,
+                usageToday = mapOf("com.brand.new" to Duration.ofMinutes(30)),
             ),
         )
     }
 
     @Test
-    fun `category without a policy is unrestricted`() {
-        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "org.duolingo", schoolAfternoon))
+    fun `the default is an allowance per app, not a shared pot`() {
+        // The substantive difference from the categories it replaces: an hour of one app does
+        // not eat another app's hour.
+        val withDefault = config.copy(defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))
+        val burned = mapOf("com.other.app" to Duration.ofMinutes(30))
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofMinutes(30)),
+            RuleEngine.evaluate(withDefault, "com.brand.new", schoolAfternoon, usageToday = burned),
+        )
+    }
+
+    @Test
+    fun `an app's own budget replaces the default, tighter or looser`() {
+        val withDefault = config.copy(
+            defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)),
+            perAppPolicies = config.perAppPolicies +
+                ("com.generous" to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofHours(3)))),
+        )
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofHours(3)),
+            RuleEngine.evaluate(withDefault, "com.generous", schoolAfternoon),
+        )
+        // And the tighter direction, on the app that already had 30 min of its own.
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofMinutes(30)),
+            RuleEngine.evaluate(withDefault, "com.game.fortnite", schoolAfternoon),
+        )
+    }
+
+    @Test
+    fun `an app can be set free of the default entirely`() {
+        val withDefault = config.copy(
+            defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)),
+            perAppPolicies = config.perAppPolicies + ("com.bus.timetable" to AppPolicy(unlimited = true)),
+        )
+        assertEquals(
+            Verdict.Allowed,
+            RuleEngine.evaluate(
+                withDefault, "com.bus.timetable", schoolAfternoon,
+                usageToday = mapOf("com.bus.timetable" to Duration.ofHours(4)),
+            ),
+        )
+        // Being set free is about budgets only: bedtime and windows still apply.
+        assertEquals(
+            Verdict.Blocked(BlockReason.BEDTIME),
+            RuleEngine.evaluate(withDefault, "com.bus.timetable", schoolNight),
+        )
     }
 
     @Test
@@ -293,66 +328,79 @@ class RuleEngineTest {
     fun `budget subtracts today's usage`() {
         val verdict = RuleEngine.evaluate(
             config, "com.game.fortnite", schoolAfternoon,
-            usageToday = mapOf("games" to Duration.ofMinutes(10)),
+            usageToday = mapOf("com.game.fortnite" to Duration.ofMinutes(10)),
         )
         assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(20)), verdict)
     }
 
     @Test
-    fun `exhausted budget blocks`() {
-        val verdict = RuleEngine.evaluate(
-            config, "com.game.fortnite", schoolAfternoon,
-            usageToday = mapOf("games" to Duration.ofMinutes(30)),
+    fun `exhausted budget blocks, and usage exactly at the budget counts as exhausted`() {
+        assertEquals(
+            Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED),
+            RuleEngine.evaluate(
+                config, "com.game.fortnite", schoolAfternoon,
+                usageToday = mapOf("com.game.fortnite" to Duration.ofMinutes(30)),
+            ),
         )
-        assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), verdict)
+        assertEquals(
+            Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED),
+            RuleEngine.evaluate(
+                config, "com.game.fortnite", schoolAfternoon,
+                usageToday = mapOf("com.game.fortnite" to Duration.ofMinutes(45)),
+            ),
+        )
     }
 
     @Test
-    fun `usage exactly at budget blocks (no negative remaining)`() {
+    fun `extra time granted to this app widens its budget`() {
         val verdict = RuleEngine.evaluate(
             config, "com.game.fortnite", schoolAfternoon,
-            usageToday = mapOf("games" to Duration.ofMinutes(45)),
-        )
-        assertEquals(Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED), verdict)
-    }
-
-    @Test
-    fun `approved extra time widens the budget`() {
-        val verdict = RuleEngine.evaluate(
-            config, "com.game.fortnite", schoolAfternoon,
-            usageToday = mapOf("games" to Duration.ofMinutes(30)),
-            extraTime = mapOf("games" to Duration.ofMinutes(15)),
+            usageToday = mapOf("com.game.fortnite" to Duration.ofMinutes(30)),
+            extraTime = mapOf("com.game.fortnite" to Duration.ofMinutes(15)),
         )
         assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(15)), verdict)
     }
 
     @Test
-    fun `a day without a budget entry is unlimited for that category`() {
-        // "social" only defines a budget for school days.
-        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "com.whatsapp", saturdayMorning))
+    fun `an all-apps grant reaches the default but not a limit set on purpose`() {
+        // "Everyone gets 30 more minutes" is about the general allowance; it must not blow past
+        // a cap somebody deliberately put on one app.
+        val withDefault = config.copy(defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))
+        val grant = mapOf(ExtraTime.ALL_APPS to Duration.ofMinutes(30))
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofMinutes(60)),
+            RuleEngine.evaluate(withDefault, "com.brand.new", schoolAfternoon, extraTime = grant),
+        )
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofMinutes(30)),
+            RuleEngine.evaluate(withDefault, "com.game.fortnite", schoolAfternoon, extraTime = grant),
+        )
     }
 
     @Test
-    fun `one category's usage does not affect another`() {
-        val verdict = RuleEngine.evaluate(
-            config, "com.whatsapp", schoolAfternoon,
-            usageToday = mapOf("games" to Duration.ofHours(5)),
-        )
-        assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(45)), verdict)
+    fun `a day without a budget entry is unlimited for that app`() {
+        // WhatsApp only defines a budget for school days.
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "com.whatsapp", saturdayMorning))
     }
 
     @Test
     fun `a config with budgets requires usage counting`() {
         // Revoking usage access must fail closed here: budgets can't count down without it.
         assertEquals(true, RuleEngine.requiresUsageCounting(config))
+        assertEquals(
+            true,
+            RuleEngine.requiresUsageCounting(
+                FamilyConfig(version = 1, defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30))),
+            ),
+        )
     }
 
     @Test
     fun `a config with only time-based rules does not require usage counting`() {
         // Bedtime and blocked windows read the clock, not the usage counter.
         val timeOnly = config.copy(
-            policies = mapOf(
-                "games" to CategoryPolicy(
+            perAppPolicies = mapOf(
+                "com.game.fortnite" to AppPolicy(
                     blockedWindows = mapOf(
                         DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(8, 30), LocalTime.of(14, 30))),
                     ),
@@ -364,7 +412,7 @@ class RuleEngineTest {
 
     @Test
     fun `an empty config does not require usage counting`() {
-        assertEquals(false, RuleEngine.requiresUsageCounting(config.copy(policies = emptyMap())))
+        assertEquals(false, RuleEngine.requiresUsageCounting(config.copy(perAppPolicies = emptyMap())))
     }
 
     // --- Weekend edges: the same Friday carries two sets of rules ---
@@ -379,7 +427,7 @@ class RuleEngineTest {
     @Test
     fun `Friday morning still runs the school rules`() {
         assertEquals(
-            Verdict.Blocked(BlockReason.BLOCKED_WINDOW), // school-hours window on "games"
+            Verdict.Blocked(BlockReason.BLOCKED_WINDOW), // school-hours window on the game
             RuleEngine.evaluate(earlyWeekend, "com.game.fortnite", fridayMorning),
         )
     }
@@ -390,7 +438,7 @@ class RuleEngineTest {
         // before lunch come off the 2h weekend budget the child moves into.
         val verdict = RuleEngine.evaluate(
             earlyWeekend, "com.game.fortnite", fridayAfternoon,
-            usageToday = mapOf("games" to Duration.ofMinutes(30)),
+            usageToday = mapOf("com.game.fortnite" to Duration.ofMinutes(30)),
         )
         assertEquals(Verdict.AllowedWithBudget(Duration.ofMinutes(90)), verdict)
     }
@@ -400,13 +448,13 @@ class RuleEngineTest {
         // The "I just remembered today is special" flow: the parent adds TODAY to the calendar
         // mid-morning. Nothing caches the day type, so the same instant must re-evaluate as
         // HOLIDAY the moment the new config lands.
-        val games = config.policies.getValue("games")
+        val game = config.perAppPolicies.getValue("com.game.fortnite")
         val holidayAware = config.copy(
-            policies = config.policies +
-                ("games" to games.copy(dailyBudget = games.dailyBudget + (DayType.HOLIDAY to Duration.ofHours(2)))),
+            perAppPolicies = config.perAppPolicies +
+                ("com.game.fortnite" to game.copy(dailyBudget = game.dailyBudget + (DayType.HOLIDAY to Duration.ofHours(2)))),
         )
-        val used = mapOf("games" to Duration.ofMinutes(30))
-        // 10:00 on a school Monday: games sit inside the school-hours window.
+        val used = mapOf("com.game.fortnite" to Duration.ofMinutes(30))
+        // 10:00 on a school Monday: the game sits inside its school-hours window.
         assertEquals(
             Verdict.Blocked(BlockReason.BLOCKED_WINDOW),
             RuleEngine.evaluate(holidayAware, "com.game.fortnite", schoolMorning, usageToday = used),
@@ -450,7 +498,7 @@ class RuleEngineTest {
         val monday = LocalDateTime.of(2026, 3, 9, 21, 15)
         assertEquals(
             Verdict.Blocked(BlockReason.BLOCKED_WINDOW),
-            RuleEngine.evaluate(dinner, "org.duolingo", monday), // an otherwise unrestricted app
+            RuleEngine.evaluate(dinner, "org.duolingo", monday), // an app with no rules of its own
         )
         assertEquals(Verdict.Allowed, RuleEngine.evaluate(dinner, "org.duolingo", monday.plusDays(1)))
     }
@@ -463,8 +511,7 @@ class RuleEngineTest {
         // The policy has to answer on the HOLIDAY slot: that's what a special day resolves to.
         fun configWith(w: TimeWindow) = config.copy(
             calendar = calendar,
-            perAppPolicies = mapOf("com.game.fortnite" to CategoryPolicy(blockedWindows = mapOf(DayType.HOLIDAY to listOf(w)))),
-            policies = emptyMap(),
+            perAppPolicies = mapOf("com.game.fortnite" to AppPolicy(blockedWindows = mapOf(DayType.HOLIDAY to listOf(w)))),
         )
         assertEquals(
             Verdict.Blocked(BlockReason.BLOCKED_WINDOW),

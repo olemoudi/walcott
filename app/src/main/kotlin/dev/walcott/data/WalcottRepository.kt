@@ -28,9 +28,6 @@ class WalcottRepository(
 
     val settingsFlow: Flow<PolicySettings> = settingsStore.settings
 
-    /** App -> categoryId assignments, now sourced from the synced policy. */
-    val assignmentsFlow: Flow<Map<String, String>> = settingsFlow.map { it.assignments }
-
     val familyConfigFlow: Flow<FamilyConfig> =
         settingsFlow.map { it.toFamilyConfig(essentials) }
 
@@ -101,8 +98,8 @@ class WalcottRepository(
     }
 
 
-    suspend fun managedPackagesNow(): Set<String> =
-        inventory.managedPackages(settingsStore.current().assignments)
+    /** Every user-installed app on this device: with no categories, they are all managed. */
+    suspend fun managedPackagesNow(): Set<String> = inventory.managedPackages()
 
     suspend fun addUsageSeconds(categoryId: String, seconds: Long) =
         db.usage().addSeconds(categoryId, today(), seconds)
@@ -136,25 +133,6 @@ class WalcottRepository(
 
     private fun LocationPointEntity.toPoint() =
         LocationPoint(lat = lat, lng = lng, epochMs = epochMs, accuracyM = accuracyM, mock = mock)
-
-    // --- Assignments (in the synced policy; changes republish to children) ---
-
-    suspend fun assign(packageName: String, categoryId: String) =
-        updateSettings { it.copy(assignments = it.assignments + (packageName to categoryId)) }
-
-    suspend fun unassign(packageName: String) =
-        updateSettings { it.copy(assignments = it.assignments - packageName) }
-
-    /**
-     * One-time migration of legacy Room assignments into the policy. Idempotent and a no-op
-     * on children (their table is empty) and once assignments already live in the policy.
-     */
-    suspend fun migrateLocalAssignmentsToSettings() {
-        if (settingsStore.current().assignments.isNotEmpty()) return
-        val legacy = db.assignments().getAll().associate { it.packageName to it.categoryId }
-        if (legacy.isEmpty()) return
-        updateSettings { it.withLegacyAssignments(legacy) }
-    }
 
     /** One-time: turn the recommended anti-tamper restrictions on by default (parent edits sync down). */
     suspend fun seedHardeningIfNeeded() {

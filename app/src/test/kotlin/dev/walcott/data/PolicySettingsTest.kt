@@ -14,11 +14,11 @@ class PolicySettingsTest {
 
     private val settings = PolicySettings(
         version = 3,
-        budgets = mapOf(
-            "games" to mapOf("SCHOOL" to 30, "WEEKEND" to 120),
-        ),
-        blockedWindows = mapOf(
-            "games" to mapOf("SCHOOL" to listOf(WindowDto(8 * 60 + 30, 14 * 60 + 30))),
+        defaultAppBudget = mapOf("SCHOOL" to 30, "WEEKEND" to 120),
+        appPolicies = mapOf(
+            "com.game" to AppPolicyDto(
+                blockedWindows = mapOf("SCHOOL" to listOf(WindowDto(8 * 60 + 30, 14 * 60 + 30))),
+            ),
         ),
         bedtime = mapOf("SCHOOL" to WindowDto(21 * 60 + 30, 7 * 60 + 30)),
         holidays = setOf(LocalDate.of(2026, 10, 12).toEpochDay()),
@@ -27,16 +27,15 @@ class PolicySettingsTest {
     @Test
     fun `toFamilyConfig maps budgets from minutes to Duration per day type`() {
         val config = settings.toFamilyConfig(essentials = emptySet())
-        val games = config.policies.getValue("games")
-        assertEquals(Duration.ofMinutes(30), games.dailyBudget[DayType.SCHOOL])
-        assertEquals(Duration.ofHours(2), games.dailyBudget[DayType.WEEKEND])
-        assertNull(games.dailyBudget[DayType.HOLIDAY])
+        assertEquals(Duration.ofMinutes(30), config.defaultAppBudget[DayType.SCHOOL])
+        assertEquals(Duration.ofHours(2), config.defaultAppBudget[DayType.WEEKEND])
+        assertNull(config.defaultAppBudget[DayType.HOLIDAY])
     }
 
     @Test
     fun `toFamilyConfig maps blocked windows and bedtime`() {
         val config = settings.toFamilyConfig(emptySet())
-        val window = config.policies.getValue("games").blockedWindows.getValue(DayType.SCHOOL).single()
+        val window = config.perAppPolicies.getValue("com.game").blockedWindows.getValue(DayType.SCHOOL).single()
         assertTrue(window.contains(java.time.LocalTime.of(10, 0)))
         val bedtime = config.bedtime.getValue(DayType.SCHOOL)
         assertTrue(bedtime.contains(java.time.LocalTime.of(23, 0)))
@@ -57,11 +56,9 @@ class PolicySettingsTest {
     }
 
     @Test
-    fun `toFamilyConfig maps holidays and carries assignments and essentials`() {
-        val config = settings.copy(assignments = mapOf("com.game" to "games"))
-            .toFamilyConfig(essentials = setOf("dev.walcott"))
+    fun `toFamilyConfig maps holidays and carries essentials`() {
+        val config = settings.toFamilyConfig(essentials = setOf("dev.walcott"))
         assertEquals(DayType.HOLIDAY, config.calendar.dayTypeOf(LocalDate.of(2026, 10, 12).atTime(12, 0)))
-        assertEquals("games", config.assignments["com.game"])
         assertTrue("dev.walcott" in config.essentialPackages)
         assertEquals(3, config.version)
     }
@@ -110,12 +107,10 @@ class PolicySettingsTest {
     }
 
     @Test
-    fun `an assigned category with no rules still gets a (permissive) policy entry`() {
-        val config = PolicySettings(assignments = mapOf("com.game" to "games"))
-            .toFamilyConfig(essentials = emptySet())
-        val games = config.policies.getValue("games")
-        assertTrue(games.dailyBudget.isEmpty())
-        assertTrue(games.blockedWindows.isEmpty())
+    fun `an app nobody set a rule for gets no entry at all`() {
+        val config = PolicySettings().toFamilyConfig(essentials = emptySet())
+        assertTrue(config.perAppPolicies.isEmpty())
+        assertNull(config.budgetFor("com.game", DayType.SCHOOL))
     }
 
     @Test
@@ -163,14 +158,11 @@ class PolicySettingsTest {
     }
 
     @Test
-    fun `withBudget sets, clears and drops empty categories`() {
-        val budgets = mapOf("games" to mapOf("SCHOOL" to 30))
-        assertEquals(
-            mapOf("games" to mapOf("SCHOOL" to 30, "WEEKEND" to 60)),
-            budgets.withBudget("games", "WEEKEND", 60),
-        )
-        assertEquals(emptyMap<String, Map<String, Int>>(), budgets.withBudget("games", "SCHOOL", null))
-        assertEquals(budgets, budgets.withBudget("video", "SCHOOL", null))
+    fun `withBudget sets and clears one day type`() {
+        val budget = mapOf("SCHOOL" to 30)
+        assertEquals(mapOf("SCHOOL" to 30, "WEEKEND" to 60), budget.withBudget("WEEKEND", 60))
+        assertEquals(emptyMap<String, Int>(), budget.withBudget("SCHOOL", null))
+        assertEquals(budget, budget.withBudget("WEEKEND", null))
     }
 
     @Test
@@ -270,15 +262,83 @@ class PolicySettingsTest {
         assertEquals(setOf("vpn"), afterRemoval.seedRestrictions(defaults).deviceRestrictions)
     }
 
+    // --- Leaving categories behind (see migratedFromCategories) ---
+
     @Test
-    fun `withLegacyAssignments adopts only when none set yet`() {
-        val legacy = mapOf("com.game" to "games")
-        assertEquals(legacy, PolicySettings().withLegacyAssignments(legacy).assignments)
-        // Already-populated policy is left untouched.
-        val populated = PolicySettings(assignments = mapOf("com.chat" to "social"))
-        assertEquals(populated, populated.withLegacyAssignments(legacy))
-        // Nothing to migrate.
-        val empty = PolicySettings()
-        assertEquals(empty, empty.withLegacyAssignments(emptyMap()))
+    fun `the General budget becomes the limit every app gets`() {
+        val old = PolicySettings(budgets = mapOf("other" to mapOf("SCHOOL" to 60, "WEEKEND" to 120)))
+        val migrated = old.migratedFromCategories()
+        assertEquals(mapOf("SCHOOL" to 60, "WEEKEND" to 120), migrated.defaultAppBudget)
+        assertTrue(migrated.budgets.isEmpty())
+    }
+
+    @Test
+    fun `every other category's rules become the rules of the apps that were in it`() {
+        val old = PolicySettings(
+            assignments = mapOf("com.game" to "games", "com.other.game" to "games", "com.chat" to "social"),
+            budgets = mapOf("games" to mapOf("SCHOOL" to 45)),
+            blockedWindows = mapOf("games" to mapOf("SCHOOL" to listOf(WindowDto(600, 660)))),
+        )
+        val migrated = old.migratedFromCategories()
+        // Both games keep a cap — each with the whole 45 minutes, which is looser than the pot
+        // they shared. Splitting it would invent a rule the parent never wrote.
+        assertEquals(45, migrated.appPolicies.getValue("com.game").budgets["SCHOOL"])
+        assertEquals(45, migrated.appPolicies.getValue("com.other.game").budgets["SCHOOL"])
+        assertEquals(1, migrated.appPolicies.getValue("com.game").blockedWindows.getValue("SCHOOL").size)
+        // The chat app's category had no rules, so it ends up with none.
+        assertTrue("com.chat" !in migrated.appPolicies)
+        assertTrue(migrated.assignments.isEmpty())
+    }
+
+    @Test
+    fun `a limit already set on an app survives the migration untouched`() {
+        val old = PolicySettings(
+            assignments = mapOf("com.game" to "games"),
+            budgets = mapOf("games" to mapOf("SCHOOL" to 45)),
+            appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf("SCHOOL" to 10))),
+        )
+        assertEquals(10, old.migratedFromCategories().appPolicies.getValue("com.game").budgets["SCHOOL"])
+    }
+
+    @Test
+    fun `earn rules are dropped, they cannot be said any more`() {
+        val old = PolicySettings(earnRules = listOf(EarnRuleDto("education", "games", 30, 10, 60)))
+        assertTrue(old.migratedFromCategories().earnRules.isEmpty())
+    }
+
+    @Test
+    fun `a child who overrode the family budgets keeps overriding, in the new shape`() {
+        val old = PolicySettings(
+            assignments = mapOf("com.game" to "games"),
+            budgets = mapOf("other" to mapOf("SCHOOL" to 60)),
+            children = listOf(
+                ChildEntry(
+                    "c1", "Ana",
+                    ChildOverrides(
+                        budgets = mapOf("other" to mapOf("SCHOOL" to 30), "games" to mapOf("SCHOOL" to 15)),
+                    ),
+                ),
+                ChildEntry("c2", "Bea"),
+            ),
+        )
+        val migrated = old.migratedFromCategories()
+        val ana = migrated.children.first().overrides
+        assertEquals(mapOf("SCHOOL" to 30), ana.defaultAppBudget)
+        assertEquals(15, ana.appPolicies?.get("com.game")?.budgets?.get("SCHOOL"))
+        assertNull(ana.budgets)
+        // Bea never overrode anything and still inherits.
+        assertTrue(migrated.children[1].overrides.isEmpty)
+    }
+
+    @Test
+    fun `the migration is idempotent and a no-op on a policy written since`() {
+        val modern = PolicySettings(
+            defaultAppBudget = mapOf("SCHOOL" to 60),
+            appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf("SCHOOL" to 10))),
+        )
+        assertEquals(modern, modern.migratedFromCategories())
+        val old = PolicySettings(budgets = mapOf("other" to mapOf("SCHOOL" to 60)))
+        val once = old.migratedFromCategories()
+        assertEquals(once, once.migratedFromCategories())
     }
 }

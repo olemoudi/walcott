@@ -9,11 +9,8 @@ import java.time.LocalTime
 enum class DayType { SCHOOL, WEEKEND, HOLIDAY }
 
 /**
- * Keys for the extra-time map. Extra time can be granted three ways, and the engine sums
- * whichever apply to a package: to one category (its id), to a single app (its package name,
- * which always contains a dot), or to every app at once ([ExtraTime.ALL_APPS], a sentinel that
- * is neither a category id nor a package). Categories are the optional power tool; "all apps"
- * and "this app" are the simple, everyday grants.
+ * Keys for the extra-time map. Extra time is granted to a single app (its package name) or to
+ * every app at once ([ExtraTime.ALL_APPS], a sentinel that is not a package name).
  */
 object ExtraTime {
     const val ALL_APPS = "__all_apps__"
@@ -96,26 +93,44 @@ data class TimeWindow(
     }
 }
 
-data class CategoryPolicy(
+/**
+ * What one app is allowed, whether it was set for that app or inherited from the family's
+ * default. Every limit in this engine is now per app: sorting apps into categories asked the
+ * parent to do a filing job before they could set a single rule, and the rules they actually
+ * want ("Roblox, 45 minutes") never needed it.
+ */
+data class AppPolicy(
     /** Daily budget per day type; no entry = no time limit that day. */
     val dailyBudget: Map<DayType, Duration> = emptyMap(),
     /** Full-block windows per day type (e.g. school hours). */
     val blockedWindows: Map<DayType, List<TimeWindow>> = emptyMap(),
+    /**
+     * This app answers to no daily budget, not even the family default. The third state a
+     * per-app entry needs: "nothing set" inherits the default, a budget overrides it, and this
+     * opts out of it — the app the parent never wants to cut off (a bus timetable, a chat with
+     * a parent) without having to turn the default off for everybody.
+     */
+    val unlimited: Boolean = false,
 )
 
 data class FamilyConfig(
     /** Monotonic version of the writer; sync uses last-write-wins on it. */
     val version: Long,
-    /** package -> categoryId. Packages not listed fall into [DEFAULT_CATEGORY]. */
-    val assignments: Map<String, String>,
-    /** categoryId -> policy. A category without a policy is unrestricted. */
-    val policies: Map<String, CategoryPolicy>,
     /**
-     * package -> per-app policy that ADDS restrictions on top of the app's category. A per-app
-     * daily budget is a sub-cap (the app is blocked when it OR its category runs out); per-app
-     * blocked windows are unioned with the category's. So per-app rules only ever tighten.
+     * The daily budget an app gets when nothing was set for it, per day type. Empty — the
+     * default — means an app nobody has touched has no time limit at all, which is the whole
+     * point: a newly installed app must not silently arrive already restricted.
+     *
+     * Each app counts against this budget SEPARATELY: it is a per-app allowance, not a shared
+     * pot, so an hour of one app does not eat another app's hour.
      */
-    val perAppPolicies: Map<String, CategoryPolicy> = emptyMap(),
+    val defaultAppBudget: Map<DayType, Duration> = emptyMap(),
+    /**
+     * package -> the rules set for that app specifically. A budget here replaces
+     * [defaultAppBudget] for that app (tighter or looser); [AppPolicy.unlimited] removes it;
+     * blocked windows are added on top of the family-wide ones.
+     */
+    val perAppPolicies: Map<String, AppPolicy> = emptyMap(),
     /** Bedtime window per day type: blocks everything non-essential. */
     val bedtime: Map<DayType, TimeWindow> = emptyMap(),
     /**
@@ -127,16 +142,20 @@ data class FamilyConfig(
     val essentialPackages: Set<String> = emptySet(),
     val calendar: SchoolCalendar = SchoolCalendar(),
 ) {
-    /** The category [packageName] is judged under: its assignment, or the default bucket. */
-    fun categoryOf(packageName: String): String = assignments[packageName] ?: DEFAULT_CATEGORY
+    /**
+     * The budget [packageName] answers to on [dayType], or null when it has none: its own if it
+     * was given one, otherwise the family default — unless it was explicitly set free.
+     */
+    fun budgetFor(packageName: String, dayType: DayType): Duration? {
+        val own = perAppPolicies[packageName]
+        if (own?.unlimited == true) return null
+        return own?.dailyBudget?.get(dayType) ?: defaultAppBudget[dayType]
+    }
 
-    companion object {
-        /**
-         * The category every unassigned app falls into ("General" in the UI). New installs are
-         * usable under its budget rather than blocked outright — classifying is opt-in, and
-         * blocking an app is an explicit act (its own budget of zero), never a default.
-         */
-        const val DEFAULT_CATEGORY = "other"
+    /** Whether [packageName] is running on the family default rather than a budget of its own. */
+    fun usesDefaultBudget(packageName: String): Boolean {
+        val own = perAppPolicies[packageName] ?: return true
+        return !own.unlimited && own.dailyBudget.isEmpty()
     }
 }
 
@@ -144,14 +163,13 @@ sealed interface Verdict {
     /** Allowed with no applicable time limit right now. */
     data object Allowed : Verdict
 
-    /** Allowed; its category has this much budget left today. */
+    /** Allowed; this app has this much time left today. */
     data class AllowedWithBudget(val remaining: Duration) : Verdict
 
     data class Blocked(val reason: BlockReason) : Verdict
 }
 
 enum class BlockReason {
-    UNCLASSIFIED,
     BEDTIME,
     BLOCKED_WINDOW,
     BUDGET_EXHAUSTED,

@@ -1,9 +1,8 @@
 package dev.walcott.data
 
-import dev.walcott.rules.CategoryPolicy
+import dev.walcott.rules.AppPolicy
 import dev.walcott.rules.DayType
 import dev.walcott.rules.DomainAppRule
-import dev.walcott.rules.EarnRule
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.rules.IdleEarnConfig
 import dev.walcott.rules.SchoolCalendar
@@ -68,17 +67,18 @@ data class WindowDto(
     }
 }
 
-/** Persistable earn-time rule (see [EarnRule]). */
+/**
+ * Pre-0.35 earn-time rule ("X min of category A unlocks Y min of category B"). Kept only so an
+ * old stored policy still decodes; [migratedFromCategories] drops them, and nothing reads one.
+ */
 @Serializable
 data class EarnRuleDto(
-    val sourceCategoryId: String,
-    val targetCategoryId: String,
-    val sourceMinutesPerReward: Int,
-    val rewardMinutes: Int,
-    val dailyCapMinutes: Int,
-) {
-    fun toEarnRule() = EarnRule(sourceCategoryId, targetCategoryId, sourceMinutesPerReward, rewardMinutes, dailyCapMinutes)
-}
+    val sourceCategoryId: String = "",
+    val targetCategoryId: String = "",
+    val sourceMinutesPerReward: Int = 0,
+    val rewardMinutes: Int = 0,
+    val dailyCapMinutes: Int = 0,
+)
 
 /** Persistable vacation range (inclusive), as epoch days. */
 @Serializable
@@ -86,12 +86,13 @@ data class VacationDto(val startEpochDay: Long, val endEpochDay: Long)
 
 /**
  * Idle-earn configuration (see [dev.walcott.rules.IdleEarnConfig]): banking idle time into
- * extra minutes for [targetCategoryId], with a rolling-window and a weekly cap, earning only
- * inside [earnWindows] (dayType name -> windows; empty = all day). Null = feature off.
+ * extra minutes for every app, with a rolling-window and a weekly cap, earning only inside
+ * [earnWindows] (dayType name -> windows; empty = all day). Null = feature off.
  */
 @Serializable
 data class IdleEarnDto(
-    val targetCategoryId: String,
+    /** Pre-0.35: which category the minutes went to. Ignored — they now go to every app. */
+    val targetCategoryId: String = "",
     val minutesIdlePerReward: Int,
     val rewardMinutes: Int,
     val windowHours: Int,
@@ -100,7 +101,6 @@ data class IdleEarnDto(
     val earnWindows: Map<String, List<WindowDto>> = emptyMap(),
 ) {
     fun toConfig() = IdleEarnConfig(
-        targetCategoryId = targetCategoryId,
         minutesIdlePerReward = minutesIdlePerReward,
         rewardMinutes = rewardMinutes,
         windowHours = windowHours,
@@ -112,15 +112,21 @@ data class IdleEarnDto(
 }
 
 /**
- * Per-app policy overrides (budget + blocked windows) that ADD restrictions on top of the
- * app's category. Day-type keys are [DayType] names; budgets are minutes.
+ * What was set for one app: its own daily budget, its own blocked windows, or an explicit
+ * exemption from the family default. Day-type keys are [DayType] names; budgets are minutes.
  */
 @Serializable
 data class AppPolicyDto(
     val budgets: Map<String, Int> = emptyMap(),
     val blockedWindows: Map<String, List<WindowDto>> = emptyMap(),
+    /**
+     * This app answers to no daily limit, not even the family default. Distinct from an empty
+     * [budgets] map, which means "nothing set here, use the family default" — the two have to
+     * stay distinguishable or a parent could only cap everything or nothing.
+     */
+    val unlimited: Boolean = false,
 ) {
-    val isEmpty: Boolean get() = budgets.isEmpty() && blockedWindows.isEmpty()
+    val isEmpty: Boolean get() = budgets.isEmpty() && blockedWindows.isEmpty() && !unlimited
 }
 
 /** Persistable per-app domain rule (see [DomainAppRule]). */
@@ -134,21 +140,11 @@ data class DomainAppRuleDto(
 }
 
 /**
- * Budgets map with [categoryId]/[dayTypeName] set to [minutes]. Null minutes clears the
- * entry; categories whose per-day map empties out are dropped. Shared by the family
- * editor and the per-child override editor.
+ * A day-typed budget map with [dayTypeName] set to [minutes]; null clears that day. Shared by
+ * the family editor and the per-child override editor.
  */
-fun Map<String, Map<String, Int>>.withBudget(
-    categoryId: String,
-    dayTypeName: String,
-    minutes: Int?,
-): Map<String, Map<String, Int>> {
-    val perDay = this[categoryId].orEmpty().toMutableMap()
-    if (minutes == null) perDay.remove(dayTypeName) else perDay[dayTypeName] = minutes
-    val budgets = toMutableMap()
-    if (perDay.isEmpty()) budgets.remove(categoryId) else budgets[categoryId] = perDay
-    return budgets
-}
+fun Map<String, Int>.withBudget(dayTypeName: String, minutes: Int?): Map<String, Int> =
+    if (minutes == null) this - dayTypeName else this + (dayTypeName to minutes)
 
 /** This day-typed map with the HOLIDAY slot mirroring WEEKEND (copied, or removed when absent). */
 private fun <V> Map<String, V>.mirrorHoliday(mirror: Boolean = true): Map<String, V> {
@@ -172,8 +168,7 @@ private fun <V> Map<String, V>.mirrorHoliday(mirror: Boolean = true): Map<String
 fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
     val mirror = !specialDaysOwnRules
     return copy(
-        budgets = budgets.mapValues { it.value.mirrorHoliday(mirror) }.filterValues { it.isNotEmpty() },
-        blockedWindows = blockedWindows.mapValues { it.value.mirrorHoliday(mirror) }.filterValues { it.isNotEmpty() },
+        defaultAppBudget = defaultAppBudget.mirrorHoliday(mirror),
         bedtime = bedtime.mirrorHoliday(mirror),
         allAppsBlockedWindows = allAppsBlockedWindows.mirrorHoliday(mirror),
         appPolicies = appPolicies
@@ -188,10 +183,7 @@ fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
         children = children.map { child ->
             child.copy(
                 overrides = child.overrides.copy(
-                    budgets = child.overrides.budgets
-                        ?.mapValues { it.value.mirrorHoliday(mirror) }?.filterValues { it.isNotEmpty() },
-                    blockedWindows = child.overrides.blockedWindows
-                        ?.mapValues { it.value.mirrorHoliday(mirror) }?.filterValues { it.isNotEmpty() },
+                    defaultAppBudget = child.overrides.defaultAppBudget?.mirrorHoliday(mirror),
                     bedtime = child.overrides.bedtime?.mirrorHoliday(mirror),
                     appPolicies = child.overrides.appPolicies
                         ?.mapValues { (_, dto) ->
@@ -221,6 +213,97 @@ fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
 fun PolicySettings.withSpecialDaysOwnRules(on: Boolean): PolicySettings =
     if (on) copy(specialDaysOwnRules = false).withHolidayMirroringWeekend().copy(specialDaysOwnRules = true)
     else copy(specialDaysOwnRules = false)
+
+/** The category every unassigned app used to fall into, before categories were removed. */
+private const val LEGACY_GENERAL_CATEGORY = "other"
+
+/**
+ * A policy written when limits were per category, expressed in the per-app model that replaced
+ * them. Idempotent, and a no-op for anything written since — it keys off the legacy fields being
+ * non-empty, and it empties them.
+ *
+ * The conversion, chosen with the parent in the room rather than for tidiness:
+ *  - the General budget — the one every unclassified app already shared — becomes the default
+ *    every app gets when nothing was set for it;
+ *  - every other category's budget and windows become the rules of each app that was IN it, so
+ *    a family that capped "games" keeps a cap on each of their games rather than losing it;
+ *  - earn rules (category to category) are dropped: they cannot be said any more.
+ *
+ * This deliberately LOOSENS one thing, and it is worth saying out loud: four games that shared
+ * 45 minutes end up with 45 minutes each. The alternative — dividing the budget between them —
+ * would invent a rule the parent never wrote. Splitting it would also be silently stricter for a
+ * family that only ever used one app in a category, which is the common case.
+ *
+ * Runs at the store's read path, so every screen and the engine see the new shape from the first
+ * launch after the update, whether or not anything has been written since.
+ */
+fun PolicySettings.migratedFromCategories(): PolicySettings {
+    val familyLegacy = budgets.isNotEmpty() || blockedWindows.isNotEmpty() ||
+        assignments.isNotEmpty() || earnRules.isNotEmpty()
+    val childLegacy = children.any {
+        it.overrides.budgets != null || it.overrides.blockedWindows != null || it.overrides.earnRules != null
+    }
+    if (!familyLegacy && !childLegacy) return this
+
+    fun convert(
+        legacyBudgets: Map<String, Map<String, Int>>,
+        legacyWindows: Map<String, Map<String, List<WindowDto>>>,
+        currentDefault: Map<String, Int>,
+        currentApps: Map<String, AppPolicyDto>,
+    ): Pair<Map<String, Int>, Map<String, AppPolicyDto>> {
+        // Anything already written in the new model wins: the migration only fills gaps, so
+        // running it twice (or after the parent has edited something) can never overwrite.
+        val default = currentDefault.ifEmpty { legacyBudgets[LEGACY_GENERAL_CATEGORY].orEmpty() }
+        val apps = currentApps.toMutableMap()
+        for ((pkg, categoryId) in assignments) {
+            if (categoryId == LEGACY_GENERAL_CATEGORY) continue
+            val budget = legacyBudgets[categoryId].orEmpty()
+            val windows = legacyWindows[categoryId].orEmpty()
+            if (budget.isEmpty() && windows.isEmpty()) continue
+            val existing = apps[pkg] ?: AppPolicyDto()
+            apps[pkg] = existing.copy(
+                budgets = existing.budgets.ifEmpty { budget },
+                blockedWindows = existing.blockedWindows.ifEmpty { windows },
+            )
+        }
+        return default to apps.filterValues { !it.isEmpty }
+    }
+
+    val (familyDefault, familyApps) = convert(budgets, blockedWindows, defaultAppBudget, appPolicies)
+    return copy(
+        defaultAppBudget = familyDefault,
+        appPolicies = familyApps,
+        budgets = emptyMap(),
+        blockedWindows = emptyMap(),
+        assignments = emptyMap(),
+        earnRules = emptyList(),
+        children = children.map { child ->
+            val overrides = child.overrides
+            if (overrides.budgets == null && overrides.blockedWindows == null && overrides.earnRules == null) {
+                child
+            } else {
+                // A child who overrode the family budgets keeps overriding, in the new shape:
+                // their General budget is their default, their category caps become their apps.
+                val (childDefault, childApps) = convert(
+                    overrides.budgets.orEmpty(),
+                    overrides.blockedWindows.orEmpty(),
+                    overrides.defaultAppBudget.orEmpty(),
+                    overrides.appPolicies.orEmpty(),
+                )
+                child.copy(
+                    overrides = overrides.copy(
+                        defaultAppBudget = overrides.defaultAppBudget
+                            ?: childDefault.takeIf { overrides.budgets != null },
+                        appPolicies = overrides.appPolicies ?: childApps.takeIf { overrides.budgets != null },
+                        budgets = null,
+                        blockedWindows = null,
+                        earnRules = null,
+                    ),
+                )
+            }
+        },
+    )
+}
 
 /**
  * The domains in [domains] added to the family's web filter.
@@ -280,10 +363,15 @@ private fun List<DomainAppRuleDto>.plusAppRules(domains: List<String>, packageNa
  */
 @Serializable
 data class ChildOverrides(
+    /** This child's own default per-app budget (dayType -> minutes); empty map = no default. */
+    val defaultAppBudget: Map<String, Int>? = null,
+    /** Pre-0.35 per-child category budgets. Migration input only (see [migratedFromCategories]). */
     val budgets: Map<String, Map<String, Int>>? = null,
+    /** Pre-0.35 per-child category windows. Migration input only. */
     val blockedWindows: Map<String, Map<String, List<WindowDto>>>? = null,
-    val bedtime: Map<String, WindowDto>? = null,
+    /** Pre-0.35 per-child earn rules. Dropped by the migration. */
     val earnRules: List<EarnRuleDto>? = null,
+    val bedtime: Map<String, WindowDto>? = null,
     val blockedDomains: Set<String>? = null,
     /** Per-app domain rules for this child alone. Null inherits the family list. */
     val domainAppRules: List<DomainAppRuleDto>? = null,
@@ -303,8 +391,8 @@ data class ChildOverrides(
     val allAppsBlockedWindows: Map<String, List<WindowDto>>? = null,
 ) {
     val isEmpty: Boolean
-        get() = budgets == null && blockedWindows == null && bedtime == null &&
-            earnRules == null && blockedDomains == null && domainAppRules == null &&
+        get() = defaultAppBudget == null && bedtime == null &&
+            blockedDomains == null && domainAppRules == null &&
             deviceRestrictions == null &&
             trackingIntervalMinutes == null && locationHistoryEnabled == null &&
             updateWifiOnly == null && appPolicies == null && allAppsBlockedWindows == null
@@ -328,9 +416,20 @@ data class ChildEntry(
 @Serializable
 data class PolicySettings(
     val version: Long = 1,
-    /** categoryId -> (dayType -> budget minutes). */
+    /**
+     * The daily budget (dayType -> minutes) an app gets when nothing was set for it. Empty —
+     * the default — means an app nobody has touched has no limit at all, so a newly installed
+     * app never arrives already restricted. Each app spends it on its own counter.
+     */
+    val defaultAppBudget: Map<String, Int> = emptyMap(),
+    /**
+     * Pre-0.35 category budgets (categoryId -> dayType -> minutes). Read once by
+     * [migratedFromCategories] and blanked; nothing else looks at them. Kept only so a policy
+     * written before categories were removed can still be converted — delete once no install
+     * that old can reach this code.
+     */
     val budgets: Map<String, Map<String, Int>> = emptyMap(),
-    /** categoryId -> (dayType -> full-block windows). */
+    /** Pre-0.35 category blocked windows. Migration input only, like [budgets]. */
     val blockedWindows: Map<String, Map<String, List<WindowDto>>> = emptyMap(),
     /** dayType -> bedtime window. */
     val bedtime: Map<String, WindowDto> = emptyMap(),
@@ -371,7 +470,11 @@ data class PolicySettings(
     val weekendStartsFridayAtMinute: Int? = null,
     /** Sunday minute-of-day from which the weekday rules return. Null runs the weekend to Monday 00:00. */
     val weekendEndsSundayAtMinute: Int? = null,
-    /** Earn-time rules ("X min of A unlocks Y min of B"). */
+    /**
+     * Pre-0.35 earn-time rules ("X min of category A unlocks Y min of category B"). They had no
+     * meaning left once categories went, so the migration drops them; the field stays only to
+     * decode an old policy without losing everything beside it.
+     */
     val earnRules: List<EarnRuleDto> = emptyList(),
     /** Domains blocked at DNS level (suffix match). */
     val blockedDomains: Set<String> = emptySet(),
@@ -385,10 +488,7 @@ data class PolicySettings(
     val familyName: String = "",
     /** Children registered by the parent, each with optional per-child overrides. */
     val children: List<ChildEntry> = emptyList(),
-    /**
-     * App -> categoryId assignments, family-wide. Part of the policy so they sync to children
-     * (an app with no entry is blocked as "unclassified"). Was previously in Room.
-     */
+    /** Pre-0.35 app -> categoryId assignments. Migration input only, like [budgets]. */
     val assignments: Map<String, String> = emptyMap(),
     /** Family-default periodic location-tracking interval in minutes (0 = off). */
     val trackingIntervalMinutes: Int = 0,
@@ -407,7 +507,7 @@ data class PolicySettings(
      * anyway). Defaults on so a family that never opens the setting still gets warned.
      */
     val newAppAlerts: Boolean = true,
-    /** package -> per-app policy (budget + windows) that tightens its category. Family-wide. */
+    /** package -> what was set for that app (budget, windows, or exempt). Family-wide. */
     val appPolicies: Map<String, AppPolicyDto> = emptyMap(),
     /** Idle-earn config (token-window model). Null = children earn no extra time from idle. */
     val idleEarn: IdleEarnDto? = null,
@@ -426,10 +526,8 @@ data class PolicySettings(
     fun resolveForChild(childId: String?): PolicySettings {
         val overrides = children.firstOrNull { it.childId == childId }?.overrides ?: return this
         return copy(
-            budgets = overrides.budgets ?: budgets,
-            blockedWindows = overrides.blockedWindows ?: blockedWindows,
+            defaultAppBudget = overrides.defaultAppBudget ?: defaultAppBudget,
             bedtime = overrides.bedtime ?: bedtime,
-            earnRules = overrides.earnRules ?: earnRules,
             blockedDomains = overrides.blockedDomains ?: blockedDomains,
             domainAppRules = overrides.domainAppRules ?: domainAppRules,
             deviceRestrictions = overrides.deviceRestrictions ?: deviceRestrictions,
@@ -502,47 +600,28 @@ data class PolicySettings(
         childVacations = childVacations.mapValues { it.value - period }.filterValues { it.isNotEmpty() },
     )
 
-    /** One-time migration: adopt [legacy] Room assignments only if none are set yet. */
-    fun withLegacyAssignments(legacy: Map<String, String>): PolicySettings =
-        if (assignments.isEmpty() && legacy.isNotEmpty()) copy(assignments = legacy) else this
-
-    fun toEarnRules(): List<EarnRule> = earnRules.map { it.toEarnRule() }
-
     fun toDomainAppRules(): List<DomainAppRule> = domainAppRules.map { it.toDomainAppRule() }
 
     /** True when any DNS filtering is configured (drives whether the VPN runs). */
     fun hasWebFilter(): Boolean = blockedDomains.isNotEmpty() || domainAppRules.isNotEmpty()
 
-    /** Builds the engine's [FamilyConfig] from these rules and assignments. */
+    /** Builds the engine's [FamilyConfig] from these rules. */
     fun toFamilyConfig(essentials: Set<String>): FamilyConfig {
-        val categoryIds = budgets.keys + blockedWindows.keys + assignments.values
-        val policies = categoryIds.associateWith { categoryId ->
-            CategoryPolicy(
-                dailyBudget = budgets[categoryId].orEmpty()
-                    .byDayType()
-                    .mapValues { Duration.ofMinutes(it.value.toLong()) },
-                blockedWindows = blockedWindows[categoryId].orEmpty()
-                    .byDayType()
-                    .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
-            )
-        }
-        // No assignment filter: an unassigned app is a General app now, and its own limits
-        // must hold exactly like a classified one's.
         val perApp = appPolicies
             .mapValues { (_, dto) ->
-                CategoryPolicy(
+                AppPolicy(
                     dailyBudget = dto.budgets
                         .byDayType()
                         .mapValues { Duration.ofMinutes(it.value.toLong()) },
                     blockedWindows = dto.blockedWindows
                         .byDayType()
                         .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
+                    unlimited = dto.unlimited,
                 )
             }
         return FamilyConfig(
             version = version,
-            assignments = assignments,
-            policies = policies,
+            defaultAppBudget = defaultAppBudget.byDayType().mapValues { Duration.ofMinutes(it.value.toLong()) },
             perAppPolicies = perApp,
             bedtime = bedtime.byDayType()
                 .mapNotNull { (dayType, window) -> window.toTimeWindowOrNull()?.let { dayType to it } }

@@ -40,11 +40,17 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
 
     private fun decode(raw: String?): PolicySettings {
         if (raw == null) return PolicySettings() // fresh install, nothing stored yet
-        return runCatching { json.decodeFromString(serializer, raw) }.getOrElse {
-            corruptionSeen = true
-            dev.walcott.debug.DebugLog.e(TAG, "stored policy is unreadable; falling back to empty", it)
-            PolicySettings()
-        }
+        return runCatching { json.decodeFromString(serializer, raw) }
+            // Anything written when limits were per category arrives in the shape the rest of
+            // the app no longer speaks. Converting on READ rather than in a one-shot migration
+            // means it also covers a policy that arrives over the wire from a parent who hasn't
+            // updated yet, and it is idempotent (see [PolicySettings.migratedFromCategories]).
+            .map { it.migratedFromCategories() }
+            .getOrElse {
+                corruptionSeen = true
+                dev.walcott.debug.DebugLog.e(TAG, "stored policy is unreadable; falling back to empty", it)
+                PolicySettings()
+            }
     }
 
     val settings: Flow<PolicySettings> = dataStore.data.map { prefs -> decode(prefs[key]) }

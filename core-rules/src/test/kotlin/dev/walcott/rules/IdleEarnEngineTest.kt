@@ -12,7 +12,6 @@ class IdleEarnEngineTest {
     private val hour = 3_600_000L
 
     private val config = IdleEarnConfig(
-        targetCategoryId = "games",
         minutesIdlePerReward = 10, // 10 min idle
         rewardMinutes = 5, //         -> 5 min games
         windowHours = 4,

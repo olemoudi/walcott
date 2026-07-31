@@ -24,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.ui.WalcottViewModel
@@ -78,6 +77,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 
     bonusTarget?.let { child ->
         BonusDialog(
+            apps = child.apps.map { it.packageName to it.label },
             onDismiss = { bonusTarget = null },
             onGrant = { categoryId, minutes ->
                 viewModel.giveBonus(child.deviceId, categoryId, minutes)
@@ -97,14 +97,11 @@ private fun ChildUsageCard(child: ChildSnapshot, onGiveBonus: () -> Unit) {
                 Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
-                child.usage.forEach { entry ->
-                    val category = AppCategory.byId(entry.categoryId)
+                // Usage is per app now, so the child's own reported app list names it.
+                val labels = child.apps.associate { it.packageName to it.label }
+                child.usage.sortedByDescending { it.seconds }.take(USAGE_ROWS).forEach { entry ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            category?.let { stringResource(it.nameRes) } ?: entry.categoryId,
-                            Modifier.weight(1f),
-                            color = category?.color ?: MaterialTheme.colorScheme.onSurface,
-                        )
+                        Text(labels[entry.categoryId] ?: entry.categoryId, Modifier.weight(1f))
                         Text(Duration.ofSeconds(entry.seconds).humanize(), style = MaterialTheme.typography.bodyMedium)
                     }
                 }

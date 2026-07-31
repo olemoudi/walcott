@@ -1,8 +1,6 @@
 package dev.walcott.data
 
-import dev.walcott.rules.CategoryPolicy
 import dev.walcott.rules.DayType
-import dev.walcott.rules.ExtraTime
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.rules.SchoolCalendar
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -22,75 +20,33 @@ class ChildStatsTest {
     private val monday: LocalDateTime = LocalDate.of(2026, 7, 20).atTime(18, 0)
     private val saturday: LocalDateTime = LocalDate.of(2026, 7, 25).atTime(18, 0)
 
-    private fun config(policies: Map<String, CategoryPolicy>, calendar: SchoolCalendar = SchoolCalendar()) =
-        FamilyConfig(version = 1, assignments = emptyMap(), policies = policies, calendar = calendar)
-
-    private fun budget(vararg perDay: Pair<DayType, Long>) =
-        CategoryPolicy(dailyBudget = perDay.associate { it.first to Duration.ofMinutes(it.second) })
+    private fun config(vararg perDay: Pair<DayType, Long>, calendar: SchoolCalendar = SchoolCalendar()) =
+        FamilyConfig(
+            version = 1,
+            defaultAppBudget = perDay.associate { it.first to Duration.ofMinutes(it.second) },
+            calendar = calendar,
+        )
 
     @Test
-    fun `sums remaining across budgeted categories for today's day type`() {
-        val config = config(
-            mapOf(
-                "games" to budget(DayType.SCHOOL to 30, DayType.WEEKEND to 120),
-                "video" to budget(DayType.SCHOOL to 60),
-            ),
-        )
-        val remaining = ChildStats.remainingToday(
-            config, monday,
-            usage = mapOf("games" to Duration.ofMinutes(10)),
-            extra = emptyMap(),
-        )
-        assertEquals(Duration.ofMinutes(20 + 60), remaining)
+    fun `the default limit for today is what the dashboard reports`() {
+        val config = config(DayType.SCHOOL to 30, DayType.WEEKEND to 120)
+        assertEquals(Duration.ofMinutes(30), ChildStats.defaultBudgetToday(config, monday))
+        assertEquals(Duration.ofMinutes(120), ChildStats.defaultBudgetToday(config, saturday))
     }
 
     @Test
-    fun `weekends use the weekend slice`() {
-        val config = config(mapOf("games" to budget(DayType.SCHOOL to 30, DayType.WEEKEND to 120)))
-        assertEquals(Duration.ofMinutes(120), ChildStats.remainingToday(config, saturday, emptyMap(), emptyMap()))
-    }
-
-    @Test
-    fun `extra time (own category and all-apps) extends the remaining`() {
-        val config = config(mapOf("games" to budget(DayType.SCHOOL to 30)))
-        val remaining = ChildStats.remainingToday(
-            config, monday,
-            usage = mapOf("games" to Duration.ofMinutes(30)),
-            extra = mapOf("games" to Duration.ofMinutes(15), ExtraTime.ALL_APPS to Duration.ofMinutes(5)),
-        )
-        assertEquals(Duration.ofMinutes(20), remaining)
-    }
-
-    @Test
-    fun `an exhausted category contributes zero, not a negative`() {
-        val config = config(
-            mapOf(
-                "games" to budget(DayType.SCHOOL to 30),
-                "video" to budget(DayType.SCHOOL to 60),
-            ),
-        )
-        val remaining = ChildStats.remainingToday(
-            config, monday,
-            usage = mapOf("games" to Duration.ofMinutes(90)),
-            extra = emptyMap(),
-        )
-        assertEquals(Duration.ofMinutes(60), remaining)
-    }
-
-    @Test
-    fun `no budget today means null (no limit), not zero`() {
-        val unlimitedToday = config(mapOf("games" to budget(DayType.WEEKEND to 120)))
-        assertNull(ChildStats.remainingToday(unlimitedToday, monday, emptyMap(), emptyMap()))
-        assertNull(ChildStats.remainingToday(config(emptyMap()), monday, emptyMap(), emptyMap()))
+    fun `no default today means null (no limit), not zero`() {
+        assertNull(ChildStats.defaultBudgetToday(config(DayType.WEEKEND to 120), monday))
+        assertNull(ChildStats.defaultBudgetToday(config(), monday))
     }
 
     @Test
     fun `a calendar special day resolves to the holiday slice`() {
         val config = config(
-            mapOf("games" to budget(DayType.SCHOOL to 30, DayType.WEEKEND to 120, DayType.HOLIDAY to 120)),
+            DayType.SCHOOL to 30, DayType.WEEKEND to 120, DayType.HOLIDAY to 90,
             calendar = SchoolCalendar(holidays = setOf(monday.toLocalDate())),
         )
-        assertEquals(Duration.ofMinutes(120), ChildStats.remainingToday(config, monday, emptyMap(), emptyMap()))
+        assertEquals(Duration.ofMinutes(90), ChildStats.defaultBudgetToday(config, monday))
     }
 
     // --- Which clock the parent reads a child by (see ChildStats.localNow) ---
@@ -170,11 +126,11 @@ class ChildStatsTest {
     }
 
     @Test
-    fun `the child's own clock picks the day type its budget is on`() {
+    fun `the child's own clock picks the day type the limit is on`() {
         // The consequence that reaches the screen: past the Friday cut in Tokyo, still before it
-        // in Madrid. Read by the parent's clock the card understates the budget by 90 minutes.
+        // in Madrid. Read by the parent's clock the card understates the limit by 90 minutes.
         val config = config(
-            mapOf("games" to budget(DayType.SCHOOL to 30, DayType.WEEKEND to 120)),
+            DayType.SCHOOL to 30, DayType.WEEKEND to 120,
             calendar = SchoolCalendar(weekendStartsFriday = LocalTime.of(14, 0)),
         )
         val instant = LocalDate.of(2026, 7, 24).atTime(11, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
@@ -182,29 +138,22 @@ class ChildStatsTest {
 
         assertEquals(
             Duration.ofMinutes(30),
-            ChildStats.remainingToday(config, ChildStats.localNow(null, instant, parentNow), emptyMap(), emptyMap()),
+            ChildStats.defaultBudgetToday(config, ChildStats.localNow(null, instant, parentNow)),
         )
         assertEquals(
             Duration.ofMinutes(120),
-            ChildStats.remainingToday(config, ChildStats.localNow(tokyo, instant, parentNow), emptyMap(), emptyMap()),
+            ChildStats.defaultBudgetToday(config, ChildStats.localNow(tokyo, instant, parentNow)),
         )
     }
 
     @Test
-    fun `the Friday weekend edge switches the budget the dashboard reports`() {
+    fun `the Friday weekend edge switches the limit the dashboard reports`() {
         val config = config(
-            mapOf("games" to budget(DayType.SCHOOL to 30, DayType.WEEKEND to 120)),
+            DayType.SCHOOL to 30, DayType.WEEKEND to 120,
             calendar = SchoolCalendar(weekendStartsFriday = LocalTime.of(14, 0)),
         )
         val friday = LocalDate.of(2026, 7, 24)
-        val used = mapOf("games" to Duration.ofMinutes(20))
-        assertEquals(
-            Duration.ofMinutes(10),
-            ChildStats.remainingToday(config, friday.atTime(9, 0), used, emptyMap()),
-        )
-        assertEquals(
-            Duration.ofMinutes(100),
-            ChildStats.remainingToday(config, friday.atTime(15, 0), used, emptyMap()),
-        )
+        assertEquals(Duration.ofMinutes(30), ChildStats.defaultBudgetToday(config, friday.atTime(9, 0)))
+        assertEquals(Duration.ofMinutes(120), ChildStats.defaultBudgetToday(config, friday.atTime(15, 0)))
     }
 }

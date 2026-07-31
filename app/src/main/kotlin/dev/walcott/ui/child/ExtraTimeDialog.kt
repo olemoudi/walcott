@@ -24,7 +24,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
 import dev.walcott.ui.components.MinutesChips
-import dev.walcott.ui.CategoryStatusUi
+import dev.walcott.ui.AppStatusUi
 import dev.walcott.ui.WalcottViewModel
 import kotlinx.coroutines.launch
 
@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ExtraTimeDialog(
     viewModel: WalcottViewModel,
-    card: CategoryStatusUi,
+    card: AppStatusUi,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -43,7 +43,7 @@ fun ExtraTimeDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.extra_title, stringResource(card.category.nameRes))) },
+        title = { Text(stringResource(R.string.extra_title, card.label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.extra_how_much), style = MaterialTheme.typography.bodyMedium)
@@ -76,7 +76,7 @@ fun ExtraTimeDialog(
                         val ok = viewModel.verifyPin(pin) is dev.walcott.data.PinResult.Ok
                         checking = false
                         if (ok) {
-                            viewModel.grantExtra(card.category.id, minutes.toLong())
+                            viewModel.grantExtra(card.packageName, minutes.toLong())
                             onDismiss()
                         } else {
                             error = true

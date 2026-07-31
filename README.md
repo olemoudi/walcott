@@ -36,9 +36,14 @@ may offer to scan it first — that is normal for any app installed this way.
 
 ## What it does
 
-**Time limits that understand the week.** Apps are grouped into categories (games, video,
-social…), and each category gets its own daily budget per kind of day: school days, weekends,
-and special days. Bedtime is per kind of day too.
+**Time limits that understand the week.** Any app can have its own daily limit, and each limit
+is per kind of day: school days, weekends, and special days. Bedtime is per kind of day too.
+There are no categories to sort apps into — a newly installed app simply has no limit until you
+give it one.
+
+**An optional limit for every app.** If you want one, set a daily limit that every app gets
+unless you have given it its own. Each app spends it on its own clock: an hour of one doesn't
+eat another's. It is off by default, and only the most detailed guided setup asks about it.
 
 **Special days.** Mark a holiday, a school break, or a birthday, and the rules for that day
 change automatically. A special day can apply to the whole family or to one child only — a
@@ -51,10 +56,11 @@ app, on the days you choose.
 notification and approve or deny with one tap. You can also hand out bonus time unprompted.
 
 **Earned time.** Optionally, time spent off the phone during set hours converts into extra
-screen time — putting it down is worth something.
+screen time for every app — putting it down is worth something.
 
-**Per-app rules.** Any single app can have its own budget and its own blocked hours, on top of
-its category's.
+**Per-app rules.** Any single app can have its own blocked hours as well as its own limit —
+and one app can be marked "never limit this", so a bus timetable or a chat with you is always
+reachable.
 
 **Web filtering.** Block specific domains without root, using a local VPN that only inspects
 DNS. You can see what a child's app is actually contacting and block it from there.

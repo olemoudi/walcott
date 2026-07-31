@@ -29,18 +29,21 @@ class PolicyCorpusTest {
             val config = case.config
             note("bedtime", config.bedtime.isNotEmpty())
             note("family windows", config.blockedWindows.values.any { it.isNotEmpty() })
-            note("category budget", config.policies.values.any { it.dailyBudget.isNotEmpty() })
-            note("category window", config.policies.values.any { it.blockedWindows.isNotEmpty() })
+            note("default budget", config.defaultAppBudget.isNotEmpty())
             note("per-app budget", config.perAppPolicies.values.any { it.dailyBudget.isNotEmpty() })
             note("per-app window", config.perAppPolicies.values.any { it.blockedWindows.isNotEmpty() })
-            note("zero budget", config.policies.values.any { p -> p.dailyBudget.values.any { it.isZero } })
+            note("app set free", config.perAppPolicies.values.any { it.unlimited })
+            note(
+                "zero budget",
+                config.perAppPolicies.values.any { p -> p.dailyBudget.values.any { it.isZero } },
+            )
             note("holiday", config.calendar.holidays.isNotEmpty())
             note("vacation", config.calendar.vacations.isNotEmpty())
             note("weekend starts Friday", config.calendar.weekendStartsFriday != null)
             note("weekend ends Sunday", config.calendar.weekendEndsSunday != null)
             note("own special-day budget", case.settings.specialDaysOwnRules)
             note("child overrides", case.settings.children.any { !it.overrides.isEmpty })
-            note("unclassified app", PolicyFuzz.MANAGED.any { it !in config.assignments })
+            note("app with no rules", PolicyFuzz.MANAGED.any { it !in config.perAppPolicies })
             val allWindows = config.blockedWindows.values.flatten() +
                 config.perAppPolicies.values.flatMap { it.blockedWindows.values.flatten() }
             note("day-of-week mask", allWindows.any { it.days.isNotEmpty() })
@@ -93,10 +96,10 @@ class PolicyCorpusTest {
     private companion object {
         /** Every trait the corpus is expected to keep producing, so a silent drop fails loudly. */
         val EXPECTED_TRAITS = setOf(
-            "bedtime", "family windows", "category budget", "category window",
-            "per-app budget", "per-app window", "zero budget", "holiday", "vacation",
+            "bedtime", "family windows", "default budget",
+            "per-app budget", "per-app window", "app set free", "zero budget", "holiday", "vacation",
             "weekend starts Friday", "weekend ends Sunday", "own special-day budget",
-            "child overrides", "unclassified app", "day-of-week mask", "skips special days",
+            "child overrides", "app with no rules", "day-of-week mask", "skips special days",
             "midnight-crossing window",
         )
     }

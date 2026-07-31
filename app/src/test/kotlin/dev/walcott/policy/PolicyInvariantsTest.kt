@@ -4,13 +4,13 @@ import dev.walcott.data.PolicySettings
 import dev.walcott.data.withHolidayMirroringWeekend
 import dev.walcott.enforcement.Enforcer
 import dev.walcott.rules.BlockReason
-import dev.walcott.rules.CategoryState
+import dev.walcott.rules.AppState
 import dev.walcott.rules.DayType
 import dev.walcott.rules.ExtraTime
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.rules.RuleEngine
 import dev.walcott.rules.Verdict
-import dev.walcott.rules.categoryStatus
+import dev.walcott.rules.appStatus
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -69,7 +69,7 @@ class PolicyInvariantsTest {
             runCatching {
                 RuleEngine.blockedPackages(config, PolicyFuzz.MANAGED, now, usage)
                 PolicyFuzz.MANAGED.forEach { RuleEngine.evaluate(config, it, now, usage) }
-                PolicyFuzz.CATEGORY_IDS.forEach { RuleEngine.categoryStatus(config, it, now, usage) }
+                PolicyFuzz.MANAGED.forEach { RuleEngine.appStatus(config, it, now, usage) }
             }.onFailure { error("$case at $now threw ${it::class.simpleName}: ${it.message}") }
         }
     }
@@ -119,7 +119,7 @@ class PolicyInvariantsTest {
         // has to make the counter mandatory, or revoking usage access grants unlimited time.
         for (case in cases) {
             val config = case.config
-            val hasBudget = config.policies.values.any { it.dailyBudget.isNotEmpty() } ||
+            val hasBudget = config.defaultAppBudget.isNotEmpty() ||
                 config.perAppPolicies.values.any { it.dailyBudget.isNotEmpty() }
             assertEquals(
                 hasBudget,
@@ -135,7 +135,8 @@ class PolicyInvariantsTest {
             val config = case.config
             val hasTimeRule = config.bedtime.isNotEmpty() ||
                 config.blockedWindows.values.any { it.isNotEmpty() } ||
-                (config.policies.values + config.perAppPolicies.values)
+                config.defaultAppBudget.isNotEmpty() ||
+                config.perAppPolicies.values
                     .any { it.dailyBudget.isNotEmpty() || it.blockedWindows.isNotEmpty() }
             assertEquals(
                 hasTimeRule,
@@ -166,20 +167,42 @@ class PolicyInvariantsTest {
     }
 
     @Test
-    fun `an app's own rules can only ever tighten its category`() {
-        // The claim in FamilyConfig.perAppPolicies' own docs. If a per-app rule could ever
-        // WIDEN what an app may do, it would be a hole a parent opened by accident.
+    fun `an app's own rules only ever affect that app`() {
+        // A per-app rule may now be LOOSER than the family default (that is the point of
+        // setting one), so the old "can only tighten" claim is gone. What must still hold is
+        // containment: whatever is set for one app cannot change the answer for another.
         for (case in cases) {
             val withOwn = case.config
-            val withoutOwn = PolicyFuzz.configFor(case.settings.copy(appPolicies = emptyMap()), case.childId)
+            val subject = PolicyFuzz.APPS.first()
+            val withoutSubject = PolicyFuzz.configFor(
+                case.settings.copy(appPolicies = case.settings.appPolicies - subject),
+                case.childId,
+            )
             for (now in PolicyFuzz.INSTANTS) {
                 for (pkg in PolicyFuzz.MANAGED) {
-                    val allowedWithOwn = RuleEngine.evaluate(withOwn, pkg, now) !is Verdict.Blocked
-                    val allowedWithout = RuleEngine.evaluate(withoutOwn, pkg, now) !is Verdict.Blocked
-                    if (allowedWithOwn) {
-                        assertTrue(allowedWithout, "$case at $now: $pkg is allowed only BECAUSE of its own rules")
-                    }
+                    if (pkg == subject) continue
+                    assertEquals(
+                        RuleEngine.evaluate(withoutSubject, pkg, now),
+                        RuleEngine.evaluate(withOwn, pkg, now),
+                        "$case at $now: a rule on $subject changed the verdict for $pkg",
+                    )
                 }
+            }
+        }
+    }
+
+    @Test
+    fun `an app set free of the default is never blocked by a budget`() {
+        // The escape hatch has to actually escape: bedtime and windows still apply, but no
+        // amount of usage may exhaust an app the parent marked as never-limited.
+        forEachUsage { case, config, now, usage ->
+            for ((pkg, policy) in config.perAppPolicies) {
+                if (!policy.unlimited) continue
+                val verdict = RuleEngine.evaluate(config, pkg, now, usage)
+                assertTrue(
+                    (verdict as? Verdict.Blocked)?.reason != BlockReason.BUDGET_EXHAUSTED,
+                    "$case at $now: $pkg was set free of limits but ran out of time",
+                )
             }
         }
     }
@@ -191,11 +214,7 @@ class PolicyInvariantsTest {
                 val plain = RuleEngine.evaluate(config, pkg, now, usage)
                 val reason = (plain as? Verdict.Blocked)?.reason
                 if (reason == BlockReason.BEDTIME || reason == BlockReason.BLOCKED_WINDOW) {
-                    val categoryId = config.assignments[pkg]
-                    val everything = GRANT + buildMap {
-                        put(pkg, Duration.ofHours(10))
-                        if (categoryId != null) put(categoryId, Duration.ofHours(10))
-                    }
+                    val everything = GRANT + mapOf(pkg to Duration.ofHours(10))
                     assertEquals(
                         plain,
                         RuleEngine.evaluate(config, pkg, now, usage, extraTime = everything),
@@ -214,7 +233,7 @@ class PolicyInvariantsTest {
             val dayType = config.calendar.dayTypeOf(now)
             for ((pkg, policy) in config.perAppPolicies) {
                 val cap = policy.dailyBudget[dayType] ?: continue
-                val spent = mapOf(pkg to cap, config.categoryOf(pkg) to Duration.ZERO)
+                val spent = mapOf(pkg to cap)
                 val verdict = RuleEngine.evaluate(config, pkg, now, usageToday = spent, extraTime = GRANT)
                 assertTrue(
                     verdict is Verdict.Blocked,
@@ -225,17 +244,15 @@ class PolicyInvariantsTest {
     }
 
     @Test
-    fun `the child's category card never contradicts the enforcer`() {
+    fun `the child's app card never contradicts the enforcer`() {
         // A card reading "2h remaining" over an app that refuses to open is worse than a
-        // block. For an app carrying no rules of its own, the card and the verdict have to
-        // agree — same blocked-ness, same reason.
+        // block: the card and the verdict have to agree — same blocked-ness, same reason.
         forEachUsage { case, config, now, usage ->
-            for ((pkg, categoryId) in config.assignments) {
-                if (pkg in config.perAppPolicies) continue // its own rules may tighten past the card
-                val card = RuleEngine.categoryStatus(config, categoryId, now, usage)
+            for (pkg in PolicyFuzz.MANAGED) {
+                val card = RuleEngine.appStatus(config, pkg, now, usage)
                 val verdict = RuleEngine.evaluate(config, pkg, now, usage)
                 assertEquals(
-                    card.state == CategoryState.BLOCKED,
+                    card.state == AppState.BLOCKED,
                     verdict is Verdict.Blocked,
                     "$case at $now (usage $usage): card says ${card.state} but $pkg is $verdict",
                 )

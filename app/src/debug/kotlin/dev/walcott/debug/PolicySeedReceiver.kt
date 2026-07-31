@@ -248,7 +248,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * Optional extras drive the reliability UI on a single emulator: `--es child_gaps a,b`
      * (failed self-test), `--el child_skew_ms N` (clock tamper), `--es child_update_error e`
      * (e.g. waiting_parent), `--ez child_diag true` (a synthesized health report),
-     * `--es child_usage "games=1800,video=600"` (today's per-category seconds),
+     * `--es child_usage "com.whatsapp=1800,com.roblox=600"` (today's per-app seconds),
      * `--ei child_history_days N` (a ledger of N past days, for the dashboard average),
      * `--ez child_feed true` (a handful of activity-feed entries for the wall),
      * `--ei child_tz_offset_min N` (a child in another timezone, reporting its own day).
@@ -336,7 +336,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
             val history = (1..historyDays).map { d ->
                 dev.walcott.sync.DayUsage(
                     today - d,
-                    listOf(dev.walcott.sync.UsageEntry("games", 5400L + (d % 5) * 900L)),
+                    listOf(dev.walcott.sync.UsageEntry("com.seeded.app", 5400L + (d % 5) * 900L)),
                 )
             }
             val key = dev.walcott.sync.UsageLedger.keyOf(childId, snapshot.deviceId)

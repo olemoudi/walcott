@@ -46,31 +46,12 @@ object ChildStats {
     ): Boolean = epochDay == localNow(tzOffsetMinutes, nowMs, parentNow).toLocalDate().toEpochDay()
 
     /**
-     * Screen time the child can still use today: the sum of every budgeted category's
-     * remaining time (categories are independent caps, so the sum is the true maximum).
-     * Deliberately ignores bedtime/blocked windows — this is "budget left for the day",
-     * not "can they use it this second". Null when no category has a budget today.
+     * The limit an app gets today unless something was set for it, or null when the family has
+     * no default. What replaced "time left today": with a per-app allowance there is no single
+     * number left to show — an unused app still has its full hour, so summing them would report
+     * a day's worth of screen time per installed app. The number a parent can actually act on is
+     * the allowance itself, and the child's own screen shows what is left app by app.
      */
-    fun remainingToday(
-        config: FamilyConfig,
-        /** Wall clock, not just the date: with a weekend edge set, the day type flips mid-day. */
-        now: LocalDateTime,
-        usage: Map<String, Duration>,
-        extra: Map<String, Duration>,
-    ): Duration? {
-        val dayType = config.calendar.dayTypeOf(now)
-        var anyBudget = false
-        var total = Duration.ZERO
-        for ((categoryId, policy) in config.policies) {
-            val budget = policy.dailyBudget[dayType] ?: continue
-            anyBudget = true
-            // Same arithmetic as RuleEngine.categoryStatus: base + global extra + own extra − used.
-            val remaining = budget +
-                (extra[ExtraTime.ALL_APPS] ?: Duration.ZERO) +
-                (extra[categoryId] ?: Duration.ZERO) -
-                (usage[categoryId] ?: Duration.ZERO)
-            if (remaining > Duration.ZERO) total += remaining
-        }
-        return if (anyBudget) total else null
-    }
+    fun defaultBudgetToday(config: FamilyConfig, now: LocalDateTime): Duration? =
+        config.defaultAppBudget[config.calendar.dayTypeOf(now)]
 }

@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.rules.DayType
 import dev.walcott.ui.WalcottViewModel
@@ -70,7 +69,6 @@ fun AppDetailScreen(
     val rows by viewModel.appRows.collectAsStateWithLifecycle()
     val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
     val label = rows.firstOrNull { it.app.packageName == packageName }?.app?.label ?: packageName
-    val categoryId = settings.assignments[packageName]
     val appPolicy = if (childId == null) {
         settings.appPolicies[packageName]
     } else {
@@ -107,35 +105,6 @@ fun AppDetailScreen(
                 }
             }
 
-            item { SectionTitle(stringResource(R.string.classify_into)) }
-            if (childId == null) {
-                item {
-                    CategorySelector(
-                        current = categoryId,
-                        onPick = { category ->
-                            if (category == null) viewModel.unassign(packageName)
-                            else viewModel.assign(packageName, category.id)
-                        },
-                    )
-                }
-            } else {
-                // The category is the app's family-wide identity; only the limits are per-child.
-                item {
-                    Text(
-                        AppCategory.byId(categoryId ?: "")?.let { stringResource(it.nameRes) }
-                            ?: stringResource(R.string.unclassified_blocked),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-                item {
-                    Text(
-                        stringResource(R.string.app_category_family_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
             item { SectionTitle(stringResource(R.string.app_own_limit), AppRestriction.OWN_BUDGET, restrictions) }
             item {
                 Text(
@@ -143,6 +112,26 @@ fun AppDetailScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            // The third state, and the only way to say "never cut this one off" without turning
+            // the family default off for everybody (see AppPolicyDto.unlimited).
+            item {
+                WalcottCard {
+                    Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.app_no_limit_ever), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                stringResource(R.string.app_no_limit_ever_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = appPolicy?.unlimited == true,
+                            onCheckedChange = { viewModel.setAppUnlimited(packageName, it, childId) },
+                        )
+                    }
+                }
             }
             item {
                 PerDayBudgetCard(
@@ -208,47 +197,6 @@ private fun SectionTitle(text: String, restriction: AppRestriction? = null, acti
             Spacer(Modifier.width(Tokens.spacing.sm))
         }
         Text(text, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-@Composable
-private fun CategorySelector(current: String?, onPick: (AppCategory?) -> Unit) {
-    WalcottCard {
-        Column(Modifier.padding(Tokens.spacing.md), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            // No "unclassified (block)" option any more: unassigned IS General, and blocking
-            // an app is its own explicit act (the Blocked chip in the per-app limit below).
-            AppCategory.entries.forEach { category ->
-                CategoryOptionRow(
-                    color = category.color,
-                    label = stringResource(category.nameRes),
-                    selected = current == category.id || (current == null && category == AppCategory.OTHER),
-                    onClick = { onPick(category) },
-                    icon = { Icon(category.icon, contentDescription = null, tint = category.color) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CategoryOptionRow(
-    color: androidx.compose.ui.graphics.Color,
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    icon: @Composable () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
-        color = if (selected) color.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(Tokens.spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            icon()
-            Spacer(Modifier.width(Tokens.spacing.md))
-            Text(label, style = MaterialTheme.typography.bodyLarge)
-        }
     }
 }
 

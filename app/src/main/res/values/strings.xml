@@ -22,14 +22,11 @@
 
     <!-- Category status -->
     <string name="status_available">Available</string>
-    <string name="status_free">Free</string>
     <string name="status_blocked">Blocked</string>
     <string name="label_remaining">remaining</string>
-    <string name="no_limit_today">No limit today</string>
     <string name="reason_bedtime">It\'s bedtime</string>
     <string name="reason_blocked_window">Not available at this time</string>
     <string name="reason_budget_exhausted">Out of time for today</string>
-    <string name="reason_unclassified">Not set up yet</string>
     <string name="reason_fail_closed">Locked until this phone is fixed</string>
     <string name="request_more_time">Ask for more time</string>
 
@@ -73,23 +70,21 @@
     <string name="parent_mode">Parent mode</string>
     <string name="protection_active">Protection active (Device Owner)</string>
     <string name="protection_inactive">No Device Owner: blocking isn\'t guaranteed</string>
-    <string name="nav_apps_title">Apps and categories</string>
+    <string name="nav_apps_title">Apps and limits</string>
     <string name="apps_filter_all">All</string>
-    <string name="nav_apps_subtitle">See every app; new ones land in General, usable under the general limit</string>
+    <string name="nav_apps_subtitle">Every app your children have, and the daily limit each one has</string>
     <string name="nav_limits_title">Limits and schedules</string>
     <string name="nav_limits_subtitle">Daily budget per category and bedtime</string>
     <!-- App assignment -->
     <string name="apps_no_remote">No apps reported yet. They\'ll appear here once your children\'s devices sync.</string>
     <string name="search_app">Search app</string>
-    <string name="unclassified_blocked">General</string>
-    <string name="classify_into">Classify into…</string>
 
     <!-- Budgets & schedules -->
     <string name="from">From</string>
     <string name="to">To</string>
     <string name="bedtime_start_title">Goes to sleep</string>
     <string name="bedtime_end_title">Wakes up</string>
-    <string name="daily_budget_header">General daily limit</string>
+    <string name="daily_budget_header">Daily limit per app</string>
     <string name="special_days_note_short">Which days those are is set in Special days.</string>
     <string name="special_days_note_action">Info</string>
     <string name="special_days_note_open">Open Special days</string>
@@ -114,13 +109,7 @@
     <string name="increment">More</string>
 
     <!-- Categories -->
-    <string name="category_games">Games</string>
-    <string name="category_social">Social</string>
-    <string name="category_video">Video</string>
-    <string name="category_education">Education</string>
-    <string name="category_creative">Creativity</string>
     <!-- The default bucket every unassigned app falls into (wire id stays "other"). -->
-    <string name="category_other">General</string>
 
     <!-- Enforcement service -->
     <string name="service_channel_name">Walcott protection</string>
@@ -184,7 +173,6 @@
     <string name="reason_optional">Reason (optional)</string>
 
     <!-- Phase 3: earned time, calendar, weekly report -->
-    <string name="earned_bonus">🎁 +%1$s earned</string>
     <string name="nav_earn_title">Earned time</string>
     <string name="nav_earn_subtitle">Turn learning time into extra playtime</string>
     <string name="nav_calendar_title">Special days</string>
@@ -285,7 +273,6 @@
     <string name="override_budgets_title">Custom budgets</string>
     <string name="override_apps_title">Custom app limits</string>
     <string name="override_windows_title">Custom screen-free times</string>
-    <string name="app_category_family_note">The category is set for the whole family; only the limits below are this child\'s own.</string>
     <string name="last_7_days">Last 7 days</string>
 
     <!-- Location tracking -->
@@ -611,7 +598,6 @@
     <string name="install_share_title">Install on a child</string>
     <string name="install_share_app">App: %1$s</string>
     <string name="install_share_pick_child">On which child?</string>
-    <string name="install_share_pick_category">Category (optional)</string>
     <string name="install_share_send">Send</string>
     <string name="install_share_sent">Sent to %1$s</string>
     <string name="install_share_bad_link">Couldn\'t read the app link. Share the app\'s full Play Store page.</string>
@@ -634,7 +620,6 @@
     <string name="wrong_app_text">They installed %1$s instead of the approved app. It has been removed.</string>
     <string name="event_wrong_app">%1$s installed %2$s without approval — it was removed</string>
     <!-- Child home: the per-app limit cards -->
-    <string name="app_card_remaining">%1$s left today</string>
     <string name="app_card_blocked">Not available right now</string>
     <string name="ask_install_hint">Approving installs only this app; everything else stays blocked.</string>
     <string name="install_channel_name">App install requests</string>
@@ -684,7 +669,6 @@
     <string name="earn_window_hours">Rolling window</string>
     <string name="earn_window_cap">Max earned per window</string>
     <string name="earn_weekly_cap">Max earned per week</string>
-    <string name="earn_target_title">Extra time goes to</string>
     <string name="earn_windows_title">When can they earn?</string>
     <string name="earn_windows_hint">Turn a day on to earn only during those hours (e.g. after school). Off = earns any time that day.</string>
     <string name="earn_window_all_day">Earns any time</string>
@@ -819,7 +803,6 @@
     <string name="event_remote_failed">%1$s: failed — %2$s</string>
     <!-- Child dashboard (top of the child detail) -->
     <string name="dashboard_used_today">Used today</string>
-    <string name="dashboard_remaining">Left today</string>
     <string name="dashboard_avg7">7-day average</string>
     <string name="dashboard_avg30">30-day average</string>
     <plurals name="dashboard_avg_days">
@@ -969,9 +952,6 @@
     <string name="calendar_scope_title">Who is this day for?</string>
     <string name="calendar_scope_hint">Tick nobody for the whole family, or pick the children it belongs to — a birthday is only theirs.</string>
     <string name="calendar_scope_everyone">Everyone</string>
-    <string name="general_budget_hint">Counts every app that isn\'t in a category of its own.</string>
-    <string name="budgets_categories_fold_title">Category limits</string>
-    <string name="budgets_categories_fold_subtitle">Optional: separate budgets for games, social, video…</string>
     <string name="nav_family_settings_title">All family settings</string>
     <string name="nav_family_settings_subtitle">Apps, web filter, protection, location, reports…</string>
     <!-- Several families on one parent phone -->
@@ -1004,4 +984,13 @@
     <string name="remove_family_title">Stop managing %1$s?</string>
     <string name="remove_family_text">This phone forgets the family: its rules, its children and its history. It does NOT free the children — their phones keep enforcing the rules they last received, and nobody will be able to change them from here. Save a backup first if you might want the family back.</string>
     <string name="remove_family_action">Stop managing</string>
+    <string name="default_budget_title">Every app</string>
+    <string name="default_budget_hint">Optional, and off by default. Each app gets this much a day on its own clock — an hour of one does not eat another’s. Apps you give their own limit ignore it.</string>
+    <string name="app_limit_own">Own limit: %1$s a day</string>
+    <string name="app_limit_default">Family default: %1$s a day</string>
+    <string name="app_limit_none">No limit</string>
+    <string name="app_limit_none_ever">No limit, ever</string>
+    <string name="app_no_limit_ever">Never limit this app</string>
+    <string name="app_no_limit_ever_hint">It ignores the family default. Bedtime and screen-free times still apply.</string>
+    <string name="dashboard_default_limit">Limit per app</string>
 </resources>

@@ -3,16 +3,15 @@ package dev.walcott.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import dev.walcott.AppCategory
+import dev.walcott.data.AppPolicyDto
 import dev.walcott.data.InstalledApp
 import dev.walcott.data.PolicySettings
 import dev.walcott.data.WalcottRepository
 import dev.walcott.data.withBudget
 import dev.walcott.data.withSpecialDaysOwnRules
-import dev.walcott.rules.CategoryStatus
 import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
-import dev.walcott.rules.categoryStatus
+import dev.walcott.rules.appStatus
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
@@ -28,19 +27,18 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
 
-data class CategoryStatusUi(
-    val category: AppCategory,
-    val status: CategoryStatus,
-    val earned: Duration = Duration.ZERO,
-)
-
-/** One app with its own daily limit, for the child home's per-app cards. */
+/** One app with a limit today, for the child home's cards. */
 data class AppStatusUi(
     val packageName: String,
     val label: String,
-    /** Time left right now (min of its own cap and its category's); null when blocked. */
+    /** Today's limit for this app: its own, or the family default. */
+    val budget: Duration,
+    val used: Duration,
+    /** Time left right now; null when blocked. */
     val remaining: Duration?,
     val blocked: Boolean,
+    /** True when this app is running on the family default rather than a limit of its own. */
+    val fromDefault: Boolean,
 )
 
 data class ChildUiState(
@@ -48,14 +46,18 @@ data class ChildUiState(
     val bedtimeActive: Boolean = false,
     /** Today's configured bedtime window, if any (for the "bedtime tonight" row). */
     val bedtimeTonight: dev.walcott.rules.TimeWindow? = null,
-    val categories: List<CategoryStatusUi> = emptyList(),
-    /** Apps with their own daily limit — the general/per-app posture's first-class cards. */
+    /** Apps with a limit today — their own or the family default — busiest first. */
     val apps: List<AppStatusUi> = emptyList(),
+    /** The limit every app gets today unless something was set for it; null when there is none. */
+    val defaultBudget: Duration? = null,
+    /** Minutes earned by staying off the phone today; they widen every app's allowance. */
+    val earnedMinutes: Int = 0,
 )
 
+/** One app in the parent's list, with whatever was set for it (null = the family default). */
 data class AppRow(
     val app: InstalledApp,
-    val categoryId: String?,
+    val policy: AppPolicyDto?,
     /** Which children have this app installed (registry name, legacy device name as fallback). */
     val owners: List<dev.walcott.data.AppCatalog.Owner> = emptyList(),
 )
@@ -102,9 +104,8 @@ class WalcottViewModel(
     fun allowInstallsFor(durationMs: Long) = viewModelScope.launch { sync.allowInstallsFor(durationMs) }
     fun endInstallExemption() = viewModelScope.launch { sync.endInstallExemption() }
 
-    /** Approves a child's one-app install request: classify (optional), resolve, push. */
-    fun approveInstallAsk(requestId: String, categoryId: String?) =
-        viewModelScope.launch { sync.approveInstallAsk(requestId, categoryId) }
+    /** Approves a child's one-app install request: resolve and push the single-app install. */
+    fun approveInstallAsk(requestId: String) = viewModelScope.launch { sync.approveInstallAsk(requestId) }
 
     // --- Domain monitor: the child device, driven by a parent holding it ---
 
@@ -339,23 +340,23 @@ class WalcottViewModel(
 
     // --- Guided setup (presets) ---
 
-    /** Caps every leisure category at [minutes] per day, all day types (null removes the caps). */
     /**
-     * The wizard's leisure cap. [weekdaysOnly] once the family has said weekends are different,
-     * so the weekend step's value isn't overwritten when the parent walks back a step.
+     * The wizard's one budget question: the limit every app gets unless something is set for it.
+     * [weekdaysOnly] once the family has said weekends are different, so the weekend step's
+     * value isn't overwritten when the parent walks back a step.
      */
-    fun setLeisureBudget(minutes: Int?, weekdaysOnly: Boolean = false) = viewModelScope.launch {
+    fun setDefaultBudgetPreset(minutes: Int?, weekdaysOnly: Boolean = false) = viewModelScope.launch {
         repository.updateSettings {
             if (weekdaysOnly) {
-                dev.walcott.data.SetupPresets.withWeekdayLeisureBudget(it, minutes)
+                dev.walcott.data.SetupPresets.withWeekdayDefaultBudget(it, minutes)
             } else {
-                dev.walcott.data.SetupPresets.withLeisureBudget(it, minutes)
+                dev.walcott.data.SetupPresets.withDefaultBudget(it, minutes)
             }
         }
     }
 
-    fun setWeekendLeisureBudget(minutes: Int?) = viewModelScope.launch {
-        repository.updateSettings { dev.walcott.data.SetupPresets.withWeekendLeisureBudget(it, minutes) }
+    fun setWeekendDefaultBudget(minutes: Int?) = viewModelScope.launch {
+        repository.updateSettings { dev.walcott.data.SetupPresets.withWeekendDefaultBudget(it, minutes) }
     }
 
     /** "Weekends are the same as weekdays": one cap for every day, both edges back to midnight. */
@@ -616,73 +617,47 @@ class WalcottViewModel(
     fun denyPanic(deviceId: String, requestId: String) =
         viewModelScope.launch { sync.denyPanicRequest(deviceId, requestId) }
 
-    /** The idle-earn target category id (or "") so childState can attribute earned minutes. */
-    private val settingsFlowForEarn: kotlinx.coroutines.flow.Flow<String> =
-        repository.settingsFlow.map { it.idleEarn?.targetCategoryId ?: "" }
-
     val childState: StateFlow<ChildUiState> = combine(
         repository.familyConfigFlow,
         repository.usageTodayFlow,
         repository.effectiveExtraTodayFlow,
-        combine(sync.earnedTodayMinutes, settingsFlowForEarn) { minutes, target -> Pair(minutes, target) },
+        sync.earnedTodayMinutes,
         combine(clock, clockTampered) { now, tampered -> Pair(now, tampered) },
-    ) { config, usage, effectiveExtra, earnedPair, clockPair ->
-        val earnedMinutes = earnedPair.first
-        val earnTarget = earnedPair.second
+    ) { config, usage, effectiveExtra, earnedMinutes, clockPair ->
         val now = clockPair.first
         val clockTampered = clockPair.second
         val dayType = config.calendar.dayTypeOf(now)
         val bedtimeTonight = config.bedtime[dayType]
         val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
 
-        // Show categories that have a defined budget/window or have apps assigned.
-        val relevantIds = buildSet {
-            addAll(config.assignments.values)
-            config.policies.forEach { (id, policy) ->
-                if (policy.dailyBudget.isNotEmpty() || policy.blockedWindows.isNotEmpty()) add(id)
-            }
-        }
-        val cards = relevantIds
-            .mapNotNull { id -> AppCategory.byId(id)?.let { it to id } }
-            .sortedBy { it.first.ordinal }
-            .map { (category, id) ->
-                CategoryStatusUi(
-                    category = category,
-                    status = RuleEngine.categoryStatus(
-                        config, id, now, usage, effectiveExtra,
-                        // Same fail-closed the enforcement loop applies, so the cards can't
-                        // promise time the device is refusing to hand out.
-                        failClosed = clockTampered && RuleEngine.requiresTrustedClock(config),
-                    ),
-                    // Idle-earned time all lands in the target category.
-                    earned = if (id == earnTarget) Duration.ofMinutes(earnedMinutes.toLong()) else Duration.ZERO,
-                )
-            }
-        // Apps with a limit of their own today — first-class cards, since the general/per-app
-        // posture makes these (not categories) the rules a family most often sets.
+        // The apps worth a card: everything with a limit today, out of the ones the child has
+        // actually used and the ones somebody set a rule for. With no family default that is
+        // just the capped apps; with one it is what they have been using — never the whole
+        // launcher, which is what listing "every app with a limit" would mean.
         val failClosed = clockTampered && RuleEngine.requiresTrustedClock(config)
-        val appCards = config.perAppPolicies
-            .filterValues { it.dailyBudget[dayType] != null }
-            .map { (pkg, _) ->
-                val verdict = if (failClosed) {
-                    dev.walcott.rules.Verdict.Blocked(dev.walcott.rules.BlockReason.FAIL_CLOSED)
-                } else {
-                    RuleEngine.evaluate(config, pkg, now, usage, effectiveExtra)
-                }
+        val appCards = (config.perAppPolicies.keys + usage.keys)
+            .filter { config.budgetFor(it, dayType) != null }
+            .map { pkg ->
+                val status = RuleEngine.appStatus(config, pkg, now, usage, effectiveExtra, failClosed)
                 AppStatusUi(
                     packageName = pkg,
                     label = repository.inventory.label(pkg) ?: pkg,
-                    remaining = (verdict as? dev.walcott.rules.Verdict.AllowedWithBudget)?.remaining,
-                    blocked = verdict is dev.walcott.rules.Verdict.Blocked,
+                    budget = status.budget ?: Duration.ZERO,
+                    used = status.used,
+                    remaining = status.remaining,
+                    blocked = status.state == dev.walcott.rules.AppState.BLOCKED,
+                    fromDefault = config.usesDefaultBudget(pkg),
                 )
             }
-            .sortedBy { it.label.lowercase() }
+            // Closest to running out first: that is the card the child came to look at.
+            .sortedWith(compareBy({ it.remaining ?: Duration.ZERO }, { it.label.lowercase() }))
         ChildUiState(
             loading = false,
             bedtimeActive = bedtimeActive,
             bedtimeTonight = bedtimeTonight,
-            categories = cards,
             apps = appCards,
+            defaultBudget = config.defaultAppBudget[dayType],
+            earnedMinutes = earnedMinutes,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 
@@ -693,29 +668,48 @@ class WalcottViewModel(
         repository.settingsFlow.map { it.pinHash != null }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    // Parent classifies the apps its children actually have installed (reported over sync),
-    // deduplicated across children but remembering WHO has each one (tags + per-child filter).
+    // The apps the children actually have installed (reported over sync), deduplicated across
+    // children but remembering WHO has each one (tags + per-child filter), each with the limit
+    // set for it — which is the only thing there is to say about an app now.
     val appRows: StateFlow<List<AppRow>> =
-        combine(children, repository.assignmentsFlow, settings) { snapshots, assignments, s ->
+        combine(children, settings) { snapshots, s ->
             dev.walcott.data.AppCatalog.build(snapshots, s.children.associate { it.childId to it.name })
                 .map {
-                    AppRow(InstalledApp(it.packageName, it.label, isSystem = false), assignments[it.packageName], it.owners)
+                    AppRow(
+                        InstalledApp(it.packageName, it.label, isSystem = false),
+                        s.appPolicies[it.packageName],
+                        it.owners,
+                    )
                 }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // --- Actions ---
 
-    fun assign(packageName: String, categoryId: String) =
-        viewModelScope.launch { repository.assign(packageName, categoryId) }
-
-    fun unassign(packageName: String) =
-        viewModelScope.launch { repository.unassign(packageName) }
-
-    fun setBudget(categoryId: String, dayType: DayType, minutes: Int?) = viewModelScope.launch {
-        repository.updateSettings { it.copy(budgets = it.budgets.withBudget(categoryId, dayType.name, minutes)) }
+    /**
+     * The limit every app gets unless something was set for it, for one day type ([minutes] null
+     * removes it). [childId] set edits that child's own default instead of the family's.
+     */
+    fun setDefaultBudget(dayType: DayType, minutes: Int?, childId: String? = null) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            if (childId == null) {
+                s.copy(defaultAppBudget = s.defaultAppBudget.withBudget(dayType.name, minutes))
+            } else {
+                s.copy(
+                    children = s.children.map { child ->
+                        if (child.childId != childId) child
+                        else child.copy(
+                            overrides = child.overrides.copy(
+                                defaultAppBudget = child.overrides.defaultAppBudget.orEmpty()
+                                    .withBudget(dayType.name, minutes),
+                            ),
+                        )
+                    },
+                )
+            }
+        }
     }
 
-    // --- Per-app policy (Apps & categories) ---
+    // --- Per-app limits ---
 
     /**
      * [childId] null edits the family map; set, it edits that child's [ChildOverrides.appPolicies]
@@ -777,6 +771,13 @@ class WalcottViewModel(
                 },
             )
         }
+
+    /**
+     * Sets this app free of the family default (or puts it back under it). Distinct from having
+     * no budget: "nothing set" follows the default, this ignores it.
+     */
+    fun setAppUnlimited(pkg: String, unlimited: Boolean, childId: String? = null) =
+        mutateAppPolicy(pkg, childId) { it.copy(unlimited = unlimited) }
 
     /** Set this app's own blocked windows (any number), applied to every day type. */
     fun setAppWindows(

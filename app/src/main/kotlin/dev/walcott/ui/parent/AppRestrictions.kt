@@ -17,15 +17,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
 import dev.walcott.data.PolicySettings
+import dev.walcott.ui.format.humanize
+import java.time.Duration
 
 /**
- * The restrictions an app can carry of its own, on top of whatever its category imposes —
- * each with the icon that stands for it.
+ * The rules an app can carry of its own, each with the icon that stands for it.
  *
  * The same icon marks the app in the list and titles its section in the app's own screen, so
- * the badge a parent scans past is the thing they then edit. That pairing is the whole point:
- * only restrictions with a section of their own belong here, which is why a category's budget
- * (edited in Limits, identical for every app in it) is deliberately not one of them.
+ * the badge a parent scans past is the thing they then edit.
  */
 internal enum class AppRestriction(val icon: ImageVector, @StringRes val labelRes: Int) {
     OWN_BUDGET(Icons.Outlined.HourglassBottom, R.string.app_own_limit),
@@ -62,3 +61,31 @@ internal fun AppRestrictionBadges(restrictions: List<AppRestriction>, modifier: 
         }
     }
 }
+
+/**
+ * What this app's day looks like, in one line: the limit set for it, the family default it
+ * falls back to, that it was set free of the default, or that nothing limits it at all.
+ *
+ * Reads the RESOLVED policy (the family's, or one child's), so the list says what will really
+ * happen rather than what was typed where.
+ */
+@Composable
+internal fun appLimitLabel(settings: PolicySettings, packageName: String): String {
+    val policy = settings.appPolicies[packageName]
+    val dayType = dev.walcott.rules.DayType.SCHOOL
+    val own = policy?.budgets?.get(dayType.name)
+    return when {
+        policy?.unlimited == true -> stringResource(R.string.app_limit_none_ever)
+        own != null && own <= 0 -> stringResource(R.string.app_limit_blocked)
+        own != null -> stringResource(R.string.app_limit_own, humanMinutes(own))
+        settings.defaultAppBudget[dayType.name] != null ->
+            stringResource(R.string.app_limit_default, humanMinutes(settings.defaultAppBudget.getValue(dayType.name)))
+        else -> stringResource(R.string.app_limit_none)
+    }
+}
+
+/** "45 min" / "1 h 30 min", reusing the app-wide duration wording. */
+private fun humanMinutes(minutes: Int): String = Duration.ofMinutes(minutes.toLong()).humanize()
+
+/** How many app rows a "used today" list shows before it stops being a glance. */
+internal const val USAGE_ROWS = 6

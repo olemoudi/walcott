@@ -26,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.data.IdleEarnDto
 import dev.walcott.data.WindowDto
@@ -86,7 +85,6 @@ fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenSpeci
                     CardGroup {
                         RateCard(cfg, position = CardPosition.First, onChange = viewModel::setIdleEarn)
                         CapsCard(cfg, position = CardPosition.Middle, onChange = viewModel::setIdleEarn)
-                        TargetCard(cfg, position = CardPosition.Middle, onChange = viewModel::setIdleEarn)
                         EarnWindowsCard(
                             cfg,
                             position = CardPosition.Last,
@@ -104,7 +102,6 @@ fun EarnRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenSpeci
 }
 
 private fun defaultConfig() = IdleEarnDto(
-    targetCategoryId = AppCategory.GAMES.id,
     minutesIdlePerReward = 10,
     rewardMinutes = 5,
     windowHours = 4,
@@ -163,27 +160,6 @@ private fun CapsCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.Sin
                 onDecrement = { onChange(cfg.copy(weeklyCapMinutes = (cfg.weeklyCapMinutes - 15).coerceAtLeast(15))) },
                 onIncrement = { onChange(cfg.copy(weeklyCapMinutes = cfg.weeklyCapMinutes + 15)) },
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun TargetCard(cfg: IdleEarnDto, position: CardPosition = CardPosition.Single, onChange: (IdleEarnDto) -> Unit) {
-    val spacing = Tokens.spacing
-    WalcottCard(position = position) {
-        Column(Modifier.padding(spacing.lg)) {
-            Text(stringResource(R.string.earn_target_title), style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.size(spacing.sm))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                AppCategory.entries.forEach { category ->
-                    dev.walcott.ui.components.ChoiceChip(
-                        selected = cfg.targetCategoryId == category.id,
-                        onClick = { onChange(cfg.copy(targetCategoryId = category.id)) },
-                        label = stringResource(category.nameRes),
-                    )
-                }
-            }
         }
     }
 }

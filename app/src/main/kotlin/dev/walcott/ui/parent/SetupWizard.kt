@@ -352,11 +352,11 @@ private fun ScreenTimeStep(viewModel: WalcottViewModel, weekdaysOnly: Boolean) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    // Selection derives from the stored policy (the leading leisure category's weekday budget
-    // as the representative), so re-entering the wizard shows what is actually configured.
+    // Selection derives from the stored policy, so re-entering the wizard shows what is
+    // actually configured rather than a fresh default.
     LeisureBudgetChips(
-        current = SetupPresets.leisureBudget(settings, DayType.SCHOOL),
-        onSelect = { viewModel.setLeisureBudget(it, weekdaysOnly = weekdaysOnly) },
+        current = SetupPresets.defaultBudget(settings, DayType.SCHOOL),
+        onSelect = { viewModel.setDefaultBudgetPreset(it, weekdaysOnly = weekdaysOnly) },
     )
 }
 
@@ -391,8 +391,8 @@ private fun WeekendStep(
     if (split) {
         Text(stringResource(R.string.step_weekend_budget_title), style = MaterialTheme.typography.titleSmall)
         LeisureBudgetChips(
-            current = SetupPresets.leisureBudget(settings, DayType.WEEKEND),
-            onSelect = { viewModel.setWeekendLeisureBudget(it) },
+            current = SetupPresets.defaultBudget(settings, DayType.WEEKEND),
+            onSelect = { viewModel.setWeekendDefaultBudget(it) },
         )
         WeekendEdgesCard(
             startMinute = settings.weekendStartsFridayAtMinute,
@@ -563,7 +563,7 @@ private fun SummaryStep(settings: dev.walcott.data.PolicySettings, steps: List<W
     // Only recap what THIS preset walked through: the basic wizard never asked about
     // protection or location, so listing them as "Off" would read as something undone.
     val bedtime = settings.bedtime[DayType.SCHOOL.name]
-    val leisure = settings.budgets[SetupPresets.LEISURE_CATEGORY_IDS.first()]?.get(DayType.SCHOOL.name)
+    val leisure = SetupPresets.defaultBudget(settings, DayType.SCHOOL)
     if (WizardStep.BEDTIME in steps) {
         SummaryRow(
             stringResource(R.string.bedtime_title),
@@ -586,7 +586,7 @@ private fun SummaryStep(settings: dev.walcott.data.PolicySettings, steps: List<W
     }
     if (WizardStep.WEEKEND in steps) {
         val split = SetupPresets.hasWeekendDistinction(settings)
-        val weekend = SetupPresets.leisureBudget(settings, DayType.WEEKEND)
+        val weekend = SetupPresets.defaultBudget(settings, DayType.WEEKEND)
         SummaryRow(
             stringResource(R.string.step_weekend_title),
             when {

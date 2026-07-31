@@ -292,7 +292,6 @@ class EnforcementService : LifecycleService() {
         // classification edits, both of which invalidate it explicitly below.
         var managed: Set<String> = emptySet()
         var managedFetchedAt = 0L
-        var lastAssignments: Map<String, String>? = null
         // Suspension is only re-asserted when the target state changes (or periodically as
         // a self-heal), instead of N isPackageSuspended binder calls per tick.
         var lastAppliedBlocked: Set<String>? = null
@@ -348,12 +347,9 @@ class EnforcementService : LifecycleService() {
 
             val usage = repo.usageNow()
             val extra = repo.effectiveExtraNow() // manually granted + idle-earned
-            if (inventoryDirty || config.assignments != lastAssignments ||
-                nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS
-            ) {
+            if (inventoryDirty || nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS) {
                 managed = repo.managedPackagesNow()
                 managedFetchedAt = nowClock
-                lastAssignments = config.assignments
                 inventoryDirty = false
             }
 
@@ -361,15 +357,10 @@ class EnforcementService : LifecycleService() {
             // slow idle tick can't attribute time actually spent elsewhere.
             val creditedUsage = foreground != null && foreground == lastForeground &&
                 foreground in managed && deltaSeconds in 1..MAX_CREDIT_SECONDS
-            if (creditedUsage) {
-                // Unassigned apps are General apps: their time counts against the general budget.
-                repo.addUsageSeconds(config.categoryOf(foreground!!), deltaSeconds)
-                // Per-app budget: also count under the package key (has a dot, never collides
-                // with a category id) so RuleEngine can enforce the app's own sub-cap.
-                if (foreground in config.perAppPolicies) {
-                    repo.addUsageSeconds(foreground, deltaSeconds)
-                }
-            }
+            // One counter per app, always: every limit is now an app's own, and an app with no
+            // limit today may be given one tomorrow — a counter that only started then would
+            // hand back a day the child already spent.
+            if (creditedUsage) repo.addUsageSeconds(foreground!!, deltaSeconds)
             // Idle-earn: screen on but not on a managed app, inside an earning window.
             if (idleCfg != null && earningNow && !creditedUsage && deltaSeconds in 1..MAX_IDLE_STEP_SECONDS) {
                 idleAccumSeconds += deltaSeconds

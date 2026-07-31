@@ -47,7 +47,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.ui.AppRow
 import dev.walcott.ui.WalcottViewModel
@@ -152,6 +151,7 @@ fun AppAssignScreen(
                         viewModel,
                         row,
                         restrictions = appRestrictions(effective, row.app.packageName),
+                        limitLabel = appLimitLabel(effective, row.app.packageName),
                         showOwners = showOwners,
                         iconRefresh = iconRefresh,
                         onClick = { onOpenApp(row.app.packageName) },
@@ -169,22 +169,20 @@ private fun AppAssignRow(
     row: AppRow,
     /** The app's own restrictions, badged with the icons that title them in its own screen. */
     restrictions: List<AppRestriction>,
+    /** "45 min a day", "No limit", "Blocked" — the one thing there is to say about an app. */
+    limitLabel: String,
     showOwners: Boolean,
     iconRefresh: Int,
     onClick: () -> Unit,
 ) {
-    val category = row.categoryId?.let { AppCategory.byId(it) }
     ListItem(
         headlineContent = { Text(row.app.label) },
         supportingContent = {
             Column {
-                // Category name (or "unclassified"), then a badge per rule the app carries of
-                // its own — the same icons that title those sections inside the app.
+                // What this app's day looks like — its own limit, the family default, or
+                // nothing — then a badge per rule it carries of its own.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        category?.let { stringResource(it.nameRes) } ?: stringResource(R.string.unclassified_blocked),
-                        color = category?.color ?: MaterialTheme.colorScheme.error,
-                    )
+                    Text(limitLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     AppRestrictionBadges(restrictions, Modifier.padding(start = Tokens.spacing.sm))
                 }
                 // Who has it: one small tag per child (only in multi-child families).
@@ -220,18 +218,11 @@ private fun AppAssignRow(
             )
         },
         trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (category != null) {
-                    Box(Modifier.size(14.dp).clip(RoundedCornerShape(50)).background(category.color))
-                } else {
-                    Icon(Icons.Filled.Block, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                }
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick),

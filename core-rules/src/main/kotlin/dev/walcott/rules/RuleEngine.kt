@@ -8,9 +8,9 @@ import java.time.LocalDateTime
  * as parameters. The enforcement service calls it with real state; tests, with whatever
  * state they want to reproduce.
  *
- * Precedence: essential > bedtime > blocked window > budget. An app with no assignment is
- * judged under [FamilyConfig.DEFAULT_CATEGORY] ("General"): usable, subject to the general
- * budget when one is set — never blocked merely for being unclassified.
+ * Precedence: essential > bedtime > blocked window > budget. An app nobody has set a rule for
+ * answers to the family's default daily budget, and to nothing at all when there isn't one —
+ * a newly installed app is never restricted by a rule that predates it.
  */
 object RuleEngine {
 
@@ -18,9 +18,9 @@ object RuleEngine {
         config: FamilyConfig,
         packageName: String,
         now: LocalDateTime,
-        /** Time used today per category (categoryId -> duration). */
+        /** Time used today per app (package -> duration). */
         usageToday: Map<String, Duration> = emptyMap(),
-        /** Extra time granted today per category (approvals, spent ledger…). */
+        /** Extra time granted today, keyed by package or [ExtraTime.ALL_APPS]. */
         extraTime: Map<String, Duration> = emptyMap(),
     ): Verdict {
         if (packageName in config.essentialPackages) return Verdict.Allowed
@@ -35,38 +35,28 @@ object RuleEngine {
             if (time in window) return Verdict.Blocked(BlockReason.BEDTIME)
         }
         // Family-wide screen-free windows: like bedtime, a hard block on every non-essential
-        // app (before classification, so unclassified apps are inside too); extra time never
-        // lifts a window.
+        // app — checked before any budget, so an app with no limit is inside them too. Extra
+        // time never lifts a window.
         if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
             return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
         }
 
-        val categoryId = config.categoryOf(packageName)
-        val policy = config.policies[categoryId]
         val appPolicy = config.perAppPolicies[packageName]
-        if (policy == null && appPolicy == null) return Verdict.Allowed
+        if (appPolicy?.blockedWindows?.get(dayType).orEmpty().any { it.appliesAt(now, specialDay) }) {
+            return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
+        }
 
-        // Blocked windows: category OR per-app (the per-app ones only add restrictions).
-        val inCategoryWindow = policy?.blockedWindows?.get(dayType).orEmpty().any { it.appliesAt(now, specialDay) }
-        val inAppWindow = appPolicy?.blockedWindows?.get(dayType).orEmpty().any { it.appliesAt(now, specialDay) }
-        if (inCategoryWindow || inAppWindow) return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
+        val budget = config.budgetFor(packageName, dayType) ?: return Verdict.Allowed
 
-        // Extra time applying to this package: everyone's grant + its category's + its own.
-        val globalExtra = extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO
+        // Extra time reaching this app: its own grant always, plus any "all apps" grant — but
+        // only while the app is on the family default. A budget somebody set for this app on
+        // purpose is not something a blanket "everyone gets 30 more minutes" should blow past.
         val appExtra = extraTime[packageName] ?: Duration.ZERO
+        val sharedExtra =
+            if (config.usesDefaultBudget(packageName)) extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO
+            else Duration.ZERO
 
-        // Budgets: the category budget (widened by global + category + this-app extra) and the
-        // per-app sub-cap (widened only by a grant to THIS app — a blanket "all apps" grant must
-        // not blow through a deliberately tight per-app cap). Whichever bites first blocks.
-        val categoryRemaining = policy?.dailyBudget?.get(dayType)?.let { budget ->
-            budget + globalExtra + (extraTime[categoryId] ?: Duration.ZERO) + appExtra -
-                (usageToday[categoryId] ?: Duration.ZERO)
-        }
-        val appRemaining = appPolicy?.dailyBudget?.get(dayType)?.let { budget ->
-            budget + appExtra - (usageToday[packageName] ?: Duration.ZERO)
-        }
-        val remaining = listOfNotNull(categoryRemaining, appRemaining).minOrNull()
-            ?: return Verdict.Allowed // neither has a budget for this day type
+        val remaining = budget + appExtra + sharedExtra - (usageToday[packageName] ?: Duration.ZERO)
         return if (remaining > Duration.ZERO) {
             Verdict.AllowedWithBudget(remaining)
         } else {
@@ -82,8 +72,8 @@ object RuleEngine {
      * config without budgets can safely keep enforcing as usual.
      */
     fun requiresUsageCounting(config: FamilyConfig): Boolean =
-        config.policies.values.any { it.dailyBudget.isNotEmpty() } ||
-            // Per-app sub-caps count down off the same counter. Missing them here was a real
+        config.defaultAppBudget.isNotEmpty() ||
+            // Per-app budgets count down off the same counter. Missing them here was a real
             // bypass: a family that caps only individual apps ("WhatsApp, 30 min") kept
             // enforcing "as usual" with the counter gone, which for a budget means forever.
             config.perAppPolicies.values.any { it.dailyBudget.isNotEmpty() }
@@ -96,7 +86,7 @@ object RuleEngine {
     fun requiresTrustedClock(config: FamilyConfig): Boolean =
         config.bedtime.isNotEmpty() ||
             config.blockedWindows.values.any { it.isNotEmpty() } ||
-            config.policies.values.any { it.dailyBudget.isNotEmpty() || it.blockedWindows.isNotEmpty() } ||
+            config.defaultAppBudget.isNotEmpty() ||
             config.perAppPolicies.values.any { it.dailyBudget.isNotEmpty() || it.blockedWindows.isNotEmpty() }
 
     /**

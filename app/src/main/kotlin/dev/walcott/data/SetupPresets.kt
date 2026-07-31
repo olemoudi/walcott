@@ -1,6 +1,5 @@
 package dev.walcott.data
 
-import dev.walcott.AppCategory
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.rules.DayType
 
@@ -11,49 +10,42 @@ import dev.walcott.rules.DayType
  */
 object SetupPresets {
 
-    /**
-     * Categories a daily screen-time cap applies to. Education and creative apps are the
-     * deliberate exceptions, and system apps (phone, contacts…) are never managed at all,
-     * so calls keep working under any cap.
-     */
-    val LEISURE_CATEGORY_IDS: List<String> = listOf(
-        AppCategory.GAMES.id, AppCategory.SOCIAL.id, AppCategory.VIDEO.id, AppCategory.OTHER.id,
-    )
-
     /** The wizard's bedtime starting point: 21:30–07:30, every day type. */
     fun defaultBedtime(): Map<String, WindowDto> =
         DayType.entries.associate { it.name to WindowDto(21 * 60 + 30, 7 * 60 + 30) }
 
-    /** Sets [minutes] as the daily budget of every leisure category for all day types (null clears). */
-    fun withLeisureBudget(settings: PolicySettings, minutes: Int?): PolicySettings =
-        withLeisureBudget(settings, minutes, DayType.entries)
+    /**
+     * Sets [minutes] as the daily limit every app gets unless something was set for it, on all
+     * day types (null clears it). The wizard's one budget question — and the only place the
+     * default is offered, because a family that never answers it has no limits by default.
+     */
+    fun withDefaultBudget(settings: PolicySettings, minutes: Int?): PolicySettings =
+        withDefaultBudget(settings, minutes, DayType.entries)
 
     /** Weekday-only variant, for a family that caps the weekend differently. */
-    fun withWeekdayLeisureBudget(settings: PolicySettings, minutes: Int?): PolicySettings =
-        withLeisureBudget(settings, minutes, listOf(DayType.SCHOOL))
+    fun withWeekdayDefaultBudget(settings: PolicySettings, minutes: Int?): PolicySettings =
+        withDefaultBudget(settings, minutes, listOf(DayType.SCHOOL))
 
     /**
      * Weekend-only variant. HOLIDAY is deliberately left alone: every parent write mirrors
      * WEEKEND into it (see [withHolidayMirroringWeekend]), so special days follow by themselves.
      */
-    fun withWeekendLeisureBudget(settings: PolicySettings, minutes: Int?): PolicySettings =
-        withLeisureBudget(settings, minutes, listOf(DayType.WEEKEND))
+    fun withWeekendDefaultBudget(settings: PolicySettings, minutes: Int?): PolicySettings =
+        withDefaultBudget(settings, minutes, listOf(DayType.WEEKEND))
 
-    private fun withLeisureBudget(
+    private fun withDefaultBudget(
         settings: PolicySettings,
         minutes: Int?,
         days: List<DayType>,
     ): PolicySettings {
-        var budgets = settings.budgets
-        for (categoryId in LEISURE_CATEGORY_IDS) {
-            for (day in days) budgets = budgets.withBudget(categoryId, day.name, minutes)
-        }
-        return settings.copy(budgets = budgets)
+        var budget = settings.defaultAppBudget
+        for (day in days) budget = budget.withBudget(day.name, minutes)
+        return settings.copy(defaultAppBudget = budget)
     }
 
-    /** The leisure cap the wizard reads back for [dayType] (null = no cap that day). */
-    fun leisureBudget(settings: PolicySettings, dayType: DayType): Int? =
-        settings.budgets[LEISURE_CATEGORY_IDS.first()]?.get(dayType.name)
+    /** The default cap the wizard reads back for [dayType] (null = no cap that day). */
+    fun defaultBudget(settings: PolicySettings, dayType: DayType): Int? =
+        settings.defaultAppBudget[dayType.name]
 
     /**
      * Whether this policy already treats the weekend as its own thing — a different leisure cap,
@@ -61,7 +53,7 @@ object SetupPresets {
      * switch from this, so re-entering it shows what is configured instead of a default.
      */
     fun hasWeekendDistinction(settings: PolicySettings): Boolean =
-        leisureBudget(settings, DayType.WEEKEND) != leisureBudget(settings, DayType.SCHOOL) ||
+        defaultBudget(settings, DayType.WEEKEND) != defaultBudget(settings, DayType.SCHOOL) ||
             settings.weekendStartsFridayAtMinute != null ||
             settings.weekendEndsSundayAtMinute != null
 
@@ -72,7 +64,7 @@ object SetupPresets {
      * leaving it set would only mislead the next parent who reads the calendar screen.
      */
     fun withoutWeekendDistinction(settings: PolicySettings): PolicySettings =
-        withLeisureBudget(settings, leisureBudget(settings, DayType.SCHOOL))
+        withDefaultBudget(settings, defaultBudget(settings, DayType.SCHOOL))
             .copy(weekendStartsFridayAtMinute = null, weekendEndsSundayAtMinute = null)
 
     /**
@@ -90,9 +82,8 @@ object SetupPresets {
         )
     }
 
-    /** Balanced earned-time starter: 10 min off the phone earn 5 min of games, capped. */
+    /** Balanced earned-time starter: 10 min off the phone earn 5 min of screen time, capped. */
     fun defaultIdleEarn() = IdleEarnDto(
-        targetCategoryId = AppCategory.GAMES.id,
         minutesIdlePerReward = 10,
         rewardMinutes = 5,
         windowHours = 4,

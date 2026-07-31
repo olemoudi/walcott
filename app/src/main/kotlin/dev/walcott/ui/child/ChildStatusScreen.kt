@@ -81,13 +81,12 @@ import dev.walcott.R
 import dev.walcott.enforcement.UsageAccess
 import dev.walcott.location.LocationPolicy
 import dev.walcott.rules.BlockReason
-import dev.walcott.rules.CategoryState
 import dev.walcott.rules.TimeWindow
 import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
 import dev.walcott.sync.Role
-import dev.walcott.ui.CategoryStatusUi
+import dev.walcott.ui.AppStatusUi
 import dev.walcott.ui.ChildUiState
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppIcon
@@ -124,8 +123,8 @@ fun ChildStatusScreen(
     val spacing = Tokens.spacing
     val scope = rememberCoroutineScope()
 
-    var pending by remember { mutableStateOf<CategoryStatusUi?>(null) }
-    var pendingRemote by remember { mutableStateOf<CategoryStatusUi?>(null) }
+    var pending by remember { mutableStateOf<AppStatusUi?>(null) }
+    var pendingRemote by remember { mutableStateOf<AppStatusUi?>(null) }
     var showAsk by remember { mutableStateOf(false) }
     // "Request more time" flow: pick a target (all apps or one app), then the minutes.
     var showRequestSheet by remember { mutableStateOf(false) }
@@ -276,20 +275,19 @@ fun ChildStatusScreen(
                     item { BedtimeTonightRow(window) }
                 }
             }
-            items(state.categories, key = { it.category.id }) { card ->
-                CategoryCard(
-                    card,
-                    // While this category's request is unanswered the button says so,
-                    // instead of inviting a duplicate.
-                    requestPending = myRequests.any { it.categoryId == card.category.id },
+            // One card per app with a limit today: the rules the child actually lives with,
+            // closest to running out first.
+            items(state.apps, key = { "app-" + it.packageName }) { app ->
+                AppCard(
+                    app,
+                    // While this app's request is unanswered the button says so, instead of
+                    // inviting a duplicate.
+                    requestPending = myRequests.any { it.categoryId == app.packageName },
                     onRequestExtra = {
-                        if (identity.role == Role.CHILD) pendingRemote = card else pending = card
+                        if (identity.role == Role.CHILD) pendingRemote = app else pending = app
                     },
                 )
             }
-            // Apps with a limit of their own, right beside the category cards: under the
-            // general/per-app posture these are the rules the child actually lives with.
-            items(state.apps, key = { "app-" + it.packageName }) { app -> AppLimitCard(app) }
             // Everything sent and still unanswered, so "did it go through?" has an answer.
             if (myAsks.isNotEmpty()) {
                 item { WaitingCard(myAsks.map { it.text }) }
@@ -339,7 +337,7 @@ fun ChildStatusScreen(
             card = card,
             onDismiss = { pendingRemote = null },
             onSend = { minutes, reason ->
-                viewModel.requestExtraTimeRemote(card.category.id, minutes, reason)
+                viewModel.requestExtraTimeRemote(card.packageName, minutes, reason, targetLabel = card.label)
                 pendingRemote = null
                 Toast.makeText(context, R.string.request_sent, Toast.LENGTH_SHORT).show()
             },
@@ -532,8 +530,8 @@ private fun UsageAccessCard(onFix: () -> Unit) {
 @Composable
 private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Unit) {
     val spacing = Tokens.spacing
-    val categoryName = dev.walcott.AppCategory.byId(notice.categoryId)
-        ?.let { stringResource(it.nameRes) } ?: notice.categoryId
+    // The grant's target: one app (its label travelled in the notice) or everything.
+    val categoryName = notice.text.ifBlank { stringResource(R.string.request_all_apps) }
     val title = when {
         notice.kind == "bonus" -> stringResource(R.string.notice_bonus, notice.minutes, categoryName)
         !notice.approved -> stringResource(R.string.notice_denied)
@@ -979,13 +977,13 @@ private fun HeroCard(state: ChildUiState) {
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
                         Spacer(Modifier.height(spacing.xs))
-                        val budgeted = state.categories.count { it.status.state == CategoryState.BUDGETED }
-                        // No categories means nothing is classified yet, and the rule engine
-                        // blocks unclassified apps — so "all free" was misleading. Say so plainly.
-                        val summary = if (state.categories.isEmpty()) {
+                        val available = state.apps.count { !it.blocked }
+                        // No limited apps at all is the honest "nothing is capped today", not a
+                        // setup that is missing something: limits are opt-in now.
+                        val summary = if (state.apps.isEmpty()) {
                             stringResource(R.string.hero_pending_setup)
                         } else {
-                            pluralStringResource(R.plurals.hero_available_count, budgeted, budgeted)
+                            pluralStringResource(R.plurals.hero_available_count, available, available)
                         }
                         Text(
                             summary,
@@ -999,133 +997,80 @@ private fun HeroCard(state: ChildUiState) {
     }
 }
 
-/** One app with its own daily limit: name plus what's left of it right now. */
+/**
+ * One app with a limit today: what is left of it, how much of it has gone, and — when it has
+ * run out — the way to ask for more. The card the child came to look at.
+ */
 @Composable
-private fun AppLimitCard(app: dev.walcott.ui.AppStatusUi) {
+private fun AppCard(app: AppStatusUi, requestPending: Boolean, onRequestExtra: () -> Unit) {
     val spacing = Tokens.spacing
-    WalcottCard {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(app.label, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    when {
-                        app.blocked -> stringResource(R.string.app_card_blocked)
-                        app.remaining != null ->
-                            stringResource(R.string.app_card_remaining, app.remaining.humanize())
-                        else -> stringResource(R.string.no_limit_today)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (app.blocked) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CategoryCard(card: CategoryStatusUi, requestPending: Boolean, onRequestExtra: () -> Unit) {
-    val spacing = Tokens.spacing
-    val category = card.category
-    val status = card.status
+    val accent = MaterialTheme.colorScheme.primary
 
     WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
-                        .background(category.color.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(category.icon, contentDescription = null, tint = category.color)
-                }
-                Spacer(Modifier.width(spacing.md))
                 Text(
-                    stringResource(category.nameRes),
+                    app.label,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
-                StatusPill(status.state)
+                StatusPill(blocked = app.blocked)
             }
-
-            when (status.state) {
-                CategoryState.BUDGETED -> {
-                    Spacer(Modifier.height(spacing.md))
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(
-                            (status.remaining ?: Duration.ZERO).humanize(),
-                            style = NumberDisplay,
-                            color = category.color,
+            if (app.blocked) {
+                Spacer(Modifier.height(spacing.sm))
+                Text(stringResource(R.string.app_card_blocked), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(spacing.md))
+                if (requestPending) {
+                    // Already asked: say so instead of inviting a duplicate request.
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            Icons.Outlined.HourglassEmpty,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(Modifier.width(spacing.xs))
                         Text(
-                            stringResource(R.string.label_remaining),
-                            style = MaterialTheme.typography.bodyMedium,
+                            stringResource(R.string.request_waiting_button),
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 10.dp),
                         )
                     }
-                    Spacer(Modifier.height(spacing.sm))
-                    BudgetBar(fraction = fractionUsed(card), color = category.color)
-                    if (card.earned > Duration.ZERO) {
-                        Spacer(Modifier.height(spacing.sm))
-                        Text(
-                            stringResource(R.string.earned_bonus, card.earned.humanize()),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.secondary,
-                        )
-                    }
+                } else {
+                    RequestExtraButton(accent, onRequestExtra)
                 }
-
-                CategoryState.ALLOWED -> {
-                    Spacer(Modifier.height(spacing.sm))
-                    Text(stringResource(R.string.no_limit_today), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Spacer(Modifier.height(spacing.md))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        (app.remaining ?: Duration.ZERO).humanize(),
+                        style = NumberDisplay,
+                        color = accent,
+                    )
+                    Spacer(Modifier.width(spacing.xs))
+                    Text(
+                        stringResource(R.string.label_remaining),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 10.dp),
+                    )
                 }
-
-                CategoryState.BLOCKED -> {
-                    Spacer(Modifier.height(spacing.sm))
-                    Text(blockedReasonText(status.blockReason), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (status.blockReason == BlockReason.BUDGET_EXHAUSTED) {
-                        Spacer(Modifier.height(spacing.md))
-                        if (requestPending) {
-                            // Already asked: say so instead of inviting a duplicate request.
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                Icon(
-                                    Icons.Outlined.HourglassEmpty,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(Modifier.width(spacing.xs))
-                                Text(
-                                    stringResource(R.string.request_waiting_button),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        } else {
-                            RequestExtraButton(category.color, onRequestExtra)
-                        }
-                    }
-                }
+                Spacer(Modifier.height(spacing.sm))
+                BudgetBar(fraction = fractionUsed(app), color = accent)
             }
         }
     }
 }
 
 @Composable
-private fun StatusPill(state: CategoryState) {
-    val (labelRes, color, icon) = when (state) {
-        CategoryState.BUDGETED -> Triple(R.string.status_available, MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle)
-        CategoryState.ALLOWED -> Triple(R.string.status_free, MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle)
-        CategoryState.BLOCKED -> Triple(R.string.status_blocked, MaterialTheme.colorScheme.error, Icons.Filled.Lock)
+private fun StatusPill(blocked: Boolean) {
+    val (labelRes, color, icon) = when (blocked) {
+        false -> Triple(R.string.status_available, MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle)
+        true -> Triple(R.string.status_blocked, MaterialTheme.colorScheme.error, Icons.Filled.Lock)
     }
     Surface(shape = RoundedCornerShape(50), color = color.copy(alpha = 0.14f)) {
         Row(
@@ -1172,11 +1117,10 @@ private fun RequestExtraButton(color: Color, onClick: () -> Unit) {
     }
 }
 
-private fun fractionUsed(card: CategoryStatusUi): Float {
-    val budget = card.status.budget?.seconds ?: return 0f
+private fun fractionUsed(app: AppStatusUi): Float {
+    val budget = app.budget.seconds
     if (budget <= 0) return 0f
-    val used = card.status.used.seconds.toFloat()
-    return used / budget.toFloat()
+    return app.used.seconds.toFloat() / budget.toFloat()
 }
 
 @Composable
@@ -1184,7 +1128,6 @@ private fun blockedReasonText(reason: BlockReason?): String = when (reason) {
     BlockReason.BEDTIME -> stringResource(R.string.reason_bedtime)
     BlockReason.BLOCKED_WINDOW -> stringResource(R.string.reason_blocked_window)
     BlockReason.BUDGET_EXHAUSTED -> stringResource(R.string.reason_budget_exhausted)
-    BlockReason.UNCLASSIFIED -> stringResource(R.string.reason_unclassified)
     BlockReason.FAIL_CLOSED -> stringResource(R.string.reason_fail_closed)
     null -> ""
 }

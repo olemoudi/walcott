@@ -30,12 +30,11 @@ import java.util.Random
 object PolicyFuzz {
 
     const val OWN_PACKAGE = "dev.walcott"
-    val CATEGORY_IDS = listOf("games", "social", "video", "education", "creative", "other")
 
-    /** Apps a generated policy draws from; [UNCLASSIFIED_APP] is never assigned on purpose. */
+    /** Apps a generated policy draws from; [UNTOUCHED_APP] never gets a rule of its own. */
     val APPS = listOf("com.game", "com.chat", "com.video", "com.school", "com.draw")
-    const val UNCLASSIFIED_APP = "com.brand.new"
-    val MANAGED: Set<String> = (APPS + UNCLASSIFIED_APP).toSet()
+    const val UNTOUCHED_APP = "com.brand.new"
+    val MANAGED: Set<String> = (APPS + UNTOUCHED_APP).toSet()
 
     /** A Monday, so weekday/weekend/holiday all sit within one week of it. */
     val MONDAY: LocalDate = LocalDate.of(2026, 3, 2)
@@ -73,21 +72,18 @@ object PolicyFuzz {
     fun policy(index: Int): PolicySettings {
         val rnd = Random(index.toLong() * 1_000_003L)
 
-        val assignments = APPS
-            .filter { rnd.nextInt(10) > 0 } // ~10% of apps stay unclassified, i.e. blocked
-            .associateWith { CATEGORY_IDS[rnd.nextInt(CATEGORY_IDS.size)] }
-
-        val budgets = CATEGORY_IDS
-            .filter { rnd.nextBoolean() }
-            .associateWith { perDayBudget(rnd) }
-            .filterValues { it.isNotEmpty() }
+        // The optional family default: often absent, which is the shape of a family that only
+        // ever set limits on the two apps it cares about.
+        val defaultBudget = if (rnd.nextBoolean()) perDayBudget(rnd) else emptyMap()
 
         val appPolicies = APPS
             .filter { rnd.nextInt(3) == 0 }
             .associateWith {
+                val free = rnd.nextInt(8) == 0 // the "never limit this one" escape hatch
                 AppPolicyDto(
-                    budgets = if (rnd.nextBoolean()) perDayBudget(rnd) else emptyMap(),
+                    budgets = if (!free && rnd.nextBoolean()) perDayBudget(rnd) else emptyMap(),
                     blockedWindows = if (rnd.nextBoolean()) perDayWindows(rnd) else emptyMap(),
+                    unlimited = free,
                 )
             }
             .filterValues { !it.isEmpty }
@@ -107,11 +103,7 @@ object PolicyFuzz {
                 overrides = ChildOverrides(
                     // A child either inherits everything or replaces a whole field, which is
                     // the only shape resolveForChild supports.
-                    budgets = if (rnd.nextInt(3) == 0) {
-                        CATEGORY_IDS.take(2).associateWith { perDayBudget(rnd) }.filterValues { it.isNotEmpty() }
-                    } else {
-                        null
-                    },
+                    defaultAppBudget = if (rnd.nextInt(3) == 0) perDayBudget(rnd) else null,
                     bedtime = if (rnd.nextInt(4) == 0) DayType.entries.associate { it.name to WindowDto(20 * 60, 6 * 60) } else null,
                 ),
                 addedAtMs = 1L,
@@ -120,8 +112,7 @@ object PolicyFuzz {
 
         return PolicySettings(
             version = 1 + index.toLong(),
-            budgets = budgets,
-            blockedWindows = CATEGORY_IDS.filter { rnd.nextInt(4) == 0 }.associateWith { perDayWindows(rnd) },
+            defaultAppBudget = defaultBudget,
             bedtime = bedtime,
             allAppsBlockedWindows = if (rnd.nextInt(3) == 0) perDayWindows(rnd) else emptyMap(),
             holidays = if (rnd.nextInt(3) == 0) setOf(SPECIAL_DAY.toEpochDay()) else emptySet(),
@@ -133,7 +124,6 @@ object PolicyFuzz {
             weekendStartsFridayAtMinute = if (rnd.nextInt(3) == 0) 14 * 60 else null,
             weekendEndsSundayAtMinute = if (rnd.nextInt(4) == 0) 20 * 60 else null,
             specialDaysOwnRules = rnd.nextInt(4) == 0,
-            assignments = assignments,
             appPolicies = appPolicies,
             children = children,
         )
@@ -189,9 +179,10 @@ object PolicyFuzz {
      */
     fun usageProfiles(config: FamilyConfig, now: LocalDateTime): List<Map<String, Duration>> {
         val dayType = config.calendar.dayTypeOf(now)
+        // Every counter is a package now: each managed app spends its own budget, whether that
+        // budget is its own or the family default.
         val full = buildMap<String, Duration> {
-            config.policies.forEach { (id, policy) -> policy.dailyBudget[dayType]?.let { put(id, it) } }
-            config.perAppPolicies.forEach { (pkg, policy) -> policy.dailyBudget[dayType]?.let { put(pkg, it) } }
+            MANAGED.forEach { pkg -> config.budgetFor(pkg, dayType)?.let { put(pkg, it) } }
         }
         return listOf(
             emptyMap(),

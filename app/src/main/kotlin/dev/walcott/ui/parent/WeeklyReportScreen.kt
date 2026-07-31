@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,7 +26,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.walcott.AppCategory
 import dev.walcott.R
 import dev.walcott.sync.DeviceMode
 import dev.walcott.ui.WalcottViewModel
@@ -45,6 +45,11 @@ fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val localWeekly by viewModel.weeklyUsage.collectAsStateWithLifecycle()
     val childrenWeekly by viewModel.childrenWeeklyUsage.collectAsStateWithLifecycle()
+    // Packages are what the counters are keyed by; the children's own app lists name them.
+    val childSnapshots by viewModel.children.collectAsStateWithLifecycle()
+    val appLabels = remember(childSnapshots) {
+        childSnapshots.flatMap { it.apps }.associate { it.packageName to it.label }
+    }
     // On a parent phone the local usage is empty; show the children's aggregate instead.
     val weekly = if (identity.effectiveMode == DeviceMode.PARENT) childrenWeekly else localWeekly
 
@@ -85,18 +90,18 @@ fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
 
+            // Per app now, busiest first: "where did the week go" is an app-shaped question.
             categoryTotals.entries
                 .sortedByDescending { it.value.seconds }
-                .forEach { (catId, total) ->
-                    val category = AppCategory.byId(catId)
+                .take(USAGE_ROWS)
+                .forEach { (pkg, total) ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.width(12.dp).height(12.dp).clip(RoundedCornerShape(50))
-                            .background(category?.color ?: MaterialTheme.colorScheme.primary))
-                        Spacer(Modifier.width(spacing.sm))
-                        Text(
-                            category?.let { stringResource(it.nameRes) } ?: catId,
-                            Modifier.weight(1f),
+                        Box(
+                            Modifier.width(12.dp).height(12.dp).clip(RoundedCornerShape(50))
+                                .background(MaterialTheme.colorScheme.primary),
                         )
+                        Spacer(Modifier.width(spacing.sm))
+                        Text(appLabels[pkg] ?: pkg, Modifier.weight(1f))
                         Text(total.humanize(), style = MaterialTheme.typography.titleSmall)
                     }
                 }

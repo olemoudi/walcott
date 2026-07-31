@@ -22,28 +22,41 @@ class BlockedPackagesTest {
     private val edu = "com.edu"
     private val managed = setOf(game, chat, edu)
 
+    /** [budgets] is package -> per-day-type budget, the only shape budgets have now. */
     private fun config(
         budgets: Map<String, Map<DayType, Duration>> = emptyMap(),
         bedtime: Map<DayType, TimeWindow> = emptyMap(),
+        defaultBudget: Map<DayType, Duration> = emptyMap(),
     ) = FamilyConfig(
         version = 1,
-        assignments = mapOf(game to "games", chat to "social", edu to "education"),
-        policies = budgets.mapValues { (_, perDay) -> CategoryPolicy(dailyBudget = perDay) },
+        defaultAppBudget = defaultBudget,
+        perAppPolicies = budgets.mapValues { (_, perDay) -> AppPolicy(dailyBudget = perDay) },
         bedtime = bedtime,
     )
 
     @Test
-    fun `unclassified-free config with room blocks nothing`() {
-        val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
+    fun `a config with room blocks nothing`() {
+        val cfg = config(budgets = mapOf(game to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
         val out = RuleEngine.blockedPackages(cfg, managed, monday, usageToday = emptyMap())
         assertTrue(out.isEmpty())
     }
 
     @Test
-    fun `only the exhausted category is blocked`() {
-        val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(1))))
+    fun `only the exhausted app is blocked`() {
+        val cfg = config(budgets = mapOf(game to mapOf(DayType.SCHOOL to Duration.ofHours(1))))
         val out = RuleEngine.blockedPackages(
-            cfg, managed, monday, usageToday = mapOf("games" to Duration.ofHours(1)),
+            cfg, managed, monday, usageToday = mapOf(game to Duration.ofHours(1)),
+        )
+        assertEquals(setOf(game), out)
+    }
+
+    @Test
+    fun `the family default blocks each app on its own counter`() {
+        // What replaced the shared category pot: one app burning its hour leaves the others
+        // with theirs. The old model blocked all three the moment the pot ran dry.
+        val cfg = config(defaultBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1)))
+        val out = RuleEngine.blockedPackages(
+            cfg, managed, monday, usageToday = mapOf(game to Duration.ofHours(1)),
         )
         assertEquals(setOf(game), out)
     }
@@ -59,7 +72,7 @@ class BlockedPackagesTest {
 
     @Test
     fun `revoked usage access with budgets blocks everything managed`() {
-        val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
+        val cfg = config(budgets = mapOf(game to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
         val out = RuleEngine.blockedPackages(cfg, managed, monday, usageCountingAvailable = false)
         assertEquals(managed, out)
     }
@@ -74,14 +87,14 @@ class BlockedPackagesTest {
 
     @Test
     fun `granted usage access ignores the fail-closed branch`() {
-        val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
+        val cfg = config(budgets = mapOf(game to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
         val out = RuleEngine.blockedPackages(cfg, managed, monday, usageCountingAvailable = true)
         assertTrue(out.isEmpty())
     }
 
     @Test
     fun `empty managed set is always empty`() {
-        val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
+        val cfg = config(budgets = mapOf(game to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
         assertTrue(RuleEngine.blockedPackages(cfg, emptySet(), monday, usageCountingAvailable = false).isEmpty())
     }
 
@@ -98,7 +111,7 @@ class BlockedPackagesTest {
 
     @Test
     fun `an untrusted clock with a budget blocks everything managed`() {
-        val cfg = config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
+        val cfg = config(budgets = mapOf(game to mapOf(DayType.SCHOOL to Duration.ofHours(2))))
         assertEquals(managed, RuleEngine.blockedPackages(cfg, managed, monday, clockTrusted = false))
     }
 
@@ -110,24 +123,6 @@ class BlockedPackagesTest {
         assertTrue(RuleEngine.blockedPackages(cfg, managed, monday, clockTrusted = false).isEmpty())
     }
 
-    @Test
-    fun `requiresTrustedClock spots every kind of time rule`() {
-        assertTrue(!RuleEngine.requiresTrustedClock(config()))
-        assertTrue(RuleEngine.requiresTrustedClock(config(budgets = mapOf("games" to mapOf(DayType.SCHOOL to Duration.ofHours(1))))))
-        assertTrue(
-            RuleEngine.requiresTrustedClock(
-                config(bedtime = mapOf(DayType.SCHOOL to TimeWindow(LocalTime.of(22, 0), LocalTime.of(7, 0)))),
-            ),
-        )
-        val windowed = FamilyConfig(
-            version = 1,
-            assignments = mapOf(game to "games"),
-            policies = emptyMap(),
-            blockedWindows = mapOf(DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(9, 0), LocalTime.of(14, 0)))),
-        )
-        assertTrue(RuleEngine.requiresTrustedClock(windowed))
-    }
-
     // --- The two fail-closed guards, one clause at a time ---
     //
     // Both are OR-chains, so a config that trips an early clause proves nothing about the
@@ -135,11 +130,11 @@ class BlockedPackagesTest {
     // that rule is walkable by revoking a permission or moving the clock.
 
     private val window = TimeWindow(LocalTime.of(9, 0), LocalTime.of(14, 0))
-    private val bare = FamilyConfig(version = 1, assignments = mapOf(game to "games"), policies = emptyMap())
+    private val bare = FamilyConfig(version = 1)
 
     @Test
-    fun `a category budget alone requires the usage counter`() {
-        val cfg = bare.copy(policies = mapOf("games" to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1)))))
+    fun `the family default budget alone requires the usage counter`() {
+        val cfg = bare.copy(defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1)))
         assertTrue(RuleEngine.requiresUsageCounting(cfg))
         assertEquals(managed, RuleEngine.blockedPackages(cfg, managed, monday, usageCountingAvailable = false))
     }
@@ -149,7 +144,7 @@ class BlockedPackagesTest {
         // The bypass this closes: capping only individual apps left the counter "optional",
         // and a budget that can't count down never runs out.
         val cfg = bare.copy(
-            perAppPolicies = mapOf(game to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))),
+            perAppPolicies = mapOf(game to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))),
         )
         assertTrue(RuleEngine.requiresUsageCounting(cfg))
         assertEquals(managed, RuleEngine.blockedPackages(cfg, managed, monday, usageCountingAvailable = false))
@@ -163,7 +158,7 @@ class BlockedPackagesTest {
         assertFalse(RuleEngine.requiresUsageCounting(bare.copy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window)))))
         assertFalse(
             RuleEngine.requiresUsageCounting(
-                bare.copy(perAppPolicies = mapOf(game to CategoryPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
+                bare.copy(perAppPolicies = mapOf(game to AppPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
             ),
         )
         assertFalse(RuleEngine.requiresUsageCounting(bare))
@@ -175,37 +170,41 @@ class BlockedPackagesTest {
         assertTrue(RuleEngine.requiresTrustedClock(bare.copy(bedtime = mapOf(DayType.SCHOOL to window))))
         assertTrue(RuleEngine.requiresTrustedClock(bare.copy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window)))))
         assertTrue(
+            RuleEngine.requiresTrustedClock(bare.copy(defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1)))),
+        )
+        assertTrue(
             RuleEngine.requiresTrustedClock(
-                bare.copy(policies = mapOf("games" to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1))))),
+                bare.copy(perAppPolicies = mapOf(game to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30))))),
             ),
         )
         assertTrue(
             RuleEngine.requiresTrustedClock(
-                bare.copy(policies = mapOf("games" to CategoryPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
-            ),
-        )
-        assertTrue(
-            RuleEngine.requiresTrustedClock(
-                bare.copy(perAppPolicies = mapOf(game to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30))))),
-            ),
-        )
-        assertTrue(
-            RuleEngine.requiresTrustedClock(
-                bare.copy(perAppPolicies = mapOf(game to CategoryPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
+                bare.copy(perAppPolicies = mapOf(game to AppPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(window))))),
             ),
         )
     }
 
     @Test
     fun `an empty rule slot is not a rule`() {
-        // The editors leave keys behind: a category whose budget map is empty, a windows list
+        // The editors leave keys behind: an app entry whose budget map is empty, a windows list
         // emptied of its last window. Neither is a reason to lock a device down.
         val emptyish = bare.copy(
-            policies = mapOf("games" to CategoryPolicy()),
-            perAppPolicies = mapOf(game to CategoryPolicy()),
+            perAppPolicies = mapOf(game to AppPolicy()),
             blockedWindows = mapOf(DayType.SCHOOL to emptyList()),
         )
         assertFalse(RuleEngine.requiresUsageCounting(emptyish))
         assertFalse(RuleEngine.requiresTrustedClock(emptyish))
+    }
+
+    @Test
+    fun `an app set free of the default is not blocked when the default runs out`() {
+        val cfg = config(defaultBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))
+            .let { it.copy(perAppPolicies = it.perAppPolicies + (edu to AppPolicy(unlimited = true))) }
+        val burned = mapOf(
+            game to Duration.ofMinutes(30),
+            chat to Duration.ofMinutes(30),
+            edu to Duration.ofMinutes(30),
+        )
+        assertEquals(setOf(game, chat), RuleEngine.blockedPackages(cfg, managed, monday, usageToday = burned))
     }
 }

@@ -109,6 +109,7 @@ fun WalcottApp(
     // home now, and Back must land where the parent came from. Null = the historical origin
     // (the hub for budgets, the child detail for the map).
     var budgetsReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var appsReturnTo by remember { mutableStateOf<Screen?>(null) }
     var mapReturnTo by remember { mutableStateOf<Screen?>(null) }
     // Which guided-setup preset is running (SETUP_WIZARD screen).
     var wizardPreset by remember { mutableStateOf<SetupPreset?>(null) }
@@ -213,7 +214,7 @@ fun WalcottApp(
                     overrideChildId = null
                     Screen.CHILD_DETAIL
                 } else {
-                    Screen.FAMILY
+                    appsReturnTo?.also { appsReturnTo = null } ?: Screen.FAMILY
                 }
             Screen.CHILDREN, Screen.EARN,
             Screen.REPORT, Screen.LOCATION,
@@ -407,6 +408,9 @@ fun WalcottApp(
                         viewModel,
                         onBack = ::back,
                         onOpenSpecialDays = { calendarReturnTo = Screen.BUDGETS; screen = Screen.CALENDAR },
+                        // Per-app limits are the everyday instrument now, so Limits opens onto
+                        // them; Back returns here rather than to the hub.
+                        onOpenApps = { overrideChildId = null; appsReturnTo = Screen.BUDGETS; screen = Screen.APPS },
                     )
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.EARN -> EarnRulesScreen(

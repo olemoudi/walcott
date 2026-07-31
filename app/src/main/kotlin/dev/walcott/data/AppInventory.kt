@@ -38,13 +38,12 @@ class AppInventory(context: Context) {
     }
 
     /**
-     * Packages the enforcement manages: user apps (non-system) plus any app the parent has
-     * explicitly classified. Never Walcott itself.
+     * Packages the enforcement manages: every user-installed (non-system) app, never Walcott
+     * itself. It used to also include whatever the parent had classified; with limits set per
+     * app there is nothing to classify, and an app that isn't installed can't be used anyway.
      */
-    fun managedPackages(assignments: Map<String, String>): Set<String> {
-        val userInstalled = launchableApps().filterNot { it.isSystem }.map { it.packageName }
-        return (userInstalled + assignments.keys - ownPackage).toSet()
-    }
+    fun managedPackages(): Set<String> =
+        launchableApps().filterNot { it.isSystem }.map { it.packageName }.toSet() - ownPackage
 
     fun icon(packageName: String): Drawable? =
         runCatching { pm.getApplicationIcon(packageName) }.getOrNull()

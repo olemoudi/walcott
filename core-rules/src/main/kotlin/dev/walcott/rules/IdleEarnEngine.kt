@@ -6,7 +6,7 @@ import java.time.LocalTime
  * "Idle time earns app time" with token-window caps, à la Claude Code plan limits.
  *
  * The child banks idle time (time NOT spent on managed/restricted apps) and it converts into
- * extra minutes for a target category — but bounded two ways, like a token budget:
+ * extra minutes for every app — but bounded two ways, like a token budget:
  *  - a **rolling window**: at most [windowCapMinutes] earned in any [windowHours] stretch, so it
  *    can't be binged;
  *  - a **weekly ceiling**: at most [weeklyCapMinutes] earned per 7 days.
@@ -17,7 +17,6 @@ import java.time.LocalTime
  * The caller persists the ledger and applies the grant.
  */
 data class IdleEarnConfig(
-    val targetCategoryId: String,
     /** Minutes of banked idle needed for one reward. Must be > 0. */
     val minutesIdlePerReward: Int,
     /** Minutes granted per reward block. Must be > 0. */
