@@ -19,30 +19,45 @@ class AppInventory(context: Context) {
     private val ownPackage = context.packageName
     private val telecom = context.getSystemService(android.telecom.TelecomManager::class.java)
 
-    @Volatile private var dialer: String? = null
-    @Volatile private var dialerReadAt = 0L
+    @Volatile private var reachOut: Set<String> = emptySet()
+    @Volatile private var reachOutReadAt = 0L
 
     /**
-     * The phone app, as the system currently answers it — never limited by anything Walcott
-     * does (see [WalcottRepository.essentials]).
+     * The apps that let the child reach a person: the phone, and contacts. Never limited by
+     * anything Walcott does (see [WalcottRepository.essentials]) — not by a budget, not at
+     * bedtime. Calling at three in the morning has to be possible, and so does looking up the
+     * number to call, or the pair is worth nothing.
      *
-     * Asked of the system rather than assumed: on most phones the dialer is a system app and
-     * was already out of reach, but a device whose default dialer is an ordinary installed app
-     * would have had it counted and capped like any other. "You can always call" cannot rest on
-     * how the manufacturer happened to package it.
+     * Asked of the system rather than assumed. On most phones both ship bundled, so they were
+     * already out of reach as system apps — but a device whose dialer or contacts app is an
+     * ordinary installed one would have had it counted and capped like any other. This promise
+     * cannot rest on how the manufacturer happened to package them.
      *
      * Cached with a TTL because the enforcement loop reads the essentials every tick, and
-     * re-read now and then because changing the default dialer is a thing a person can do
-     * without restarting the app.
+     * re-read now and then because a person can change their default dialer without
+     * restarting the app.
      */
-    fun defaultDialerPackage(): String? {
+    fun alwaysReachablePackages(): Set<String> {
         val now = android.os.SystemClock.elapsedRealtime()
-        if (dialer == null || now - dialerReadAt > DIALER_TTL_MS) {
-            dialer = runCatching { telecom?.defaultDialerPackage }.getOrNull()
-            dialerReadAt = now
+        if (reachOut.isEmpty() || now - reachOutReadAt > REACH_OUT_TTL_MS) {
+            reachOut = setOfNotNull(dialerPackage(), contactsPackage())
+            reachOutReadAt = now
         }
-        return dialer
+        return reachOut
     }
+
+    private fun dialerPackage(): String? = runCatching { telecom?.defaultDialerPackage }.getOrNull()
+
+    /**
+     * Whoever answers "open contacts". There is no contacts *role* to ask for the way there is
+     * for the dialer, so this resolves the intent a launcher would fire. With several handlers
+     * and no default the system answers with its own chooser, which is nobody's contacts app —
+     * hence the guard.
+     */
+    private fun contactsPackage(): String? = runCatching {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CONTACTS)
+        pm.resolveActivity(intent, 0)?.activityInfo?.packageName?.takeIf { it != RESOLVER_PACKAGE }
+    }.getOrNull()
 
     /** Launchable apps, sorted by name. Excludes Walcott itself. */
     fun launchableApps(): List<InstalledApp> {
@@ -82,7 +97,10 @@ class AppInventory(context: Context) {
         (flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
 
     private companion object {
-        /** How long the resolved dialer is trusted; it changes about as often as never. */
-        const val DIALER_TTL_MS = 60 * 60 * 1000L
+        /** How long the resolved apps are trusted; they change about as often as never. */
+        const val REACH_OUT_TTL_MS = 60 * 60 * 1000L
+
+        /** The system's "which app should open this?" chooser, not an app in its own right. */
+        const val RESOLVER_PACKAGE = "android"
     }
 }

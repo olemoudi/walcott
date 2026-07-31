@@ -283,10 +283,10 @@ class EnforcementService : LifecycleService() {
     private suspend fun runLoop() {
         val app = application as WalcottApplication
         val repo = app.repository
-        // Which app the phone call goes through, resolved once at start-up and logged: it is
-        // exempt from every rule, so "why is this one never blocked" has to be answerable from
-        // the child's own debug log rather than by guessing at the OEM's packaging.
-        DebugLog.i(TAG, "phone app (never limited): ${repo.inventory.defaultDialerPackage() ?: "none"}")
+        // The apps that reach a person, resolved once at start-up and logged: they are exempt
+        // from every rule, so "why is this one never blocked" has to be answerable from the
+        // child's own debug log rather than by guessing at the OEM's packaging.
+        DebugLog.i(TAG, "phone and contacts (never limited): ${repo.inventory.alwaysReachablePackages()}")
         var lastTick = SystemClock.elapsedRealtime()
         var lastForeground: String? = null
         var lastUsageAccess: Boolean? = null

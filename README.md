@@ -60,8 +60,9 @@ screen time for every app — putting it down is worth something.
 
 **Per-app rules.** Any single app can have its own blocked hours as well as its own limit —
 and one app can be marked "never limit this", so a bus timetable or a chat with you is always
-reachable. **The phone app is never limited by anything**, not even at bedtime: a child has to
-be able to call, and above all to call you.
+reachable. **The phone and contacts apps are never limited by anything**, not even at bedtime:
+a child has to be able to call, and above all to call you — and a number they can't look up is
+a call they can't make.
 
 **Web filtering.** Block specific domains without root, using a local VPN that only inspects
 DNS. You can see what a child's app is actually contacting and block it from there.

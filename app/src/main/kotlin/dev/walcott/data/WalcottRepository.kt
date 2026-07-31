@@ -26,15 +26,16 @@ class WalcottRepository(
     private fun today(): Long = LocalDate.now().toEpochDay()
 
     /**
-     * Apps no rule of ours may ever touch: Walcott itself, and the phone app.
+     * Apps no rule of ours may ever touch: Walcott itself, the phone, and contacts.
      *
-     * The phone is not a convenience — a child has to be able to call at any hour, including
-     * the middle of bedtime, and especially to call the parent who set the rules. It is asked
-     * of the system (see [AppInventory.defaultDialerPackage]) rather than assumed to be a
-     * system app, so a device whose dialer is an ordinary installed app is covered too.
+     * Reaching a person is not a convenience — a child has to be able to call at any hour,
+     * including the middle of bedtime, and especially to call the parent who set the rules;
+     * and a number they cannot look up is a call they cannot make. Both are asked of the
+     * system (see [AppInventory.alwaysReachablePackages]) rather than assumed to be system
+     * apps, so a device where either is an ordinary installed app is covered too.
      */
     private val essentials: Set<String>
-        get() = setOf(ownPackage) + listOfNotNull(inventory.defaultDialerPackage())
+        get() = setOf(ownPackage) + inventory.alwaysReachablePackages()
 
     val settingsFlow: Flow<PolicySettings> = settingsStore.settings
 
