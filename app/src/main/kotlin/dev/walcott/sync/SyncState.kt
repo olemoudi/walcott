@@ -77,6 +77,9 @@ data class ParentEvent(
         const val TYPE_PANIC_DENIED = "panic_denied"
         const val TYPE_PANIC_CANCELLED = "panic_cancelled"
 
+        /** An install window has been open on a child device past its first hour. */
+        const val TYPE_INSTALL_WINDOW = "install_window"
+
         /** A child sent a selection of domains to block; [detail] is the app, [count] how many. */
         const val TYPE_DOMAINS = "domains"
 
@@ -226,6 +229,14 @@ data class SyncState(
      * each two-hourly notice raises exactly one alert and a re-started request alerts again.
      */
     val panicAlerted: Map<String, String> = emptyMap(),
+    /**
+     * deviceId -> wall-clock ms when the parent FIRST saw that device's install window open
+     * (from [ChildSnapshot.installExemptionUntilMs]), and when it last reminded about it.
+     * Cleared when the window closes; drives the hourly "installs are still allowed" nag
+     * (see [InstallWindowReminder]).
+     */
+    val installWindowSeen: Map<String, Long> = emptyMap(),
+    val installWindowRemindedAt: Map<String, Long> = emptyMap(),
     /** When the parent last saved a family backup file (0 = never), for the backup card. */
     val lastBackupAtMs: Long = 0,
     /** When this device first ran as a parent (0 = not yet); anchors the backup reminders. */

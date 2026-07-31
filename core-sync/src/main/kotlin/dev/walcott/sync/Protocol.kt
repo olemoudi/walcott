@@ -45,6 +45,8 @@ data class ChildRequest(
     val kind: String,
     val text: String,
     val createdAtEpochMs: Long,
+    /** The Play package for [KIND_INSTALL] (text carries the human label); "" otherwise. */
+    val pkg: String = "",
 ) {
     companion object {
         const val KIND_APP = "app"
@@ -52,6 +54,12 @@ data class ChildRequest(
 
         /** Domains an app was seen resolving, sent for the parent to block (see [DomainAsk]). */
         const val KIND_DOMAINS = "domains"
+
+        /**
+         * One concrete app, shared from the Play Store on the child's phone. Approval pushes
+         * an install of exactly [pkg] (the tight single-app window), never a blanket window.
+         */
+        const val KIND_INSTALL = "install"
     }
 }
 
@@ -429,6 +437,12 @@ data class ChildSnapshot(
      * legacy child, so an old device can never look like it is asking for one.
      */
     val panic: PanicRequest? = null,
+    /**
+     * Wall-clock ms until which app installs are temporarily allowed on this device (a PIN
+     * window or an approved install), so the parent can see — and be reminded about — a
+     * window that is still open. 0 = closed / legacy child that doesn't report it.
+     */
+    val installExemptionUntilMs: Long = 0,
     /**
      * The device's UTC offset in minutes when it published (Madrid in winter = 60). [epochDay]
      * and every counter beside it are keyed to the child's OWN calendar day, which stops being

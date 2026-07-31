@@ -32,8 +32,13 @@ object DeviceRestrictions {
     const val KEY_APPS_CONTROL = "apps_control"
     const val KEY_UNKNOWN_SOURCES = "unknown_sources"
 
-    /** How long the PIN-gated "allow installs" exemption lasts on the child device. */
+    /** How long an approved generic app ask keeps installs open on the child device. */
     const val INSTALL_EXEMPTION_MS = 15 * 60 * 1000L
+
+    /** The PIN-gated window choices: a quick errand, a session, and "I don't know" (8 h). */
+    const val INSTALL_EXEMPTION_SHORT_MS = 10 * 60 * 1000L
+    const val INSTALL_EXEMPTION_MEDIUM_MS = 30 * 60 * 1000L
+    const val INSTALL_EXEMPTION_UNSURE_MS = 8 * 60 * 60 * 1000L
 
     /** Anti-tamper features seeded on by default for new families (see PolicySettings.seedRestrictions). */
     val RECOMMENDED_DEFAULTS = setOf(KEY_DATETIME, KEY_VPN, KEY_APPS_CONTROL, KEY_UNKNOWN_SOURCES)

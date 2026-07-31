@@ -217,6 +217,52 @@ object SyncNotifications {
         notifId = ("ask$requestId").hashCode(),
     )
 
+    /** A child shared one concrete app from Play and wants it installed (see KIND_INSTALL). */
+    fun notifyInstallAsk(context: Context, childName: String, appLabel: String, requestId: String) = post(
+        context, CHANNEL, R.string.sync_request_channel_name,
+        title = context.getString(R.string.sync_install_ask_title, childName),
+        text = context.getString(R.string.sync_install_ask_text, appLabel),
+        notifId = ("ask$requestId").hashCode(),
+    )
+
+    /**
+     * An install window has been open on a child device for over an hour (the "I don't know
+     * how long" unlock). Hourly nag with a one-tap re-block, so an open-ended window is never
+     * quietly forgotten — the child re-arms itself at the 8-hour mark regardless.
+     */
+    fun notifyInstallWindowOpen(
+        context: Context,
+        childName: String,
+        remaining: String,
+        deviceId: String,
+        childId: String = "",
+    ) {
+        val reblock = PendingIntent.getBroadcast(
+            context, "reblock$deviceId".hashCode(),
+            Intent(context, InstallReminderReceiver::class.java)
+                .setAction(InstallReminderReceiver.ACTION_REBLOCK)
+                .putExtra(InstallReminderReceiver.EXTRA_DEVICE_ID, deviceId),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        post(
+            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            title = context.getString(R.string.install_window_open_title, childName),
+            text = context.getString(R.string.install_window_open_text, remaining),
+            notifId = "installwin".hashCode() + deviceId.hashCode(),
+            dest = childDest(childId),
+            action = NotificationCompat.Action(
+                0, context.getString(R.string.install_window_reblock), reblock,
+            ),
+        )
+    }
+
+    /** Cancels the open-window nag once the window is closed (re-blocked or expired). */
+    fun cancelInstallWindowOpen(context: Context, deviceId: String) {
+        runCatching {
+            NotificationManagerCompat.from(context).cancel("installwin".hashCode() + deviceId.hashCode())
+        }
+    }
+
     /**
      * A child's domain selection arrived whole and is waiting to be turned into rules. Its own
      * notification rather than the generic ask: answering it is not yes/no, it is choosing a reach.

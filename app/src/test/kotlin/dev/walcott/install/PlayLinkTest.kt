@@ -68,4 +68,40 @@ class PlayLinkTest {
     fun `rejects a single-segment id that is not a real package`() {
         assertNull(PlayLink.parsePackage("market://details?id=android"))
     }
+
+    // --- parseLabel: the human title travelling with an install request ---
+
+    @Test
+    fun `label prefers the share subject`() {
+        assertEquals(
+            "Duolingo",
+            PlayLink.parseLabel("Duolingo", "https://play.google.com/store/apps/details?id=com.duolingo"),
+        )
+    }
+
+    @Test
+    fun `label falls back to the first non-url line of the text`() {
+        assertEquals(
+            "Duolingo: language lessons",
+            PlayLink.parseLabel(null, "Duolingo: language lessons\nhttps://play.google.com/store/apps/details?id=com.duolingo"),
+        )
+    }
+
+    @Test
+    fun `label skips a url subject and strips quotes`() {
+        assertEquals(
+            "Clash Royale",
+            PlayLink.parseLabel(
+                "https://play.google.com/store/apps/details?id=com.supercell.clashroyale",
+                "“Clash Royale”\nhttps://play.google.com/store/apps/details?id=com.supercell.clashroyale",
+            ),
+        )
+    }
+
+    @Test
+    fun `label is empty when the share carries nothing readable`() {
+        assertEquals("", PlayLink.parseLabel(null, "https://play.google.com/store/apps/details?id=com.duolingo"))
+        assertEquals("", PlayLink.parseLabel(null, "com.duolingo"))
+        assertEquals("", PlayLink.parseLabel(null, null))
+    }
 }

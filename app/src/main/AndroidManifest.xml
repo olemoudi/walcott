@@ -163,6 +163,11 @@
             android:name=".sync.PanicDenyReceiver"
             android:exported="false" />
 
+        <!-- "Re-block now" action on the open-install-window reminder. -->
+        <receiver
+            android:name=".sync.InstallReminderReceiver"
+            android:exported="false" />
+
         <!-- Hands the encrypted family backup to the share sheet (email-to-self and the like). -->
         <provider
             android:name="androidx.core.content.FileProvider"

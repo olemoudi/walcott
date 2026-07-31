@@ -131,6 +131,22 @@ class WalcottApplication : Application() {
     }
 
     /**
+     * Child's side of the share-sheet flow: queues an install request for the parents. Runs on
+     * the app scope so it survives the activity finishing; [onResult] is invoked on Main.
+     */
+    fun requestAppInstall(
+        pkg: String,
+        label: String,
+        onResult: (dev.walcott.sync.SyncManager.InstallRequestResult) -> Unit,
+    ) {
+        appScope.launch {
+            val result = runCatching { syncManager.sendInstallRequest(pkg, label) }
+                .getOrDefault(dev.walcott.sync.SyncManager.InstallRequestResult.SENT)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(result) }
+        }
+    }
+
+    /**
      * Starts/stops enforcement when the device mode CHANGES (a foreground, user-driven
      * event, so the foreground-service start is always allowed). The initial start is
      * done by MainActivity / BootReceiver, which run in exempt contexts — reacting to the

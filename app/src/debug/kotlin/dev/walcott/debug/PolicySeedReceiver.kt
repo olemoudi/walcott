@@ -288,6 +288,21 @@ class PolicySeedReceiver : BroadcastReceiver() {
             // `--el child_applied_version N`: the policy version this fake child claims to run
             // (N >= 1 but below the parent's own drives the "updating rules" chip).
             appliedPolicyVersion = intent.getLongExtra("child_applied_version", 0),
+            // `--es child_ask "install:pkg:Label"` (or "app:text" / "other:text"): one pending
+            // ask from this fake child, so the parent's request cards can be driven locally.
+            asks = intent.getStringExtra("child_ask")?.let { spec ->
+                val parts = spec.split(":", limit = 3)
+                val kind = parts.getOrElse(0) { "other" }
+                listOf(
+                    dev.walcott.sync.ChildRequest(
+                        requestId = "debug-ask-${spec.hashCode()}",
+                        kind = kind,
+                        text = parts.getOrElse(2) { parts.getOrElse(1) { "" } },
+                        pkg = if (kind == dev.walcott.sync.ChildRequest.KIND_INSTALL) parts.getOrElse(1) { "" } else "",
+                        createdAtEpochMs = System.currentTimeMillis(),
+                    ),
+                )
+            } ?: emptyList(),
             // `--ei child_panic N`: this fake child is N checkpoints into an emergency release,
             // so the parent's alert card, home banner and refusal can be driven on one emulator.
             panic = intent.getIntExtra("child_panic", -1).takeIf { it >= 0 }?.let { checkpoints ->

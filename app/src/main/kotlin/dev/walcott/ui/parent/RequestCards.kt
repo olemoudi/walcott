@@ -2,6 +2,8 @@ package dev.walcott.ui.parent
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,14 +11,22 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import dev.walcott.AppCategory
 import dev.walcott.R
+import dev.walcott.install.PlayIntents
 import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.DomainAsk
 import dev.walcott.sync.SyncManager
+import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 
@@ -124,12 +134,65 @@ fun AskCard(pending: SyncManager.PendingAsk, viewModel: dev.walcott.ui.WalcottVi
             onDone = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
             onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
         )
+    } else if (pending.ask.kind == ChildRequest.KIND_INSTALL && pending.ask.pkg.isNotBlank()) {
+        InstallAskCard(
+            pending = pending,
+            onApprove = { categoryId -> viewModel.approveInstallAsk(pending.ask.requestId, categoryId) },
+            onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
+        )
     } else {
         AskRequestCard(
             pending = pending,
             onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
             onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
         )
+    }
+}
+
+/**
+ * A child's one-app install request, shared from its Play page: title + package, a look at
+ * the store listing before deciding, and an optional category so the app isn't born
+ * unclassified. Approving installs only this package — installs stay blocked throughout.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun InstallAskCard(
+    pending: SyncManager.PendingAsk,
+    onApprove: (categoryId: String?) -> Unit,
+    onDeny: () -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val context = LocalContext.current
+    var category by remember(pending.ask.requestId) { mutableStateOf<AppCategory?>(null) }
+
+    WalcottCard {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Text(pending.childName, style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.ask_summary_app, pending.ask.text))
+            Text(
+                pending.ask.pkg,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = {
+                runCatching { context.startActivity(PlayIntents.storePage(context, pending.ask.pkg)) }
+            }) { Text(stringResource(R.string.ask_install_view_play)) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                AppCategory.entries.forEach { cat ->
+                    ChoiceChip(
+                        selected = category == cat,
+                        onClick = { category = if (category == cat) null else cat },
+                        label = stringResource(cat.nameRes),
+                    )
+                }
+            }
+            Text(
+                stringResource(R.string.ask_install_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ApproveDenyRow(onApprove = { onApprove(category?.id) }, onDeny = onDeny)
+        }
     }
 }
 

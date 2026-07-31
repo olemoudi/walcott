@@ -401,7 +401,8 @@ fun WalcottApp(
                         childDevice = !parentMode,
                         installsBlocked = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions,
                         installExemptionUntil = installExemption,
-                        onAllowInstalls = { viewModel.allowInstallsTemporarily() },
+                        onAllowInstalls = { durationMs -> viewModel.allowInstallsFor(durationMs) },
+                        onEndInstallWindow = { viewModel.endInstallExemption() },
                         onOpenDebugLogs = { screen = Screen.DEBUG_LOGS },
                         onChangeMode = {
                             viewModel.resetDeviceMode()

@@ -1,5 +1,6 @@
 package dev.walcott.ui.parent
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.WalcottApplication
 import dev.walcott.data.PinResult
+import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.data.ThemeMode
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.ChoiceChip
@@ -60,7 +62,8 @@ fun AppSettingsScreen(
     childDevice: Boolean,
     installsBlocked: Boolean,
     installExemptionUntil: Long,
-    onAllowInstalls: () -> Unit,
+    onAllowInstalls: (durationMs: Long) -> Unit,
+    onEndInstallWindow: () -> Unit,
     onOpenDebugLogs: () -> Unit,
     onChangeMode: () -> Unit,
     onReleased: () -> Unit,
@@ -72,6 +75,7 @@ fun AppSettingsScreen(
     var confirmRelease by remember { mutableStateOf(false) }
     var releasing by remember { mutableStateOf(false) }
     var released by remember { mutableStateOf(false) }
+    var showAllowInstalls by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.app_settings_title), onBack)
@@ -121,7 +125,7 @@ fun AppSettingsScreen(
                     } else {
                         stringResource(R.string.allow_installs_desc)
                     },
-                    onClick = onAllowInstalls,
+                    onClick = { showAllowInstalls = true },
                 )
             }
             if (childDevice) {
@@ -141,6 +145,15 @@ fun AppSettingsScreen(
                 )
             }
         }
+    }
+
+    if (showAllowInstalls) {
+        AllowInstallsDialog(
+            windowOpen = installExemptionUntil > System.currentTimeMillis(),
+            onPick = { durationMs -> showAllowInstalls = false; onAllowInstalls(durationMs) },
+            onReblock = { showAllowInstalls = false; onEndInstallWindow() },
+            onDismiss = { showAllowInstalls = false },
+        )
     }
 
     if (confirmChangeMode) {
@@ -194,6 +207,89 @@ fun AppSettingsScreen(
                 }
             },
         )
+    }
+}
+
+/**
+ * The PIN-gated "allow installs" flow, in the two steps the situation deserves: is this
+ * temporary — and if so, for how long? "I don't know" opens the long window (8 h) with hourly
+ * reminders on the parent phone from the first hour, and the block re-arms itself at the end.
+ * Not-temporary is a policy change, which belongs in Device protection on the parent's phone —
+ * a local policy edit here would be overwritten by the next sync.
+ */
+@Composable
+private fun AllowInstallsDialog(
+    windowOpen: Boolean,
+    onPick: (durationMs: Long) -> Unit,
+    onReblock: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // Step 1 asks "temporary?"; "yes" advances, "no" swaps in the permanent-path hint.
+    var step by remember { mutableStateOf(if (windowOpen) Step.DURATION else Step.TEMPORARY) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.allow_installs_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.sm)) {
+                when (step) {
+                    Step.TEMPORARY -> Text(stringResource(R.string.allow_installs_q_temporary))
+                    Step.PERMANENT_HINT -> Text(stringResource(R.string.allow_installs_permanent_hint))
+                    Step.DURATION -> {
+                        Text(stringResource(R.string.allow_installs_duration_q))
+                        DurationOption(stringResource(R.string.allow_installs_10)) {
+                            onPick(DeviceRestrictions.INSTALL_EXEMPTION_SHORT_MS)
+                        }
+                        DurationOption(stringResource(R.string.allow_installs_30)) {
+                            onPick(DeviceRestrictions.INSTALL_EXEMPTION_MEDIUM_MS)
+                        }
+                        DurationOption(
+                            stringResource(R.string.allow_installs_unsure),
+                            supporting = stringResource(R.string.allow_installs_unsure_hint),
+                        ) { onPick(DeviceRestrictions.INSTALL_EXEMPTION_UNSURE_MS) }
+                        if (windowOpen) {
+                            DurationOption(stringResource(R.string.allow_installs_reblock)) { onReblock() }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (step == Step.TEMPORARY) {
+                TextButton(onClick = { step = Step.DURATION }) {
+                    Text(stringResource(R.string.allow_installs_temp_yes))
+                }
+            }
+        },
+        dismissButton = {
+            when (step) {
+                Step.TEMPORARY -> TextButton(onClick = { step = Step.PERMANENT_HINT }) {
+                    Text(stringResource(R.string.allow_installs_temp_no))
+                }
+                else -> TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            }
+        },
+    )
+}
+
+private enum class Step { TEMPORARY, PERMANENT_HINT, DURATION }
+
+/** One tappable duration row inside [AllowInstallsDialog]. */
+@Composable
+private fun DurationOption(label: String, supporting: String? = null, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = Tokens.spacing.sm),
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
+        if (supporting != null) {
+            Text(
+                supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

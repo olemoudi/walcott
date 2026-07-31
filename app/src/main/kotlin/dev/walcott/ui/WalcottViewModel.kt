@@ -82,7 +82,12 @@ class WalcottViewModel(
     fun childAppIcon(pkg: String): ByteArray? = sync.iconBytes(pkg)
 
     fun askFor(kind: String, text: String) = viewModelScope.launch { sync.askFor(kind, text) }
-    fun allowInstallsTemporarily() = viewModelScope.launch { sync.allowInstallsTemporarily() }
+    fun allowInstallsFor(durationMs: Long) = viewModelScope.launch { sync.allowInstallsFor(durationMs) }
+    fun endInstallExemption() = viewModelScope.launch { sync.endInstallExemption() }
+
+    /** Approves a child's one-app install request: classify (optional), resolve, push. */
+    fun approveInstallAsk(requestId: String, categoryId: String?) =
+        viewModelScope.launch { sync.approveInstallAsk(requestId, categoryId) }
 
     // --- Domain monitor: the child device, driven by a parent holding it ---
 

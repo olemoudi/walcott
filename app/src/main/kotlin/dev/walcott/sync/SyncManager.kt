@@ -357,6 +357,36 @@ class SyncManager(
         publishSelf()
     }
 
+    enum class InstallRequestResult { SENT, DUPLICATE, ALREADY_INSTALLED }
+
+    /**
+     * Child: ask the parents for one concrete app, shared from its Play page. Approval pushes
+     * an install of exactly this package (see [ChildRequest.KIND_INSTALL]) — never a blanket
+     * window. Deduplicated so mashing "share" doesn't stack copies on the parent's home.
+     */
+    suspend fun sendInstallRequest(pkg: String, label: String): InstallRequestResult {
+        if (runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess) {
+            return InstallRequestResult.ALREADY_INSTALLED
+        }
+        if (syncStore.current().pendingAsks.any { it.kind == ChildRequest.KIND_INSTALL && it.pkg == pkg }) {
+            return InstallRequestResult.DUPLICATE
+        }
+        syncStore.update { s ->
+            s.copy(
+                childVersion = s.childVersion + 1,
+                pendingAsks = s.pendingAsks + ChildRequest(
+                    requestId = UUID.randomUUID().toString(),
+                    kind = ChildRequest.KIND_INSTALL,
+                    text = label.ifBlank { pkg },
+                    pkg = pkg,
+                    createdAtEpochMs = System.currentTimeMillis(),
+                ),
+            )
+        }
+        publishSelf()
+        return InstallRequestResult.SENT
+    }
+
     /**
      * Child: hand the parent a selection of domains the monitor saw (see [DomainDelivery]).
      *
@@ -545,11 +575,33 @@ class SyncManager(
         runCatching { publishSelf() }
     }
 
-    /** PIN-gated manual exemption: allow installs on this device for a while (blanket). */
-    suspend fun allowInstallsTemporarily() {
-        syncStore.update {
-            it.copy(installExemptionUntilMs = System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS)
+    /** PIN-gated manual exemption: allow installs on this device for [durationMs] (blanket). */
+    suspend fun allowInstallsFor(durationMs: Long) {
+        val until = System.currentTimeMillis() + durationMs
+        syncStore.update { it.copy(installExemptionUntilMs = until) }
+        // Synchronous lift, like openInstallForPush: the parent is standing at the device with
+        // Play already open — don't depend on the exemption collector being alive and prompt.
+        runCatching {
+            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = until)
         }
+        // The window is parent-visible state (and drives the reminder ladder on their phone).
+        runCatching { publishSelf() }
+    }
+
+    /** Ends any open install window now and re-arms the block (the "re-block now" action). */
+    suspend fun endInstallExemption() {
+        val s = syncStore.current()
+        if (s.pendingInstallPackage.isNotEmpty()) {
+            // A pushed install's tight window is open: close it through its own path so the
+            // pending fields and the prompt notification are cleaned up with it.
+            closeInstallWindow()
+            return
+        }
+        syncStore.update { it.copy(installExemptionUntilMs = 0) }
+        runCatching {
+            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = 0)
+        }
+        runCatching { publishSelf() }
     }
 
     /** True while a parent-pushed install's tight window is open (drives the close-on-install). */
@@ -676,6 +728,21 @@ class SyncManager(
             }
         }
         publishSelf()
+    }
+
+    /**
+     * Approves a child's install request ([ChildRequest.KIND_INSTALL]): classifies the app
+     * first when a category was picked (so it isn't born blocked), resolves the ask, and
+     * pushes the tight single-app install to the device that asked — installs of anything
+     * else stay blocked throughout.
+     */
+    suspend fun approveInstallAsk(requestId: String, categoryId: String?) {
+        val owner = syncStore.current().children.firstOrNull { c -> c.asks.any { it.requestId == requestId } }
+        val ask = owner?.asks?.firstOrNull { it.requestId == requestId }
+        if (owner == null || ask == null || ask.pkg.isBlank()) return
+        if (categoryId != null) repository.assign(ask.pkg, categoryId)
+        resolveRequest(requestId, approved = true, grantedMinutes = 0)
+        sendCommand(owner.deviceId, RemoteAction.INSTALL_APP, arg = ask.pkg)
     }
 
     /** Parent asks a child device to report its current location on its next check-in. */
@@ -1236,6 +1303,7 @@ class SyncManager(
                     enforcementGaps = s.enforcementGaps,
                     clockSkewMs = s.clockSkewMs,
                     panic = s.panic,
+                    installExemptionUntilMs = s.installExemptionUntilMs,
                     domainChunks = DomainDelivery.forPublish(s.domainBatch),
                     // Which clock `epochDay` and the counters beside it were read by, so the
                     // parent doesn't date them with its own while one of them is travelling.
@@ -1645,12 +1713,26 @@ class SyncManager(
             snapshot.epochDay,
             snapshot.usage.sumOf { it.seconds },
         )
+        // Track when this device's install window was first seen open, so the hourly reminder
+        // can count "open for an hour" from reality rather than from worker cadence.
+        val installWindowOpen = snapshot.installExemptionUntilMs > System.currentTimeMillis()
         syncStore.update {
             it.copy(
                 children = merged,
                 lastSeen = it.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
                 commands = if (ackedId != null) it.commands.filterNot { c -> c.id == ackedId } else it.commands,
                 usageHistory = it.usageHistory + (ledgerKey to ledger),
+                installWindowSeen = when {
+                    installWindowOpen && snapshot.deviceId !in it.installWindowSeen ->
+                        it.installWindowSeen + (snapshot.deviceId to System.currentTimeMillis())
+                    !installWindowOpen -> it.installWindowSeen - snapshot.deviceId
+                    else -> it.installWindowSeen
+                },
+                installWindowRemindedAt = if (installWindowOpen) {
+                    it.installWindowRemindedAt
+                } else {
+                    it.installWindowRemindedAt - snapshot.deviceId
+                },
             ).let { s ->
                 if (ackCompleted == null) {
                     s
@@ -1663,6 +1745,11 @@ class SyncManager(
                     )
                 }
             }
+        }
+
+        // The open-window nag is stateful on screen too: drop it the moment the window closes.
+        if (!installWindowOpen && snapshot.deviceId in before.installWindowSeen) {
+            SyncNotifications.cancelInstallWindowOpen(context, snapshot.deviceId)
         }
 
         // Alert once when a child reports enforcement is inactive (not Device Owner and no
@@ -1869,7 +1956,13 @@ class SyncManager(
         // Generic asks (app installs, free-form) notify too — they used to be UI-only.
         val newlyAsked = snapshot.asks.map { it.requestId }.toSet() - prevAskIds - resolved
         for (ask in snapshot.asks.filter { it.requestId in newlyAsked }) {
-            SyncNotifications.notifyAsk(context, snapshot.displayName, ask.text, ask.requestId)
+            // Install requests get their own wording — "asks for something" undersells the
+            // one ask the parent can answer entirely from the notification shade's tap.
+            if (ask.kind == ChildRequest.KIND_INSTALL) {
+                SyncNotifications.notifyInstallAsk(context, snapshot.displayName, ask.text, ask.requestId)
+            } else {
+                SyncNotifications.notifyAsk(context, snapshot.displayName, ask.text, ask.requestId)
+            }
             syncStore.update { it.plusEvent(event(ParentEvent.TYPE_ASK, snapshot, detail = ask.text)) }
         }
 

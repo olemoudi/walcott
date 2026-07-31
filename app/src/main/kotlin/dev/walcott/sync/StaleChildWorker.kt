@@ -60,12 +60,33 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
             feedEvent(ParentEvent.TYPE_NEVER_REPORTED, childId, name)
         }
 
-        if (toAlert.isEmpty() && neverReported.isEmpty()) return Result.success()
+        // An install window still open on a child device after its first hour: nag hourly with
+        // a one-tap re-block, until the parent acts or the child re-arms itself at the 8 h mark
+        // (see InstallWindowReminder). Short windows expire before the first nag is due.
+        val reminded = mutableMapOf<String, Long>()
+        for (snapshot in state.children) {
+            val due = InstallWindowReminder.shouldRemind(
+                untilMs = snapshot.installExemptionUntilMs,
+                firstSeenMs = state.installWindowSeen[snapshot.deviceId] ?: 0L,
+                lastReminderMs = state.installWindowRemindedAt[snapshot.deviceId] ?: 0L,
+                nowMs = now,
+            )
+            if (!due) continue
+            val name = registry.firstOrNull { it.childId == snapshot.childId && it.childId.isNotBlank() }?.name
+                ?: snapshot.displayName
+            val remaining = Duration.ofMillis(snapshot.installExemptionUntilMs - now).humanize()
+            SyncNotifications.notifyInstallWindowOpen(context, name, remaining, snapshot.deviceId, snapshot.childId)
+            feedEvent(ParentEvent.TYPE_INSTALL_WINDOW, snapshot.childId, name)
+            reminded[snapshot.deviceId] = now
+        }
+
+        if (toAlert.isEmpty() && neverReported.isEmpty() && reminded.isEmpty()) return Result.success()
         syncStore.update {
             events.fold(
                 it.copy(
                     staleNotifiedLastSeen = it.staleNotifiedLastSeen + toAlert +
                         neverReported.associateWith { Staleness.NEVER },
+                    installWindowRemindedAt = it.installWindowRemindedAt + reminded,
                 ),
             ) { state, event -> state.plusEvent(event) }
         }

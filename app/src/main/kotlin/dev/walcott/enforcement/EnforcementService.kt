@@ -73,18 +73,26 @@ class EnforcementService : LifecycleService() {
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             inventoryDirty = true
+            val app = application as WalcottApplication
+            val realChange = intent?.action in
+                setOf(Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_REMOVED) &&
+                intent?.getBooleanExtra(Intent.EXTRA_REPLACING, false) == false
             // A genuinely NEW install (not an app self-update) during a parent-pushed install
             // window closes that window at once, re-arming the install block so the child can't
             // slip a second app in behind the pushed one.
-            if (intent?.action == Intent.ACTION_PACKAGE_ADDED &&
-                !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+            if (intent?.action == Intent.ACTION_PACKAGE_ADDED && realChange &&
+                app.syncManager.pendingInstall.value.isNotEmpty()
             ) {
-                val app = application as WalcottApplication
-                if (app.syncManager.pendingInstall.value.isNotEmpty()) {
-                    // The added package tells closeInstallWindow whether the pushed app itself
-                    // landed (ack "installed" to the parent) or something else closed the window.
-                    val added = intent.data?.schemeSpecificPart
-                    lifecycleScope.launch { runCatching { app.syncManager.closeInstallWindow(added) } }
+                // The added package tells closeInstallWindow whether the pushed app itself
+                // landed (ack "installed" to the parent) or something else closed the window.
+                val added = intent.data?.schemeSpecificPart
+                lifecycleScope.launch { runCatching { app.syncManager.closeInstallWindow(added) } }
+            } else if (realChange) {
+                // The parent's app list should follow reality in seconds, not at the next
+                // heartbeat: a new (or removed) app publishes now, throttled so a batch of
+                // installs during an open window costs one message a minute, not one each.
+                lifecycleScope.launch {
+                    runCatching { app.syncManager.publishHeartbeatIfStale(PACKAGE_PUBLISH_MIN_MS) }
                 }
             }
         }
@@ -490,6 +498,9 @@ class EnforcementService : LifecycleService() {
         private const val MIN_LOCATION_GAP_MILLIS = 30_000L
         /** Screen-off checkpoint publish, skipped if anything published this recently. */
         private const val SCREEN_OFF_PUBLISH_MIN_MS = 5 * 60_000L
+
+        /** Publish throttle for package add/remove — prompt, but one message a minute at most. */
+        private const val PACKAGE_PUBLISH_MIN_MS = 60_000L
         private const val LOC_TAG = "WalcottLocation"
         private const val TAG = "WalcottEnforce"
 

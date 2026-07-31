@@ -489,8 +489,22 @@
 
     <!-- Install exemption + child asks -->
     <string name="allow_installs_title">Allow app installs</string>
-    <string name="allow_installs_desc">Lift the install block on this device for 15 minutes</string>
-    <string name="allow_installs_active">Installs allowed — %1$s left. Tap to restart the window</string>
+    <string name="allow_installs_desc">Lift the install block on this device for a while</string>
+    <string name="allow_installs_active">Installs allowed — %1$s left. Tap to change or re-block</string>
+    <string name="allow_installs_q_temporary">Is this a temporary unlock?</string>
+    <string name="allow_installs_temp_yes">Yes, temporary</string>
+    <string name="allow_installs_temp_no">No</string>
+    <string name="allow_installs_permanent_hint">To remove the block for good, turn it off under Device protection on the parent phone. A change made here would be overwritten by the next sync.</string>
+    <string name="allow_installs_duration_q">How long do you need?</string>
+    <string name="allow_installs_10">10 minutes</string>
+    <string name="allow_installs_30">30 minutes</string>
+    <string name="allow_installs_unsure">I don\'t know</string>
+    <string name="allow_installs_unsure_hint">Installs stay open for 8 hours. Your phone reminds you every hour, and the block comes back on its own.</string>
+    <string name="allow_installs_reblock">Re-block now</string>
+    <string name="install_window_open_title">Installs are still allowed on %1$s\'s phone</string>
+    <string name="install_window_open_text">%1$s left before the block comes back on its own.</string>
+    <string name="install_window_reblock">Re-block now</string>
+    <string name="event_install_window">Installs are still allowed on %1$s\'s phone</string>
     <string name="ask_card_title">Ask your parents for something</string>
     <string name="ask_card_desc">An app or anything else — they\'ll see it in Walcott</string>
     <string name="ask_dialog_title">Ask for something</string>
@@ -599,7 +613,8 @@
     <string name="webfilter_child_rules_note">Per-app domain rules are managed at the family level and still apply to this child.</string>
 
     <!-- Remote assisted app install (share from Play) -->
-    <string name="install_share_label">Install on a child</string>
+    <!-- The share-sheet target name: mode-neutral, since the child shares here to ASK. -->
+    <string name="install_share_label">Walcott</string>
     <string name="install_share_title">Install on a child</string>
     <string name="install_share_app">App: %1$s</string>
     <string name="install_share_pick_child">On which child?</string>
@@ -609,6 +624,18 @@
     <string name="install_share_bad_link">Couldn\'t read the app link. Share the app\'s full Play Store page.</string>
     <string name="install_share_parent_only">Only the parent device can install apps on a child.</string>
     <string name="install_share_no_children">No linked child devices yet.</string>
+    <string name="install_share_not_linked">This phone isn\'t linked to a family yet.</string>
+    <!-- The child's side of the share: ask the parents for exactly this app -->
+    <string name="install_request_title">Ask your parents for this app?</string>
+    <string name="install_request_body">A request for %1$s will be sent. If they approve, it installs by itself.</string>
+    <string name="install_request_send">Send request</string>
+    <string name="install_request_sent">Request sent to your parents</string>
+    <string name="install_request_duplicate">You already asked for this app</string>
+    <string name="install_request_already">This app is already installed</string>
+    <string name="sync_install_ask_title">%1$s wants to install an app</string>
+    <string name="sync_install_ask_text">Asking for: %1$s</string>
+    <string name="ask_install_view_play">View on Google Play</string>
+    <string name="ask_install_hint">Approving installs only this app; everything else stays blocked.</string>
     <string name="install_channel_name">App install requests</string>
     <string name="install_prompt_title">Install requested</string>
     <string name="install_prompt_text">Tap to install %1$s from Play.</string>

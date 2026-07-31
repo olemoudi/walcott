@@ -46,11 +46,13 @@ import dev.walcott.sync.DeviceMode
 import kotlinx.coroutines.launch
 
 /**
- * Share-sheet target: the parent shares an app from the Play Store into Walcott to push an
- * assisted install to one of their children. Parses the shared Play link, lets the parent pick
- * the child and (optionally) a category, then classifies the app and sends the install command.
- * A lightweight standalone activity that finishes as soon as it has sent — the actual send runs
- * on the application scope ([WalcottApplication.pushAppInstall]) so finishing doesn't cancel it.
+ * Share-sheet target for a Play Store page, with one behavior per mode:
+ *  - **Parent**: push an assisted install to one of the children — pick the child and
+ *    (optionally) a category, classify, send the install command.
+ *  - **Child** (paired): ask the parents for exactly this app. The request travels with the
+ *    app's title, package and Play link; approval installs only that package.
+ * A lightweight standalone activity that finishes as soon as it has sent — sends run on the
+ * application scope ([WalcottApplication.pushAppInstall]) so finishing doesn't cancel them.
  */
 class ShareInstallActivity : ComponentActivity() {
 
@@ -63,6 +65,10 @@ class ShareInstallActivity : ComponentActivity() {
             toastAndFinish(R.string.install_share_bad_link)
             return
         }
+        val label = PlayLink.parseLabel(
+            intent?.getStringExtra(Intent.EXTRA_SUBJECT),
+            intent?.getStringExtra(Intent.EXTRA_TEXT),
+        ).ifBlank { pkg }
 
         setContent {
             dev.walcott.ui.theme.WalcottTheme {
@@ -75,6 +81,41 @@ class ShareInstallActivity : ComponentActivity() {
                 // legitimate cold-start share — or skip the gate it should have asserted.
                 val bootMode by app.syncManager.bootMode.collectAsStateWithLifecycle()
                 if (bootMode == null) return@WalcottTheme
+
+                // A paired child sharing from Play is asking for the app, not pushing it.
+                if (identity.effectiveMode == DeviceMode.CHILD) {
+                    if (identity.role != dev.walcott.sync.Role.CHILD) {
+                        toastAndFinish(R.string.install_share_not_linked)
+                        return@WalcottTheme
+                    }
+                    RequestInstallDialog(
+                        label = label,
+                        pkg = pkg,
+                        onDismiss = { finish() },
+                        onConfirm = {
+                            // App context for the toast: the activity is already finished by
+                            // the time the app-scope send reports back.
+                            app.requestAppInstall(pkg, label) { result ->
+                                Toast.makeText(
+                                    app,
+                                    app.getString(
+                                        when (result) {
+                                            dev.walcott.sync.SyncManager.InstallRequestResult.SENT ->
+                                                R.string.install_request_sent
+                                            dev.walcott.sync.SyncManager.InstallRequestResult.DUPLICATE ->
+                                                R.string.install_request_duplicate
+                                            dev.walcott.sync.SyncManager.InstallRequestResult.ALREADY_INSTALLED ->
+                                                R.string.install_request_already
+                                        },
+                                    ),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                            finish()
+                        },
+                    )
+                    return@WalcottTheme
+                }
 
                 if (identity.effectiveMode != DeviceMode.PARENT) {
                     toastAndFinish(R.string.install_share_parent_only)
@@ -134,6 +175,30 @@ class ShareInstallActivity : ComponentActivity() {
 }
 
 private data class InstallTarget(val name: String, val deviceId: String)
+
+/** The child's confirmation: one app, by name, asked of the parents. */
+@Composable
+private fun RequestInstallDialog(
+    label: String,
+    pkg: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.install_request_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.install_request_body, label))
+                Text(pkg, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.install_request_send)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
 
 @Composable
 private fun PinGate(

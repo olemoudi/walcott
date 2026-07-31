@@ -535,7 +535,8 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
         notice.kind == "bonus" -> stringResource(R.string.notice_bonus, notice.minutes, categoryName)
         !notice.approved -> stringResource(R.string.notice_denied)
         notice.kind == "time" -> stringResource(R.string.notice_approved_time, notice.minutes, categoryName)
-        notice.kind == ChildRequest.KIND_APP -> stringResource(R.string.notice_approved_app, notice.text)
+        notice.kind == ChildRequest.KIND_APP || notice.kind == ChildRequest.KIND_INSTALL ->
+            stringResource(R.string.notice_approved_app, notice.text)
         else -> stringResource(R.string.notice_approved_other, notice.text)
     }
     val subtitle = when {

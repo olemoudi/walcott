@@ -489,8 +489,22 @@
 
     <!-- Excepción de instalación + peticiones del hijo -->
     <string name="allow_installs_title">Permitir instalar apps</string>
-    <string name="allow_installs_desc">Levanta el bloqueo de instalación en este dispositivo durante 15 minutos</string>
-    <string name="allow_installs_active">Instalación permitida — quedan %1$s. Toca para reiniciar la ventana</string>
+    <string name="allow_installs_desc">Levanta el bloqueo de instalación en este dispositivo durante un rato</string>
+    <string name="allow_installs_active">Instalación permitida — quedan %1$s. Toca para cambiar o volver a bloquear</string>
+    <string name="allow_installs_q_temporary">¿Es un desbloqueo temporal?</string>
+    <string name="allow_installs_temp_yes">Sí, temporal</string>
+    <string name="allow_installs_temp_no">No</string>
+    <string name="allow_installs_permanent_hint">Para quitar el bloqueo definitivamente, desactívalo en Protección del dispositivo desde el móvil del padre. Un cambio hecho aquí lo pisaría la próxima sincronización.</string>
+    <string name="allow_installs_duration_q">¿Cuánto tiempo necesitas?</string>
+    <string name="allow_installs_10">10 minutos</string>
+    <string name="allow_installs_30">30 minutos</string>
+    <string name="allow_installs_unsure">No lo sé</string>
+    <string name="allow_installs_unsure_hint">La instalación queda abierta 8 horas. Tu móvil te lo recordará cada hora, y el bloqueo vuelve solo.</string>
+    <string name="allow_installs_reblock">Volver a bloquear ya</string>
+    <string name="install_window_open_title">Las instalaciones siguen permitidas en el móvil de %1$s</string>
+    <string name="install_window_open_text">Quedan %1$s para que el bloqueo vuelva solo.</string>
+    <string name="install_window_reblock">Volver a bloquear</string>
+    <string name="event_install_window">Las instalaciones siguen permitidas en el móvil de %1$s</string>
     <string name="ask_card_title">Pide algo a tus padres</string>
     <string name="ask_card_desc">Una app o cualquier otra cosa — lo verán en Walcott</string>
     <string name="ask_dialog_title">Pedir algo</string>
@@ -599,7 +613,8 @@
     <string name="webfilter_child_rules_note">Las reglas de dominio por app se gestionan a nivel de familia y siguen aplicando a este hijo.</string>
 
     <!-- Instalación remota asistida (compartir desde Play) -->
-    <string name="install_share_label">Instalar en un hijo</string>
+    <!-- Nombre en la hoja de compartir: neutro, porque el hijo comparte aquí para PEDIR. -->
+    <string name="install_share_label">Walcott</string>
     <string name="install_share_title">Instalar en un hijo</string>
     <string name="install_share_app">App: %1$s</string>
     <string name="install_share_pick_child">¿En qué hijo?</string>
@@ -609,6 +624,18 @@
     <string name="install_share_bad_link">No pude leer el enlace de la app. Comparte la ficha completa de Play Store.</string>
     <string name="install_share_parent_only">Solo el dispositivo del padre puede instalar apps en un hijo.</string>
     <string name="install_share_no_children">Aún no hay dispositivos de hijos vinculados.</string>
+    <string name="install_share_not_linked">Este móvil aún no está vinculado a una familia.</string>
+    <!-- El lado del hijo al compartir: pedir a los padres exactamente esta app -->
+    <string name="install_request_title">¿Pedir esta app a tus padres?</string>
+    <string name="install_request_body">Se enviará una petición para %1$s. Si la aprueban, se instalará sola.</string>
+    <string name="install_request_send">Enviar petición</string>
+    <string name="install_request_sent">Petición enviada a tus padres</string>
+    <string name="install_request_duplicate">Ya has pedido esta app</string>
+    <string name="install_request_already">Esta app ya está instalada</string>
+    <string name="sync_install_ask_title">%1$s quiere instalar una app</string>
+    <string name="sync_install_ask_text">Pide: %1$s</string>
+    <string name="ask_install_view_play">Ver en Google Play</string>
+    <string name="ask_install_hint">Aprobar instala solo esta app; todo lo demás sigue bloqueado.</string>
     <string name="install_channel_name">Peticiones de instalación</string>
     <string name="install_prompt_title">Instalación solicitada</string>
     <string name="install_prompt_text">Toca para instalar %1$s desde Play.</string>
