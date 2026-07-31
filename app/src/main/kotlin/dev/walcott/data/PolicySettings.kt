@@ -201,6 +201,7 @@ fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
                             )
                         }
                         ?.filterValues { !it.isEmpty },
+                    allAppsBlockedWindows = child.overrides.allAppsBlockedWindows?.mirrorHoliday(mirror),
                 ),
             )
         },
@@ -295,13 +296,18 @@ data class ChildOverrides(
     val updateWifiOnly: Boolean? = null,
     /** Per-app limits (package -> policy) for this child alone. Null inherits the family map. */
     val appPolicies: Map<String, AppPolicyDto>? = null,
+    /**
+     * Family-wide screen-free windows (dayType -> windows) for this child alone — empty map =
+     * none at all, the laxer-sibling case. Null inherits the family's.
+     */
+    val allAppsBlockedWindows: Map<String, List<WindowDto>>? = null,
 ) {
     val isEmpty: Boolean
         get() = budgets == null && blockedWindows == null && bedtime == null &&
             earnRules == null && blockedDomains == null && domainAppRules == null &&
             deviceRestrictions == null &&
             trackingIntervalMinutes == null && locationHistoryEnabled == null &&
-            updateWifiOnly == null && appPolicies == null
+            updateWifiOnly == null && appPolicies == null && allAppsBlockedWindows == null
 }
 
 /** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */
@@ -431,6 +437,7 @@ data class PolicySettings(
             locationHistoryEnabled = overrides.locationHistoryEnabled ?: locationHistoryEnabled,
             updateWifiOnly = overrides.updateWifiOnly ?: updateWifiOnly,
             appPolicies = overrides.appPolicies ?: appPolicies,
+            allAppsBlockedWindows = overrides.allAppsBlockedWindows ?: allAppsBlockedWindows,
             // This child's own special days on top of the family's; the others' never travel here.
             holidays = holidays + childHolidays[childId].orEmpty(),
             vacations = vacations + childVacations[childId].orEmpty(),

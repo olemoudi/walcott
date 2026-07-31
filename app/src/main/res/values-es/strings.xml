@@ -284,6 +284,7 @@
     <string name="override_bedtime_title">Hora de dormir personalizada</string>
     <string name="override_budgets_title">Límites personalizados</string>
     <string name="override_apps_title">Límites por app personalizados</string>
+    <string name="override_windows_title">Horarios sin pantalla personalizados</string>
     <string name="app_category_family_note">La categoría es de toda la familia; solo los límites de abajo son propios de este hijo.</string>
     <string name="last_7_days">Últimos 7 días</string>
 

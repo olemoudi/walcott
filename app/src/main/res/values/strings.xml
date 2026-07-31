@@ -284,6 +284,7 @@
     <string name="override_bedtime_title">Custom bedtime</string>
     <string name="override_budgets_title">Custom budgets</string>
     <string name="override_apps_title">Custom app limits</string>
+    <string name="override_windows_title">Custom screen-free times</string>
     <string name="app_category_family_note">The category is set for the whole family; only the limits below are this child\'s own.</string>
     <string name="last_7_days">Last 7 days</string>
 

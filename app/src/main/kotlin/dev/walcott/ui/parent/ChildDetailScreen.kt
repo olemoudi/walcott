@@ -144,7 +144,7 @@ fun ChildDetailScreen(
     // Starts open only when something IS customized, so active state is never hidden.
     val hasCustomRules = entry.overrides.bedtime != null || entry.overrides.budgets != null ||
         entry.overrides.blockedDomains != null || entry.overrides.deviceRestrictions != null ||
-        entry.overrides.appPolicies != null
+        entry.overrides.appPolicies != null || entry.overrides.allAppsBlockedWindows != null
     var showRules by rememberSaveable { mutableStateOf(hasCustomRules) }
 
     // Location earns a prominent slot only when it can actually show something: tracking or
@@ -329,7 +329,7 @@ fun ChildDetailScreen(
                 val customized = listOf(
                     entry.overrides.bedtime, entry.overrides.budgets,
                     entry.overrides.blockedDomains, entry.overrides.deviceRestrictions,
-                    entry.overrides.appPolicies,
+                    entry.overrides.appPolicies, entry.overrides.allAppsBlockedWindows,
                 ).count { it != null }
                 FoldCard(
                     icon = Icons.Outlined.Rule,
@@ -369,6 +369,49 @@ fun ChildDetailScreen(
                         ) { updated ->
                             viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
                         }
+                    }
+                }
+                // Family-wide screen-free windows, per child: the one field that used to be
+                // truly family-only — a laxer sibling couldn't opt out of "no screens at
+                // dinner" until this row existed.
+                item {
+                    CardGroup {
+                        OverrideSwitchRow(
+                            title = stringResource(R.string.override_windows_title),
+                            checked = entry.overrides.allAppsBlockedWindows != null,
+                            position = CardPosition.First,
+                            onToggle = { on ->
+                                viewModel.setChildOverrides(
+                                    childId,
+                                    entry.overrides.copy(
+                                        allAppsBlockedWindows = if (on) settings.allAppsBlockedWindows else null,
+                                    ),
+                                )
+                            },
+                        )
+                        BlockedWindowsCard(
+                            title = stringResource(R.string.all_apps_windows_title),
+                            hint = stringResource(R.string.all_apps_windows_hint),
+                            windowsByDay = entry.overrides.allAppsBlockedWindows ?: settings.allAppsBlockedWindows,
+                            enabled = entry.overrides.allAppsBlockedWindows != null,
+                            position = CardPosition.Last,
+                            specialDaysOwnRules = settings.specialDaysOwnRules,
+                            onOpenSpecialDays = onOpenSpecialDays,
+                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                            onChange = { dayType, windows ->
+                                val base = entry.overrides.allAppsBlockedWindows.orEmpty()
+                                viewModel.setChildOverrides(
+                                    childId,
+                                    entry.overrides.copy(
+                                        allAppsBlockedWindows = if (windows.isEmpty()) {
+                                            base - dayType.name
+                                        } else {
+                                            base + (dayType.name to windows)
+                                        },
+                                    ),
+                                )
+                            },
+                        )
                     }
                 }
                 item {

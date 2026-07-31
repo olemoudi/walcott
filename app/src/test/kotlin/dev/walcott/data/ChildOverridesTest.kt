@@ -89,6 +89,24 @@ class ChildOverridesTest {
         assertTrue(!ChildOverrides(locationHistoryEnabled = false).isEmpty)
         assertTrue(!ChildOverrides(updateWifiOnly = false).isEmpty)
         assertTrue(!ChildOverrides(appPolicies = emptyMap()).isEmpty)
+        assertTrue(!ChildOverrides(allAppsBlockedWindows = emptyMap()).isEmpty)
+    }
+
+    @Test
+    fun `family screen-free windows resolve per-child, empty map opting out entirely`() {
+        val window = WindowDto(startMinute = 21 * 60, endMinute = 21 * 60 + 30)
+        val fam = family.copy(
+            allAppsBlockedWindows = mapOf(DayType.SCHOOL.name to listOf(window)),
+            children = listOf(
+                // The laxer sibling: no screen-free windows at all.
+                ChildEntry("w1", "Ana", ChildOverrides(allAppsBlockedWindows = emptyMap())),
+                ChildEntry("w2", "Bea"),
+            ),
+        )
+        val ana = fam.resolveForChild("w1").toFamilyConfig(emptySet())
+        val bea = fam.resolveForChild("w2").toFamilyConfig(emptySet())
+        assertTrue(ana.blockedWindows[DayType.SCHOOL].orEmpty().isEmpty())
+        assertEquals(1, bea.blockedWindows[DayType.SCHOOL].orEmpty().size)
     }
 
     @Test
