@@ -254,15 +254,6 @@
     <string name="badge_child_mode">Modo hijo</string>
 
     <!-- Familias (home del padre) -->
-    <string name="families_title">Familias</string>
-    <plurals name="family_children_count">
-        <item quantity="one">%d hijo</item>
-        <item quantity="other">%d hijos</item>
-    </plurals>
-    <plurals name="family_pending_requests">
-        <item quantity="one">%d petición pendiente</item>
-        <item quantity="other">%d peticiones pendientes</item>
-    </plurals>
     <string name="children_section">Hijos</string>
     <string name="children_empty">Aún no hay hijos. Añade uno para generar su código de enrolamiento.</string>
     <string name="add_child">Añadir hijo</string>
@@ -980,4 +971,7 @@
     <string name="general_budget_hint">Cuenta toda app que no esté en una categoría propia.</string>
     <string name="budgets_categories_fold_title">Límites por categoría</string>
     <string name="budgets_categories_fold_subtitle">Opcional: presupuestos separados para juegos, social, vídeo…</string>
+    <string name="nav_family_settings_title">Todos los ajustes de la familia</string>
+    <string name="nav_family_settings_subtitle">Apps, filtro web, protección, ubicación, informes…</string>
+    <string name="add_family_soon">Añadir familia — próximamente</string>
 </resources>

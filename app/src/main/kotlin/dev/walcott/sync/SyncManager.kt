@@ -758,6 +758,11 @@ class SyncManager(
         publishSelf()
     }
 
+    /** Parent: hide a delivered-but-unfinished op from the home (see SyncState.dismissedOpIds). */
+    suspend fun dismissPendingOp(id: String) {
+        syncStore.update { it.copy(dismissedOpIds = (it.dismissedOpIds + id).takeLast(50)) }
+    }
+
     /**
      * Approves a child's install request ([ChildRequest.KIND_INSTALL]): classifies the app
      * first when a category was picked (so it isn't born blocked), resolves the ask, and

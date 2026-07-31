@@ -233,6 +233,11 @@ data class SyncState(
      */
     val panicAlerted: Map<String, String> = emptyMap(),
     /**
+     * Pending-operation ids the parent dismissed from the home (a delivered install the child
+     * never finished). Bounded; the op itself expires with its 7-day TTL anyway.
+     */
+    val dismissedOpIds: List<String> = emptyList(),
+    /**
      * deviceId -> wall-clock ms when the parent FIRST saw that device's install window open
      * (from [ChildSnapshot.installExemptionUntilMs]), and when it last reminded about it.
      * Cleared when the window closes; drives the hourly "installs are still allowed" nag

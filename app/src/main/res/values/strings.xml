@@ -254,15 +254,6 @@
     <string name="badge_child_mode">Child mode</string>
 
     <!-- Families (parent home) -->
-    <string name="families_title">Families</string>
-    <plurals name="family_children_count">
-        <item quantity="one">%d child</item>
-        <item quantity="other">%d children</item>
-    </plurals>
-    <plurals name="family_pending_requests">
-        <item quantity="one">%d pending request</item>
-        <item quantity="other">%d pending requests</item>
-    </plurals>
     <string name="children_section">Children</string>
     <string name="children_empty">No children yet. Add one to generate their enrollment code.</string>
     <string name="add_child">Add child</string>
@@ -980,4 +971,7 @@
     <string name="general_budget_hint">Counts every app that isn\'t in a category of its own.</string>
     <string name="budgets_categories_fold_title">Category limits</string>
     <string name="budgets_categories_fold_subtitle">Optional: separate budgets for games, social, video…</string>
+    <string name="nav_family_settings_title">All family settings</string>
+    <string name="nav_family_settings_subtitle">Apps, web filter, protection, location, reports…</string>
+    <string name="add_family_soon">Add family — coming soon</string>
 </resources>

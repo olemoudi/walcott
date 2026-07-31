@@ -174,8 +174,10 @@ fun FamiliesScreen(
                 Modifier.fillMaxWidth().padding(top = spacing.xxl, bottom = spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // The home IS this family's home: its name is the title. (A future multi-family
+                // build puts a chooser in front of this screen; the layout already assumes one.)
                 Text(
-                    stringResource(R.string.families_title),
+                    settings.familyName.ifBlank { stringResource(R.string.family_default_name) },
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.weight(1f),
                 )
@@ -189,6 +191,16 @@ fun FamiliesScreen(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+
+        // Placeholder on purpose: managing several families needs per-family identities in
+        // the sync layer first. Kept visible (disabled) as the roadmap marker it is.
+        item {
+            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(spacing.xs))
+                Text(stringResource(R.string.add_family_soon))
             }
         }
 
@@ -274,8 +286,36 @@ fun FamiliesScreen(
             }
         }
 
-        // The children, right under the requests: "how much have they used today, and this
-        // month" is the question the home answers first once the family is set up.
+        // This family's general settings, one row, before the children: the home reads
+        // top-down as "the family → its rules → its kids".
+        item { SectionHeader(stringResource(R.string.home_section_manage)) }
+        item {
+            CardGroup {
+                NavCard(
+                    Icons.Outlined.Schedule,
+                    stringResource(R.string.nav_limits_title),
+                    stringResource(R.string.nav_limits_subtitle),
+                    onOpenBudgets,
+                    position = CardPosition.First,
+                )
+                NavCard(
+                    Icons.Outlined.CalendarMonth,
+                    stringResource(R.string.nav_calendar_title),
+                    stringResource(R.string.nav_calendar_subtitle),
+                    onOpenCalendar,
+                    position = CardPosition.Middle,
+                )
+                NavCard(
+                    Icons.Outlined.Groups,
+                    stringResource(R.string.nav_family_settings_title),
+                    stringResource(R.string.nav_family_settings_subtitle),
+                    onOpenFamily,
+                    position = CardPosition.Last,
+                )
+            }
+        }
+
+        // The children of THIS family, with the day's numbers at a glance.
         item { SectionHeader(stringResource(R.string.children_section)) }
         if (settings.children.isEmpty()) {
             item {
@@ -327,28 +367,6 @@ fun FamiliesScreen(
             }
         }
 
-        // The two rule screens a running family actually revisits, one tap away. Everything
-        // else stays behind the family card below.
-        item { SectionHeader(stringResource(R.string.home_section_manage)) }
-        item {
-            CardGroup {
-                NavCard(
-                    Icons.Outlined.Schedule,
-                    stringResource(R.string.nav_limits_title),
-                    stringResource(R.string.nav_limits_subtitle),
-                    onOpenBudgets,
-                    position = CardPosition.First,
-                )
-                NavCard(
-                    Icons.Outlined.CalendarMonth,
-                    stringResource(R.string.nav_calendar_title),
-                    stringResource(R.string.nav_calendar_subtitle),
-                    onOpenCalendar,
-                    position = CardPosition.Last,
-                )
-            }
-        }
-
         // The wall, in digest form: the last few lines in one compact card, with the full feed
         // one tap away. A notification can be swiped away and lost; its message survives there.
         val renderable = events.filter(::eventRenderable)
@@ -383,7 +401,11 @@ fun FamiliesScreen(
                         childName = childNameFor(op.deviceId, settings.children, snapshots),
                         nowMs = nowMs,
                         onCancel = when {
-                            op.delivered -> null
+                            // Delivered installs can be dismissed: the child may simply never
+                            // finish in Play, and the parent shouldn't stare at it for a week.
+                            op.delivered -> {
+                                { viewModel.dismissPendingOp(op.id) }
+                            }
                             op.action == SyncEngine.ACTION_LOCATE -> {
                                 { viewModel.cancelLocationRequest(op.deviceId) }
                             }
@@ -404,16 +426,6 @@ fun FamiliesScreen(
             item { EnableLocalBackupCard(onEnable = { showBackupPin = true }) }
         }
 
-        // The gateway to everything less-than-daily: apps, web filter, protection, location
-        // defaults, reports. Below the fold on purpose — it's setup, not routine.
-        item {
-            FamilyCard(
-                name = settings.familyName.ifBlank { stringResource(R.string.family_default_name) },
-                childrenCount = settings.children.size,
-                pendingCount = requests.size + asks.size + domainRequests.size,
-                onClick = onOpenFamily,
-            )
-        }
 
         if (legacyDevices.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.legacy_devices_header)) }
@@ -465,52 +477,6 @@ fun FamiliesScreen(
                 onOpenChild(viewModel.addChild(name))
             },
         )
-    }
-}
-
-@Composable
-private fun FamilyCard(name: String, childrenCount: Int, pendingCount: Int, onClick: () -> Unit) {
-    val spacing = Tokens.spacing
-    // Shares the child hero's signature gradient, so both homes open on the same identity.
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
-        color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth().background(Tokens.heroBrush, RoundedCornerShape(24.dp)),
-    ) {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Outlined.Groups,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(36.dp),
-            )
-            Spacer(Modifier.width(spacing.md))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    name,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-                Text(
-                    pluralStringResource(R.plurals.family_children_count, childrenCount, childrenCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
-                )
-                if (pendingCount > 0) {
-                    Text(
-                        pluralStringResource(R.plurals.family_pending_requests, pendingCount, pendingCount),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
-            }
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
-            )
-        }
     }
 }
 

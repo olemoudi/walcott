@@ -479,7 +479,13 @@ class WalcottViewModel(
     val pendingOps: StateFlow<List<dev.walcott.sync.SyncEngine.PendingOp>> =
         combine(sync.state, clock) { s, _ ->
             dev.walcott.sync.SyncEngine.pendingOps(s.commands, s.locationRequests, s.children, System.currentTimeMillis())
+                // Dismissed by the parent: an install the child never finishes shouldn't sit
+                // on the home for a week — they can always send the request again.
+                .filterNot { it.id.isNotBlank() && it.id in s.dismissedOpIds }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Hides a delivered-but-unfinished operation from the home for good. */
+    fun dismissPendingOp(id: String) = viewModelScope.launch { sync.dismissPendingOp(id) }
 
     /**
      * Wall-clock ms of the last proof the family channel worked, once that's long enough ago
