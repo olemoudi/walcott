@@ -17,7 +17,6 @@ import dev.walcott.sync.SyncManager
 import dev.walcott.sync.SyncStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -132,9 +131,6 @@ class FamilyHub(
     val activeId: StateFlow<String?> =
         store.state.map { it.active }.stateIn(scope, SharingStarted.Eagerly, null)
 
-    /** Bumps whenever a family is added or removed, so choosers re-read the per-family flows. */
-    val revision = MutableStateFlow(0)
-
     /**
      * This device's own family: the one whose rules it enforces, whose PIN gates it and whose
      * identity the boot receiver reads. Always the default id, which is why enforcement never
@@ -193,7 +189,6 @@ class FamilyHub(
         fresh.syncManager.becomeParent(name)
         carryOverDeviceSecrets(source, fresh)
         store.update { it.plus(id, System.currentTimeMillis()) }
-        revision.value++
         DebugLog.i(TAG, "family created ($id)")
         id
     }
@@ -221,7 +216,6 @@ class FamilyHub(
         }
         carryOverDeviceSecrets(active, fresh)
         store.update { it.plus(id, System.currentTimeMillis()) }
-        revision.value++
         DebugLog.i(TAG, "family restored as a new family ($id)")
         AddResult.OK
     }
@@ -235,7 +229,6 @@ class FamilyHub(
         if (store.current().families.size <= 1) return@onHubScope
         store.update { it.minus(id) }
         discard(id)
-        revision.value++
         DebugLog.w(TAG, "family removed ($id)")
     }
 
