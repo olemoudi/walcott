@@ -115,7 +115,6 @@ fun FamiliesScreen(
     onOpenAppSettings: () -> Unit,
     // Setup-checklist shortcuts: a first-time parent taps a pending step and lands on the
     // screen that completes it, instead of hunting through the rules hub.
-    onOpenApps: () -> Unit,
     onOpenBudgets: () -> Unit,
     onOpenGuidedSetup: () -> Unit,
     onOpenActivity: () -> Unit,
@@ -255,11 +254,12 @@ fun FamiliesScreen(
 
         // Onboarding coach: a brand-new family enforces nothing until apps are classified and
         // limits set. Show the remaining steps until they're done, then it disappears.
+        // Classifying apps is no longer a step: new apps land in General, usable under the
+        // general limit — categories are an optional refinement, not setup.
         val childDone = settings.children.isNotEmpty()
-        val appsDone = settings.assignments.isNotEmpty()
         val limitsDone = settings.budgets.isNotEmpty() || settings.bedtime.isNotEmpty()
         val bedtimeDone = settings.bedtime.isNotEmpty()
-        if (!(childDone && appsDone && limitsDone && bedtimeDone)) {
+        if (!(childDone && limitsDone && bedtimeDone)) {
             // The guided wizards, front and center until the family is fully set up (they
             // stay reachable afterwards from the family rules hub).
             item { GuidedSetupCard(onOpenGuidedSetup) }
@@ -267,7 +267,6 @@ fun FamiliesScreen(
                 SetupChecklistCard(
                     steps = listOf(
                         SetupStep(stringResource(R.string.setup_step_child), childDone) { showAddChild = true },
-                        SetupStep(stringResource(R.string.setup_step_apps), appsDone, onOpenApps),
                         SetupStep(stringResource(R.string.setup_step_limits), limitsDone, onOpenBudgets),
                         SetupStep(stringResource(R.string.setup_step_bedtime), bedtimeDone, onOpenBudgets),
                     ),

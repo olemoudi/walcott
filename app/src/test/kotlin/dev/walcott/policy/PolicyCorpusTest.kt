@@ -82,7 +82,6 @@ class PolicyCorpusTest {
                     BlockReason.BEDTIME,
                     BlockReason.BLOCKED_WINDOW,
                     BlockReason.BUDGET_EXHAUSTED,
-                    BlockReason.UNCLASSIFIED,
                 ),
             ),
             "the corpus never reached some block reasons: $reasons",

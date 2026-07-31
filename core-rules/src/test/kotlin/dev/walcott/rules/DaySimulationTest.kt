@@ -323,14 +323,14 @@ class DaySimulationTest {
     // --- The unclassified default over a day ---
 
     @Test
-    fun `an app the parent never classified stays blocked all day except never during essential use`() {
+    fun `an app the parent never classified lives under General - usable by day, bedtime still bites`() {
         val config = schoolDayConfig().copy(essentialPackages = setOf("com.android.dialer"))
         val stranger = "com.random.new.app"
         val device = SimDevice(config, LocalDateTime.of(MONDAY, LocalTime.of(12, 0)))
-        // Midday, evening, night: always blocked as unclassified (bedtime shows through at night).
-        assertEquals(Verdict.Blocked(BlockReason.UNCLASSIFIED), device.verdict(stranger))
+        // Midday and evening: usable (no general budget configured); bedtime still applies at night.
+        assertEquals(Verdict.Allowed, device.verdict(stranger))
         device.jumpTo(LocalTime.of(18, 0))
-        assertEquals(Verdict.Blocked(BlockReason.UNCLASSIFIED), device.verdict(stranger))
+        assertEquals(Verdict.Allowed, device.verdict(stranger))
         device.jumpTo(LocalTime.of(22, 0))
         assertEquals(Verdict.Blocked(BlockReason.BEDTIME), device.verdict(stranger))
         // The phone app is untouchable at any hour, bedtime included.

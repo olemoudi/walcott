@@ -215,22 +215,17 @@ private fun SectionTitle(text: String, restriction: AppRestriction? = null, acti
 private fun CategorySelector(current: String?, onPick: (AppCategory?) -> Unit) {
     WalcottCard {
         Column(Modifier.padding(Tokens.spacing.md), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // No "unclassified (block)" option any more: unassigned IS General, and blocking
+            // an app is its own explicit act (the Blocked chip in the per-app limit below).
             AppCategory.entries.forEach { category ->
                 CategoryOptionRow(
                     color = category.color,
                     label = stringResource(category.nameRes),
-                    selected = current == category.id,
+                    selected = current == category.id || (current == null && category == AppCategory.OTHER),
                     onClick = { onPick(category) },
                     icon = { Icon(category.icon, contentDescription = null, tint = category.color) },
                 )
             }
-            CategoryOptionRow(
-                color = MaterialTheme.colorScheme.error,
-                label = stringResource(R.string.unclassified_block_action),
-                selected = current == null,
-                onClick = { onPick(null) },
-                icon = { Icon(Icons.Filled.Block, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            )
         }
     }
 }

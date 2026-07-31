@@ -186,12 +186,12 @@ class PolicySettingsTest {
     }
 
     @Test
-    fun `per-app policies map into FamilyConfig and only for classified apps`() {
+    fun `per-app policies map into FamilyConfig, unassigned General apps included`() {
         val s = PolicySettings(
             assignments = mapOf("com.chat" to "social", "com.stale" to "games"),
             appPolicies = mapOf(
                 "com.chat" to AppPolicyDto(budgets = mapOf("SCHOOL" to 20)),
-                // A rule for an app that is no longer classified must be ignored.
+                // Unassigned = General now, and a General app's own cap must hold.
                 "com.gone" to AppPolicyDto(budgets = mapOf("SCHOOL" to 5)),
             ),
         )
@@ -200,7 +200,10 @@ class PolicySettingsTest {
             java.time.Duration.ofMinutes(20),
             config.perAppPolicies.getValue("com.chat").dailyBudget[dev.walcott.rules.DayType.SCHOOL],
         )
-        assertTrue("com.gone" !in config.perAppPolicies)
+        assertEquals(
+            java.time.Duration.ofMinutes(5),
+            config.perAppPolicies.getValue("com.gone").dailyBudget[dev.walcott.rules.DayType.SCHOOL],
+        )
     }
 
     @Test

@@ -75,22 +75,21 @@
     <string name="protection_inactive">Sin Device Owner: el bloqueo no está garantizado</string>
     <string name="nav_apps_title">Apps y categorías</string>
     <string name="apps_filter_all">Todos</string>
-    <string name="nav_apps_subtitle">Clasifica cada app; las nuevas quedan bloqueadas hasta clasificarlas</string>
+    <string name="nav_apps_subtitle">Todas las apps; las nuevas caen en General, usables bajo el límite general</string>
     <string name="nav_limits_title">Límites y horarios</string>
     <string name="nav_limits_subtitle">Presupuesto diario por categoría y hora de dormir</string>
     <!-- Asignación de apps -->
     <string name="apps_no_remote">Aún no hay apps reportadas. Aparecerán aquí cuando los dispositivos de los hijos se sincronicen.</string>
     <string name="search_app">Buscar app</string>
-    <string name="unclassified_blocked">Sin clasificar · bloqueada</string>
+    <string name="unclassified_blocked">General</string>
     <string name="classify_into">Clasificar en…</string>
-    <string name="unclassified_block_action">Sin clasificar (bloquear)</string>
 
     <!-- Presupuestos y horarios -->
     <string name="from">Desde</string>
     <string name="to">Hasta</string>
     <string name="bedtime_start_title">Empieza a dormir</string>
     <string name="bedtime_end_title">Se levanta</string>
-    <string name="daily_budget_header">Presupuesto diario por categoría</string>
+    <string name="daily_budget_header">Límite diario general</string>
     <string name="special_days_note_short">Qué días son se elige en Días especiales.</string>
     <string name="special_days_note_action">Info</string>
     <string name="special_days_note_open">Abrir Días especiales</string>
@@ -120,7 +119,8 @@
     <string name="category_video">Vídeo</string>
     <string name="category_education">Educación</string>
     <string name="category_creative">Creatividad</string>
-    <string name="category_other">Otras</string>
+    <!-- La categoría por defecto de toda app sin clasificar (el id de wire sigue siendo "other"). -->
+    <string name="category_other">General</string>
 
     <!-- Servicio de enforcement -->
     <string name="service_channel_name">Protección Walcott</string>
@@ -377,7 +377,7 @@
     <string name="override_customized_hint">Personalizado — no seguirá los cambios de la familia</string>
     <string name="never_reported_title">%1$s no se ha conectado</string>
     <string name="never_reported_text">Este dispositivo hijo nunca hizo check-in — quizá no se completó el enrolamiento</string>
-    <string name="hero_pending_setup">Esperando configuración — las apps siguen bloqueadas hasta que un padre las clasifique</string>
+    <string name="hero_pending_setup">Hoy no hay límites de tiempo configurados</string>
     <string name="setup_title">Termina la configuración</string>
     <string name="setup_hint">Toca un paso y te llevamos allí.</string>
     <!-- Configuración guiada (presets) -->
@@ -429,7 +429,6 @@
     <string name="summary_off">Desactivado</string>
     <string name="summary_next_hint">Siguiente paso: enrola el móvil de un hijo. Sus apps aparecerán aquí para clasificarlas — las apps nuevas quedan bloqueadas hasta que lo hagas.</string>
     <string name="setup_step_child">Enrola un dispositivo hijo</string>
-    <string name="setup_step_apps">Clasifica las apps en categorías</string>
     <string name="setup_step_limits">Pon límites de tiempo diarios</string>
     <string name="setup_step_bedtime">Configura una hora de dormir</string>
 
@@ -637,6 +636,14 @@
     <string name="sync_install_ask_title">%1$s quiere instalar una app</string>
     <string name="sync_install_ask_text">Pide: %1$s</string>
     <string name="ask_install_view_play">Ver en Google Play</string>
+    <string name="remote_result_wrong_app">se instaló otra app distinta — se ha eliminado</string>
+    <string name="remote_result_wrong_app_pkg">instaló %1$s en su lugar — se ha eliminado</string>
+    <string name="wrong_app_title">%1$s instaló una app distinta</string>
+    <string name="wrong_app_text">Instaló %1$s en vez de la app aprobada. Se ha eliminado.</string>
+    <string name="event_wrong_app">%1$s instaló %2$s sin permiso — se ha eliminado</string>
+    <!-- Home del hijo: tarjetas de límite por app -->
+    <string name="app_card_remaining">Quedan %1$s hoy</string>
+    <string name="app_card_blocked">No disponible ahora mismo</string>
     <string name="ask_install_hint">Aprobar instala solo esta app; todo lo demás sigue bloqueado.</string>
     <string name="install_channel_name">Peticiones de instalación</string>
     <string name="install_prompt_title">Instalación solicitada</string>
@@ -970,4 +977,7 @@
     <string name="calendar_scope_title">¿Para quién es este día?</string>
     <string name="calendar_scope_hint">No marques a nadie para toda la familia, o elige los hijos a los que les toca — un cumpleaños es solo suyo.</string>
     <string name="calendar_scope_everyone">Toda la familia</string>
+    <string name="general_budget_hint">Cuenta toda app que no esté en una categoría propia.</string>
+    <string name="budgets_categories_fold_title">Límites por categoría</string>
+    <string name="budgets_categories_fold_subtitle">Opcional: presupuestos separados para juegos, social, vídeo…</string>
 </resources>

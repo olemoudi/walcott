@@ -125,12 +125,13 @@ class HostileWireTest {
 
     @Test
     fun `a policy that is only unknown fields still enforces the safe default`() {
-        // Everything a future build might add, and nothing this one understands: the child must
-        // fall back to "unclassified is blocked", not to "anything goes".
+        // Everything a future build might add, and nothing this one understands: that decodes
+        // to an empty policy — no limits, exactly like a fresh install. Unassigned apps live
+        // under General now, so "no rules" reads as usable, never as everything-blocked.
         val config = PolicyFuzz.configFor(
             decode("""{"version":9,"somethingNew":true,"weekendMode":"strict"}"""),
             childId = null,
         )
-        assertEquals(Verdict.Blocked(BlockReason.UNCLASSIFIED), RuleEngine.evaluate(config, game, monday))
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, game, monday))
     }
 }

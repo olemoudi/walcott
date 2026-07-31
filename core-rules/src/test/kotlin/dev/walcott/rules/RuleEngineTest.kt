@@ -248,10 +248,27 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `unclassified app is blocked by default`() {
+    fun `an unassigned app falls into General - usable, and capped by the general budget`() {
+        // No general budget configured: the new app is simply usable.
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config, "com.random.newapp", schoolAfternoon))
+        // With a general budget, the unassigned app counts against it like any General app.
+        val withGeneral = config.copy(
+            policies = config.policies +
+                (FamilyConfig.DEFAULT_CATEGORY to CategoryPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))),
+        )
         assertEquals(
-            Verdict.Blocked(BlockReason.UNCLASSIFIED),
-            RuleEngine.evaluate(config, "com.random.newapp", schoolAfternoon),
+            Verdict.AllowedWithBudget(Duration.ofMinutes(10)),
+            RuleEngine.evaluate(
+                withGeneral, "com.random.newapp", schoolAfternoon,
+                usageToday = mapOf(FamilyConfig.DEFAULT_CATEGORY to Duration.ofMinutes(20)),
+            ),
+        )
+        assertEquals(
+            Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED),
+            RuleEngine.evaluate(
+                withGeneral, "com.random.newapp", schoolAfternoon,
+                usageToday = mapOf(FamilyConfig.DEFAULT_CATEGORY to Duration.ofMinutes(30)),
+            ),
         )
     }
 

@@ -106,7 +106,7 @@ data class CategoryPolicy(
 data class FamilyConfig(
     /** Monotonic version of the writer; sync uses last-write-wins on it. */
     val version: Long,
-    /** package -> categoryId. Packages not listed are unclassified (blocked). */
+    /** package -> categoryId. Packages not listed fall into [DEFAULT_CATEGORY]. */
     val assignments: Map<String, String>,
     /** categoryId -> policy. A category without a policy is unrestricted. */
     val policies: Map<String, CategoryPolicy>,
@@ -126,7 +126,19 @@ data class FamilyConfig(
     /** Never blocked: phone, contacts, the app itself… */
     val essentialPackages: Set<String> = emptySet(),
     val calendar: SchoolCalendar = SchoolCalendar(),
-)
+) {
+    /** The category [packageName] is judged under: its assignment, or the default bucket. */
+    fun categoryOf(packageName: String): String = assignments[packageName] ?: DEFAULT_CATEGORY
+
+    companion object {
+        /**
+         * The category every unassigned app falls into ("General" in the UI). New installs are
+         * usable under its budget rather than blocked outright — classifying is opt-in, and
+         * blocking an app is an explicit act (its own budget of zero), never a default.
+         */
+        const val DEFAULT_CATEGORY = "other"
+    }
+}
 
 sealed interface Verdict {
     /** Allowed with no applicable time limit right now. */

@@ -214,7 +214,7 @@ class PolicyInvariantsTest {
             val dayType = config.calendar.dayTypeOf(now)
             for ((pkg, policy) in config.perAppPolicies) {
                 val cap = policy.dailyBudget[dayType] ?: continue
-                val spent = mapOf(pkg to cap, config.assignments.getValue(pkg) to Duration.ZERO)
+                val spent = mapOf(pkg to cap, config.categoryOf(pkg) to Duration.ZERO)
                 val verdict = RuleEngine.evaluate(config, pkg, now, usageToday = spent, extraTime = GRANT)
                 assertTrue(
                     verdict is Verdict.Blocked,

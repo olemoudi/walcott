@@ -63,6 +63,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_REQUEST_DENIED, ParentEvent.TYPE_BONUS, ParentEvent.TYPE_REMOTE_DONE,
     ParentEvent.TYPE_PANIC_REQUEST, ParentEvent.TYPE_PANIC_RELEASED, ParentEvent.TYPE_PANIC_DENIED,
     ParentEvent.TYPE_PANIC_CANCELLED, ParentEvent.TYPE_DOMAINS, ParentEvent.TYPE_INSTALL_WINDOW,
+    ParentEvent.TYPE_WRONG_APP,
 )
 
 @Composable
@@ -157,6 +158,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_PANIC_CANCELLED -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_DOMAINS -> Icons.Outlined.Language to neutral
         ParentEvent.TYPE_INSTALL_WINDOW -> Icons.Outlined.InstallMobile to warn
+        ParentEvent.TYPE_WRONG_APP -> Icons.Filled.Warning to error
         else -> Icons.Outlined.Build to neutral
     }
 }
@@ -209,6 +211,7 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_DOMAINS ->
         pluralStringResource(R.plurals.event_domains, event.count, name, event.count, event.detail)
     ParentEvent.TYPE_INSTALL_WINDOW -> stringResource(R.string.event_install_window, name)
+    ParentEvent.TYPE_WRONG_APP -> stringResource(R.string.event_wrong_app, name, event.detail)
     ParentEvent.TYPE_REMOTE_DONE -> stringResource(
         if (event.count > 0) R.string.event_remote_ok else R.string.event_remote_failed,
         name, remoteActionLabel(event.detail),

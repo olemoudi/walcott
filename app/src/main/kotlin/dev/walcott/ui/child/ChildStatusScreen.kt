@@ -287,6 +287,9 @@ fun ChildStatusScreen(
                     },
                 )
             }
+            // Apps with a limit of their own, right beside the category cards: under the
+            // general/per-app posture these are the rules the child actually lives with.
+            items(state.apps, key = { "app-" + it.packageName }) { app -> AppLimitCard(app) }
             // Everything sent and still unanswered, so "did it go through?" has an answer.
             if (myAsks.isNotEmpty()) {
                 item { WaitingCard(myAsks.map { it.text }) }
@@ -991,6 +994,33 @@ private fun HeroCard(state: ChildUiState) {
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** One app with its own daily limit: name plus what's left of it right now. */
+@Composable
+private fun AppLimitCard(app: dev.walcott.ui.AppStatusUi) {
+    val spacing = Tokens.spacing
+    WalcottCard {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(app.label, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    when {
+                        app.blocked -> stringResource(R.string.app_card_blocked)
+                        app.remaining != null ->
+                            stringResource(R.string.app_card_remaining, app.remaining.humanize())
+                        else -> stringResource(R.string.no_limit_today)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (app.blocked) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
         }
     }

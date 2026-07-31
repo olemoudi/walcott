@@ -49,6 +49,10 @@ class AppInventory(context: Context) {
     fun icon(packageName: String): Drawable? =
         runCatching { pm.getApplicationIcon(packageName) }.getOrNull()
 
+    /** Display label for one installed package, or null when it isn't installed. */
+    fun label(packageName: String): String? =
+        runCatching { pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString() }.getOrNull()
+
     private fun ApplicationInfo.isSystemApp(): Boolean =
         (flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
 }

@@ -8,7 +8,9 @@ import java.time.LocalDateTime
  * as parameters. The enforcement service calls it with real state; tests, with whatever
  * state they want to reproduce.
  *
- * Precedence: essential > bedtime > unclassified > blocked window > budget.
+ * Precedence: essential > bedtime > blocked window > budget. An app with no assignment is
+ * judged under [FamilyConfig.DEFAULT_CATEGORY] ("General"): usable, subject to the general
+ * budget when one is set — never blocked merely for being unclassified.
  */
 object RuleEngine {
 
@@ -39,8 +41,7 @@ object RuleEngine {
             return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
         }
 
-        val categoryId = config.assignments[packageName]
-            ?: return Verdict.Blocked(BlockReason.UNCLASSIFIED)
+        val categoryId = config.categoryOf(packageName)
         val policy = config.policies[categoryId]
         val appPolicy = config.perAppPolicies[packageName]
         if (policy == null && appPolicy == null) return Verdict.Allowed

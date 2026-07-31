@@ -519,8 +519,9 @@ data class PolicySettings(
                     .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
             )
         }
+        // No assignment filter: an unassigned app is a General app now, and its own limits
+        // must hold exactly like a classified one's.
         val perApp = appPolicies
-            .filterKeys { it in assignments } // ignore rules for apps no longer classified
             .mapValues { (_, dto) ->
                 CategoryPolicy(
                     dailyBudget = dto.budgets

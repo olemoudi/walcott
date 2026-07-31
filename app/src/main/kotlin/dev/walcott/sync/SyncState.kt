@@ -80,6 +80,9 @@ data class ParentEvent(
         /** An install window has been open on a child device past its first hour. */
         const val TYPE_INSTALL_WINDOW = "install_window"
 
+        /** A different app than the approved one was installed during a window; [detail] = its package. */
+        const val TYPE_WRONG_APP = "wrong_app"
+
         /** A child sent a selection of domains to block; [detail] is the app, [count] how many. */
         const val TYPE_DOMAINS = "domains"
 

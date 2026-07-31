@@ -280,7 +280,6 @@ fun WalcottApp(
                             screen = Screen.CHILD_DETAIL
                         },
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
-                        onOpenApps = { overrideChildId = null; screen = Screen.APPS },
                         onOpenBudgets = { budgetsReturnTo = Screen.FAMILIES; screen = Screen.BUDGETS },
                         onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
                         onOpenActivity = { screen = Screen.ACTIVITY },

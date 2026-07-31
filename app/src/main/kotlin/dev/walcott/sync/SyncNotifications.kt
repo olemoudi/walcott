@@ -256,6 +256,15 @@ object SyncNotifications {
         )
     }
 
+    /** A different app than the approved one was installed during a window (and removed). */
+    fun notifyWrongApp(context: Context, childName: String, pkg: String, deviceId: String, childId: String = "") = post(
+        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        title = context.getString(R.string.wrong_app_title, childName),
+        text = context.getString(R.string.wrong_app_text, pkg),
+        notifId = "wrongapp".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
     /** Cancels the open-window nag once the window is closed (re-blocked or expired). */
     fun cancelInstallWindowOpen(context: Context, deviceId: String) {
         runCatching {

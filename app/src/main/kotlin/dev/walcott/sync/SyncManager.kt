@@ -652,13 +652,18 @@ class SyncManager(
         val s = syncStore.current()
         if (s.pendingInstallPackage.isEmpty()) return
         val pushedLanded = installedPkg == s.pendingInstallPackage && s.pendingInstallCommandId.isNotEmpty()
+        // The window was opened for ONE approved app; Play can't be told to install only that
+        // one, so the guarantee is enforced after the fact: anything else that lands during
+        // the window is removed on the spot (Device Owner uninstalls silently) and the parent
+        // sees which app was tried instead of the approved one.
+        val sneaked = installedPkg != null && !pushedLanded && s.pendingInstallCommandId.isNotEmpty()
         syncStore.update {
             it.copy(
                 installExemptionUntilMs = 0,
                 pendingInstallPackage = "",
                 pendingInstallCommandId = "",
-                lastCommandAck = if (pushedLanded) {
-                    CommandAck(
+                lastCommandAck = when {
+                    pushedLanded -> CommandAck(
                         id = s.pendingInstallCommandId,
                         action = RemoteAction.INSTALL_APP,
                         ok = true,
@@ -666,10 +671,17 @@ class SyncManager(
                         completedAtMs = System.currentTimeMillis(),
                         arg = s.pendingInstallPackage,
                     )
-                } else {
-                    it.lastCommandAck
+                    sneaked -> CommandAck(
+                        id = s.pendingInstallCommandId,
+                        action = RemoteAction.INSTALL_APP,
+                        ok = false,
+                        detail = RemoteAction.DETAIL_WRONG_APP_REMOVED,
+                        completedAtMs = System.currentTimeMillis(),
+                        arg = installedPkg,
+                    )
+                    else -> it.lastCommandAck
                 },
-                childVersion = if (pushedLanded) it.childVersion + 1 else it.childVersion,
+                childVersion = if (pushedLanded || sneaked) it.childVersion + 1 else it.childVersion,
             )
         }
         InstallPromptNotifications.cancel(context, s.pendingInstallPackage)
@@ -677,7 +689,23 @@ class SyncManager(
         runCatching {
             DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = 0)
         }
-        if (pushedLanded) publishSelf()
+        if (sneaked) {
+            dev.walcott.debug.DebugLog.w(TAG, "unauthorized install during window: $installedPkg — removing")
+            runCatching { silentUninstall(installedPkg!!) }
+        }
+        if (pushedLanded || sneaked) publishSelf()
+    }
+
+    /** Device Owner silent uninstall (no-op elsewhere); the result lands in the debug log only. */
+    private fun silentUninstall(pkg: String) {
+        val dpm = context.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+        if (dpm?.isDeviceOwnerApp(context.packageName) != true) return
+        val sender = android.app.PendingIntent.getBroadcast(
+            context, pkg.hashCode(),
+            android.content.Intent("dev.walcott.action.UNINSTALL_RESULT").setPackage(context.packageName),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        ).intentSender
+        context.packageManager.packageInstaller.uninstall(pkg, sender)
     }
 
     suspend fun requestExtraTime(categoryId: String, minutes: Int, reason: String, targetLabel: String = "") {
@@ -1771,6 +1799,21 @@ class SyncManager(
         // (the NONE alert above misses that downgrade). The version guard mirrors mergeChild's
         // accept rule so a replayed older snapshot can't fake a transition.
         val prevChild = before.children.firstOrNull { it.deviceId == snapshot.deviceId }
+
+        // A different app than the approved one landed during an install window and was
+        // removed on the spot. Loud and specific: the parent sees exactly WHICH app was tried.
+        val wrongAppAck = snapshot.lastCommand
+            ?.takeIf { it.detail == RemoteAction.DETAIL_WRONG_APP_REMOVED && it.arg.isNotBlank() }
+        if (wrongAppAck != null &&
+            (prevChild?.lastCommand?.completedAtMs ?: 0L) != wrongAppAck.completedAtMs
+        ) {
+            SyncNotifications.notifyWrongApp(
+                context, snapshot.displayName, wrongAppAck.arg, snapshot.deviceId, snapshot.childId,
+            )
+            syncStore.update {
+                it.plusEvent(event(ParentEvent.TYPE_WRONG_APP, snapshot, detail = wrongAppAck.arg))
+            }
+        }
         if (prevChild?.enforcement == EnforcementStatus.DEVICE_OWNER &&
             snapshot.enforcement != EnforcementStatus.DEVICE_OWNER &&
             snapshot.enforcement != EnforcementStatus.UNKNOWN &&

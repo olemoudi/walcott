@@ -81,6 +81,7 @@ import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.FoldCard
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.cardPosition
@@ -371,7 +372,9 @@ fun ChildDetailScreen(
                     }
                 }
                 item {
-                    val categories = AppCategory.entries.toList()
+                    // General first: under the general-first posture it is the budget that
+                    // matters; the per-category refinements follow.
+                    val categories = listOf(AppCategory.OTHER) + AppCategory.entries.filterNot { it == AppCategory.OTHER }
                     CardGroup {
                         OverrideSwitchRow(
                             title = stringResource(R.string.override_budgets_title),
@@ -1095,10 +1098,17 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = Card
                     modifier = Modifier.padding(top = spacing.sm),
                 )
             } else if (ack != null) {
+                // The wrong-app removal names the exact package that was tried; everything
+                // else maps through the generic detail table.
+                val detailLabel = if (ack.detail == RemoteAction.DETAIL_WRONG_APP_REMOVED && ack.arg.isNotBlank()) {
+                    stringResource(R.string.remote_result_wrong_app_pkg, ack.arg)
+                } else {
+                    remoteResultLabel(context, ack.detail)
+                }
                 Text(
                     stringResource(
                         if (ack.ok) R.string.remote_command_ok else R.string.remote_command_failed,
-                        remoteResultLabel(context, ack.detail),
+                        detailLabel,
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (ack.ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
@@ -1153,6 +1163,7 @@ internal fun remoteResultLabel(context: android.content.Context, detail: String)
     "installed" -> context.getString(R.string.remote_result_installed)
     "already_installed" -> context.getString(R.string.remote_result_already_installed)
     "no_package" -> context.getString(R.string.remote_result_no_package)
+    "wrong_app_removed" -> context.getString(R.string.remote_result_wrong_app)
     "waiting_parent" -> context.getString(R.string.remote_result_waiting_parent)
     "diag_sent" -> context.getString(R.string.remote_result_diag_sent)
     else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail
@@ -1445,52 +1456,6 @@ private fun OverrideSwitchRow(
                 }
             }
             Switch(checked = checked, onCheckedChange = onToggle)
-        }
-    }
-}
-
-/**
- * A fold that keeps a group of rarely-needed cards out of the way (the child's rule
- * overrides, the technical tail). One tap opens it in place; the state survives
- * recomposition but not leaving the screen, so the detail always opens compact.
- */
-@Composable
-private fun FoldCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-) {
-    val spacing = Tokens.spacing
-    val rotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
-        animationSpec = tween(Tokens.motion.medium),
-        label = "foldChevron",
-    )
-    WalcottCard(onClick = onToggle) {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp),
-            )
-            Spacer(Modifier.width(spacing.md))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Icon(
-                Icons.Outlined.ExpandMore,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.rotate(rotation),
-            )
         }
     }
 }

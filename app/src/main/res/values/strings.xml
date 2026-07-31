@@ -75,22 +75,21 @@
     <string name="protection_inactive">No Device Owner: blocking isn\'t guaranteed</string>
     <string name="nav_apps_title">Apps and categories</string>
     <string name="apps_filter_all">All</string>
-    <string name="nav_apps_subtitle">Classify each app; new ones stay blocked until classified</string>
+    <string name="nav_apps_subtitle">See every app; new ones land in General, usable under the general limit</string>
     <string name="nav_limits_title">Limits and schedules</string>
     <string name="nav_limits_subtitle">Daily budget per category and bedtime</string>
     <!-- App assignment -->
     <string name="apps_no_remote">No apps reported yet. They\'ll appear here once your children\'s devices sync.</string>
     <string name="search_app">Search app</string>
-    <string name="unclassified_blocked">Unclassified · blocked</string>
+    <string name="unclassified_blocked">General</string>
     <string name="classify_into">Classify into…</string>
-    <string name="unclassified_block_action">Unclassified (block)</string>
 
     <!-- Budgets & schedules -->
     <string name="from">From</string>
     <string name="to">To</string>
     <string name="bedtime_start_title">Goes to sleep</string>
     <string name="bedtime_end_title">Wakes up</string>
-    <string name="daily_budget_header">Daily budget per category</string>
+    <string name="daily_budget_header">General daily limit</string>
     <string name="special_days_note_short">Which days those are is set in Special days.</string>
     <string name="special_days_note_action">Info</string>
     <string name="special_days_note_open">Open Special days</string>
@@ -120,7 +119,8 @@
     <string name="category_video">Video</string>
     <string name="category_education">Education</string>
     <string name="category_creative">Creativity</string>
-    <string name="category_other">Other</string>
+    <!-- The default bucket every unassigned app falls into (wire id stays "other"). -->
+    <string name="category_other">General</string>
 
     <!-- Enforcement service -->
     <string name="service_channel_name">Walcott protection</string>
@@ -377,7 +377,7 @@
     <string name="override_customized_hint">Customized — won\'t follow family changes</string>
     <string name="never_reported_title">%1$s hasn\'t connected</string>
     <string name="never_reported_text">This child device never checked in — the enrollment may not have finished</string>
-    <string name="hero_pending_setup">Waiting for setup — apps stay blocked until a parent classifies them</string>
+    <string name="hero_pending_setup">No time limits set today</string>
     <string name="setup_title">Finish setting up</string>
     <string name="setup_hint">Tap a step and we\'ll take you there.</string>
     <!-- Guided setup (presets) -->
@@ -429,7 +429,6 @@
     <string name="summary_off">Off</string>
     <string name="summary_next_hint">Next step: enroll a child device. Its apps will appear here for you to classify — new apps stay blocked until you do.</string>
     <string name="setup_step_child">Enroll a child device</string>
-    <string name="setup_step_apps">Classify the apps into categories</string>
     <string name="setup_step_limits">Set daily time limits</string>
     <string name="setup_step_bedtime">Set a bedtime</string>
 
@@ -637,6 +636,14 @@
     <string name="sync_install_ask_title">%1$s wants to install an app</string>
     <string name="sync_install_ask_text">Asking for: %1$s</string>
     <string name="ask_install_view_play">View on Google Play</string>
+    <string name="remote_result_wrong_app">a different app was installed instead — it was removed</string>
+    <string name="remote_result_wrong_app_pkg">they installed %1$s instead — it was removed</string>
+    <string name="wrong_app_title">%1$s installed a different app</string>
+    <string name="wrong_app_text">They installed %1$s instead of the approved app. It has been removed.</string>
+    <string name="event_wrong_app">%1$s installed %2$s without approval — it was removed</string>
+    <!-- Child home: the per-app limit cards -->
+    <string name="app_card_remaining">%1$s left today</string>
+    <string name="app_card_blocked">Not available right now</string>
     <string name="ask_install_hint">Approving installs only this app; everything else stays blocked.</string>
     <string name="install_channel_name">App install requests</string>
     <string name="install_prompt_title">Install requested</string>
@@ -970,4 +977,7 @@
     <string name="calendar_scope_title">Who is this day for?</string>
     <string name="calendar_scope_hint">Tick nobody for the whole family, or pick the children it belongs to — a birthday is only theirs.</string>
     <string name="calendar_scope_everyone">Everyone</string>
+    <string name="general_budget_hint">Counts every app that isn\'t in a category of its own.</string>
+    <string name="budgets_categories_fold_title">Category limits</string>
+    <string name="budgets_categories_fold_subtitle">Optional: separate budgets for games, social, video…</string>
 </resources>

@@ -339,6 +339,9 @@ object RemoteAction {
     const val DETAIL_INSTALL_OPENED = "opened"
     const val DETAIL_INSTALLED = "installed"
     const val DETAIL_ALREADY_INSTALLED = "already_installed"
+
+    /** A different app than the approved one landed during the window; it was removed. */
+    const val DETAIL_WRONG_APP_REMOVED = "wrong_app_removed"
 }
 
 /** How a child device says a [RemoteCommand] went, echoed back in its snapshot. */

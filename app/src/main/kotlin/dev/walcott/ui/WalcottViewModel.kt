@@ -34,12 +34,23 @@ data class CategoryStatusUi(
     val earned: Duration = Duration.ZERO,
 )
 
+/** One app with its own daily limit, for the child home's per-app cards. */
+data class AppStatusUi(
+    val packageName: String,
+    val label: String,
+    /** Time left right now (min of its own cap and its category's); null when blocked. */
+    val remaining: Duration?,
+    val blocked: Boolean,
+)
+
 data class ChildUiState(
     val loading: Boolean = true,
     val bedtimeActive: Boolean = false,
     /** Today's configured bedtime window, if any (for the "bedtime tonight" row). */
     val bedtimeTonight: dev.walcott.rules.TimeWindow? = null,
     val categories: List<CategoryStatusUi> = emptyList(),
+    /** Apps with their own daily limit — the general/per-app posture's first-class cards. */
+    val apps: List<AppStatusUi> = emptyList(),
 )
 
 data class AppRow(
@@ -600,11 +611,31 @@ class WalcottViewModel(
                     earned = if (id == earnTarget) Duration.ofMinutes(earnedMinutes.toLong()) else Duration.ZERO,
                 )
             }
+        // Apps with a limit of their own today — first-class cards, since the general/per-app
+        // posture makes these (not categories) the rules a family most often sets.
+        val failClosed = clockTampered && RuleEngine.requiresTrustedClock(config)
+        val appCards = config.perAppPolicies
+            .filterValues { it.dailyBudget[dayType] != null }
+            .map { (pkg, _) ->
+                val verdict = if (failClosed) {
+                    dev.walcott.rules.Verdict.Blocked(dev.walcott.rules.BlockReason.FAIL_CLOSED)
+                } else {
+                    RuleEngine.evaluate(config, pkg, now, usage, effectiveExtra)
+                }
+                AppStatusUi(
+                    packageName = pkg,
+                    label = repository.inventory.label(pkg) ?: pkg,
+                    remaining = (verdict as? dev.walcott.rules.Verdict.AllowedWithBudget)?.remaining,
+                    blocked = verdict is dev.walcott.rules.Verdict.Blocked,
+                )
+            }
+            .sortedBy { it.label.lowercase() }
         ChildUiState(
             loading = false,
             bedtimeActive = bedtimeActive,
             bedtimeTonight = bedtimeTonight,
             categories = cards,
+            apps = appCards,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 

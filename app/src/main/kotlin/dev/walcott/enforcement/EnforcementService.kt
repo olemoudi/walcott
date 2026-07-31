@@ -362,9 +362,8 @@ class EnforcementService : LifecycleService() {
             val creditedUsage = foreground != null && foreground == lastForeground &&
                 foreground in managed && deltaSeconds in 1..MAX_CREDIT_SECONDS
             if (creditedUsage) {
-                config.assignments[foreground]?.let { categoryId ->
-                    repo.addUsageSeconds(categoryId, deltaSeconds)
-                }
+                // Unassigned apps are General apps: their time counts against the general budget.
+                repo.addUsageSeconds(config.categoryOf(foreground!!), deltaSeconds)
                 // Per-app budget: also count under the package key (has a dot, never collides
                 // with a category id) so RuleEngine can enforce the app's own sub-cap.
                 if (foreground in config.perAppPolicies) {
