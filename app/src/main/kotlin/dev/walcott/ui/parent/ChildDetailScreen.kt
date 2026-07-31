@@ -359,6 +359,9 @@ fun ChildDetailScreen(
                             bedtime = entry.overrides.bedtime ?: settings.bedtime,
                             enabled = entry.overrides.bedtime != null,
                             position = CardPosition.Last,
+                            specialDaysOwnRules = settings.specialDaysOwnRules,
+                            onOpenSpecialDays = onOpenSpecialDays,
+                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
                         ) { updated ->
                             viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
                         }
