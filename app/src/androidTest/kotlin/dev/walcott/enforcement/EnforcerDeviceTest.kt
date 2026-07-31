@@ -104,7 +104,20 @@ class EnforcerDeviceTest {
     fun the_managed_set_the_loop_acts_on_never_contains_walcott_itself() {
         // If it did, the app would suspend the thing enforcing the rules.
         val inventory = AppInventory(context)
-        val managed = inventory.managedPackages(mapOf(context.packageName to "games"))
-        assertFalse("Walcott put itself in the managed set", context.packageName in managed)
+        assertFalse("Walcott put itself in the managed set", context.packageName in inventory.managedPackages())
+    }
+
+    @Test
+    fun the_apps_that_reach_a_person_are_never_managed_and_never_limited() {
+        // The phone and contacts apps are exempt from every rule (see WalcottRepository's
+        // essentials). Asserted on a device because resolving WHO they are is the part no JVM
+        // test can do — and getting it wrong means a child who cannot call.
+        val inventory = AppInventory(context)
+        val reachable = inventory.alwaysReachablePackages()
+        assertFalse("no phone app resolved on this device", reachable.isEmpty())
+        assertTrue(
+            "an always-reachable app is in the managed set: ${'$'}reachable",
+            inventory.managedPackages().none { it in reachable },
+        )
     }
 }

@@ -37,6 +37,12 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug
 
+      # Compiles the on-device tests without running them (no emulator here). They are the only
+      # checks that the operating system really suspends what the rules ask, and they had gone
+      # stale unnoticed for two releases because `gradlew test` never touches this source set.
+      - name: Compile the on-device tests
+        run: ./gradlew :app:assembleDebugAndroidTest
+
       - name: Commit coverage badge
         if: github.ref == 'refs/heads/main'
         run: |

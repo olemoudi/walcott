@@ -66,7 +66,8 @@ class PolicyEnforcementDeviceTest {
             config,
             managed,
             at,
-            usageToday = mapOf("games" to java.time.Duration.ofMinutes(usageMinutes)),
+            // Counted under the package: every limit is that app's own now.
+            usageToday = mapOf(target to java.time.Duration.ofMinutes(usageMinutes)),
         )
         enforcer.apply(managed, blocked)
     }
@@ -74,7 +75,6 @@ class PolicyEnforcementDeviceTest {
     @Test
     fun a_bedtime_written_in_minutes_ends_with_an_app_the_system_will_not_open() {
         val settings = PolicySettings(
-            assignments = mapOf(target to "games"),
             bedtime = DayType.entries.associate { it.name to WindowDto(21 * 60, 7 * 60) },
         )
         enforce(settings, monday.atTime(22, 30))
@@ -87,8 +87,7 @@ class PolicyEnforcementDeviceTest {
     @Test
     fun a_daily_budget_running_out_reaches_the_operating_system() {
         val settings = PolicySettings(
-            assignments = mapOf(target to "games"),
-            budgets = mapOf("games" to mapOf(DayType.SCHOOL.name to 60)),
+            appPolicies = mapOf(target to dev.walcott.data.AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 60))),
         )
         enforce(settings, monday.atTime(18, 0), usageMinutes = 30)
         assertFalse("half a budget already blocked the app", systemSaysSuspended(target))
@@ -98,11 +97,24 @@ class PolicyEnforcementDeviceTest {
     }
 
     @Test
-    fun an_app_the_parent_never_classified_is_blocked_on_the_device_too() {
-        // "Unclassified is blocked" is the rule everything else rests on; it has to hold at the
-        // level of the OS, not just in the engine.
+    fun an_app_nobody_set_a_rule_for_is_left_alone_on_the_device_too() {
+        // The promise since limits became per app: a policy that says nothing about an app
+        // leaves it usable. It has to hold at the level of the OS, not just in the engine —
+        // this is the assertion that would catch "empty policy suspends the world".
         enforce(PolicySettings(), monday.atTime(18, 0))
-        assertTrue("an unclassified app was left usable", systemSaysSuspended(target))
+        assertFalse("an app with no rules was suspended", systemSaysSuspended(target))
+    }
+
+    @Test
+    fun the_family_default_limit_reaches_the_operating_system_too() {
+        // The other half of the budget model: the app has no limit of its own, and answers to
+        // the one every app gets.
+        val settings = PolicySettings(defaultAppBudget = mapOf(DayType.SCHOOL.name to 60))
+        enforce(settings, monday.atTime(18, 0), usageMinutes = 30)
+        assertFalse("half the default already blocked the app", systemSaysSuspended(target))
+
+        enforce(settings, monday.atTime(18, 0), usageMinutes = 60)
+        assertTrue("an exhausted default did not reach the operating system", systemSaysSuspended(target))
     }
 
     @Test
@@ -110,8 +122,7 @@ class PolicyEnforcementDeviceTest {
         // The fail-closed branch, end to end: with budgets configured and no way to count time,
         // every managed app goes — which is what makes revoking the permission pointless.
         val settings = PolicySettings(
-            assignments = mapOf(target to "games"),
-            budgets = mapOf("games" to mapOf(DayType.SCHOOL.name to 60)),
+            appPolicies = mapOf(target to dev.walcott.data.AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 60))),
         )
         val config = rulesFor(settings)
         val blocked = RuleEngine.blockedPackages(

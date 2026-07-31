@@ -436,6 +436,14 @@ data class ChildSnapshot(
      */
     val clockSkewMs: Long = 0,
     /**
+     * A fresh random stamped on every publish, for the publishing device alone: when the
+     * message comes back over the topic, this is what tells it apart from an OLDER publish of
+     * its own being replayed after a reconnect — the difference between measuring the clock and
+     * inventing a 21-minute skew out of a network outage (see [ClockGuard.skewFromOwnEcho]).
+     * Nobody else reads it; 0 on children that don't stamp it.
+     */
+    val publishNonce: Long = 0,
+    /**
      * The child's pending emergency-release request, or null when there is none. Null on every
      * legacy child, so an old device can never look like it is asking for one.
      */

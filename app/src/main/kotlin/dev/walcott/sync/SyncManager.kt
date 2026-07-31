@@ -69,6 +69,12 @@ class SyncManager(
     @Volatile private var sinceCache: Long = 0
     /** Wall clock of the last successful publish, so heartbeats can skip redundant ones. */
     @Volatile private var lastPublishAtMs: Long = 0
+    /**
+     * The publish whose echo would prove something about this device's clock: its nonce, and
+     * what the local clock read when it went out. Replaced by the next publish and cleared once
+     * measured, so only the newest publish is ever paired (see [ClockGuard.skewFromOwnEcho]).
+     */
+    @Volatile private var awaitedEcho: Pair<Long, Long>? = null
     /** Serializes remote-command execution across concurrently handled parent snapshots. */
     private val commandMutex = Mutex()
     /**
@@ -1330,6 +1336,9 @@ class SyncManager(
             Role.CHILD -> {
                 val s = syncStore.current()
                 val today = LocalDate.now().toEpochDay()
+                // Stamped now and remembered with the local clock as it reads at this instant:
+                // when this message comes back, those two are what measure the clock.
+                val nonce = java.util.concurrent.ThreadLocalRandom.current().nextLong()
                 val history = repository.weeklyUsage().map { (day, usage) ->
                     DayUsage(day, usage.map { UsageEntry(it.key, it.value.seconds) })
                 }
@@ -1381,6 +1390,7 @@ class SyncManager(
                     // Which clock `epochDay` and the counters beside it were read by, so the
                     // parent doesn't date them with its own while one of them is travelling.
                     tzOffsetMinutes = java.time.OffsetDateTime.now().offset.totalSeconds / 60,
+                    publishNonce = nonce,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -1389,6 +1399,7 @@ class SyncManager(
                 if (fitted.degraded != null) {
                     dev.walcott.debug.DebugLog.w(TAG, "snapshot over size budget; degraded: ${fitted.degraded}")
                 }
+                awaitedEcho = nonce to System.currentTimeMillis()
                 transport.publish(fitted.encoded)
                 // Count the round only when slices actually went out, and only after the publish
                 // succeeded: charging a retry to a message that was never sent would burn the
@@ -1502,12 +1513,22 @@ class SyncManager(
             dev.walcott.debug.DebugLog.w(TAG, "adopted rotated parent signing key (parent restored from backup)")
         }
 
-        // Clock-tamper watch (child only): every message carries the server's clock. Only this
-        // device's own echo proves a forward-set clock; see ClockGuard for the replay caveat.
+        // Clock-tamper watch (child only): every message carries the server's clock.
         if (id.role == Role.CHILD && timeSec > 0) {
-            val ownEcho = message is IncomingMessage.FromChild && message.snapshot.deviceId == id.deviceId
-            ClockGuard.measuredSkew(ClockGuard.skewMs(System.currentTimeMillis(), timeSec), ownEcho)
-                ?.let { recordClockSkew(it) }
+            val ownSnapshot = (message as? IncomingMessage.FromChild)
+                ?.snapshot?.takeIf { it.deviceId == id.deviceId }
+            val skew = if (ownSnapshot != null) {
+                // Only the echo of the publish we are still waiting for says anything: an older
+                // publish of ours, replayed after a reconnect, carries a server stamp from
+                // before the outage and would read as a clock hours ahead.
+                awaitedEcho?.let { (nonce, publishedAt) ->
+                    ClockGuard.skewFromOwnEcho(nonce, publishedAt, ownSnapshot.publishNonce, timeSec)
+                        ?.also { awaitedEcho = null }
+                }
+            } else {
+                ClockGuard.measuredSkew(ClockGuard.skewMs(System.currentTimeMillis(), timeSec))
+            }
+            skew?.let { recordClockSkew(it) }
         }
 
         when {

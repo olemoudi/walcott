@@ -13,8 +13,16 @@ import kotlin.math.abs
  * (local ahead of server) on an arbitrary message is indistinguishable from replay. Hence
  * [measuredSkew]'s asymmetry: a negative skew is replay-proof in ANY message (the server
  * already saw a later time than the local clock shows, so the clock was moved back), while a
- * positive skew only counts on this device's own fresh echo (published seconds ago, so its
- * server timestamp is genuinely "now").
+ * positive skew is only ever read off an echo of one of OUR publishes, PAIRED with it by
+ * nonce (see [skewFromOwnEcho]).
+ *
+ * The pairing is the whole guard, and it was learned the hard way: "this snapshot carries my
+ * device id" is not the same as "this is the publish I just made". A device that spends 21
+ * minutes off the socket (Doze, a tunnel, a dead Wi-Fi) keeps publishing over HTTP, and on
+ * reconnect the server hands its own 21-minute-old message back — same device id, timestamp
+ * from before the outage. Read as skew, that is "the clock is 21 minutes ahead": a false
+ * tamper alert to the parent AND, because the rules fail closed on an untrusted clock, every
+ * app on the child's phone locked over a network outage.
  *
  * Pure, so the decision — especially the alert hysteresis — is unit-tested.
  */
@@ -30,14 +38,31 @@ object ClockGuard {
     fun skewMs(localNowMs: Long, serverTimeSec: Long): Long = localNowMs - serverTimeSec * 1000
 
     /**
-     * The skew worth recording from one message, or null when the message proves nothing
-     * (a positive skew on a message that may be replayed). [ownFreshEcho] = the message is
-     * this device's own publish coming back, so its server timestamp is current.
+     * The skew worth recording from a message that is NOT one of our own publishes coming
+     * back, or null when it proves nothing. Only a clock moved BACKWARDS can be read off such
+     * a message: replay can only ever make the skew look more positive, never more negative.
      */
-    fun measuredSkew(skewMs: Long, ownFreshEcho: Boolean): Long? = when {
-        ownFreshEcho -> skewMs
-        skewMs <= -TAMPER_THRESHOLD_MS -> skewMs
-        else -> null
+    fun measuredSkew(skewMs: Long): Long? = skewMs.takeIf { it <= -TAMPER_THRESHOLD_MS }
+
+    /**
+     * The skew proven by an echo of our own publish, or null when this echo is not the publish
+     * we are waiting for (an older one of ours, replayed after a reconnect) or comes from a
+     * build that doesn't stamp its publishes.
+     *
+     * Measured against the local clock as it read AT THE MOMENT OF THAT PUBLISH, not on
+     * arrival. Pairing already rules out replay, and reading the clock at publish time also
+     * takes delivery latency out of the answer: a message that took two minutes to come back
+     * says nothing about the clock, and this way it doesn't pretend to.
+     */
+    fun skewFromOwnEcho(
+        awaitedNonce: Long,
+        publishedAtLocalMs: Long,
+        echoNonce: Long,
+        serverTimeSec: Long,
+    ): Long? = if (echoNonce != 0L && echoNonce == awaitedNonce) {
+        skewMs(publishedAtLocalMs, serverTimeSec)
+    } else {
+        null
     }
 
     fun isTampered(skewMs: Long): Boolean = abs(skewMs) >= TAMPER_THRESHOLD_MS
