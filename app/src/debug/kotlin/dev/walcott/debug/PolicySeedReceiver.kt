@@ -388,6 +388,9 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 detail = detail, count = count,
             )
             val feed = listOf(
+                entry(dev.walcott.sync.ParentEvent.TYPE_BEDTIME, 11 * 3_600_000L),
+                entry(dev.walcott.sync.ParentEvent.TYPE_APP_TIME_OUT, 4 * 3_600_000L, detail = "Roblox"),
+                entry(dev.walcott.sync.ParentEvent.TYPE_SCREEN_FREE, 3 * 3_600_000L),
                 entry(dev.walcott.sync.ParentEvent.TYPE_BONUS, 3 * 24 * 3_600_000L, count = 15),
                 entry(dev.walcott.sync.ParentEvent.TYPE_ENFORCEMENT_GAP, 26 * 3_600_000L, count = 2),
                 entry(dev.walcott.sync.ParentEvent.TYPE_ENFORCEMENT_GAP_CLEARED, 25 * 3_600_000L),

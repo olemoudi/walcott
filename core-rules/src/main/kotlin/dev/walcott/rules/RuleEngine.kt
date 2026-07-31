@@ -65,6 +65,25 @@ object RuleEngine {
     }
 
     /**
+     * The block that applies to EVERY non-essential app right now (bedtime, or a family-wide
+     * screen-free window), or null when nothing device-wide is in force.
+     *
+     * The same two checks [evaluate] runs before it looks at any app, pulled out so a caller can
+     * ask the question once instead of per package: a device that has just entered bedtime has
+     * one thing to say, not one thing per installed app.
+     */
+    fun deviceWideBlock(config: FamilyConfig, now: LocalDateTime): BlockReason? {
+        val dayType = config.calendar.dayTypeOf(now)
+        config.bedtime[dayType]?.let { if (now.toLocalTime() in it) return BlockReason.BEDTIME }
+        val specialDay = dayType == DayType.HOLIDAY
+        return if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
+            BlockReason.BLOCKED_WINDOW
+        } else {
+            null
+        }
+    }
+
+    /**
      * Whether this config must fail CLOSED when screen-time counting is unavailable (usage
      * access revoked). Budgets depend on the counter: without it they never run out, so
      * revoking the permission would mean unlimited time — the opposite of what the parent

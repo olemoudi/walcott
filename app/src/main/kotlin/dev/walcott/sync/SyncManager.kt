@@ -897,6 +897,22 @@ class SyncManager(
         runCatching { publishSelf() }
     }
 
+    /**
+     * Records what the rules just did here, for the parent's activity wall (see [ChildEvent]).
+     * Published promptly but throttled: a wall entry is worth a message, a burst of them is not.
+     */
+    suspend fun recordRuleEvents(events: List<ChildEvent>) {
+        if (events.isEmpty()) return
+        val now = System.currentTimeMillis()
+        syncStore.update {
+            it.copy(
+                ruleEvents = ChildEventLog.plus(it.ruleEvents, events, now),
+                childVersion = it.childVersion + 1,
+            )
+        }
+        runCatching { publishHeartbeatIfStale(RULE_EVENT_PUBLISH_MIN_MS) }
+    }
+
     /** Records the heartbeat self-test's result; publishes on change so the parent hears promptly. */
     suspend fun recordEnforcementGap(packages: List<String>) {
         if (syncStore.current().enforcementGaps == packages) return
@@ -1391,6 +1407,7 @@ class SyncManager(
                     // parent doesn't date them with its own while one of them is travelling.
                     tzOffsetMinutes = java.time.OffsetDateTime.now().offset.totalSeconds / 60,
                     publishNonce = nonce,
+                    ruleEvents = ChildEventLog.plus(s.ruleEvents, emptyList(), System.currentTimeMillis()),
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -2044,6 +2061,20 @@ class SyncManager(
             }
         }
 
+        // The child's own account of what the rules did (bedtime starting, an app running out).
+        // Folded in by id, so a re-emitted snapshot repeats nothing; kinds this build doesn't
+        // know are skipped rather than shown as a blank line.
+        val knownEventIds = before.events.map { it.id }.toSet()
+        val freshRuleEvents = snapshot.ruleEvents.filter { it.id.isNotBlank() && it.id !in knownEventIds }
+        if (freshRuleEvents.isNotEmpty()) {
+            syncStore.update { state ->
+                freshRuleEvents.fold(state) { acc, ruleEvent ->
+                    val entry = ParentEvent.fromChildEvent(ruleEvent, snapshot.childId, snapshot.displayName)
+                    if (entry == null) acc else acc.plusEvent(entry)
+                }
+            }
+        }
+
         // Alert whenever the child's cumulative wrong-PIN count grows (someone is guessing the PIN).
         val prevPinTotal = before.pinAlertedTotal[snapshot.deviceId] ?: 0
         if (snapshot.pinWrongTotal > prevPinTotal) {
@@ -2182,6 +2213,8 @@ class SyncManager(
          * their own screen: this is the one minute in which the request matters.
          */
         private const val DOMAIN_NUDGE_MS = 20_000L
+        /** At most one message a minute for wall entries, however busy the rules get. */
+        private const val RULE_EVENT_PUBLISH_MIN_MS = 60_000L
         /** How far a restore jumps the version counter past the backup's (see restoreBackup). */
         private const val RESTORE_VERSION_LEAP = 1_000_000L
 

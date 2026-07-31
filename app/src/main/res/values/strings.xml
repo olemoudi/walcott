@@ -990,4 +990,7 @@
     <string name="app_no_limit_ever">Never limit this app</string>
     <string name="app_no_limit_ever_hint">It ignores the family default. Bedtime and screen-free times still apply.</string>
     <string name="dashboard_default_limit">Limit per app</string>
+    <string name="event_app_time_out">%1$s ran out of time in %2$s</string>
+    <string name="event_bedtime">Bedtime started for %1$s</string>
+    <string name="event_screen_free">A screen-free time started for %1$s</string>
 </resources>

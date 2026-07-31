@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.InstallMobile
@@ -63,7 +64,8 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_REQUEST_DENIED, ParentEvent.TYPE_BONUS, ParentEvent.TYPE_REMOTE_DONE,
     ParentEvent.TYPE_PANIC_REQUEST, ParentEvent.TYPE_PANIC_RELEASED, ParentEvent.TYPE_PANIC_DENIED,
     ParentEvent.TYPE_PANIC_CANCELLED, ParentEvent.TYPE_DOMAINS, ParentEvent.TYPE_INSTALL_WINDOW,
-    ParentEvent.TYPE_WRONG_APP,
+    ParentEvent.TYPE_WRONG_APP, ParentEvent.TYPE_APP_TIME_OUT, ParentEvent.TYPE_BEDTIME,
+    ParentEvent.TYPE_SCREEN_FREE,
 )
 
 @Composable
@@ -159,6 +161,9 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_DOMAINS -> Icons.Outlined.Language to neutral
         ParentEvent.TYPE_INSTALL_WINDOW -> Icons.Outlined.InstallMobile to warn
         ParentEvent.TYPE_WRONG_APP -> Icons.Filled.Warning to error
+        ParentEvent.TYPE_APP_TIME_OUT -> Icons.Outlined.Timer to neutral
+        ParentEvent.TYPE_BEDTIME -> Icons.Outlined.Bedtime to neutral
+        ParentEvent.TYPE_SCREEN_FREE -> Icons.Outlined.Schedule to neutral
         else -> Icons.Outlined.Build to neutral
     }
 }
@@ -212,6 +217,9 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
         pluralStringResource(R.plurals.event_domains, event.count, name, event.count, event.detail)
     ParentEvent.TYPE_INSTALL_WINDOW -> stringResource(R.string.event_install_window, name)
     ParentEvent.TYPE_WRONG_APP -> stringResource(R.string.event_wrong_app, name, event.detail)
+    ParentEvent.TYPE_APP_TIME_OUT -> stringResource(R.string.event_app_time_out, name, event.detail)
+    ParentEvent.TYPE_BEDTIME -> stringResource(R.string.event_bedtime, name)
+    ParentEvent.TYPE_SCREEN_FREE -> stringResource(R.string.event_screen_free, name)
     ParentEvent.TYPE_REMOTE_DONE -> stringResource(
         if (event.count > 0) R.string.event_remote_ok else R.string.event_remote_failed,
         name, remoteActionLabel(event.detail),

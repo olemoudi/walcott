@@ -84,6 +84,39 @@ data class ParentEvent(
         const val TYPE_DOMAINS = "domains"
 
         /**
+         * The everyday rhythm, reported by the child itself (see [ChildEvent]): one app's daily
+         * limit ran out ([detail] names it), bedtime began, a screen-free window began. No
+         * notification goes with these — they are what the wall is for.
+         */
+        const val TYPE_APP_TIME_OUT = "app_time_out"
+        const val TYPE_BEDTIME = "bedtime"
+        const val TYPE_SCREEN_FREE = "screen_free"
+
+        /**
+         * The wall entry for something the child reported its rules doing, or null when this
+         * build doesn't know the kind (a newer child; skipped rather than shown as a blank
+         * line). The event keeps its own id, which is what makes folding it in idempotent
+         * however many times the snapshot is re-emitted.
+         */
+        fun fromChildEvent(event: ChildEvent, childId: String, childName: String): ParentEvent? {
+            val type = when (event.kind) {
+                ChildEvent.KIND_BUDGET_OUT -> TYPE_APP_TIME_OUT
+                ChildEvent.KIND_BEDTIME -> TYPE_BEDTIME
+                ChildEvent.KIND_SCREEN_FREE -> TYPE_SCREEN_FREE
+                else -> return null
+            }
+            return ParentEvent(
+                id = event.id,
+                atMs = event.atMs,
+                type = type,
+                childId = childId,
+                childName = childName,
+                // The child named the app for us: the parent may never have heard of it.
+                detail = event.label.ifBlank { event.pkg },
+            )
+        }
+
+        /**
          * Collapses runs of identical consecutive entries (same type, child, detail and count)
          * into the run's first element plus how many it stands for. The feed can legitimately
          * repeat itself — two equal bonuses in a row are two grants — but N identical adjacent
@@ -164,6 +197,11 @@ data class SyncState(
     val enforcementGaps: List<String> = emptyList(),
     /** Local minus server clock in ms, as last measured by [ClockGuard]; 0 until measured. */
     val clockSkewMs: Long = 0,
+    /**
+     * What the rules have just done here, waiting to be seen by the parent (see [ChildEvent]).
+     * Bounded by [ChildEventLog]; there is no acknowledgement, the parent folds each in by id.
+     */
+    val ruleEvents: List<ChildEvent> = emptyList(),
     /** The parent app's build, from its snapshots; the child only self-updates up to it (canary). */
     val parentAppVersionCode: Int = 0,
     /** Wall-clock ms of the last message received over the channel (proof it works end to end). */

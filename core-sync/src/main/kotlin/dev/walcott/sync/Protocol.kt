@@ -267,6 +267,61 @@ data class PanicRequest(
     val checkpoints: Int = 0,
 )
 
+/**
+ * Something the rules did on the child device, reported so the parent's activity wall can show
+ * the everyday rhythm — "Ana ran out of Roblox", "bedtime started" — and not only the alarms.
+ *
+ * Carries its own [id] so the parent can fold it in exactly once however many times the snapshot
+ * is re-emitted, and its own [label], because the parent may never have heard of the package
+ * (an app installed and used before its list next travelled).
+ *
+ * Deliberately tiny and few: this rides in every snapshot until it ages out, and a snapshot that
+ * outgrows the message cap takes the whole child off the air (see [SnapshotFit]).
+ */
+@Serializable
+data class ChildEvent(
+    val id: String,
+    val atMs: Long,
+    /** One of the KIND_* constants; a parent skips kinds it doesn't know (forward compat). */
+    val kind: String,
+    val pkg: String = "",
+    val label: String = "",
+) {
+    companion object {
+        /** One app's daily limit ran out. [pkg]/[label] name it. */
+        const val KIND_BUDGET_OUT = "budget_out"
+
+        /** Bedtime began: everything went quiet at once, so it is one line, not one per app. */
+        const val KIND_BEDTIME = "bedtime"
+
+        /** A family screen-free window began. Same reasoning as bedtime. */
+        const val KIND_SCREEN_FREE = "screen_free"
+    }
+}
+
+/**
+ * The child's short-lived log of [ChildEvent]s waiting to be seen by the parent.
+ *
+ * Bounded twice on purpose. By count, because this rides inside every snapshot and a snapshot
+ * over the message cap takes the child off the air entirely. By age, because there is no
+ * acknowledgement to wait for — the parent folds each event in by id and ignores repeats, so an
+ * event that nobody collected in [RETENTION_MS] has had every chance it is going to get.
+ */
+object ChildEventLog {
+
+    /** How many events ride in a snapshot at once. Small: they are one line each on a wall. */
+    const val MAX = 8
+
+    /** How long an uncollected event keeps travelling. Longer than any re-emit interval. */
+    const val RETENTION_MS = 6 * 60 * 60 * 1000L
+
+    /** [existing] plus [fresh], oldest first, pruned to the two bounds. */
+    fun plus(existing: List<ChildEvent>, fresh: List<ChildEvent>, nowMs: Long): List<ChildEvent> =
+        (existing + fresh)
+            .filter { nowMs - it.atMs <= RETENTION_MS }
+            .takeLast(MAX)
+}
+
 /** A GPS fix reported by a child device (WGS84). */
 @Serializable
 data class LocationPoint(
@@ -464,6 +519,11 @@ data class ChildSnapshot(
      * the right answer whenever the family shares a timezone, which is nearly always.
      */
     val tzOffsetMinutes: Int? = null,
+    /**
+     * What the rules have just done on this device (see [ChildEvent]), newest last. Bounded and
+     * short-lived: it is the parent's activity wall that keeps them, not the snapshot.
+     */
+    val ruleEvents: List<ChildEvent> = emptyList(),
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */

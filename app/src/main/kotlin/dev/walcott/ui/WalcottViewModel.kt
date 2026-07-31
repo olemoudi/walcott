@@ -579,9 +579,15 @@ class WalcottViewModel(
                 .mapValues { (_, report) -> listOf(dev.walcott.sync.StoredDiag(report)) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    /** The activity feed, newest first (parent side), for the home wall and child dashboards. */
+    /**
+     * The activity feed, newest first (parent side), for the home wall and child dashboards.
+     * Ordered by when things HAPPENED, not by when we heard: a child reports what its rules did
+     * on its next publish, so a phone that was offline all evening delivers a bedtime from hours
+     * ago after events the parent logged since. Sorting by arrival put those lines at the top
+     * with a timestamp that contradicted their position.
+     */
     val recentEvents: StateFlow<List<dev.walcott.sync.ParentEvent>> =
-        sync.state.map { it.events.asReversed() }
+        sync.state.map { state -> state.events.sortedByDescending { it.atMs } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Per-child daily usage ledger (see [dev.walcott.sync.UsageLedger]), for the dashboard average. */

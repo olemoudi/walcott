@@ -299,6 +299,11 @@ class EnforcementService : LifecycleService() {
         // Suspension is only re-asserted when the target state changes (or periodically as
         // a self-heal), instead of N isPackageSuspended binder calls per tick.
         var lastAppliedBlocked: Set<String>? = null
+        // What was blocking the whole device last tick, so entering bedtime is one line on the
+        // parent's wall instead of one per app. Null until the first tick has been seen: a
+        // service that restarts mid-bedtime must not announce it again.
+        var lastDeviceBlock: dev.walcott.rules.BlockReason? = null
+        var deviceBlockSeen = false
         var lastAppliedManaged: Set<String>? = null
         var lastApplyAt = 0L
         // Idle-earn: idle seconds are batched locally and flushed to the store ~once a minute,
@@ -401,6 +406,45 @@ class EnforcementService : LifecycleService() {
                 usageCountingAvailable = usageAccessOk,
                 clockTrusted = clockTrusted,
             )
+            // What the rules just did, for the parent's activity wall. Skipped entirely while
+            // failing closed: that already has its own alert, and it would otherwise report
+            // every managed app as having run out of time at the same instant.
+            val failingClosed = (!usageAccessOk && RuleEngine.requiresUsageCounting(config)) ||
+                (!clockTrusted && RuleEngine.requiresTrustedClock(config))
+            if (!failingClosed) {
+                val deviceBlock = RuleEngine.deviceWideBlock(config, now)
+                // On the first tick there is no "before", so nothing is new.
+                val newlyBlocked = blocked - (lastAppliedBlocked ?: blocked)
+                val budgetOut = newlyBlocked.filter {
+                    val verdict = RuleEngine.evaluate(config, it, now, usage, extra)
+                    (verdict as? dev.walcott.rules.Verdict.Blocked)?.reason ==
+                        dev.walcott.rules.BlockReason.BUDGET_EXHAUSTED
+                }
+                val kinds = if (deviceBlockSeen) {
+                    RuleEvents.kindsFor(lastDeviceBlock, deviceBlock, budgetOut)
+                } else {
+                    emptyList()
+                }
+                lastDeviceBlock = deviceBlock
+                deviceBlockSeen = true
+                if (kinds.isNotEmpty()) {
+                    val stampedAt = System.currentTimeMillis()
+                    app.syncManager.recordRuleEvents(
+                        kinds.map { (kind, pkg) ->
+                            dev.walcott.sync.ChildEvent(
+                                id = java.util.UUID.randomUUID().toString(),
+                                atMs = stampedAt,
+                                kind = kind,
+                                pkg = pkg,
+                                // Named here, where the app is installed: the parent may never
+                                // have heard of the package.
+                                label = if (pkg.isEmpty()) "" else repo.inventory.label(pkg) ?: pkg,
+                            )
+                        },
+                    )
+                }
+            }
+
             // Re-assert on change, plus periodically so external state drift self-heals.
             if (blocked != lastAppliedBlocked || managed != lastAppliedManaged ||
                 nowClock - lastApplyAt > REASSERT_MILLIS

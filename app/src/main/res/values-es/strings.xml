@@ -989,4 +989,7 @@
     <string name="app_no_limit_ever">No limitar nunca esta app</string>
     <string name="app_no_limit_ever_hint">Ignora el límite por defecto de la familia. La hora de dormir y los horarios sin pantalla siguen aplicando.</string>
     <string name="dashboard_default_limit">Límite por app</string>
+    <string name="event_app_time_out">A %1$s se le acabó el tiempo de %2$s</string>
+    <string name="event_bedtime">Empezó la hora de dormir de %1$s</string>
+    <string name="event_screen_free">Empezó un horario sin pantalla para %1$s</string>
 </resources>
