@@ -55,6 +55,28 @@ data class ChildUiState(
 )
 
 /** One app in the parent's list, with whatever was set for it (null = the family default). */
+/**
+ * The apps worth a card on the child's home, each with its label: everything with a limit
+ * today, out of the ones the child has actually used and the ones somebody set a rule for.
+ * With no family default that is just the capped apps; with one it is what they have been
+ * using — never the whole launcher, which is what listing "every app with a limit" would mean.
+ *
+ * Anything not installed any more is dropped, which [label] answers by returning null for it.
+ * Both sources outlive the app: a limit stays in the policy on purpose (it has to survive an
+ * uninstall, or uninstalling and reinstalling would be the way to wipe it), and today's counter
+ * keeps the minutes that were really spent. Neither is a reason to keep offering the child a
+ * card for something they can no longer open.
+ */
+internal fun childCardPackages(
+    config: dev.walcott.rules.FamilyConfig,
+    usedToday: Set<String>,
+    dayType: DayType,
+    label: (String) -> String?,
+): List<Pair<String, String>> =
+    (config.perAppPolicies.keys + usedToday)
+        .filter { config.budgetFor(it, dayType) != null }
+        .mapNotNull { pkg -> label(pkg)?.let { pkg to it } }
+
 data class AppRow(
     val app: InstalledApp,
     val policy: AppPolicyDto?,
@@ -630,18 +652,13 @@ class WalcottViewModel(
         val bedtimeTonight = config.bedtime[dayType]
         val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
 
-        // The apps worth a card: everything with a limit today, out of the ones the child has
-        // actually used and the ones somebody set a rule for. With no family default that is
-        // just the capped apps; with one it is what they have been using — never the whole
-        // launcher, which is what listing "every app with a limit" would mean.
         val failClosed = clockTampered && RuleEngine.requiresTrustedClock(config)
-        val appCards = (config.perAppPolicies.keys + usage.keys)
-            .filter { config.budgetFor(it, dayType) != null }
-            .map { pkg ->
+        val appCards = childCardPackages(config, usage.keys, dayType) { repository.inventory.label(it) }
+            .map { (pkg, label) ->
                 val status = RuleEngine.appStatus(config, pkg, now, usage, effectiveExtra, failClosed)
                 AppStatusUi(
                     packageName = pkg,
-                    label = repository.inventory.label(pkg) ?: pkg,
+                    label = label,
                     budget = status.budget ?: Duration.ZERO,
                     used = status.used,
                     remaining = status.remaining,
