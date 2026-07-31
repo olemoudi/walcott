@@ -145,8 +145,13 @@ data class FamilyConfig(
     /**
      * The budget [packageName] answers to on [dayType], or null when it has none: its own if it
      * was given one, otherwise the family default — unless it was explicitly set free.
+     *
+     * An essential app (the phone, Walcott itself) never has one. Stated here and not only in
+     * [RuleEngine.evaluate] so that everything reading a budget agrees: a child's screen must
+     * not draw "Phone · 20 min left" over an app that will keep working regardless.
      */
     fun budgetFor(packageName: String, dayType: DayType): Duration? {
+        if (packageName in essentialPackages) return null
         val own = perAppPolicies[packageName]
         if (own?.unlimited == true) return null
         return own?.dailyBudget?.get(dayType) ?: defaultAppBudget[dayType]

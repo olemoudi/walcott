@@ -113,4 +113,51 @@ class PerAppPolicyTest {
         )
         assertEquals(Verdict.Blocked(BlockReason.BLOCKED_WINDOW), RuleEngine.evaluate(cfg, app, schoolAfternoon))
     }
+
+    // --- The phone app ---
+
+    @Test
+    fun `an essential app has no budget, whatever the family set`() {
+        // "You can always call" has to survive a family default, a limit typed on that very
+        // app, and a day spent using it. Asserted on budgetFor as well as on the verdict,
+        // because the child's screen reads the budget to decide what to draw.
+        val phone = "com.android.dialer"
+        val cfg = FamilyConfig(
+            version = 1,
+            defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)),
+            perAppPolicies = mapOf(phone to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ZERO))),
+            bedtime = mapOf(DayType.SCHOOL to TimeWindow(LocalTime.of(21, 30), LocalTime.of(7, 30))),
+            blockedWindows = mapOf(
+                DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(15, 0), LocalTime.of(17, 0))),
+            ),
+            essentialPackages = setOf(phone),
+        )
+        assertNull(cfg.budgetFor(phone, DayType.SCHOOL))
+        val burned = mapOf(phone to Duration.ofHours(5))
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(cfg, phone, schoolAfternoon, burned))
+        // Bedtime and a screen-free window are exactly when a call matters most.
+        assertEquals(
+            Verdict.Allowed,
+            RuleEngine.evaluate(cfg, phone, LocalDateTime.of(2026, 3, 3, 23, 0), burned),
+        )
+        // The same instant blocks anything that is not essential, so this is the exemption
+        // doing the work rather than the windows being misconfigured.
+        assertEquals(
+            Verdict.Blocked(BlockReason.BLOCKED_WINDOW),
+            RuleEngine.evaluate(cfg, "com.other", schoolAfternoon),
+        )
+    }
+
+    @Test
+    fun `the child's screen shows an essential app as unlimited, not as budgeted`() {
+        val phone = "com.android.dialer"
+        val cfg = FamilyConfig(
+            version = 1,
+            defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)),
+            essentialPackages = setOf(phone),
+        )
+        val status = RuleEngine.appStatus(cfg, phone, schoolAfternoon, mapOf(phone to Duration.ofHours(2)))
+        assertEquals(AppState.ALLOWED, status.state)
+        assertNull(status.budget)
+    }
 }

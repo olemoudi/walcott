@@ -24,7 +24,17 @@ class WalcottRepository(
     private val ownPackage: String,
 ) {
     private fun today(): Long = LocalDate.now().toEpochDay()
-    private val essentials: Set<String> get() = setOf(ownPackage)
+
+    /**
+     * Apps no rule of ours may ever touch: Walcott itself, and the phone app.
+     *
+     * The phone is not a convenience — a child has to be able to call at any hour, including
+     * the middle of bedtime, and especially to call the parent who set the rules. It is asked
+     * of the system (see [AppInventory.defaultDialerPackage]) rather than assumed to be a
+     * system app, so a device whose dialer is an ordinary installed app is covered too.
+     */
+    private val essentials: Set<String>
+        get() = setOf(ownPackage) + listOfNotNull(inventory.defaultDialerPackage())
 
     val settingsFlow: Flow<PolicySettings> = settingsStore.settings
 
