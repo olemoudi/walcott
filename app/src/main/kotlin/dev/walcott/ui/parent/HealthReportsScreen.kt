@@ -110,7 +110,10 @@ fun HealthReportsScreen(viewModel: WalcottViewModel, childId: String, onBack: ()
                 }
             }
             // The newest is expanded on arrival; the rest are one line each until asked for.
-            itemsIndexed(reports, key = { _, it -> it.report.atMs }) { index, stored ->
+            // Keyed by position as well as by instant: a parent updating from a build that could
+            // file the same report twice (see SyncManager.applyDiagPayload) still has the
+            // duplicate on disk, and a repeated key is a crash, not a cosmetic problem.
+            itemsIndexed(reports, key = { index, it -> "${it.report.atMs}-$index" }) { index, stored ->
                 ReportCard(stored = stored, appLabels = appLabels, initiallyExpanded = index == 0)
             }
         }

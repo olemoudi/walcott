@@ -992,4 +992,21 @@
     <string name="event_app_time_out">A %1$s se le acabó el tiempo de %2$s</string>
     <string name="event_bedtime">Empezó la hora de dormir de %1$s</string>
     <string name="event_screen_free">Empezó un horario sin pantalla para %1$s</string>
+    <!-- Heads-up on the child device before something closes (30 and 5 minutes ahead). -->
+    <string name="warn_channel_name">Avisos de tiempo</string>
+    <plurals name="warn_budget_title">
+        <item quantity="one">Te queda %1$d minuto en %2$s</item>
+        <item quantity="other">Te quedan %1$d minutos en %2$s</item>
+    </plurals>
+    <string name="warn_budget_text">Cuando se acabe puedes pedir más tiempo.</string>
+    <plurals name="warn_bedtime_title">
+        <item quantity="one">La hora de dormir empieza en %1$d minuto</item>
+        <item quantity="other">La hora de dormir empieza en %1$d minutos</item>
+    </plurals>
+    <string name="warn_bedtime_text">Tus apps descansan hasta mañana.</string>
+    <plurals name="warn_screen_free_title">
+        <item quantity="one">Horario sin pantalla en %1$d minuto</item>
+        <item quantity="other">Horario sin pantalla en %1$d minutos</item>
+    </plurals>
+    <string name="warn_screen_free_text">Tus apps se pausan hasta que acabe el horario.</string>
 </resources>

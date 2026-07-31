@@ -417,7 +417,17 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 appVersionName = dev.walcott.BuildConfig.VERSION_NAME,
                 logLines = DebugLog.tail(20).ifEmpty { listOf("(empty log)") },
             )
-            target.syncStore.update { it.copy(diagReports = it.diagReports + (snapshot.deviceId to report)) }
+            // `--ei child_diag_copies N`: file the SAME report N times into the history, which is
+            // what a replayed DIAG message used to do to a parent (see applyDiagPayload).
+            val copies = intent.getIntExtra("child_diag_copies", 0)
+            if (copies > 0) {
+                val filed = List(copies) { dev.walcott.sync.StoredDiag(report, dev.walcott.BuildConfig.VERSION_CODE) }
+                target.syncStore.update {
+                    it.copy(diagHistory = it.diagHistory + (snapshot.deviceId to filed))
+                }
+            } else {
+                target.syncStore.update { it.copy(diagReports = it.diagReports + (snapshot.deviceId to report)) }
+            }
         }
     }
 

@@ -304,6 +304,8 @@ class EnforcementService : LifecycleService() {
         // service that restarts mid-bedtime must not announce it again.
         var lastDeviceBlock: dev.walcott.rules.BlockReason? = null
         var deviceBlockSeen = false
+        // What the child has already been warned about, so a 2-second loop says each thing once.
+        val warnings = TimeWarnings()
         var lastAppliedManaged: Set<String>? = null
         var lastApplyAt = 0L
         // Idle-earn: idle seconds are batched locally and flushed to the store ~once a minute,
@@ -441,6 +443,29 @@ class EnforcementService : LifecycleService() {
                                 label = if (pkg.isEmpty()) "" else repo.inventory.label(pkg) ?: pkg,
                             )
                         },
+                    )
+                }
+            }
+
+            // Heads-up before the door closes, and only while the phone is being used: a warning
+            // nobody is there to read is just a notification waiting to confuse them later.
+            // Skipped while failing closed, where "when does this end" has no honest answer.
+            if (!failingClosed && foreground != null && foreground != packageName) {
+                val closing = if (foreground in managed) {
+                    dev.walcott.rules.CloseWatch.nextClose(config, foreground, now, usage, extra)
+                } else {
+                    // Nothing Walcott limits, so only the rules that close the whole phone apply.
+                    dev.walcott.rules.CloseWatch.nextDeviceWideClose(config, now)
+                }
+                warnings.due(closing, System.currentTimeMillis() / 60_000)?.let {
+                    TimeWarningNotifications.notify(
+                        this, closing!!,
+                        // What is actually left, rounded up — not the threshold that triggered
+                        // it. A child who picks the phone up 22 minutes before bedtime crosses
+                        // the 30-minute mark on the first look, and "in 30 minutes" would be
+                        // a lie the clock disproves.
+                        minutes = ((closing.left.seconds + 59) / 60).toInt().coerceAtLeast(1),
+                        appLabel = repo.inventory.label(closing.packageName) ?: closing.packageName,
                     )
                 }
             }

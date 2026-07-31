@@ -1572,6 +1572,11 @@ class SyncManager(
             // oldest entry of the new history; filing over it is what retires that field.
             val legacy = s.diagReports[payload.deviceId]?.let { listOf(StoredDiag(it)) }.orEmpty()
             val previous = s.diagHistory[payload.deviceId] ?: legacy
+            // The same report twice is one report. ntfy replays its backlog on every reconnect,
+            // so a message we already filed comes back around: without this the archive grew a
+            // second copy of it, and the screen — which keys its rows by that instant — died on
+            // the duplicate key the moment the parent opened it.
+            if (previous.any { it.report.atMs == payload.atMs }) return@update s
             // Stamped on arrival — see StoredDiag for why the version row needs the date.
             val filed = StoredDiag(payload, BuildConfig.VERSION_CODE)
             s.copy(

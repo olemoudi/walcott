@@ -69,6 +69,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
@@ -275,7 +276,21 @@ fun ChildStatusScreen(
                     item { BedtimeTonightRow(window) }
                 }
             }
-            // One card per app with a limit today: the rules the child actually lives with,
+            // The two things the child comes here to DO, above what they have left: asking is
+            // the point of this screen, and it used to sit under a list that grows with every
+            // app they install — off the bottom of the screen on a phone with a few of them.
+            if (identity.role == Role.CHILD) {
+                item {
+                    RequestTimeCard(onClick = { showRequestSheet = true })
+                }
+                item { AskCard(onClick = { showAsk = true }) }
+            }
+            // Everything sent and still unanswered, so "did it go through?" has an answer.
+            // Kept with the cards that send them rather than with the apps.
+            if (myAsks.isNotEmpty()) {
+                item { WaitingCard(myAsks.map { it.text }) }
+            }
+            // One row per app with a limit today: the rules the child actually lives with,
             // closest to running out first.
             items(state.apps, key = { "app-" + it.packageName }) { app ->
                 AppCard(
@@ -287,16 +302,6 @@ fun ChildStatusScreen(
                         if (identity.role == Role.CHILD) pendingRemote = app else pending = app
                     },
                 )
-            }
-            // Everything sent and still unanswered, so "did it go through?" has an answer.
-            if (myAsks.isNotEmpty()) {
-                item { WaitingCard(myAsks.map { it.text }) }
-            }
-            if (identity.role == Role.CHILD) {
-                item {
-                    RequestTimeCard(onClick = { showRequestSheet = true })
-                }
-                item { AskCard(onClick = { showAsk = true }) }
             }
             // The way out when the parents lost their phone AND the PIN: deliberately a plain
             // line at the very bottom, not a card. It has to be findable in a real emergency
@@ -998,8 +1003,10 @@ private fun HeroCard(state: ChildUiState) {
 }
 
 /**
- * One app with a limit today: what is left of it, how much of it has gone, and — when it has
- * run out — the way to ask for more. The card the child came to look at.
+ * One app with a limit today: what is left of it, and — when it has run out — the way to ask
+ * for more. Deliberately a small row rather than a card with a headline number: there is one
+ * per limited app, and a child with six of them was scrolling past six posters to reach
+ * anything else on the screen.
  */
 @Composable
 private fun AppCard(app: AppStatusUi, requestPending: Boolean, onRequestExtra: () -> Unit) {
@@ -1007,36 +1014,49 @@ private fun AppCard(app: AppStatusUi, requestPending: Boolean, onRequestExtra: (
     val accent = MaterialTheme.colorScheme.primary
 
     WalcottCard {
-        Column(Modifier.padding(spacing.lg)) {
+        Column(Modifier.padding(horizontal = spacing.lg, vertical = spacing.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     app.label,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                StatusPill(blocked = app.blocked)
+                Spacer(Modifier.width(spacing.sm))
+                if (app.blocked) {
+                    StatusPill(blocked = true)
+                } else {
+                    // The time left says "available" better than a pill ever did, so the pill
+                    // is gone from the ones that are.
+                    Text(
+                        (app.remaining ?: Duration.ZERO).humanize(),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = accent,
+                    )
+                    Spacer(Modifier.width(spacing.xs))
+                    Text(
+                        stringResource(R.string.label_remaining),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (app.blocked) {
                 Spacer(Modifier.height(spacing.sm))
-                Text(stringResource(R.string.app_card_blocked), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(spacing.md))
                 if (requestPending) {
                     // Already asked: say so instead of inviting a duplicate request.
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Outlined.HourglassEmpty,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(14.dp),
                         )
                         Spacer(Modifier.width(spacing.xs))
                         Text(
                             stringResource(R.string.request_waiting_button),
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1044,21 +1064,6 @@ private fun AppCard(app: AppStatusUi, requestPending: Boolean, onRequestExtra: (
                     RequestExtraButton(accent, onRequestExtra)
                 }
             } else {
-                Spacer(Modifier.height(spacing.md))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        (app.remaining ?: Duration.ZERO).humanize(),
-                        style = NumberDisplay,
-                        color = accent,
-                    )
-                    Spacer(Modifier.width(spacing.xs))
-                    Text(
-                        stringResource(R.string.label_remaining),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 10.dp),
-                    )
-                }
                 Spacer(Modifier.height(spacing.sm))
                 BudgetBar(fraction = fractionUsed(app), color = accent)
             }
@@ -1092,10 +1097,10 @@ private fun BudgetBar(fraction: Float, color: Color) {
         label = "budget",
     )
     Box(
-        Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50))
+        Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
-        Box(Modifier.fillMaxWidth(animated).height(10.dp).clip(RoundedCornerShape(50)).background(color))
+        Box(Modifier.fillMaxWidth(animated).height(6.dp).clip(RoundedCornerShape(50)).background(color))
     }
 }
 
@@ -1111,7 +1116,7 @@ private fun RequestExtraButton(color: Color, onClick: () -> Unit) {
             stringResource(R.string.request_more_time),
             style = MaterialTheme.typography.labelLarge,
             color = color,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             textAlign = TextAlign.Center,
         )
     }

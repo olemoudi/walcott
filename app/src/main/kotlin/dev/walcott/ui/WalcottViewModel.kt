@@ -574,9 +574,13 @@ class WalcottViewModel(
      */
     val diagHistory: StateFlow<Map<String, List<dev.walcott.sync.StoredDiag>>> =
         sync.state.map { state ->
-            state.diagHistory + state.diagReports
-                .filterKeys { state.diagHistory[it].isNullOrEmpty() }
-                .mapValues { (_, report) -> listOf(dev.walcott.sync.StoredDiag(report)) }
+            // Deduplicated on the way out: a report is identified by the instant the child
+            // filed it, and an archive that already holds the same one twice (filed by a build
+            // that didn't check — see SyncManager.applyDiagPayload) should read as one report.
+            state.diagHistory.mapValues { (_, reports) -> reports.distinctBy { it.report.atMs } } +
+                state.diagReports
+                    .filterKeys { state.diagHistory[it].isNullOrEmpty() }
+                    .mapValues { (_, report) -> listOf(dev.walcott.sync.StoredDiag(report)) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /**

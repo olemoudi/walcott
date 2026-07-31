@@ -993,4 +993,21 @@
     <string name="event_app_time_out">%1$s ran out of time in %2$s</string>
     <string name="event_bedtime">Bedtime started for %1$s</string>
     <string name="event_screen_free">A screen-free time started for %1$s</string>
+    <!-- Heads-up on the child device before something closes (30 and 5 minutes ahead). -->
+    <string name="warn_channel_name">Time warnings</string>
+    <plurals name="warn_budget_title">
+        <item quantity="one">%1$d minute left in %2$s</item>
+        <item quantity="other">%1$d minutes left in %2$s</item>
+    </plurals>
+    <string name="warn_budget_text">When it runs out you can ask for more time.</string>
+    <plurals name="warn_bedtime_title">
+        <item quantity="one">Bedtime in %1$d minute</item>
+        <item quantity="other">Bedtime in %1$d minutes</item>
+    </plurals>
+    <string name="warn_bedtime_text">Your apps will rest until tomorrow.</string>
+    <plurals name="warn_screen_free_title">
+        <item quantity="one">Screen-free time in %1$d minute</item>
+        <item quantity="other">Screen-free time in %1$d minutes</item>
+    </plurals>
+    <string name="warn_screen_free_text">Your apps pause until the schedule is over.</string>
 </resources>
