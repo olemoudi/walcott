@@ -60,6 +60,10 @@ fun AppDetailScreen(
     onBack: () -> Unit,
     onOpenWebFilter: () -> Unit,
     onOpenSpecialDays: () -> Unit,
+    // Set = editing ONE child's per-app override (their rules fold guarantees it is active).
+    // The category stays family-wide and reads as plain text in that scope.
+    childId: String? = null,
+    childName: String? = null,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -67,10 +71,18 @@ fun AppDetailScreen(
     val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
     val label = rows.firstOrNull { it.app.packageName == packageName }?.app?.label ?: packageName
     val categoryId = settings.assignments[packageName]
-    val appPolicy = settings.appPolicies[packageName]
+    val appPolicy = if (childId == null) {
+        settings.appPolicies[packageName]
+    } else {
+        settings.children.firstOrNull { it.childId == childId }?.overrides?.appPolicies?.get(packageName)
+    }
     // Lit next to the section it belongs to when the app carries it — the same icon the list
-    // badges it with, so a parent can connect the two without a word of explanation.
-    val restrictions = appRestrictions(settings, packageName)
+    // badges it with, so a parent can connect the two without a word of explanation. Scoped
+    // to what this child actually gets when editing their override.
+    val restrictions = appRestrictions(
+        if (childId == null) settings else settings.resolveForChild(childId),
+        packageName,
+    )
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(label, onBack)
@@ -78,6 +90,9 @@ fun AppDetailScreen(
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
+            if (childId != null) {
+                item { OverrideScopeBanner(childName.orEmpty()) }
+            }
             item {
                 Row(Modifier.fillMaxWidth().padding(top = spacing.sm), verticalAlignment = Alignment.CenterVertically) {
                     AppIcon(
@@ -93,14 +108,32 @@ fun AppDetailScreen(
             }
 
             item { SectionTitle(stringResource(R.string.classify_into)) }
-            item {
-                CategorySelector(
-                    current = categoryId,
-                    onPick = { category ->
-                        if (category == null) viewModel.unassign(packageName)
-                        else viewModel.assign(packageName, category.id)
-                    },
-                )
+            if (childId == null) {
+                item {
+                    CategorySelector(
+                        current = categoryId,
+                        onPick = { category ->
+                            if (category == null) viewModel.unassign(packageName)
+                            else viewModel.assign(packageName, category.id)
+                        },
+                    )
+                }
+            } else {
+                // The category is the app's family-wide identity; only the limits are per-child.
+                item {
+                    Text(
+                        AppCategory.byId(categoryId ?: "")?.let { stringResource(it.nameRes) }
+                            ?: stringResource(R.string.unclassified_blocked),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+                item {
+                    Text(
+                        stringResource(R.string.app_category_family_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             item { SectionTitle(stringResource(R.string.app_own_limit), AppRestriction.OWN_BUDGET, restrictions) }
@@ -117,8 +150,8 @@ fun AppDetailScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                    onSetBudget = { dayType, minutes -> viewModel.setAppBudget(packageName, dayType, minutes) },
-                    onSetAllDays = { minutes -> viewModel.setAppBudgetAllDays(packageName, minutes) },
+                    onSetBudget = { dayType, minutes -> viewModel.setAppBudget(packageName, dayType, minutes, childId) },
+                    onSetAllDays = { minutes -> viewModel.setAppBudgetAllDays(packageName, minutes, childId) },
                 )
             }
 
@@ -131,20 +164,23 @@ fun AppDetailScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                    onChange = { dayType, windows -> viewModel.setAppWindows(packageName, dayType, windows) },
+                    onChange = { dayType, windows -> viewModel.setAppWindows(packageName, dayType, windows, childId) },
                 )
             }
 
-            item { SectionTitle(stringResource(R.string.app_web_filter), AppRestriction.WEB_RULE, restrictions) }
-            item {
-                WalcottCard(onClick = onOpenWebFilter) {
-                    Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            stringResource(R.string.app_web_filter_link),
-                            Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Family scope only: the child's own web rules live behind their web-filter override.
+            if (childId == null) {
+                item { SectionTitle(stringResource(R.string.app_web_filter), AppRestriction.WEB_RULE, restrictions) }
+                item {
+                    WalcottCard(onClick = onOpenWebFilter) {
+                        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(R.string.app_web_filter_link),
+                                Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }

@@ -193,6 +193,14 @@ fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
                     blockedWindows = child.overrides.blockedWindows
                         ?.mapValues { it.value.mirrorHoliday(mirror) }?.filterValues { it.isNotEmpty() },
                     bedtime = child.overrides.bedtime?.mirrorHoliday(mirror),
+                    appPolicies = child.overrides.appPolicies
+                        ?.mapValues { (_, dto) ->
+                            dto.copy(
+                                budgets = dto.budgets.mirrorHoliday(mirror),
+                                blockedWindows = dto.blockedWindows.mirrorHoliday(mirror),
+                            )
+                        }
+                        ?.filterValues { !it.isEmpty },
                 ),
             )
         },
@@ -285,13 +293,15 @@ data class ChildOverrides(
     val locationHistoryEnabled: Boolean? = null,
     /** Restrict this child's self-update to Wi-Fi. Null inherits the family value. */
     val updateWifiOnly: Boolean? = null,
+    /** Per-app limits (package -> policy) for this child alone. Null inherits the family map. */
+    val appPolicies: Map<String, AppPolicyDto>? = null,
 ) {
     val isEmpty: Boolean
         get() = budgets == null && blockedWindows == null && bedtime == null &&
             earnRules == null && blockedDomains == null && domainAppRules == null &&
             deviceRestrictions == null &&
             trackingIntervalMinutes == null && locationHistoryEnabled == null &&
-            updateWifiOnly == null
+            updateWifiOnly == null && appPolicies == null
 }
 
 /** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */
@@ -420,6 +430,7 @@ data class PolicySettings(
             trackingIntervalMinutes = overrides.trackingIntervalMinutes ?: trackingIntervalMinutes,
             locationHistoryEnabled = overrides.locationHistoryEnabled ?: locationHistoryEnabled,
             updateWifiOnly = overrides.updateWifiOnly ?: updateWifiOnly,
+            appPolicies = overrides.appPolicies ?: appPolicies,
             // This child's own special days on top of the family's; the others' never travel here.
             holidays = holidays + childHolidays[childId].orEmpty(),
             vacations = vacations + childVacations[childId].orEmpty(),

@@ -124,6 +124,7 @@ fun WalcottApp(
     // Keyed on settings too: a child-detail dest may arrive before the registry has loaded.
     LaunchedEffect(startDest, parentMode, settings) {
         if (startDest == SyncNotifications.DEST_APPS && parentMode) {
+            overrideChildId = null
             screen = Screen.APPS
             onDestConsumed()
         }
@@ -198,7 +199,16 @@ fun WalcottApp(
                 }
             Screen.CALENDAR -> calendarReturnTo?.also { calendarReturnTo = null } ?: Screen.FAMILY
             Screen.BUDGETS -> budgetsReturnTo?.also { budgetsReturnTo = null } ?: Screen.FAMILY
-            Screen.APPS, Screen.CHILDREN, Screen.EARN,
+            // The apps list serves two masters: the family catalog (hub) and one child's
+            // override (their rules fold) — back returns to whichever opened it.
+            Screen.APPS ->
+                if (overrideChildId != null) {
+                    overrideChildId = null
+                    Screen.CHILD_DETAIL
+                } else {
+                    Screen.FAMILY
+                }
+            Screen.CHILDREN, Screen.EARN,
             Screen.REPORT, Screen.LOCATION,
             -> Screen.FAMILY
             // Reached from the home gear on the parent, from the device hub on a child.
@@ -270,7 +280,7 @@ fun WalcottApp(
                             screen = Screen.CHILD_DETAIL
                         },
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
-                        onOpenApps = { screen = Screen.APPS },
+                        onOpenApps = { overrideChildId = null; screen = Screen.APPS },
                         onOpenBudgets = { budgetsReturnTo = Screen.FAMILIES; screen = Screen.BUDGETS },
                         onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
                         onOpenActivity = { screen = Screen.ACTIVITY },
@@ -320,6 +330,7 @@ fun WalcottApp(
                             onOpenHealthReports = { screen = Screen.CHILD_HEALTH },
                             onEditWebFilter = { overrideChildId = childId; screen = Screen.WEBFILTER },
                             onEditProtection = { overrideChildId = childId; screen = Screen.PROTECTION },
+                            onEditApps = { overrideChildId = childId; screen = Screen.APPS },
                             onOpenSpecialDays = {
                                 calendarReturnTo = Screen.CHILD_DETAIL
                                 screen = Screen.CALENDAR
@@ -345,7 +356,7 @@ fun WalcottApp(
                         },
                         deviceOwner = deviceOwner,
                         childDevice = !parentMode,
-                        onOpenApps = { screen = Screen.APPS },
+                        onOpenApps = { overrideChildId = null; screen = Screen.APPS },
                         onOpenBudgets = { screen = Screen.BUDGETS },
                         onOpenChildren = { screen = Screen.CHILDREN },
                         onOpenEarn = { overrideChildId = null; screen = Screen.EARN },
@@ -361,8 +372,10 @@ fun WalcottApp(
                     )
                     Screen.APPS -> AppAssignScreen(
                         viewModel,
-                        onBack = { screen = Screen.FAMILY },
+                        onBack = ::back,
                         onOpenApp = { pkg -> appDetailPkg = pkg; screen = Screen.APP_DETAIL },
+                        childId = overrideChildId,
+                        childName = overrideChildName(settings, overrideChildId),
                     )
                     Screen.APP_DETAIL -> appDetailPkg?.let { pkg ->
                         AppDetailScreen(
@@ -371,6 +384,8 @@ fun WalcottApp(
                             onBack = ::back,
                             onOpenWebFilter = { overrideChildId = null; screen = Screen.WEBFILTER },
                             onOpenSpecialDays = { calendarReturnTo = Screen.APP_DETAIL; screen = Screen.CALENDAR },
+                            childId = overrideChildId,
+                            childName = overrideChildName(settings, overrideChildId),
                         )
                     }
                     Screen.BUDGETS -> BudgetsScreen(

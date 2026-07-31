@@ -292,6 +292,8 @@
     <string name="override_inherited_row_hint">Inherited from the family — turn on to change it for this child</string>
     <string name="override_bedtime_title">Custom bedtime</string>
     <string name="override_budgets_title">Custom budgets</string>
+    <string name="override_apps_title">Custom app limits</string>
+    <string name="app_category_family_note">The category is set for the whole family; only the limits below are this child\'s own.</string>
     <string name="last_7_days">Last 7 days</string>
 
     <!-- Location tracking -->

@@ -105,6 +105,7 @@ fun ChildDetailScreen(
     onOpenHealthReports: () -> Unit,
     onEditWebFilter: () -> Unit,
     onEditProtection: () -> Unit,
+    onEditApps: () -> Unit,
     onOpenSpecialDays: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -141,7 +142,8 @@ fun ChildDetailScreen(
     // of greyed-out rules, which read as "settings to fix" instead of "nothing customized".
     // Starts open only when something IS customized, so active state is never hidden.
     val hasCustomRules = entry.overrides.bedtime != null || entry.overrides.budgets != null ||
-        entry.overrides.blockedDomains != null || entry.overrides.deviceRestrictions != null
+        entry.overrides.blockedDomains != null || entry.overrides.deviceRestrictions != null ||
+        entry.overrides.appPolicies != null
     var showRules by rememberSaveable { mutableStateOf(hasCustomRules) }
 
     // Location earns a prominent slot only when it can actually show something: tracking or
@@ -326,6 +328,7 @@ fun ChildDetailScreen(
                 val customized = listOf(
                     entry.overrides.bedtime, entry.overrides.budgets,
                     entry.overrides.blockedDomains, entry.overrides.deviceRestrictions,
+                    entry.overrides.appPolicies,
                 ).count { it != null }
                 FoldCard(
                     icon = Icons.Outlined.Rule,
@@ -400,6 +403,21 @@ fun ChildDetailScreen(
                             )
                         }
                     }
+                }
+                item {
+                    // Per-app limits for this child's own apps. The Edit door only exists while
+                    // the override is on: the scoped Apps screens always write the override.
+                    OverrideSwitchRow(
+                        title = stringResource(R.string.override_apps_title),
+                        checked = entry.overrides.appPolicies != null,
+                        onToggle = { on ->
+                            viewModel.setChildOverrides(
+                                childId,
+                                entry.overrides.copy(appPolicies = if (on) settings.appPolicies else null),
+                            )
+                        },
+                        onEdit = if (entry.overrides.appPolicies != null) onEditApps else null,
+                    )
                 }
                 item {
                     OverrideSwitchRow(

@@ -88,6 +88,35 @@ class ChildOverridesTest {
         assertTrue(!ChildOverrides(trackingIntervalMinutes = 0).isEmpty)
         assertTrue(!ChildOverrides(locationHistoryEnabled = false).isEmpty)
         assertTrue(!ChildOverrides(updateWifiOnly = false).isEmpty)
+        assertTrue(!ChildOverrides(appPolicies = emptyMap()).isEmpty)
+    }
+
+    @Test
+    fun `per-app policies resolve per-child override over the family map`() {
+        val fam = family.copy(
+            assignments = mapOf("com.game" to "games"),
+            appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 60))),
+            children = listOf(
+                // This child gets a tighter per-app cap; the override replaces the whole map.
+                ChildEntry(
+                    "p1", "Ana",
+                    ChildOverrides(
+                        appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 15))),
+                    ),
+                ),
+                ChildEntry("p2", "Bea"),
+            ),
+        )
+        val ana = fam.resolveForChild("p1").toFamilyConfig(emptySet())
+        val bea = fam.resolveForChild("p2").toFamilyConfig(emptySet())
+        assertEquals(
+            Duration.ofMinutes(15),
+            ana.perAppPolicies.getValue("com.game").dailyBudget[DayType.SCHOOL],
+        )
+        assertEquals(
+            Duration.ofMinutes(60),
+            bea.perAppPolicies.getValue("com.game").dailyBudget[DayType.SCHOOL],
+        )
     }
 
     @Test

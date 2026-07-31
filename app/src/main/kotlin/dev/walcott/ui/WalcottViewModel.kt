@@ -639,14 +639,35 @@ class WalcottViewModel(
 
     // --- Per-app policy (Apps & categories) ---
 
+    /**
+     * [childId] null edits the family map; set, it edits that child's [ChildOverrides.appPolicies]
+     * (which the editors only offer while the override is active, so the base is never null in
+     * practice — an empty map otherwise, matching the snapshot-on-switch-on convention).
+     */
     private fun mutateAppPolicy(
         pkg: String,
+        childId: String? = null,
         transform: (dev.walcott.data.AppPolicyDto) -> dev.walcott.data.AppPolicyDto,
     ) = viewModelScope.launch {
         repository.updateSettings { s ->
-            val next = transform(s.appPolicies[pkg] ?: dev.walcott.data.AppPolicyDto())
-            // Drop the entry entirely once it carries no restrictions, so it never lingers.
-            s.copy(appPolicies = if (next.isEmpty) s.appPolicies - pkg else s.appPolicies + (pkg to next))
+            if (childId == null) {
+                val next = transform(s.appPolicies[pkg] ?: dev.walcott.data.AppPolicyDto())
+                // Drop the entry entirely once it carries no restrictions, so it never lingers.
+                s.copy(appPolicies = if (next.isEmpty) s.appPolicies - pkg else s.appPolicies + (pkg to next))
+            } else {
+                s.copy(
+                    children = s.children.map { child ->
+                        if (child.childId != childId) return@map child
+                        val base = child.overrides.appPolicies.orEmpty()
+                        val next = transform(base[pkg] ?: dev.walcott.data.AppPolicyDto())
+                        child.copy(
+                            overrides = child.overrides.copy(
+                                appPolicies = if (next.isEmpty) base - pkg else base + (pkg to next),
+                            ),
+                        )
+                    },
+                )
+            }
         }
     }
 
@@ -654,35 +675,38 @@ class WalcottViewModel(
      * Set this app's own daily budget for a day type: a positive number of minutes, 0 to block
      * the app entirely that day (even when its category is open), or null for no per-app limit.
      */
-    fun setAppBudget(pkg: String, dayType: DayType, minutes: Int?) = mutateAppPolicy(pkg) { dto ->
-        val budgets = dto.budgets.toMutableMap()
-        if (minutes == null) budgets.remove(dayType.name) else budgets[dayType.name] = minutes
-        dto.copy(budgets = budgets)
-    }
+    fun setAppBudget(pkg: String, dayType: DayType, minutes: Int?, childId: String? = null) =
+        mutateAppPolicy(pkg, childId) { dto ->
+            val budgets = dto.budgets.toMutableMap()
+            if (minutes == null) budgets.remove(dayType.name) else budgets[dayType.name] = minutes
+            dto.copy(budgets = budgets)
+        }
 
     /**
      * Set this app's own daily budget the same way across ALL day types in one write — the
      * common case (one limit, or "block it everywhere") without editing three rows. 0 blocks,
      * null clears the per-app limit entirely.
      */
-    fun setAppBudgetAllDays(pkg: String, minutes: Int?) = mutateAppPolicy(pkg) { dto ->
-        // Every day type, special days included: with the column off, the write's mirror pass
-        // collapses HOLIDAY back onto WEEKEND, so this is correct either way.
-        dto.copy(
-            budgets = if (minutes == null) {
-                emptyMap()
-            } else {
-                dev.walcott.rules.DayType.entries.associate { it.name to minutes }
-            },
-        )
-    }
+    fun setAppBudgetAllDays(pkg: String, minutes: Int?, childId: String? = null) =
+        mutateAppPolicy(pkg, childId) { dto ->
+            // Every day type, special days included: with the column off, the write's mirror pass
+            // collapses HOLIDAY back onto WEEKEND, so this is correct either way.
+            dto.copy(
+                budgets = if (minutes == null) {
+                    emptyMap()
+                } else {
+                    dev.walcott.rules.DayType.entries.associate { it.name to minutes }
+                },
+            )
+        }
 
     /** Set this app's own blocked windows (any number), applied to every day type. */
     fun setAppWindows(
         pkg: String,
         dayType: DayType,
         windows: List<dev.walcott.data.WindowDto>,
-    ) = mutateAppPolicy(pkg) { dto ->
+        childId: String? = null,
+    ) = mutateAppPolicy(pkg, childId) { dto ->
         val next = dto.blockedWindows.toMutableMap()
         if (windows.isEmpty()) next.remove(dayType.name) else next[dayType.name] = windows
         dto.copy(blockedWindows = next)

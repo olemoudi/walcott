@@ -58,19 +58,34 @@ import dev.walcott.ui.theme.Tokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: (String) -> Unit) {
+fun AppAssignScreen(
+    viewModel: WalcottViewModel,
+    onBack: () -> Unit,
+    onOpenApp: (String) -> Unit,
+    // Set = this is one child's app list, opened from their rules: only their apps, and the
+    // per-app editor behind each row writes that child's override (see AppDetailScreen).
+    childId: String? = null,
+    childName: String? = null,
+) {
     val spacing = Tokens.spacing
-    val rows by viewModel.appRows.collectAsStateWithLifecycle()
+    val allRows by viewModel.appRows.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
+    val rows = remember(allRows, childId) {
+        if (childId == null) allRows else allRows.filter { row -> row.owners.any { it.id == childId } }
+    }
+    // Badges must reflect what THIS scope actually gets: the child's resolved policy when
+    // scoped, the family policy otherwise.
+    val effective = remember(settings, childId) { if (childId == null) settings else settings.resolveForChild(childId) }
     // Per-child filter (null = everyone). Only offered once there are two+ children to
-    // tell apart — a single-child family gains nothing from the extra chrome.
+    // tell apart — a single-child family gains nothing from the extra chrome. Never in
+    // child scope, where the whole list already belongs to one child.
     var ownerFilter by rememberSaveable { mutableStateOf<String?>(null) }
     val allOwners = remember(rows) {
         rows.flatMap { it.owners }.distinctBy { it.id }.sortedBy { it.name.lowercase() }
     }
-    val showOwners = allOwners.size > 1
+    val showOwners = childId == null && allOwners.size > 1
 
     val filtered = remember(rows, query, ownerFilter) {
         rows.filter { row ->
@@ -81,6 +96,11 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_apps_title), onBack)
+        if (childId != null) {
+            Column(Modifier.padding(horizontal = spacing.screen)) {
+                OverrideScopeBanner(childName.orEmpty())
+            }
+        }
         if (rows.isEmpty()) {
             Box(
                 Modifier.fillMaxSize().padding(spacing.screen),
@@ -131,7 +151,7 @@ fun AppAssignScreen(viewModel: WalcottViewModel, onBack: () -> Unit, onOpenApp: 
                     AppAssignRow(
                         viewModel,
                         row,
-                        restrictions = appRestrictions(settings, row.app.packageName),
+                        restrictions = appRestrictions(effective, row.app.packageName),
                         showOwners = showOwners,
                         iconRefresh = iconRefresh,
                         onClick = { onOpenApp(row.app.packageName) },

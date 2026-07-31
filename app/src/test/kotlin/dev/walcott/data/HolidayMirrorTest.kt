@@ -65,6 +65,7 @@ class HolidayMirrorTest {
                     overrides = ChildOverrides(
                         budgets = mapOf("games" to mapOf("WEEKEND" to 90, "HOLIDAY" to 999)),
                         bedtime = mapOf("WEEKEND" to window),
+                        appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf("WEEKEND" to 30))),
                     ),
                 ),
             ),
@@ -74,6 +75,7 @@ class HolidayMirrorTest {
         val overrides = out.children.single().overrides
         assertEquals(90, overrides.budgets!!.getValue("games")["HOLIDAY"])
         assertEquals(window, overrides.bedtime!!["HOLIDAY"])
+        assertEquals(30, overrides.appPolicies!!.getValue("com.game").budgets["HOLIDAY"])
     }
 
     @Test
