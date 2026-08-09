@@ -539,6 +539,10 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
     val categoryName = notice.text.ifBlank { stringResource(R.string.request_all_apps) }
     val title = when {
         notice.kind == "bonus" -> stringResource(R.string.notice_bonus, notice.minutes, categoryName)
+        // Ahead of the plain denial: nobody said no, nobody said anything (see
+        // SyncEngine.REQUEST_TTL_MS). Telling a child they were refused would be a lie.
+        notice.kind == dev.walcott.sync.SyncManager.NOTICE_EXPIRED ->
+            stringResource(R.string.notice_expired, categoryName)
         !notice.approved -> stringResource(R.string.notice_denied)
         notice.kind == "time" -> stringResource(R.string.notice_approved_time, notice.minutes, categoryName)
         notice.kind == ChildRequest.KIND_APP || notice.kind == ChildRequest.KIND_INSTALL ->
@@ -546,6 +550,8 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
         else -> stringResource(R.string.notice_approved_other, notice.text)
     }
     val subtitle = when {
+        notice.kind == dev.walcott.sync.SyncManager.NOTICE_EXPIRED ->
+            stringResource(R.string.notice_expired_desc)
         !notice.approved && notice.text.isNotBlank() -> notice.text
         !notice.approved -> stringResource(R.string.notice_denied_desc)
         else -> null

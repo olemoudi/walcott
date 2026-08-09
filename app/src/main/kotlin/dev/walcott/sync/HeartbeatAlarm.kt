@@ -80,6 +80,10 @@ object HeartbeatAlarm {
         // re-publish makes the one below redundant rather than the other way round.
         runCatching { app.syncManager.reconnectIfChannelStale() }
             .onFailure { DebugLog.e(TAG, "channel reconnect check failed", it) }
+        // Requests nobody answered, retired before the publish so the snapshot goes out without
+        // them (see SyncEngine.REQUEST_TTL_MS — an unanswered one blocks asking again).
+        runCatching { app.syncManager.expireStaleRequests() }
+            .onFailure { DebugLog.e(TAG, "expiring stale requests failed", it) }
         runCatching { app.syncManager.publishHeartbeatIfStale(PUBLISH_MIN_INTERVAL_MS) }
             .onFailure { DebugLog.e(TAG, "heartbeat publish failed", it) }
         // An emergency release must die the moment the channel fails on it. While the channel

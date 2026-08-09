@@ -114,6 +114,30 @@ object SyncEngine {
     /** How long a "locate now" counts as pending; after this it's moot, answered or not. */
     const val LOCATION_REQUEST_TTL_MS = 30 * 60 * 1000L
 
+    /**
+     * How long a child's request waits for an answer before it gives up.
+     *
+     * Not housekeeping. The child's screen refuses to send a second request for something that
+     * already has one in flight — the right call against double-asking, and a trap without this:
+     * a request nobody ever answered left that app's button dead forever, and the parent's home
+     * kept a question from last week pinned above everything current.
+     *
+     * Two days rather than a few hours: a parent who is away for a weekend is not a parent who
+     * said no, and an expired request is a small loss (ask again) next to one that vanishes
+     * while someone still means to answer it.
+     */
+    const val REQUEST_TTL_MS = 48 * 60 * 60 * 1000L
+
+    /**
+     * Whether a request created at [createdAtEpochMs] has waited too long to still be live.
+     *
+     * A missing timestamp (0, as legacy children send) never expires: `now - 0` is an enormous
+     * age that would retire every one of them on sight, and "I can't tell how old this is" must
+     * not read as "this is ancient".
+     */
+    fun requestExpired(createdAtEpochMs: Long, nowMs: Long): Boolean =
+        createdAtEpochMs > 0 && nowMs - createdAtEpochMs > REQUEST_TTL_MS
+
     /** Pseudo-action for a pending "locate now" in [pendingOps] (not a [RemoteAction]). */
     const val ACTION_LOCATE = "locate_now"
 

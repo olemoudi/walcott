@@ -70,6 +70,44 @@ only once no 0.21.0 child remains.
 
 Empty. The audit items below all shipped; kept for context so none of it gets redone.
 
+Shipped in v0.37.0 — a second audit pass, mostly about the recovery door:
+
+- **A family could have no PIN at all, and then there was no door.** Nothing ever required one:
+  the wizard doesn't ask, and `PinGateScreen` only creates one on the way into parent mode.
+  `WalcottRepository.verifyPin` returns false when `pinHash` is null, so on such a family the
+  child's "Release this device" asked for a PIN and rejected every answer forever — earning
+  escalating lockouts and firing "wrong PIN" alerts at the parent for a door that was never
+  going to open — while the panic screen told the child their parents could free the phone
+  instantly. Only the 24-hour countdown was real. Now: no enrollment code is handed out until
+  the family has a PIN (`EnrollmentSection`), the home's setup checklist carries it as a step
+  and reappears for families that predate the gate, and `PinResult.NotSet` lets every screen
+  say "there is no PIN" instead of "wrong PIN" — including the app lock, which could otherwise
+  shut a parent out of their own app with a gate that had nothing behind it.
+- **The parent PIN can be read back on the parent phone** (`FamilyIdentity.pinPlain`), so
+  forgetting it no longer costs a policy change that has to reach every child before any of
+  them can be released again. Device-local by construction: `:core-sync` never names that
+  field, no snapshot carries it, and the backup rebuilds the identity rather than restoring it,
+  so the plaintext reaches neither the children nor the backup file — only the PBKDF2 hash
+  travels, as before. Revealing asks for exactly what resetting asks for (`pinResetPath`),
+  because it grants exactly as much. Families predating it get their copy the next time the PIN
+  is typed correctly, the same trick the local-backup key already used.
+- **Requests never expired, which left the child unable to ask again.** `createdAtEpochMs` was
+  recorded and never read — commands expire after 7 days, "locate now" after 30 minutes,
+  requests never. The child's home refuses to send a second request while one is pending, so an
+  unanswered one killed that app's button for good, and pinned a week-old question above
+  everything current on the parent's home. `SyncEngine.REQUEST_TTL_MS` is 48 h (a weekend away
+  is not a refusal); the child retires its own on the heartbeat and says so, and the parent's
+  lists drop them too, since an older child build re-sends forever.
+- **The accessibility backend queried AppOps on every window change.** `AppBlockerService` asked
+  whether usage access was still granted once per `TYPE_WINDOW_STATE_CHANGED` — a binder round
+  trip in the hot path of the fallback backend, on exactly the phones that aren't Device Owner.
+  Cached for 10 s, like the Device Owner loop already did.
+- **Changing the PIN froze the dialog for tens of seconds** (~30 s measured on the emulator):
+  `setPinEverywhere` ran PBKDF2 at 600k plus three encrypt-and-write backup cycles per family
+  inside the Save button's busy state. The PIN is saved synchronously; the backup work now
+  follows on its own, and a process death before it lands is repaired by the next correct PIN
+  entry, which is where legacy families get it anyway.
+
 Shipped in v0.36.0 — four holes from a fresh audit, all of them silent failures:
 
 - **A socket that dies without saying so.** OkHttp sends no WebSocket pings by default, and

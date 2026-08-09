@@ -138,10 +138,18 @@ fun AppSettingsScreen(
                 // The parent-PIN way out: for the family whose parent phone (and backup) is
                 // gone but who still knows the PIN. Unlike "change mode", which only unlinks,
                 // this hands the whole device back — see PanicRelease.
+                //
+                // With no PIN synced there is nothing to check an attempt against, so the door
+                // says so rather than rejecting every entry forever. New families can't reach
+                // this state (a child can't be enrolled without one — see EnrollmentSection);
+                // families set up before that gate can, and this is what they see.
+                val pinSynced by viewModel.hasPin.collectAsStateWithLifecycle()
                 DangerCard(
                     title = stringResource(R.string.release_device_title),
-                    description = stringResource(R.string.release_device_subtitle),
-                    onClick = { confirmRelease = true },
+                    description = stringResource(
+                        if (pinSynced) R.string.release_device_subtitle else R.string.release_device_no_pin,
+                    ),
+                    onClick = { if (pinSynced) confirmRelease = true },
                 )
             }
         }
@@ -330,6 +338,7 @@ private fun PinConfirmDialog(
     var pinError by remember { mutableStateOf<String?>(null) }
     val wrongPin = stringResource(R.string.pin_incorrect)
     val lockedFmt = stringResource(R.string.pin_locked)
+    val noPin = stringResource(R.string.release_device_no_pin)
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
@@ -360,6 +369,9 @@ private fun PinConfirmDialog(
                         is PinResult.Wrong -> pinError = wrongPin
                         is PinResult.Locked ->
                             pinError = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                        // Nothing to check against — the family never set a PIN. Rejecting
+                        // every entry as "wrong" is what used to wall this door up for good.
+                        is PinResult.NotSet -> pinError = noPin
                     }
                 }
             }) { Text(confirmLabel) }

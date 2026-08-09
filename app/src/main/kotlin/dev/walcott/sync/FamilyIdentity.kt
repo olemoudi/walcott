@@ -47,6 +47,24 @@ data class FamilyIdentity(
     /** Parent only: nudge notifications when the family backup is missing or stale. */
     val backupReminders: Boolean = true,
     val ntfyServer: String = "https://ntfy.sh",
+    /**
+     * PARENT DEVICES ONLY: the parent PIN in the clear, so a parent who forgot it can be
+     * reminded instead of having to set a new one — which bumps the policy and has to reach
+     * every child before any of them can be released again.
+     *
+     * It lives HERE, and nowhere else, on purpose. [dev.walcott.data.PolicySettings] is the
+     * family's brain and travels to every child device (they verify an emergency release
+     * offline against the hash), so a plaintext copy there would put the PIN on the phone of
+     * the person it exists to keep out. [FamilyIdentity] is device-local: nothing in
+     * `:core-sync` so much as names it, no snapshot carries it, and the family backup rebuilds
+     * it from the payload rather than restoring it — so a restored parent gets a working PIN
+     * (the hash is in the policy) that simply can't be displayed until it is next entered.
+     *
+     * The write is gated on being a parent (see [SyncManager.rememberPinIfParent]), unlike the
+     * local-backup key beside it, which is deliberately ungated: that one is a KDF output that
+     * reveals nothing, and this one is the secret itself.
+     */
+    val pinPlain: String = "",
     /** Parent mode: require the PIN (or biometrics) on every app open / regain of focus. */
     val appLock: Boolean = false,
     /** Whether device biometrics may be used to satisfy [appLock]. */

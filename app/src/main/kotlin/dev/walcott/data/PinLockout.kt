@@ -8,6 +8,17 @@ sealed interface PinResult {
     data object Wrong : PinResult
     /** Too many attempts; [remainingMs] until another try is allowed. */
     data class Locked(val remainingMs: Long) : PinResult
+
+    /**
+     * This family has no PIN at all, so nothing can be checked against it.
+     *
+     * Its own answer, and not [Wrong], because the two need opposite handling: a wrong PIN is
+     * someone guessing and earns a lockout and an alert to the parent, while this is the family
+     * never having set one — the person typing is right and the setup is wrong. Told apart, the
+     * screens can say so instead of rejecting every attempt forever (see the emergency release
+     * in AppSettingsScreen, which is the door this used to quietly wall up).
+     */
+    data object NotSet : PinResult
 }
 
 /**

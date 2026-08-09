@@ -140,6 +140,7 @@ fun FamiliesScreen(
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
     val ledgers by viewModel.usageLedgers.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
+    var showSetPin by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
     val needsBackupPin by viewModel.localBackupNeedsPin.collectAsStateWithLifecycle()
     var showBackupPin by remember { mutableStateOf(false) }
@@ -292,16 +293,26 @@ fun FamiliesScreen(
             settings.appPolicies.values.any { it.budgets.isNotEmpty() } ||
             settings.bedtime.isNotEmpty()
         val bedtimeDone = settings.bedtime.isNotEmpty()
-        if (!(childDone && limitsDone && bedtimeDone)) {
+        // Not a rule but the family's spare key: without a PIN nobody can authorise the
+        // emergency release on a child's phone, so a lost parent phone means a 24-hour
+        // countdown instead of thirty seconds. Families set up before this was asked for are
+        // exactly the ones that need telling, which is why an otherwise-finished setup shows
+        // the list again for this one step.
+        val pinDone = settings.pinHash != null
+        val rulesIncomplete = !(childDone && limitsDone && bedtimeDone)
+        if (rulesIncomplete) {
             // The guided wizards, front and center until the family is fully set up (they
             // stay reachable afterwards from the family rules hub).
             item { GuidedSetupCard(onOpenGuidedSetup) }
+        }
+        if (rulesIncomplete || !pinDone) {
             item {
                 SetupChecklistCard(
                     steps = listOf(
                         SetupStep(stringResource(R.string.setup_step_child), childDone) { showAddChild = true },
                         SetupStep(stringResource(R.string.setup_step_limits), limitsDone, onOpenBudgets),
                         SetupStep(stringResource(R.string.setup_step_bedtime), bedtimeDone, onOpenBudgets),
+                        SetupStep(stringResource(R.string.setup_step_pin), pinDone) { showSetPin = true },
                     ),
                 )
             }
@@ -499,6 +510,8 @@ fun FamiliesScreen(
             },
         )
     }
+
+    if (showSetPin) ChangePinDialog(viewModel) { showSetPin = false }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

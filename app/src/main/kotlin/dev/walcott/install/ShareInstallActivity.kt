@@ -223,6 +223,7 @@ private fun PinGate(
     val scope = rememberCoroutineScope()
     val wrong = stringResource(R.string.pin_incorrect)
     val lockedFmt = stringResource(R.string.pin_locked)
+    val noPin = stringResource(R.string.release_device_no_pin)
 
     AlertDialog(
         onDismissRequest = onCancel,
@@ -249,6 +250,8 @@ private fun PinGate(
                         is PinResult.Ok -> onUnlocked()
                         is PinResult.Wrong -> error = wrong
                         is PinResult.Locked -> error = lockedFmt.format(((r.remainingMs + 59_999) / 60_000).toInt())
+                        // No family PIN to check against: say that, instead of "wrong PIN".
+                        is PinResult.NotSet -> error = noPin
                     }
                 }
             }) { Text(stringResource(R.string.action_ok)) }

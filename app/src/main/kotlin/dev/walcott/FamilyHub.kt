@@ -247,7 +247,21 @@ class FamilyHub(
     suspend fun setPinEverywhere(pin: String) {
         for (scope in allNow()) {
             scope.repository.setPin(pin)
-            runCatching { scope.syncManager.cacheLocalBackupKey(pin) }
+            // The readable reminder, parent devices only — the call itself checks (see
+            // FamilyIdentity.pinPlain for why it must never exist on a child).
+            runCatching { scope.syncManager.rememberPinIfParent(pin) }
+        }
+        // The backup key is derived and the three on-device copies rewritten AFTER the caller
+        // is free to go: that is PBKDF2 at 600k iterations plus three encrypt-and-write cycles
+        // per family, which held the Save button frozen for tens of seconds while the thing the
+        // parent asked for — the new PIN — had already been saved. Nothing downstream waits on
+        // it, and a process death before it lands is repaired by the next correct PIN entry
+        // (see verifyPinGuarded), which is where families predating the feature get it anyway.
+        scope.launch {
+            for (family in allNow()) {
+                runCatching { family.syncManager.cacheLocalBackupKey(pin) }
+                    .onFailure { dev.walcott.debug.DebugLog.w(TAG, "caching the backup key failed", it) }
+            }
         }
     }
 

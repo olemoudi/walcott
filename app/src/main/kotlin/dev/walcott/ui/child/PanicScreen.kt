@@ -112,12 +112,18 @@ fun PanicScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
 
-            Text(
-                stringResource(R.string.panic_pin_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = spacing.sm),
-            )
+            // Only promise the instant way out when it exists: with no PIN on this device
+            // nothing can authorise a release, and telling a child to go ask their parents for
+            // one sends them into a dialog that rejects every answer.
+            val hasPin by viewModel.hasPin.collectAsStateWithLifecycle()
+            if (hasPin) {
+                Text(
+                    stringResource(R.string.panic_pin_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
         }
     }
 

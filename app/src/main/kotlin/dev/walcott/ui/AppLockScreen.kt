@@ -92,6 +92,9 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
                 is PinResult.Ok -> onUnlocked()
                 is PinResult.Wrong -> error = wrongPin
                 is PinResult.Locked -> error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                // The lock is on and the family has no PIN: a gate with nothing behind it,
+                // which would otherwise shut the parent out of their own app for good.
+                is PinResult.NotSet -> onUnlocked()
             }
             verifying = false
         }

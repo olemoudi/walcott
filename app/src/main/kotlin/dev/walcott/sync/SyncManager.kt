@@ -104,8 +104,16 @@ class SyncManager(
     val state: StateFlow<SyncState> =
         syncStore.state.stateIn(scope, SharingStarted.Eagerly, SyncState())
 
-    /** Requests from all children that the parent hasn't resolved yet. */
+    /**
+     * Requests from all children that the parent hasn't resolved yet.
+     *
+     * Expired ones drop out here too, not only on the child that sent them: an older child
+     * build keeps re-sending a request forever, and a question from last week has no business
+     * sitting above today's on the parent's home. Judged when the store changes rather than on
+     * a timer — a child publishes at least every half hour, so the list is never stale for long.
+     */
     val pendingRequests: StateFlow<List<PendingRequest>> = syncStore.state.map { s ->
+        val now = System.currentTimeMillis()
         val resolved = s.resolutions.map { it.requestId }.toSet()
         s.children.flatMap { child ->
             child.requests.map { request ->
@@ -118,7 +126,10 @@ class SyncManager(
                     tzOffsetMinutes = child.tzOffsetMinutes,
                 )
             }
-        }.filter { it.request.requestId !in resolved }
+        }.filter {
+            it.request.requestId !in resolved &&
+                !SyncEngine.requestExpired(it.request.createdAtEpochMs, now)
+        }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /**
@@ -138,9 +149,12 @@ class SyncManager(
 
     /** Generic asks (apps, anything) from all children that the parent hasn't resolved yet. */
     val pendingAsks: StateFlow<List<PendingAsk>> = syncStore.state.map { s ->
+        val now = System.currentTimeMillis()
         val resolved = s.resolutions.map { it.requestId }.toSet()
         s.children.flatMap { child -> child.asks.map { PendingAsk(child.displayName, it) } }
-            .filter { it.ask.requestId !in resolved }
+            .filter {
+                it.ask.requestId !in resolved && !SyncEngine.requestExpired(it.ask.createdAtEpochMs, now)
+            }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     data class PendingAsk(val childName: String, val ask: ChildRequest)
@@ -837,6 +851,43 @@ class SyncManager(
         publishSelf()
     }
 
+    /**
+     * Retires the child's own requests that nobody answered in time (see
+     * [SyncEngine.REQUEST_TTL_MS]). Called from the heartbeat, so it happens on a phone whose
+     * owner never opens the app.
+     *
+     * The point is not tidiness: the home refuses to send a second request for something that
+     * already has one pending, so an unanswered one left that button dead for good.
+     */
+    suspend fun expireStaleRequests() {
+        val s = syncStore.current()
+        val now = System.currentTimeMillis()
+        val deadRequests = s.pendingRequests.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
+        val deadAsks = s.pendingAsks.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
+        if (deadRequests.isEmpty() && deadAsks.isEmpty()) return
+        val newest = deadRequests.maxByOrNull { it.createdAtEpochMs }
+        val expiredNotice = NoticeEntry(
+            kind = NOTICE_EXPIRED,
+            approved = false,
+            text = newest?.targetLabel ?: deadAsks.maxByOrNull { it.createdAtEpochMs }?.text.orEmpty(),
+            atMs = now,
+        )
+        syncStore.update { state ->
+            state.copy(
+                pendingRequests = state.pendingRequests - deadRequests.toSet(),
+                pendingAsks = state.pendingAsks - deadAsks.toSet(),
+                // Never over an answer the child hasn't read yet: an approval from a minute ago
+                // matters more than a request that ran out, and this is the only copy of it.
+                lastNotice = state.lastNotice ?: expiredNotice,
+                childVersion = state.childVersion + 1,
+            )
+        }
+        dev.walcott.debug.DebugLog.i(
+            TAG, "retired ${deadRequests.size + deadAsks.size} unanswered request(s)",
+        )
+        runCatching { publishSelf() }
+    }
+
     // --- Parent actions ---
 
     suspend fun resolveRequest(requestId: String, approved: Boolean, grantedMinutes: Int) {
@@ -1171,6 +1222,23 @@ class SyncManager(
      * The PIN is short, so this file is far weaker than a passphrase backup and is not a
      * replacement for one — see [LocalBackupStore] for what it is and isn't for.
      */
+    /**
+     * Keeps a readable copy of the PIN — on a PARENT device only (see
+     * [FamilyIdentity.pinPlain]). The role check is the whole security property, so it is here,
+     * once, rather than at each call site: a child device runs this same code on every extra-time
+     * and release dialog, and must come out of it holding nothing.
+     */
+    suspend fun rememberPinIfParent(pin: String) {
+        val id = identityStore.current()
+        if (id.effectiveMode != DeviceMode.PARENT) return
+        if (id.pinPlain == pin) return
+        identityStore.save(id.copy(pinPlain = pin))
+    }
+
+    /** The readable PIN, or "" when this device has never held it (see [FamilyIdentity.pinPlain]). */
+    val readablePin: StateFlow<String> =
+        identityStore.identity.map { it.pinPlain }.stateIn(scope, SharingStarted.Eagerly, "")
+
     suspend fun cacheLocalBackupKey(pin: String) {
         // Deliberately NOT gated on being a parent yet. Gating it made the whole feature depend on
         // the PIN being set after the family exists, and if a setup journey ever did it the other
@@ -1369,6 +1437,10 @@ class SyncManager(
     suspend fun verifyPinGuarded(pin: String): PinResult {
         val s = syncStore.current()
         val now = System.currentTimeMillis()
+        // Before anything else: a family with no PIN can't fail a check, it can only fail to
+        // have one. Counting these as wrong guesses locked the child out of a door that was
+        // never going to open, and reported them to the parent as an attempted break-in.
+        if (!repository.hasPin()) return PinResult.NotSet
         val remaining = PinLockout.remainingMs(s.pinLockedUntilMs, now)
         if (remaining > 0) return PinResult.Locked(remaining)
 
@@ -1380,6 +1452,9 @@ class SyncManager(
             // on-device backup key can be derived. Parents who set their PIN before this existed
             // get it on their next unlock, without being asked for anything.
             if (s.localBackupKeyB64.isBlank()) cacheLocalBackupKey(pin)
+            // Same trick for the readable reminder: a family whose PIN predates the feature
+            // gets it back the next time they type it correctly, with nothing to answer.
+            rememberPinIfParent(pin)
             return PinResult.Ok
         }
 
@@ -2337,5 +2412,8 @@ class SyncManager(
          * so in practice a child new enough to offer this already has a parent new enough.
          */
         const val PANIC_MIN_PARENT_VERSION = 53
+
+        /** [NoticeEntry.kind] for a request that ran out of time unanswered. */
+        const val NOTICE_EXPIRED = "expired"
     }
 }

@@ -848,6 +848,9 @@ class WalcottViewModel(
     /** PIN check with brute-force lockout. */
     suspend fun verifyPin(pin: String): dev.walcott.data.PinResult = sync.verifyPinGuarded(pin)
 
+    /** The PIN in the clear on this parent phone, "" if it has never been held here. */
+    val readablePin: StateFlow<String> get() = sync.readablePin
+
     class Factory(
         private val repository: WalcottRepository,
         private val sync: SyncManager,

@@ -89,6 +89,9 @@ fun PinGateScreen(
                         val mins = ((result.remainingMs + 59_999) / 60_000).toInt()
                         error = lockedFmt.format(mins)
                     }
+                    // Unreachable while `hasPin` gates this branch; if the PIN is cleared
+                    // under us the screen re-renders into create mode by itself.
+                    is PinResult.NotSet -> Unit
                 }
                 verifying = false
             }

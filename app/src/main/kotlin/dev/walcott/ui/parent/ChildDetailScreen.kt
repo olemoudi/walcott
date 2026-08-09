@@ -197,6 +197,7 @@ fun ChildDetailScreen(
                 item {
                     EnrollmentSection(
                         entry = entry,
+                        viewModel = viewModel,
                         pairingText = if (identity.role == Role.PARENT) {
                             PairingPayload(
                                 topic = identity.topic,
@@ -605,13 +606,36 @@ private fun DetailTopBar(title: String, onBack: () -> Unit, onRename: () -> Unit
 private enum class EnrollMode { DEVICE_OWNER, FALLBACK }
 
 @Composable
-private fun EnrollmentSection(entry: ChildEntry, pairingText: String?) {
+private fun EnrollmentSection(entry: ChildEntry, pairingText: String?, viewModel: WalcottViewModel) {
     val spacing = Tokens.spacing
     // Device Owner is the strong path (full blocking); the fallback works without a factory reset.
     var mode by remember { mutableStateOf(EnrollMode.DEVICE_OWNER) }
     // Two-step wizard: only one QR is ever on screen at a time, so the child's camera can't
     // lock onto the wrong code when two are shown together.
     var step by rememberSaveable { mutableStateOf(0) }
+    val hasPin by viewModel.hasPin.collectAsStateWithLifecycle()
+    var settingPin by remember { mutableStateOf(false) }
+
+    // The PIN gate. A child enrolled into a family that has no PIN is a device whose emergency
+    // release can never be authorised — every attempt is rejected, because there is nothing to
+    // check against — leaving the 24-hour countdown as the only way back if the parent phone is
+    // lost. That is a trap to walk into, not a preference, so the code that creates it is not
+    // handed out until the family has the key to undo it.
+    if (pairingText != null && !hasPin) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+            Text(stringResource(R.string.enroll_needs_pin_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.enroll_needs_pin_text),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = { settingPin = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.parent_pin_create))
+            }
+        }
+        if (settingPin) ChangePinDialog(viewModel) { settingPin = false }
+        return
+    }
 
     // Without a pairing code (non-parent device) there's only the install QR — no second step.
     if (pairingText == null) {

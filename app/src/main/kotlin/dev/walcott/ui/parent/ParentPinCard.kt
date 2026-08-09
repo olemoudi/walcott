@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,7 +36,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.data.PinResult
@@ -46,21 +49,28 @@ import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.launch
 
 /**
- * Parent-mode PIN management: change it, or set a new one when it's been forgotten.
+ * Parent-mode PIN management: read it back when it has slipped your mind, or change it.
  *
- * There is deliberately no "show my PIN". It is stored only as a PBKDF2 hash + salt (see
- * [dev.walcott.data.Pin]), and that material rides inside the policy to every child device so
- * they can verify an emergency release offline — a recoverable copy would therefore put the
- * parent's PIN, in the clear, on the phone of the person it exists to keep out. Forgetting it
- * is answered by setting a new one, which is why that path asks for biometrics instead.
+ * The readable copy lives on THIS phone only ([dev.walcott.sync.FamilyIdentity.pinPlain]).
+ * What travels to the children, inside the policy, is still only the PBKDF2 hash + salt (see
+ * [dev.walcott.data.Pin]) — they verify an emergency release offline against it — so the PIN in
+ * the clear never reaches the phone of the person it exists to keep out.
+ *
+ * Showing it asks for exactly what resetting it asks for ([pinResetPath]), because it grants
+ * exactly as much: a parent who may set a new PIN without knowing the old one may equally be
+ * told the old one. The reminder exists so that forgetting costs nothing — setting a new PIN
+ * bumps the policy, and until each child has adopted it, the old one is what their device still
+ * answers to.
  */
 @Composable
 internal fun ParentPinCard(viewModel: WalcottViewModel) {
     val spacing = Tokens.spacing
     var changing by remember { mutableStateOf(false) }
+    var revealing by remember { mutableStateOf(false) }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
+    val readablePin by viewModel.readablePin.collectAsStateWithLifecycle()
 
     WalcottCard {
         // The list grows as the children's snapshots land; grow with it instead of popping.
@@ -83,7 +93,12 @@ internal fun ParentPinCard(viewModel: WalcottViewModel) {
                 }
             }
             Text(
-                stringResource(R.string.parent_pin_not_shown),
+                stringResource(
+                    // A PIN set before this phone kept a readable copy — or restored from a
+                    // backup, which doesn't carry one — can't be shown until it is next typed.
+                    // Say so, rather than hiding the button and letting it look unsupported.
+                    if (readablePin.isBlank()) R.string.parent_pin_not_shown else R.string.parent_pin_reminder_hint,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = spacing.sm),
@@ -108,14 +123,104 @@ internal fun ParentPinCard(viewModel: WalcottViewModel) {
                     )
                 }
             }
+            if (readablePin.isNotBlank()) {
+                OutlinedButton(
+                    onClick = { revealing = true },
+                    modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
+                ) { Text(stringResource(R.string.parent_pin_show)) }
+            }
             OutlinedButton(
                 onClick = { changing = true },
-                modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
+                modifier = Modifier.fillMaxWidth().padding(top = spacing.sm),
             ) { Text(stringResource(R.string.parent_pin_change)) }
         }
     }
 
     if (changing) ChangePinDialog(viewModel) { changing = false }
+    if (revealing) RevealPinDialog(viewModel, readablePin) { revealing = false }
+}
+
+/**
+ * Shows the PIN, once whoever is holding the phone has proved the same thing that resetting it
+ * would require ([pinResetPath]). Nothing is copied to the clipboard on purpose — a clipboard
+ * is readable by whatever the child opens next.
+ */
+@Composable
+private fun RevealPinDialog(viewModel: WalcottViewModel, pin: String, onDismiss: () -> Unit) {
+    val spacing = Tokens.spacing
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val identity by viewModel.identity.collectAsStateWithLifecycle()
+    val biometricHardware = remember { BiometricAuth.isAvailable(context) }
+    val biometricAvailable = activity != null && biometricHardware
+
+    var shown by remember { mutableStateOf(false) }
+    val promptTitle = stringResource(R.string.pin_show_biometric_title)
+    val promptSubtitle = stringResource(R.string.pin_show_biometric_subtitle)
+    val cancelLabel = stringResource(R.string.action_cancel)
+
+    val path = pinResetPath(
+        appLock = identity.appLock,
+        appLockBiometric = identity.appLockBiometric,
+        biometricAvailable = biometricAvailable,
+    )
+
+    // Ask as the dialog opens: the prompt IS the dialog's first step, not a button inside it.
+    LaunchedEffect(path) {
+        when (path) {
+            PinResetPath.DIRECT -> shown = true
+            PinResetPath.BIOMETRIC -> activity?.let {
+                BiometricAuth.authenticate(
+                    activity = it,
+                    title = promptTitle,
+                    subtitle = promptSubtitle,
+                    negativeButton = cancelLabel,
+                    onSuccess = { shown = true },
+                    onCancel = { onDismiss() },
+                )
+            }
+            else -> Unit
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.parent_pin_show)) },
+        text = {
+            Column {
+                if (shown) {
+                    Text(
+                        pin,
+                        style = MaterialTheme.typography.headlineMedium,
+                        letterSpacing = 8.sp,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = spacing.md),
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        stringResource(R.string.parent_pin_show_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    // The same two dead ends the reset path has, worded the same way: with the
+                    // app lock on and no usable biometric, nothing on this phone can vouch for
+                    // the parent except the PIN itself.
+                    Text(
+                        stringResource(
+                            when (path) {
+                                PinResetPath.NEEDS_APP_LOCK_BIOMETRIC -> R.string.pin_forgot_needs_app_lock_biometrics
+                                PinResetPath.NEEDS_BIOMETRIC_HARDWARE -> R.string.pin_forgot_needs_biometrics
+                                else -> R.string.pin_show_authenticating
+                            },
+                        ),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+        },
+    )
 }
 
 /** Whether a child's phone is known to be running the parent's current rules. */
@@ -208,21 +313,31 @@ internal fun pinResetPath(
     else -> PinResetPath.BIOMETRIC
 }
 
+/**
+ * Sets the family PIN, asking for the current one first when there is one to ask for.
+ *
+ * The "no PIN yet" case is not a lesser version of changing it — it is the one that matters, and
+ * it is reachable from the places that must not let a family go without: enrolling a child, and
+ * the home's setup checklist. Without a PIN the emergency release on a child's phone can never
+ * be authorised, and the family's only way back is the 24-hour countdown.
+ */
 @Composable
-private fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit) {
+internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit) {
     val spacing = Tokens.spacing
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val activity = context as? Activity
     val identity by viewModel.identity.collectAsStateWithLifecycle()
+    val hasPin by viewModel.hasPin.collectAsStateWithLifecycle()
     // remember() unconditionally: behind a short-circuiting && it would be skipped on some
     // compositions and not others, which is exactly the slot mismatch Compose forbids.
     val biometricHardware = remember { BiometricAuth.isAvailable(context) }
     val biometricAvailable = activity != null && biometricHardware
 
     // Cleared once the current PIN checks out, or biometrics vouched for whoever is holding
-    // the phone. Only then are the new-PIN fields shown.
-    var authorized by remember { mutableStateOf(false) }
+    // the phone. Only then are the new-PIN fields shown — unless there is no PIN yet, where
+    // there is nothing to prove and asking would be a door with no lock behind it.
+    var authorized by remember(hasPin) { mutableStateOf(!hasPin) }
     var current by remember { mutableStateOf("") }
     var next by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
@@ -269,6 +384,8 @@ private fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit) 
                 is PinResult.Ok -> { authorized = true; error = null }
                 is PinResult.Wrong -> error = wrongPin
                 is PinResult.Locked -> error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                // There is no current PIN to prove; the dialog is already in create mode.
+                is PinResult.NotSet -> { authorized = true; error = null }
             }
             busy = false
         }
@@ -293,9 +410,21 @@ private fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit) 
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(stringResource(R.string.parent_pin_change)) },
+        title = {
+            Text(stringResource(if (hasPin) R.string.parent_pin_change else R.string.parent_pin_create))
+        },
         text = {
             Column {
+                if (!hasPin) {
+                    // Why this is being asked for at all, at the one moment the parent is
+                    // actually here to answer it.
+                    Text(
+                        stringResource(R.string.parent_pin_create_why),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = spacing.sm),
+                    )
+                }
                 if (!authorized) {
                     Text(stringResource(R.string.parent_pin_change_prompt))
                     PinField(

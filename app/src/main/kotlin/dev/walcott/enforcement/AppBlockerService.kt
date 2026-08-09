@@ -53,6 +53,18 @@ class AppBlockerService : AccessibilityService() {
     private var lastNotifiedPkg: String? = null
     private var lastNotifiedAt = 0L
 
+    /**
+     * Cached answer to "is usage access still granted", with the moment it was read.
+     *
+     * The query is an AppOps lookup — a binder round trip — and this service runs on every
+     * window change, which on a busy phone is many per second. The Device Owner loop caches it
+     * the same way; this path simply never did. A few seconds of staleness costs nothing: it
+     * only decides whether to fail closed, and the revocation itself is noticed within the
+     * window either way.
+     */
+    @Volatile private var usageAccessOk = true
+    @Volatile private var usageAccessReadAt = 0L
+
     // A newly installed app is unclassified (so it must be blocked), but the config doesn't
     // change on install — without this the managed set would go stale and the blocker would
     // wave the new app through until the next policy edit.
@@ -109,7 +121,7 @@ class AppBlockerService : AccessibilityService() {
         if (pkg == packageName || pkg !in managed) return
         // Mirror the Device Owner path's fail-closed rules: without the usage counter or with a
         // clock we can't trust, every managed app is blocked (see RuleEngine.blockedPackages).
-        val failClosed = (!UsageAccess.grantedForEnforcement(this) && RuleEngine.requiresUsageCounting(cfg)) ||
+        val failClosed = (!usageAccessGranted() && RuleEngine.requiresUsageCounting(cfg)) ||
             (!clockTrusted && RuleEngine.requiresTrustedClock(cfg))
         val verdict = if (failClosed) {
             Verdict.Blocked(dev.walcott.rules.BlockReason.FAIL_CLOSED)
@@ -120,6 +132,16 @@ class AppBlockerService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_HOME)
             notifyBlocked(pkg)
         }
+    }
+
+    /** Usage access, re-read at most every [USAGE_ACCESS_TTL_MS] (see [usageAccessOk]). */
+    private fun usageAccessGranted(): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - usageAccessReadAt > USAGE_ACCESS_TTL_MS) {
+            usageAccessOk = UsageAccess.grantedForEnforcement(this)
+            usageAccessReadAt = now
+        }
+        return usageAccessOk
     }
 
     private fun notifyBlocked(pkg: String) {
@@ -147,6 +169,8 @@ class AppBlockerService : AccessibilityService() {
         private const val CHANNEL = "walcott_block"
         private const val NOTIF_ID = 42
         private const val NOTIFY_THROTTLE_MS = 30_000L
+        /** How long the cached usage-access answer is trusted (see [usageAccessOk]). */
+        private const val USAGE_ACCESS_TTL_MS = 10_000L
 
         /** True while the accessibility blocker is connected. */
         fun isConnected(): Boolean = INSTANCE != null
