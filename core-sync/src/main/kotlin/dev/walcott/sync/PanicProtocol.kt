@@ -59,10 +59,24 @@ object PanicProtocol {
     fun deadlineSec(request: PanicRequest): Long = dueSec(request) + CHECKPOINT_GRACE_SEC
 
     /**
+     * Whether [request] has already served its full 24 hours. Such a request is spent: the
+     * device owes it a release and nothing else, and no later connectivity failure can take
+     * that back — see [evaluate].
+     */
+    fun earned(request: PanicRequest): Boolean = request.checkpoints >= REQUIRED_CHECKPOINTS
+
+    /**
      * The step for [request] at [serverNowSec] — the server timestamp of a message that just
      * arrived, which is itself the proof that the channel works right now.
+     *
+     * [earned] is checked FIRST, ahead of the deadline: the release is recorded (and published,
+     * so the parent has the record) before it is carried out, and carrying it out can be
+     * interrupted — a process death, a failed step. A request that comes back with its twelve
+     * notices already banked has bought the release outright; expiring it there would make the
+     * child serve another 24 hours for a countdown they had already finished.
      */
     fun evaluate(request: PanicRequest, serverNowSec: Long): Step = when {
+        earned(request) -> Step.RELEASE
         serverNowSec > deadlineSec(request) -> Step.EXPIRED
         serverNowSec < dueSec(request) -> Step.WAIT
         request.checkpoints + 1 >= REQUIRED_CHECKPOINTS -> Step.RELEASE
@@ -117,8 +131,26 @@ object PanicProtocol {
     /** Server second until which a denial blocks new requests. */
     fun cooldownUntilSec(deniedAtServerSec: Long): Long = deniedAtServerSec + DENIAL_COOLDOWN_SEC
 
-    /** Whether the child may start a request now (a parent's refusal blocks it for three days). */
-    fun canStart(blockedUntilSec: Long, serverNowSec: Long): Boolean = serverNowSec >= blockedUntilSec
+    /** Whether a parent's refusal has finished blocking new requests (three days). */
+    fun cooldownPassed(blockedUntilSec: Long, serverNowSec: Long): Boolean = serverNowSec >= blockedUntilSec
+
+    /**
+     * The whole gate on starting a request, in one testable place. This is the only door out of
+     * enforcement, so it is checked in the UI (to explain why the button is grey) and again at
+     * the moment the request is created — the two must not be able to disagree.
+     *
+     * [parentSupported] is the least obvious condition: a parent build too old to understand the
+     * field ignores it silently, which would turn a loud, refusable request into a quiet escape
+     * hatch. A request nobody can see is not the deal this feature offers, so it isn't allowed.
+     */
+    fun mayStart(
+        hasActiveRequest: Boolean,
+        parentSupported: Boolean,
+        msSinceChannelOk: Long,
+        blockedUntilSec: Long,
+        serverNowSec: Long,
+    ): Boolean = !hasActiveRequest && parentSupported && channelProven(msSinceChannelOk) &&
+        cooldownPassed(blockedUntilSec, serverNowSec)
 
     /** Notices still to come before the device releases itself. */
     fun remainingCheckpoints(request: PanicRequest): Int =

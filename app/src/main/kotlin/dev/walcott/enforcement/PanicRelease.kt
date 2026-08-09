@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.WorkManager
 import dev.walcott.WalcottApplication
+import dev.walcott.data.AppInventory
 import dev.walcott.debug.DebugLog
 import dev.walcott.net.VpnController
 import dev.walcott.sync.HeartbeatAlarm
@@ -76,6 +77,38 @@ object PanicRelease {
         // "managed by your organization" badge disappears and Walcott can be uninstalled.
         releaseDeviceOwner(context)
         DebugLog.w(TAG, "emergency release complete")
+    }
+
+    /**
+     * Finishes a release that stopped halfway, called on every start-up of a device whose
+     * identity says it was already released.
+     *
+     * Steps 4 to 6 above are the dangerous stretch: step 4 stops the foreground service, so from
+     * there on the process is ordinary and killable, while Device Owner — the thing the release
+     * exists to give up — isn't dropped until step 6. A process death in between used to be
+     * terminal: the device is no longer a child, so the settings screen no longer offers the
+     * release button that would retry it, and a phone permanently owned by an app that no longer
+     * manages anything can only be cleaned up with a factory reset.
+     *
+     * Everything here is idempotent, so running it on every start-up of a released device costs
+     * one Device Owner check and nothing else.
+     */
+    suspend fun finishIfInterrupted(context: Context) {
+        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        DebugLog.w(TAG, "released device is still Device Owner: finishing the interrupted release")
+        // Apps first, and from the installed list rather than the policy: the policy is gone by
+        // this point, and a released device that kept an app suspended has no enforcement loop
+        // left to ever unsuspend it.
+        runCatching {
+            val installed = withContext(Dispatchers.IO) {
+                AppInventory(context).launchableApps().map { it.packageName }.toSet()
+            }
+            Enforcer(context).releaseAll(installed)
+        }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }
+        runCatching { DeviceRestrictions.clearAll(context) }
+            .onFailure { DebugLog.e(TAG, "clearing device restrictions failed", it) }
+        releaseDeviceOwner(context)
     }
 
     /**

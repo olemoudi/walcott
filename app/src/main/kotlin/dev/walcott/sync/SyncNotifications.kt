@@ -16,7 +16,6 @@ object SyncNotifications {
 
     private const val CHANNEL = "walcott_requests"
     private const val ALERT_CHANNEL = "walcott_alerts"
-    private const val NOTIF_ID = 42
 
     /** Intent extra + values used to deep-link a notification tap to a screen. */
     const val EXTRA_DEST = "walcott_dest"
@@ -196,11 +195,42 @@ object SyncNotifications {
             },
             notifId = notifId,
             dest = childDest(childId),
-            action = if (released) {
-                null
+            actions = if (released) {
+                emptyList()
             } else {
-                NotificationCompat.Action(0, context.getString(R.string.panic_deny_action), deny)
+                listOf(NotificationCompat.Action(0, context.getString(R.string.panic_deny_action), deny))
             },
+        )
+    }
+
+    /**
+     * The Approve/Deny pair a request notification carries (see [RequestActionReceiver]). One
+     * PendingIntent per (verb, request) so two pending requests never collapse into one intent,
+     * which would answer the wrong child's question.
+     *
+     * Empty when [quickAnswer] is false — a parent who turned the app lock on asked for a gate
+     * between a phone lying unlocked on the table and their family's rules, and a button in the
+     * shade is not behind that gate.
+     */
+    private fun answerActions(
+        context: Context,
+        requestId: String,
+        notifId: Int,
+        approveLabel: String,
+        quickAnswer: Boolean,
+    ): List<NotificationCompat.Action> {
+        if (!quickAnswer) return emptyList()
+        fun broadcast(action: String) = PendingIntent.getBroadcast(
+            context, (action + requestId).hashCode(),
+            Intent(context, RequestActionReceiver::class.java)
+                .setAction(action)
+                .putExtra(RequestActionReceiver.EXTRA_REQUEST_ID, requestId)
+                .putExtra(RequestActionReceiver.EXTRA_NOTIF_ID, notifId),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return listOf(
+            NotificationCompat.Action(0, approveLabel, broadcast(RequestActionReceiver.ACTION_APPROVE)),
+            NotificationCompat.Action(0, context.getString(R.string.deny), broadcast(RequestActionReceiver.ACTION_DENY)),
         )
     }
 
@@ -218,21 +248,36 @@ object SyncNotifications {
     )
 
     /** A child asked for something (an app install, anything free-form). */
-    fun notifyAsk(context: Context, childName: String, text: String, requestId: String) = post(
-        context, CHANNEL, R.string.sync_request_channel_name,
-        title = context.getString(R.string.sync_ask_title, childName),
-        text = text,
+    fun notifyAsk(context: Context, childName: String, text: String, requestId: String, quickAnswer: Boolean) {
         // Per-ask id so several pending asks don't clobber each other (or the requests notification).
-        notifId = ("ask$requestId").hashCode(),
-    )
+        val notifId = ("ask$requestId").hashCode()
+        post(
+            context, CHANNEL, R.string.sync_request_channel_name,
+            title = context.getString(R.string.sync_ask_title, childName),
+            text = text,
+            notifId = notifId,
+            actions = answerActions(context, requestId, notifId, context.getString(R.string.approve), quickAnswer),
+        )
+    }
 
     /** A child shared one concrete app from Play and wants it installed (see KIND_INSTALL). */
-    fun notifyInstallAsk(context: Context, childName: String, appLabel: String, requestId: String) = post(
-        context, CHANNEL, R.string.sync_request_channel_name,
-        title = context.getString(R.string.sync_install_ask_title, childName),
-        text = context.getString(R.string.sync_install_ask_text, appLabel),
-        notifId = ("ask$requestId").hashCode(),
-    )
+    fun notifyInstallAsk(
+        context: Context,
+        childName: String,
+        appLabel: String,
+        requestId: String,
+        quickAnswer: Boolean,
+    ) {
+        val notifId = ("ask$requestId").hashCode()
+        post(
+            context, CHANNEL, R.string.sync_request_channel_name,
+            title = context.getString(R.string.sync_install_ask_title, childName),
+            text = context.getString(R.string.sync_install_ask_text, appLabel),
+            notifId = notifId,
+            // Approving here opens the single-app install window, exactly as the card does.
+            actions = answerActions(context, requestId, notifId, context.getString(R.string.approve), quickAnswer),
+        )
+    }
 
     /**
      * An install window has been open on a child device for over an hour (the "I don't know
@@ -259,8 +304,8 @@ object SyncNotifications {
             text = context.getString(R.string.install_window_open_text, remaining),
             notifId = "installwin".hashCode() + deviceId.hashCode(),
             dest = childDest(childId),
-            action = NotificationCompat.Action(
-                0, context.getString(R.string.install_window_reblock), reblock,
+            actions = listOf(
+                NotificationCompat.Action(0, context.getString(R.string.install_window_reblock), reblock),
             ),
         )
     }
@@ -293,12 +338,26 @@ object SyncNotifications {
         dest = childDest(childId),
     )
 
-    fun notifyRequest(context: Context, childName: String, minutes: Int) = post(
-        context, CHANNEL, R.string.sync_request_channel_name,
-        title = context.getString(R.string.sync_request_title),
-        text = context.getString(R.string.sync_request_text, childName, minutes),
-        notifId = NOTIF_ID,
-    )
+    /**
+     * A child is asking for extra time — the most answered notification in the app, so it
+     * answers itself: Approve grants the minutes asked for, Deny says no, neither needs the app
+     * opened. Any other amount is a considered answer and stays on the card.
+     */
+    fun notifyRequest(context: Context, childName: String, minutes: Int, requestId: String, quickAnswer: Boolean) {
+        // Per-request, like the asks: a fixed id meant a second child asking replaced the first
+        // child's notification, and one of the two questions was simply never seen.
+        val notifId = ("request$requestId").hashCode()
+        post(
+            context, CHANNEL, R.string.sync_request_channel_name,
+            title = context.getString(R.string.sync_request_title),
+            text = context.getString(R.string.sync_request_text, childName, minutes),
+            notifId = notifId,
+            actions = answerActions(
+                context, requestId, notifId,
+                context.getString(R.string.request_grant_minutes, minutes), quickAnswer,
+            ),
+        )
+    }
 
     /**
      * Nudge to create/refresh the family backup; its action mutes the reminders for good.
@@ -333,7 +392,7 @@ object SyncNotifications {
             ),
             notifId = notifId,
             dest = DEST_APP_SETTINGS,
-            action = NotificationCompat.Action(0, context.getString(R.string.backup_reminder_mute), mute),
+            actions = listOf(NotificationCompat.Action(0, context.getString(R.string.backup_reminder_mute), mute)),
         )
     }
 
@@ -345,7 +404,7 @@ object SyncNotifications {
         text: String,
         notifId: Int,
         dest: String? = null,
-        action: NotificationCompat.Action? = null,
+        actions: List<NotificationCompat.Action> = emptyList(),
     ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -368,7 +427,7 @@ object SyncNotifications {
             .setAutoCancel(true)
             .setContentIntent(tap)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .apply { if (action != null) addAction(action) }
+            .apply { actions.forEach { addAction(it) } }
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(notifId, notification) }
     }

@@ -58,12 +58,53 @@ only once no 0.21.0 child remains.
   domain flow on one emulator, through the real `DomainInbox`; add
   `--ez child_domains_partial true` to hold the last slice back and check the "not actionable yet"
   case.
+- `--es child_request "pkg:Label:minutes:reason"` seeds one pending extra-time request (pair it
+  with `--es child_usage "pkg=SECONDS"` to give the card's "already X today" line something to
+  report). Add `--ez child_request_notify true` to also post the notification: its Approve/Deny
+  actions can't be fired with `am broadcast`, because `RequestActionReceiver` is — rightly — not
+  exported, so tapping them in the shade is the only way to exercise the real PendingIntent path.
 
 ---
 
 # Reliability backlog
 
 Empty. The audit items below all shipped; kept for context so none of it gets redone.
+
+Shipped in v0.36.0 — four holes from a fresh audit, all of them silent failures:
+
+- **A socket that dies without saying so.** OkHttp sends no WebSocket pings by default, and
+  `NtfyTransport` only reconnects from `onFailure`/`onClosed` — neither of which fires when a
+  carrier or NAT drops the connection without a FIN, which is the normal way a mobile socket
+  dies. Nothing else reopened it: `connect()` runs at start-up and on pairing, the parent has
+  `ParentPollWorker` as a fallback and **the child has none**. So the child kept publishing over
+  HTTP (looking perfectly healthy to the parent) while rules, granted time and every remote
+  command — `DENY_PANIC` and a reset PIN included, i.e. both escape hatches — stopped arriving
+  until the process restarted. Fixed with `Http.webSocketClient` (30 s pings) plus a backstop on
+  the heartbeat: an hour of silence rebuilds the socket (`ChannelHealth.needsReconnect`), and the
+  `since=` cursor replays whatever was missed.
+- **An emergency release that stopped halfway was terminal.** Step 4 stops the foreground
+  service, so the process is killable from there, while Device Owner isn't dropped until step 6.
+  In between, the device is no longer a child — so the settings screen no longer offers the
+  release button that would retry — and a phone owned by an app that manages nothing needed a
+  factory reset. `PanicRelease.finishIfInterrupted` now runs on every start-up of a released
+  device: unsuspends whatever is still suspended, clears the restrictions, drops Device Owner.
+- **A release already earned could still expire.** The twelfth notice is banked and published
+  before the teardown runs, and `evaluate` checked the deadline first — so an interrupted release
+  that then went offline for three hours voided a countdown the child had already served in full.
+  `PanicProtocol.earned` is now checked ahead of everything, and `expirePanicIfOffline` finishes
+  such a request instead of killing it.
+- **Crashes left no trace.** No `setDefaultUncaughtExceptionHandler`, so the one failure worth
+  investigating on a child device was the only one missing from the log tail that a remote
+  DIAGNOSE ships to the parent. `DebugLog.crash` writes on the calling thread (the executor the
+  rest of the log uses is never scheduled again once the process is dying) and then lets Android
+  take its course.
+
+Also from that audit, on the parent's side: the request card answers with any amount rather than
+only the one asked for (the wire always carried `grantedMinutes`; the button hard-coded it), says
+what the child has already had today, and the notification carries Approve/Deny — suppressed when
+the app lock is on, since a button in the shade is not behind that gate. Extra-time notifications
+are per-request now; a fixed id meant a second child's question replaced the first and was
+simply never seen.
 
 Already covered: enforcement loop survives unexpected exceptions (`runLoopResilient`), a poison
 message can't wedge the sync cursor, snapshot convergence + re-emit + TTLs + idempotent

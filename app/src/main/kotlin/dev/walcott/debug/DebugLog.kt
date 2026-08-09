@@ -89,6 +89,19 @@ object DebugLog {
         io.execute { runCatching { appendCapped(f, entry) } }
     }
 
+    /**
+     * Records a fatal error on the CALLING thread, file write included. Everything else here
+     * hands the append to [io] and returns; a crash handler can't do that, because the process
+     * is dead long before that executor is next scheduled — which is precisely why crashes used
+     * to be the one event missing from the log.
+     */
+    fun crash(tag: String, message: String, t: Throwable) {
+        Log.e(tag, message, t)
+        val entry = LogEntry(System.currentTimeMillis(), 'E', tag, "$message\n${Log.getStackTraceString(t)}")
+        mutable.value = LogFormat.cap(mutable.value, entry, MAX_ENTRIES)
+        file?.let { f -> runCatching { appendCapped(f, entry) } }
+    }
+
     /** Whole buffer as text, for copy/share. */
     fun format(): String = LogFormat.format(mutable.value)
 

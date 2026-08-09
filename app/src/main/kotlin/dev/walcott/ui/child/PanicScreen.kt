@@ -143,7 +143,7 @@ fun PanicScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 @Composable
 private fun blockedReason(status: SyncManager.PanicStatus, nowMs: Long): String? = when {
     !status.channelProven(nowMs) -> stringResource(R.string.panic_blocked_offline)
-    !PanicProtocol.canStart(status.blockedUntilSec, status.serverNowSec) -> stringResource(
+    !PanicProtocol.cooldownPassed(status.blockedUntilSec, status.serverNowSec) -> stringResource(
         R.string.panic_blocked_denied,
         Duration.ofSeconds(status.cooldownRemainingSec).humanize(),
     )

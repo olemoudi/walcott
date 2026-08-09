@@ -54,4 +54,38 @@ object ChildStats {
      */
     fun defaultBudgetToday(config: FamilyConfig, now: LocalDateTime): Duration? =
         config.defaultAppBudget[config.calendar.dayTypeOf(now)]
+
+    /**
+     * How long the child has already spent today on whatever a request is asking for — the one
+     * fact that decides the answer, and the one the parent otherwise has to leave the request
+     * and go dig for.
+     *
+     * Null when the counters on file are not today's: a device that hasn't checked in since
+     * yesterday still reports real numbers, and showing them as "today" would be worse than
+     * showing nothing. An app with no entry has genuinely spent nothing, which is zero, not null.
+     */
+    fun usedTodayOn(
+        target: String,
+        usage: List<dev.walcott.sync.UsageEntry>,
+        epochDay: Long,
+        tzOffsetMinutes: Int?,
+        nowMs: Long,
+        parentNow: LocalDateTime,
+    ): Duration? {
+        if (!reportsCurrentDay(epochDay, tzOffsetMinutes, nowMs, parentNow)) return null
+        val seconds = if (target == ExtraTime.ALL_APPS) {
+            usage.sumOf { it.seconds }
+        } else {
+            usage.firstOrNull { it.categoryId == target }?.seconds ?: 0L
+        }
+        return Duration.ofSeconds(seconds)
+    }
+
+    /**
+     * The allowance that target answers to today, so "already 1h 20m" can be read against
+     * something. Null when there is no single number to quote: "all apps" is a request against
+     * every per-app allowance at once, and an app can be set free of limits entirely.
+     */
+    fun limitTodayOn(config: FamilyConfig, target: String, now: LocalDateTime): Duration? =
+        if (target == ExtraTime.ALL_APPS) null else config.budgetFor(target, config.calendar.dayTypeOf(now))
 }

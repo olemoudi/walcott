@@ -73,6 +73,13 @@ object HeartbeatAlarm {
             .onFailure { DebugLog.e(TAG, "enforcement service start failed", it) }
         runCatching { dev.walcott.enforcement.EnforcementSelfTest.run(context) }
             .onFailure { DebugLog.e(TAG, "enforcement self-test failed", it) }
+        // Rebuild a socket that has gone quiet. The child has no catch-up poll (the parent's
+        // ParentPollWorker is its own fallback), so this socket is the only way anything reaches
+        // this device — and a dead one is invisible from the outside, since publishing is a
+        // separate HTTP call that keeps working. Runs before the publish so a reconnect's own
+        // re-publish makes the one below redundant rather than the other way round.
+        runCatching { app.syncManager.reconnectIfChannelStale() }
+            .onFailure { DebugLog.e(TAG, "channel reconnect check failed", it) }
         runCatching { app.syncManager.publishHeartbeatIfStale(PUBLISH_MIN_INTERVAL_MS) }
             .onFailure { DebugLog.e(TAG, "heartbeat publish failed", it) }
         // An emergency release must die the moment the channel fails on it. While the channel

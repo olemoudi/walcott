@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger
 class NtfyTransport(
     server: String,
     private val topic: String,
-    private val client: OkHttpClient = dev.walcott.net.Http.client,
+    // Ping-enabled: see Http.webSocketClient for why a plain client can wedge this socket open.
+    private val client: OkHttpClient = dev.walcott.net.Http.webSocketClient,
     /**
      * Unix-seconds cursor appended as `since=` when (re)connecting, so messages published
      * while the socket was down are replayed instead of lost. 0 = no replay (legacy behavior).

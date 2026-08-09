@@ -2,8 +2,6 @@ package dev.walcott.ui.parent
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,8 +23,9 @@ import dev.walcott.install.PlayIntents
 import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.DomainAsk
 import dev.walcott.sync.SyncManager
-import dev.walcott.ui.components.ChoiceChip
+import dev.walcott.ui.components.MinutesChips
 import dev.walcott.ui.components.WalcottCard
+import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
 
 /**
@@ -34,8 +33,23 @@ import dev.walcott.ui.theme.Tokens
  * children hub ([ChildrenScreen]) so approve/deny looks and behaves identically in both.
  */
 
+/**
+ * A child's extra-time request, and the two things answering one actually needs.
+ *
+ * **How much they have already had today**, because that is what decides the answer and the
+ * parent would otherwise have to leave this screen to find it (see [ChildStats.usedTodayOn]).
+ *
+ * **How many minutes to give**, which is not the same question as yes-or-no. "Twenty, not
+ * forty" was always expressible on the wire — [SyncManager.resolveRequest] has carried the
+ * granted amount since the beginning, and the child applies exactly that — but the button used
+ * to hard-code whatever was asked for, so the only honest answers were all of it or none.
+ */
 @Composable
-fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> Unit, onDeny: () -> Unit) {
+fun ExtraTimeRequestCard(
+    pending: SyncManager.PendingRequest,
+    settings: dev.walcott.data.PolicySettings,
+    onResolve: (approved: Boolean, minutes: Int) -> Unit,
+) {
     val spacing = Tokens.spacing
     val key = pending.request.categoryId
     // The target is one app or all of them — name it the way the child chose.
@@ -44,6 +58,8 @@ fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> U
         pending.request.targetLabel.isNotBlank() -> pending.request.targetLabel
         else -> key
     }
+    // Starts at what was asked for, so the common answer stays one tap.
+    var minutes by remember(pending.request.requestId) { mutableStateOf(pending.request.minutes) }
 
     WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -52,6 +68,7 @@ fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> U
                 stringResource(R.string.request_summary, targetName, pending.request.minutes),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            SpentTodayLine(pending, settings)
             if (pending.request.reason.isNotBlank()) {
                 Text(
                     "“${pending.request.reason}”",
@@ -59,9 +76,49 @@ fun ExtraTimeRequestCard(pending: SyncManager.PendingRequest, onApprove: () -> U
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            ApproveDenyRow(onApprove, onDeny)
+            MinutesChips(value = minutes, onSelect = { minutes = it })
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Button(onClick = { onResolve(true, minutes) }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.request_grant_minutes, minutes))
+                }
+                OutlinedButton(onClick = { onResolve(false, 0) }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.deny))
+                }
+            }
         }
     }
+}
+
+/** "Already 1h 20m of 45m today" — silent when the child's counters aren't today's. */
+@Composable
+private fun SpentTodayLine(pending: SyncManager.PendingRequest, settings: dev.walcott.data.PolicySettings) {
+    val target = pending.request.categoryId
+    val parentNow = java.time.LocalDateTime.now()
+    val used = dev.walcott.data.ChildStats.usedTodayOn(
+        target = target,
+        usage = pending.usage,
+        epochDay = pending.epochDay,
+        tzOffsetMinutes = pending.tzOffsetMinutes,
+        nowMs = System.currentTimeMillis(),
+        parentNow = parentNow,
+    ) ?: return
+    // The child's own clock, for the same reason the counters are theirs: a day type — and with
+    // it the allowance — flips at their midnight, not the parent's.
+    val childNow = dev.walcott.data.ChildStats
+        .localNow(pending.tzOffsetMinutes, System.currentTimeMillis(), parentNow)
+    val config = remember(settings, pending.childId) {
+        settings.resolveForChild(pending.childId).toFamilyConfig(emptySet())
+    }
+    val limit = dev.walcott.data.ChildStats.limitTodayOn(config, target, childNow)
+    Text(
+        if (limit == null) {
+            stringResource(R.string.request_used_today, used.humanize())
+        } else {
+            stringResource(R.string.request_used_today_of, used.humanize(), limit.humanize())
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**

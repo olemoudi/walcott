@@ -106,17 +106,68 @@ class PanicProtocolTest {
     }
 
     @Test
+    fun `a request that already served its 24 hours is a release, not an expiry`() {
+        // What an interrupted release leaves behind: the twelfth notice is banked and published,
+        // and the teardown then failed or was killed. However long the device is then away, the
+        // countdown it finished must not have to be served again.
+        val done = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS)
+        assertTrue(PanicProtocol.earned(done))
+        assertEquals(Step.RELEASE, PanicProtocol.evaluate(done, start))
+        assertEquals(Step.RELEASE, PanicProtocol.evaluate(done, start + twoHours + grace + 1))
+        assertEquals(Step.RELEASE, PanicProtocol.evaluate(done, start + 30 * 24 * 60 * 60))
+    }
+
+    @Test
+    fun `a request one notice short of the end is not earned yet`() {
+        // The boundary the case above turns on: eleven banked notices still expire normally.
+        val nearly = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)
+        assertFalse(PanicProtocol.earned(nearly))
+        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(nearly, start + twoHours + grace + 1))
+    }
+
+    @Test
     fun `a denial blocks new requests for three days`() {
         val until = PanicProtocol.cooldownUntilSec(start)
         assertEquals(3 * 24 * 60 * 60L, until - start)
-        assertFalse(PanicProtocol.canStart(until, start))
-        assertFalse(PanicProtocol.canStart(until, until - 1))
-        assertTrue(PanicProtocol.canStart(until, until))
+        assertFalse(PanicProtocol.cooldownPassed(until, start))
+        assertFalse(PanicProtocol.cooldownPassed(until, until - 1))
+        assertTrue(PanicProtocol.cooldownPassed(until, until))
     }
 
     @Test
     fun `no standing denial means the child may ask`() {
-        assertTrue(PanicProtocol.canStart(blockedUntilSec = 0, serverNowSec = start))
+        assertTrue(PanicProtocol.cooldownPassed(blockedUntilSec = 0, serverNowSec = start))
+    }
+
+    @Test
+    fun `starting needs a channel that proved itself within the last half hour`() {
+        assertTrue(PanicProtocol.channelProven(0))
+        assertTrue(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS))
+        // One heartbeat missed is already too stale: the request's server-time anchor comes from
+        // that last message, and a stale anchor makes the first notice due in the past.
+        assertFalse(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS + 1))
+    }
+
+    @Test
+    fun `every condition is required to start a request`() {
+        fun gate(
+            hasActiveRequest: Boolean = false,
+            parentSupported: Boolean = true,
+            msSinceChannelOk: Long = 0,
+            blockedUntilSec: Long = 0,
+        ) = PanicProtocol.mayStart(
+            hasActiveRequest, parentSupported, msSinceChannelOk, blockedUntilSec, serverNowSec = start,
+        )
+
+        assertTrue(gate())
+        // One request at a time: starting again would restart the 24 hours, not shorten them.
+        assertFalse(gate(hasActiveRequest = true))
+        // A parent build that can't display the request would make this a silent escape hatch.
+        assertFalse(gate(parentSupported = false))
+        // No connectivity, no request — the whole design is "keep proving you can be seen".
+        assertFalse(gate(msSinceChannelOk = PanicProtocol.START_CHANNEL_FRESH_MS + 1))
+        // A standing refusal.
+        assertFalse(gate(blockedUntilSec = start + 1))
     }
 
     @Test

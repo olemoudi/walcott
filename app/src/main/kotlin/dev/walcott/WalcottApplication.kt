@@ -52,6 +52,7 @@ class WalcottApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         DebugLog.init(this)
+        installCrashLogger()
         themeStore = ThemeStore(this)
         hub = FamilyHub(
             context = this,
@@ -95,11 +96,38 @@ class WalcottApplication : Application() {
             if (identityStore.current().enforcesLocally) dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
         }
 
+        // A release that stopped halfway leaves a device nobody manages but that is still owned
+        // by this app, and no screen offering to retry (see PanicRelease.finishIfInterrupted).
+        appScope.launch {
+            if (identityStore.current().released) {
+                runCatching { dev.walcott.enforcement.PanicRelease.finishIfInterrupted(this@WalcottApplication) }
+                    .onFailure { DebugLog.e(TAG, "finishing the interrupted release failed", it) }
+            }
+        }
+
         // The share-a-backup flow parks the encrypted file in cache (see FamilyBackupCard);
         // deleting it right after sharing would race the receiving app's read, so it is
         // pruned here instead — the next process start, once any share has long finished.
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { java.io.File(cacheDir, "backups").deleteRecursively() }
+        }
+    }
+
+    /**
+     * Writes the crash to the persisted debug log before the process dies, then lets Android
+     * take its normal course (which is what actually kills it — swallowing the throw would leave
+     * a half-dead process behind, and this app is not the right place to guess at recovery).
+     *
+     * The log tail IS this app's diagnostics: it is what a remote DIAGNOSE ships to the parent
+     * and what the debug screen shows. Without this, the one failure worth investigating on a
+     * child device — the app dying — is the only one that leaves no trace, and the parent sees
+     * nothing but a device that went quiet.
+     */
+    private fun installCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching { DebugLog.crash(TAG, "uncaught exception on thread ${thread.name}", error) }
+            previous?.uncaughtException(thread, error)
         }
     }
 
@@ -152,6 +180,10 @@ class WalcottApplication : Application() {
      * done by MainActivity / BootReceiver, which run in exempt contexts — reacting to the
      * first emission here could be a background FGS start and get the app killed.
      */
+    private companion object {
+        const val TAG = "WalcottApp"
+    }
+
     private fun observeModeTransitions() {
         appScope.launch {
             identityStore.identity

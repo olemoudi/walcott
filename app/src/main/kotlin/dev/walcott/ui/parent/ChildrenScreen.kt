@@ -40,6 +40,8 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val children by viewModel.children.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
+    // The request cards read the limits out of it to say what a child has already had today.
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
     var bonusTarget by remember { mutableStateOf<ChildSnapshot?>(null) }
 
     Column(Modifier.fillMaxSize()) {
@@ -55,8 +57,10 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 items(requests, key = { it.request.requestId }) { pending ->
                     ExtraTimeRequestCard(
                         pending = pending,
-                        onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
-                        onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
+                        settings = settings,
+                        onResolve = { approved, minutes ->
+                            viewModel.resolveRequest(pending.request.requestId, approved, minutes)
+                        },
                     )
                 }
                 items(asks, key = { it.ask.requestId }) { pending ->

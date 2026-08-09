@@ -238,8 +238,10 @@ fun FamiliesScreen(
                 Box(Modifier.animateItem()) {
                     ExtraTimeRequestCard(
                         pending = pending,
-                        onApprove = { viewModel.resolveRequest(pending.request.requestId, true, pending.request.minutes) },
-                        onDeny = { viewModel.resolveRequest(pending.request.requestId, false, 0) },
+                        settings = settings,
+                        onResolve = { approved, minutes ->
+                            viewModel.resolveRequest(pending.request.requestId, approved, minutes)
+                        },
                     )
                 }
             }

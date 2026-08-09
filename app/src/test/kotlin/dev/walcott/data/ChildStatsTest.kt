@@ -146,6 +146,83 @@ class ChildStatsTest {
         )
     }
 
+    // --- What a pending extra-time request is really asking for (the parent's request card) ---
+
+    private val tiktok = "com.zhiliaoapp.musically"
+    private val today = monday.toLocalDate().toEpochDay()
+    private val nowMs = monday.toInstant(ZoneOffset.UTC).toEpochMilli()
+
+    private fun usage(vararg entries: Pair<String, Long>) =
+        entries.map { dev.walcott.sync.UsageEntry(it.first, it.second * 60) }
+
+    @Test
+    fun `the card reports what that one app has taken today`() {
+        assertEquals(
+            Duration.ofMinutes(80),
+            ChildStats.usedTodayOn(
+                tiktok, usage(tiktok to 80, "com.whatsapp" to 15), today, null, nowMs, monday,
+            ),
+        )
+    }
+
+    @Test
+    fun `an app with no entry has spent nothing, which is zero and not unknown`() {
+        assertEquals(
+            Duration.ZERO,
+            ChildStats.usedTodayOn(tiktok, usage("com.whatsapp" to 15), today, null, nowMs, monday),
+        )
+    }
+
+    @Test
+    fun `an all-apps request is measured against the whole day`() {
+        assertEquals(
+            Duration.ofMinutes(95),
+            ChildStats.usedTodayOn(
+                dev.walcott.rules.ExtraTime.ALL_APPS,
+                usage(tiktok to 80, "com.whatsapp" to 15), today, null, nowMs, monday,
+            ),
+        )
+    }
+
+    @Test
+    fun `yesterday's counters are not today's, so the card says nothing rather than lying`() {
+        assertNull(ChildStats.usedTodayOn(tiktok, usage(tiktok to 80), today - 1, null, nowMs, monday))
+    }
+
+    @Test
+    fun `a child in another timezone is read on their own calendar day`() {
+        // Same instant, and the child is far enough east to already be on the next day: their
+        // counters are stamped with it, and judged against the parent's they would read as stale.
+        val tokyo = 9 * 60
+        val instant = LocalDate.of(2026, 7, 20).atTime(20, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+        val parentNow = LocalDate.of(2026, 7, 20).atTime(20, 0)
+        val childDay = LocalDate.of(2026, 7, 21).toEpochDay()
+        assertEquals(
+            Duration.ofMinutes(80),
+            ChildStats.usedTodayOn(tiktok, usage(tiktok to 80), childDay, tokyo, instant, parentNow),
+        )
+        assertNull(ChildStats.usedTodayOn(tiktok, usage(tiktok to 80), childDay, null, instant, parentNow))
+    }
+
+    @Test
+    fun `the limit quoted beside it is that app's own allowance for today`() {
+        val config = FamilyConfig(
+            version = 1,
+            defaultAppBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)),
+            perAppPolicies = mapOf(
+                tiktok to dev.walcott.rules.AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(45))),
+                "com.spotify.music" to dev.walcott.rules.AppPolicy(unlimited = true),
+            ),
+        )
+        assertEquals(Duration.ofMinutes(45), ChildStats.limitTodayOn(config, tiktok, monday))
+        // Nothing set for it: the family default is the allowance it answers to.
+        assertEquals(Duration.ofMinutes(30), ChildStats.limitTodayOn(config, "com.whatsapp", monday))
+        // Set free of limits: there is no number to quote.
+        assertNull(ChildStats.limitTodayOn(config, "com.spotify.music", monday))
+        // "All apps" is every per-app allowance at once, so no single one is the answer.
+        assertNull(ChildStats.limitTodayOn(config, dev.walcott.rules.ExtraTime.ALL_APPS, monday))
+    }
+
     @Test
     fun `the Friday weekend edge switches the limit the dashboard reports`() {
         val config = config(

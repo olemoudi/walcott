@@ -164,6 +164,9 @@
     <string name="approve">Aprobar</string>
     <string name="deny">Denegar</string>
     <string name="request_summary">%1$s · %2$d min</string>
+    <string name="request_used_today">Ya lleva %1$s hoy</string>
+    <string name="request_used_today_of">Ya lleva %1$s de %2$s hoy</string>
+    <string name="request_grant_minutes">Dar %1$d min</string>
 
     <!-- Sync: tiempo extra remoto -->
     <string name="request_sent">Petición enviada — esperando que un adulto la apruebe</string>

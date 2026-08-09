@@ -163,6 +163,11 @@
             android:name=".sync.PanicDenyReceiver"
             android:exported="false" />
 
+        <!-- Approve/Deny actions on a child's request notification. -->
+        <receiver
+            android:name=".sync.RequestActionReceiver"
+            android:exported="false" />
+
         <!-- "Re-block now" action on the open-install-window reminder. -->
         <receiver
             android:name=".sync.InstallReminderReceiver"

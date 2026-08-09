@@ -67,6 +67,9 @@ class SyncManager(
     private var settingsWatchJob: Job? = null
     /** In-memory mirror of [SyncState.ntfySinceSec] so the transport's sinceProvider never blocks. */
     @Volatile private var sinceCache: Long = 0
+    /** When the live socket was opened, so a socket that never delivered anything can still be
+     *  judged stale (see [reconnectIfChannelStale]). */
+    @Volatile private var connectedAtMs: Long = 0
     /** Wall clock of the last successful publish, so heartbeats can skip redundant ones. */
     @Volatile private var lastPublishAtMs: Long = 0
     /**
@@ -104,11 +107,34 @@ class SyncManager(
     /** Requests from all children that the parent hasn't resolved yet. */
     val pendingRequests: StateFlow<List<PendingRequest>> = syncStore.state.map { s ->
         val resolved = s.resolutions.map { it.requestId }.toSet()
-        s.children.flatMap { child -> child.requests.map { PendingRequest(child.displayName, it) } }
-            .filter { it.request.requestId !in resolved }
+        s.children.flatMap { child ->
+            child.requests.map { request ->
+                PendingRequest(
+                    childName = child.displayName,
+                    request = request,
+                    childId = child.childId,
+                    usage = child.usage,
+                    epochDay = child.epochDay,
+                    tzOffsetMinutes = child.tzOffsetMinutes,
+                )
+            }
+        }.filter { it.request.requestId !in resolved }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    data class PendingRequest(val childName: String, val request: ExtraTimeRequest)
+    /**
+     * A request, plus what the asking child had spent when they sent it. Carried here rather
+     * than looked up at the card: the parent's screens hold requests and snapshots in separate
+     * lists keyed differently, and the answer to "should I say yes" is the usage, so it travels
+     * with the question (see [dev.walcott.data.ChildStats.usedTodayOn]).
+     */
+    data class PendingRequest(
+        val childName: String,
+        val request: ExtraTimeRequest,
+        val childId: String = "",
+        val usage: List<UsageEntry> = emptyList(),
+        val epochDay: Long = 0,
+        val tzOffsetMinutes: Int? = null,
+    )
 
     /** Generic asks (apps, anything) from all children that the parent hasn't resolved yet. */
     val pendingAsks: StateFlow<List<PendingAsk>> = syncStore.state.map { s ->
@@ -168,6 +194,7 @@ class SyncManager(
         transport?.close()
         if (!id.isPaired) return
         sinceCache = maxOf(sinceCache, syncStore.current().ntfySinceSec)
+        connectedAtMs = System.currentTimeMillis()
         transport = NtfyTransport(id.ntfyServer, id.topic, sinceProvider = { sinceCache }).also { t ->
             t.connect { raw, timeSec ->
                 scope.launch {
@@ -203,6 +230,28 @@ class SyncManager(
         // Re-emit heals lost messages from the moment a device is paired — including devices
         // paired during this process's lifetime (pairing used to publish exactly once).
         periodicReEmit()
+    }
+
+    /**
+     * Rebuilds the socket when nothing has arrived over it for too long (see
+     * [ChannelHealth.needsReconnect]). Called from the heartbeat, the one wakeup Doze always
+     * honours.
+     *
+     * The inbound socket is the only way a child hears anything — new rules, granted time, every
+     * remote command, the refusal of an emergency release — and publishing is a separate HTTP
+     * call that keeps working regardless, so a dead socket looks like a perfectly healthy child
+     * from the parent's side. Ping frames make most deaths visible to OkHttp itself; this is the
+     * backstop for the ones that aren't, and it costs one comparison per half-hour.
+     */
+    suspend fun reconnectIfChannelStale() {
+        val id = identityStore.current()
+        if (!id.isPaired || transport == null) return
+        val lastProof = maxOf(syncStore.current().lastChannelOkMs, connectedAtMs)
+        if (!ChannelHealth.needsReconnect(lastProof, System.currentTimeMillis())) return
+        dev.walcott.debug.DebugLog.w(TAG, "no message for ${ChannelHealth.RECONNECT_AFTER_MS / 60_000} min; reconnecting")
+        connect(id)
+        // The new socket replays from the cursor; this says "we are here" to anyone who missed us.
+        runCatching { publishSelf() }
     }
 
     private fun periodicReEmit() {
@@ -486,9 +535,14 @@ class SyncManager(
     ) {
         fun channelProven(nowMs: Long): Boolean = PanicProtocol.channelProven(nowMs - lastChannelOkMs)
 
-        /** Whether the child may start a request right now. */
-        fun canStart(nowMs: Long): Boolean = request == null && parentSupported && channelProven(nowMs) &&
-            PanicProtocol.canStart(blockedUntilSec, serverNowSec)
+        /** Whether the child may start a request right now (the rule itself is in [PanicProtocol]). */
+        fun canStart(nowMs: Long): Boolean = PanicProtocol.mayStart(
+            hasActiveRequest = request != null,
+            parentSupported = parentSupported,
+            msSinceChannelOk = nowMs - lastChannelOkMs,
+            blockedUntilSec = blockedUntilSec,
+            serverNowSec = serverNowSec,
+        )
 
         /** Seconds of lockout left after a refusal (0 = none), for the "try again in…" line. */
         val cooldownRemainingSec: Long get() = (blockedUntilSec - serverNowSec).coerceAtLeast(0)
@@ -582,31 +636,46 @@ class SyncManager(
                 PanicNotifications.notifyProgress(context, PanicProtocol.remainingCheckpoints(next))
                 publishSelf()
             }
-            PanicProtocol.Step.RELEASE -> {
-                // Publish the completed request first: it is the parent's only record that the
-                // device let itself go, and a moment later there is no channel left to say so.
-                syncStore.update {
-                    it.copy(
-                        panic = PanicProtocol.withCheckpoint(request, serverNowSec),
-                        childVersion = it.childVersion + 1,
-                    )
-                }
-                publishSelf()
-                PanicNotifications.notifyReleased(context)
-                dev.walcott.enforcement.PanicRelease.releaseDevice(context)
-            }
+            PanicProtocol.Step.RELEASE -> completeRelease(request, serverNowSec)
             PanicProtocol.Step.EXPIRED -> expirePanic()
         }
+    }
+
+    /**
+     * Banks the last notice and hands the device back. The request is recorded and published
+     * BEFORE the teardown: it is the parent's only record that the device let itself go, and a
+     * moment later there is no channel left to say so. That order is also what makes an
+     * interrupted release recoverable — the banked request reads as [PanicProtocol.earned] on
+     * the next pass, which is a RELEASE however long the interruption lasted.
+     */
+    private suspend fun completeRelease(request: PanicRequest, serverNowSec: Long) {
+        if (!PanicProtocol.earned(request)) {
+            syncStore.update {
+                it.copy(
+                    panic = PanicProtocol.withCheckpoint(request, serverNowSec),
+                    childVersion = it.childVersion + 1,
+                )
+            }
+            runCatching { publishSelf() }
+        }
+        PanicNotifications.notifyReleased(context)
+        dev.walcott.enforcement.PanicRelease.releaseDevice(context)
     }
 
     /**
      * Ends a request whose device went quiet when a notice was due. Also called from the
      * heartbeat: while the channel is down no message arrives to notice it, and a request
      * that survived an offline stretch would be exactly the connectivity gap this must catch.
+     *
+     * A request that already served its full 24 hours is the exception, and it is why this
+     * runs on the heartbeat at all rather than only on incoming messages: an interrupted
+     * release leaves exactly that behind, and the device has no channel to be judged by any
+     * more. Finish it instead of voiding it.
      */
     suspend fun expirePanicIfOffline() = panicMutex.withLock {
         val s = syncStore.current()
-        if (s.panic == null) return@withLock
+        val request = s.panic ?: return@withLock
+        if (PanicProtocol.earned(request)) return@withLock completeRelease(request, s.ntfySinceSec)
         if (!PanicProtocol.expiredOffline(System.currentTimeMillis() - s.lastChannelOkMs)) return@withLock
         expirePanic()
     }
@@ -799,6 +868,38 @@ class SyncManager(
             }
         }
         publishSelf()
+    }
+
+    /**
+     * Answers a request straight from its notification, without opening the app.
+     *
+     * Approving grants exactly what was asked for: the shade has room for two buttons and no
+     * picker, and "some other amount" is a considered answer that belongs on the card
+     * ([dev.walcott.ui.parent.ExtraTimeRequestCard]). This is for the answer a parent already
+     * knows, which is most of them.
+     *
+     * Returns false when there is nothing to answer — the request was resolved in the app, or
+     * belongs to another family. The receiver offers the id to every family this phone holds and
+     * lets the one that owns it act, so a stale notification (or a second tap on the same one)
+     * quietly does nothing instead of granting twice.
+     */
+    suspend fun resolveFromNotification(requestId: String, approved: Boolean): Boolean {
+        val s = syncStore.current()
+        if (s.resolutions.any { it.requestId == requestId }) return false
+        val timeRequest = s.children.flatMap { it.requests }.firstOrNull { it.requestId == requestId }
+        if (timeRequest != null) {
+            resolveRequest(requestId, approved, if (approved) timeRequest.minutes else 0)
+            return true
+        }
+        val ask = s.children.flatMap { it.asks }.firstOrNull { it.requestId == requestId } ?: return false
+        // An approved install ask is more than a resolution: it also pushes the single-app
+        // install window. Same call the card makes, so the two paths can't drift.
+        if (approved && ask.kind == ChildRequest.KIND_INSTALL && ask.pkg.isNotBlank()) {
+            approveInstallAsk(requestId)
+        } else {
+            resolveRequest(requestId, approved, 0)
+        }
+        return true
     }
 
     /** Parent: hide a delivered-but-unfinished op from the home (see SyncState.dismissedOpIds). */
@@ -2092,11 +2193,16 @@ class SyncManager(
             }
         }
 
+        // Answering from the shade skips the app lock, which is the one thing that stops a child
+        // holding the unlocked parent phone from approving their own request. A locked parent app
+        // therefore gets a notification that only opens the app, as before.
+        val quickAnswer = !identityStore.current().appLock
+
         val resolved = before.resolutions.map { it.requestId }.toSet()
         val newlyPending = snapshot.requests.map { it.requestId }.toSet() - prevRequestIds - resolved
         if (newlyPending.isNotEmpty()) {
             val req = snapshot.requests.first { it.requestId in newlyPending }
-            SyncNotifications.notifyRequest(context, who, req.minutes)
+            SyncNotifications.notifyRequest(context, who, req.minutes, req.requestId, quickAnswer)
         }
         for (req in snapshot.requests.filter { it.requestId in newlyPending }) {
             syncStore.update {
@@ -2110,9 +2216,9 @@ class SyncManager(
             // Install requests get their own wording — "asks for something" undersells the
             // one ask the parent can answer entirely from the notification shade's tap.
             if (ask.kind == ChildRequest.KIND_INSTALL) {
-                SyncNotifications.notifyInstallAsk(context, who, ask.text, ask.requestId)
+                SyncNotifications.notifyInstallAsk(context, who, ask.text, ask.requestId, quickAnswer)
             } else {
-                SyncNotifications.notifyAsk(context, who, ask.text, ask.requestId)
+                SyncNotifications.notifyAsk(context, who, ask.text, ask.requestId, quickAnswer)
             }
             syncStore.update { it.plusEvent(event(ParentEvent.TYPE_ASK, snapshot, detail = ask.text)) }
         }

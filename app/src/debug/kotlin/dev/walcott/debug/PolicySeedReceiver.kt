@@ -177,6 +177,20 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     DebugLog.i("WalcottSeed", "restore from $name -> ok=$ok")
                 }
                 if (childApps != null) seedChild(target, childApps, intent)
+                // `--ez child_request_notify true`: also post the request notification the
+                // parent would get over the channel, so its Approve/Deny actions can be driven
+                // on one emulator. The receiver behind them is (rightly) not exported, so the
+                // shade is the only way to fire them as the app itself.
+                if (intent.getBooleanExtra("child_request_notify", false)) {
+                    val request = target.syncStore.current().children.flatMap { it.requests }.lastOrNull()
+                    val child = target.syncStore.current().children.lastOrNull()
+                    if (request != null && child != null) {
+                        dev.walcott.sync.SyncNotifications.notifyRequest(
+                            context, child.displayName, request.minutes, request.requestId,
+                            quickAnswer = !target.identityStore.current().appLock,
+                        )
+                    }
+                }
                 // Optional: back-date the child-side channel-health stamp (--el channel_ok_ago_ms N)
                 // so the "no connection with your family" card can be exercised without cutting
                 // the network and waiting hours.
@@ -309,6 +323,23 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         text = parts.getOrElse(2) { parts.getOrElse(1) { "" } },
                         pkg = if (kind == dev.walcott.sync.ChildRequest.KIND_INSTALL) parts.getOrElse(1) { "" } else "",
                         createdAtEpochMs = System.currentTimeMillis(),
+                    ),
+                )
+            } ?: emptyList(),
+            // `--es child_request "pkg:Label:minutes:reason"`: one pending extra-time request
+            // from this fake child, so the parent's request card — the counter-offer chips and
+            // the "already X today" line — can be driven on a single emulator. Pair it with
+            // `--es child_usage "pkg=SECONDS"` to give that line something to report.
+            requests = intent.getStringExtra("child_request")?.let { spec ->
+                val parts = spec.split(":", limit = 4)
+                listOf(
+                    dev.walcott.sync.ExtraTimeRequest(
+                        requestId = "debug-req-${spec.hashCode()}",
+                        categoryId = parts.getOrElse(0) { dev.walcott.rules.ExtraTime.ALL_APPS },
+                        minutes = parts.getOrElse(2) { "" }.toIntOrNull() ?: 30,
+                        reason = parts.getOrElse(3) { "" },
+                        createdAtEpochMs = System.currentTimeMillis(),
+                        targetLabel = parts.getOrElse(1) { "" },
                     ),
                 )
             } ?: emptyList(),
