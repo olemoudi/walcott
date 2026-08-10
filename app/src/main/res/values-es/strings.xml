@@ -526,6 +526,9 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_40_0">
+        <item>Mientras tienes Walcott abierto vigila la conexión más de cerca, para que una respuesta que estás esperando no se quede atascada por un enlace que se cayó sin avisar. Con la app cerrada vuelve a gastar lo mínimo.</item>
+    </string-array>
     <string-array name="whats_new_0_39_0">
         <item>Walcott gasta bastante menos batería en los dos móviles: despierta la radio unas diez veces menos y deja de rehacer trabajo que ya tenía hecho.</item>
         <item>Un móvil que no consigue ubicación — en interiores o en modo avión — ya no enciende el GPS cada minuto para que le digan lo mismo.</item>

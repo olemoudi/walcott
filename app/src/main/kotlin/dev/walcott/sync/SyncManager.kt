@@ -209,7 +209,16 @@ class SyncManager(
         if (!id.isPaired) return
         sinceCache = maxOf(sinceCache, syncStore.current().ntfySinceSec)
         connectedAtMs = System.currentTimeMillis()
-        transport = NtfyTransport(id.ntfyServer, id.topic, sinceProvider = { sinceCache }).also { t ->
+        transport = NtfyTransport(
+            id.ntfyServer,
+            id.topic,
+            // A short keepalive while someone is watching, a long one the rest of the day
+            // (see Http.activeWebSocketClient). The interval is fixed when the client is
+            // built, so this is read at connect time and a change means a reconnect.
+            client = if (interactive) dev.walcott.net.Http.activeWebSocketClient
+            else dev.walcott.net.Http.webSocketClient,
+            sinceProvider = { sinceCache },
+        ).also { t ->
             t.connect { raw, timeSec ->
                 scope.launch {
                     // Advance the cursor even if handling throws: a single message that always
@@ -244,6 +253,60 @@ class SyncManager(
         // Re-emit heals lost messages from the moment a device is paired — including devices
         // paired during this process's lifetime (pairing used to publish exactly once).
         periodicReEmit()
+    }
+
+    /** Whether someone is currently looking at the app; picks the keepalive (see [connect]). */
+    @Volatile private var interactive = false
+
+    /** The mode last asked for, which a deferred switch applies once the socket has settled. */
+    @Volatile private var desiredInteractive = false
+    private var modeSwitchJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Follows whether the app is in the foreground, so the socket's keepalive matches what is
+     * being asked of it.
+     *
+     * The rebuild is the point as much as the interval is: it replaces a socket that may have
+     * died silently at exactly the moment a person starts waiting on it, and the new one replays
+     * from the `since=` cursor, so nothing is lost.
+     *
+     * A switch on a socket younger than [MODE_SWITCH_MIN_SOCKET_AGE_MS] is DEFERRED rather than
+     * dropped, and that matters in both directions. Dropping it would leave the app on the long
+     * keepalive for a whole session whenever the socket happened to be built moments before the
+     * screen appeared — the ordinary case at start-up — and, worse, leave it on the SHORT one for
+     * ever if the drop happened on the way to the background. Deferring converges either way, and
+     * cancelling any pending switch means someone flicking between apps pays for one reconnect at
+     * the end rather than one per flick.
+     */
+    suspend fun setInteractive(nowInteractive: Boolean) {
+        desiredInteractive = nowInteractive
+        modeSwitchJob?.cancel()
+        val id = identityStore.current()
+        // Nothing to rebuild yet: record it, and the next connect() picks the right client.
+        if (!id.isPaired || transport == null) {
+            interactive = nowInteractive
+            return
+        }
+        if (nowInteractive == interactive) return
+        val settledFor = System.currentTimeMillis() - connectedAtMs
+        if (settledFor >= MODE_SWITCH_MIN_SOCKET_AGE_MS) {
+            applyKeepalive(id, nowInteractive)
+        } else {
+            modeSwitchJob = scope.launch {
+                delay(MODE_SWITCH_MIN_SOCKET_AGE_MS - settledFor)
+                val want = desiredInteractive
+                if (want != interactive) {
+                    runCatching { applyKeepalive(identityStore.current(), want) }
+                        .onFailure { dev.walcott.debug.DebugLog.w(TAG, "deferred keepalive switch failed", it) }
+                }
+            }
+        }
+    }
+
+    private suspend fun applyKeepalive(id: FamilyIdentity, nowInteractive: Boolean) {
+        interactive = nowInteractive
+        dev.walcott.debug.DebugLog.i(TAG, "keepalive now ${if (nowInteractive) "active" else "idle"}")
+        connect(id)
     }
 
     /**
@@ -2475,6 +2538,13 @@ class SyncManager(
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.
         private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
+
+        /**
+         * How settled a socket must be before a foreground/background change is allowed to
+         * replace it. Someone bouncing between Walcott and another app would otherwise pay a
+         * TLS handshake each way, which costs more than the pings the switch is about.
+         */
+        private const val MODE_SWITCH_MIN_SOCKET_AGE_MS = 30_000L
         /** How many app icons a child renders+sends per parent request (the rest trickle next cycle). */
         private const val ICON_RENDER_LIMIT = 8
         /** How often the bounded icon-request window rotates when more icons are missing than fit it. */

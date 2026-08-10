@@ -66,6 +66,7 @@ class WalcottApplication : Application() {
         hub.own
         hub.start()
         observeModeTransitions()
+        observeForeground()
 
         // One-time seeding on the parent (children receive it via sync).
         appScope.launch {
@@ -118,6 +119,47 @@ class WalcottApplication : Application() {
         // pruned here instead — the next process start, once any share has long finished.
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { java.io.File(cacheDir, "backups").deleteRecursively() }
+        }
+    }
+
+    /**
+     * Tells every family's channel whether anyone is looking at the app, which decides how
+     * attentive its keepalive should be (see [dev.walcott.sync.SyncManager.setInteractive]).
+     *
+     * Counted from activity callbacks rather than through `lifecycle-process`: this app has one
+     * activity, so started-minus-stopped is exact, and it is not worth a dependency. Every family
+     * is told, not just this device's own — a parent watching one household's screen is equally
+     * waiting on messages from the others, whose alerts land in the same notification shade.
+     */
+    private fun observeForeground() {
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            private var started = 0
+
+            override fun onActivityStarted(activity: android.app.Activity) {
+                if (started++ == 0) setInteractive(true)
+            }
+
+            override fun onActivityStopped(activity: android.app.Activity) {
+                if (--started <= 0) {
+                    started = 0
+                    setInteractive(false)
+                }
+            }
+
+            override fun onActivityCreated(activity: android.app.Activity, bundle: android.os.Bundle?) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, bundle: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
+    }
+
+    private fun setInteractive(interactive: Boolean) {
+        appScope.launch {
+            hub.allNow().forEach { family ->
+                runCatching { family.syncManager.setInteractive(interactive) }
+                    .onFailure { DebugLog.w(TAG, "keepalive switch failed for ${family.id}", it) }
+            }
         }
     }
 

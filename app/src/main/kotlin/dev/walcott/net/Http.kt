@@ -36,6 +36,29 @@ object Http {
      * heartbeat rebuilds anything this misses ([dev.walcott.sync.ChannelHealth.needsReconnect]).
      */
     val webSocketClient: OkHttpClient by lazy {
-        client.newBuilder().pingInterval(4, TimeUnit.MINUTES).build()
+        client.newBuilder().pingInterval(IDLE_PING_MINUTES, TimeUnit.MINUTES).build()
     }
+
+    /**
+     * The variant used while someone is actually looking at the app.
+     *
+     * The four-minute interval above is tuned for the case that dominates the day: nobody
+     * holding the phone, screen off, radio asleep. It is the wrong trade the moment a person is
+     * waiting on an answer — a child who has just asked for more time and is watching the
+     * screen, a parent who opened the app to approve it. A silently dead socket costs them up to
+     * eight minutes of nothing happening, and neither of them knows to try again.
+     *
+     * While the app is in the foreground that cost is worth avoiding and the saving is not worth
+     * having: the screen is on, so the radio is up regardless, and a ping every forty-five
+     * seconds disappears into what the display is already drawing. Switching between the two
+     * means rebuilding the socket — OkHttp fixes the ping interval when the client is built — so
+     * [dev.walcott.sync.SyncManager] only does it for real transitions, never for app-switching
+     * churn. The rebuild is itself the liveness check the waiting person wanted.
+     */
+    val activeWebSocketClient: OkHttpClient by lazy {
+        client.newBuilder().pingInterval(ACTIVE_PING_SECONDS, TimeUnit.SECONDS).build()
+    }
+
+    private const val IDLE_PING_MINUTES = 4L
+    private const val ACTIVE_PING_SECONDS = 45L
 }
