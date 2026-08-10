@@ -82,6 +82,10 @@ class MainActivity : ComponentActivity() {
                 var dest by remember { mutableStateOf(intent?.getStringExtra(SyncNotifications.EXTRA_DEST)) }
                 LaunchedEffect(newIntentDest) { newIntentDest?.let { dest = it } }
                 WalcottApp(vm, deviceOwner, startDest = dest, onDestConsumed = { dest = null })
+                // Above everything, and outside the per-family key: the app updated itself, and
+                // on a child device that update could not even be declined.
+                val whatsNewStore = remember { dev.walcott.data.WhatsNewStore(applicationContext) }
+                dev.walcott.ui.WhatsNewSheet(whatsNewStore)
             }
         }
     }

@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -65,6 +67,7 @@ fun AppSettingsScreen(
     onAllowInstalls: (durationMs: Long) -> Unit,
     onEndInstallWindow: () -> Unit,
     onOpenDebugLogs: () -> Unit,
+    onOpenDeviceSetup: () -> Unit,
     onChangeMode: () -> Unit,
     onReleased: () -> Unit,
     onBack: () -> Unit,
@@ -97,6 +100,10 @@ fun AppSettingsScreen(
                 // a child device: the PIN is what releases a child's phone.
                 ParentPinCard(viewModel)
                 FamilyBackupCard(viewModel)
+                // Where the family's phones meet. Only worth a parent's attention when it stops
+                // working — which, until now, was invisible.
+                SectionHeader(stringResource(R.string.app_settings_section_connection))
+                RelayServerCard(viewModel)
             }
             SectionHeader(stringResource(R.string.app_settings_section_updates))
             AppUpdateCard(deviceOwner)
@@ -109,6 +116,22 @@ fun AppSettingsScreen(
                 )
             }
             SectionHeader(stringResource(R.string.app_settings_section_device))
+            // The permanent record behind the home-screen nudges — including any that were
+            // hidden, which is what makes offering "Not now" safe at all.
+            val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
+            val pending = deviceSetup.unmet.size
+            NavCard(
+                if (pending > 0) Icons.Outlined.Warning else Icons.Outlined.CheckCircle,
+                stringResource(R.string.nav_device_setup_title),
+                if (pending > 0) {
+                    androidx.compose.ui.res.pluralStringResource(
+                        R.plurals.nav_device_setup_pending, pending, pending,
+                    )
+                } else {
+                    stringResource(R.string.nav_device_setup_ok)
+                },
+                onClick = onOpenDeviceSetup,
+            )
             NavCard(
                 Icons.Outlined.BugReport,
                 stringResource(R.string.nav_debug_title),

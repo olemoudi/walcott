@@ -118,15 +118,14 @@ class RemoteCommandRunner(
      * Nudges the child through the permissions only they can grant. Reports which ones were
      * actually missing so the parent sees "nothing to fix" rather than a silent success.
      */
-    private fun requestPermissions(): Pair<Boolean, String> {
-        val missing = buildList {
-            if (!UsageAccess.granted(context)) add(ChildFixNotifications.FIX_USAGE_ACCESS)
-            if (!LocationSampler(context).networkProviderEnabled()) add(ChildFixNotifications.FIX_NETWORK_LOCATION)
-            if (!LocationPolicy.hasFineLocation(context)) add(ChildFixNotifications.FIX_LOCATION_PERMISSION)
-        }
+    private suspend fun requestPermissions(): Pair<Boolean, String> {
+        // The same list the child's own home screen and its periodic self-check use, so a parent
+        // tapping "Ask to fix" can't be told about a different set of problems than the ones the
+        // child is looking at. It used to check three of them, with its own idea of each.
+        val missing = dev.walcott.setup.DeviceSetup.unmet(dev.walcott.setup.DeviceSetupProbe.read(context))
         if (missing.isEmpty()) return true to "nothing_missing"
         missing.forEach { ChildFixNotifications.notify(context, it) }
-        return true to missing.joinToString(",")
+        return true to missing.joinToString(",") { it.key }
     }
 
     private companion object {

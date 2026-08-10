@@ -80,6 +80,13 @@ object HeartbeatAlarm {
         // re-publish makes the one below redundant rather than the other way round.
         runCatching { app.syncManager.reconnectIfChannelStale() }
             .onFailure { DebugLog.e(TAG, "channel reconnect check failed", it) }
+        // Everything only the person holding this phone can repair — usage access, location, the
+        // accessibility blocker, VPN consent, battery optimisation — re-checked here rather than
+        // trusted from setup: all of it can be taken away the day after, and a parent in another
+        // building can't fix any of it. Runs before the publish so a lapse it spots (the web
+        // filter, say) reaches the parent in the same wakeup.
+        runCatching { ChildHealthCheck.run(context) }
+            .onFailure { DebugLog.e(TAG, "child health check failed", it) }
         // Requests nobody answered, retired before the publish so the snapshot goes out without
         // them (see SyncEngine.REQUEST_TTL_MS — an unanswered one blocks asking again).
         runCatching { app.syncManager.expireStaleRequests() }

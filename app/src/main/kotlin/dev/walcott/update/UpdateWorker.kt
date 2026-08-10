@@ -39,7 +39,7 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
 
         /** One-off immediate check (app launch / boot / manual button). Bypasses the guard. */

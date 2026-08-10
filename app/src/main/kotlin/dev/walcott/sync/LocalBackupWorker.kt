@@ -52,7 +52,7 @@ class LocalBackupWorker(context: Context, params: WorkerParameters) : CoroutineW
                 .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
     }
 }

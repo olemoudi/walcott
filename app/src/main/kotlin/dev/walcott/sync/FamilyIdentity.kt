@@ -46,7 +46,8 @@ data class FamilyIdentity(
     val recoveryCertB64: String = "",
     /** Parent only: nudge notifications when the family backup is missing or stale. */
     val backupReminders: Boolean = true,
-    val ntfyServer: String = "https://ntfy.sh",
+    /** The relay this family's phones talk through (see [RelayServer]); default unless chosen. */
+    val ntfyServer: String = RelayServer.DEFAULT,
     /**
      * PARENT DEVICES ONLY: the parent PIN in the clear, so a parent who forgot it can be
      * reminded instead of having to set a new one — which bumps the policy and has to reach

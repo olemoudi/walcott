@@ -65,7 +65,7 @@ class BackupReminderWorker(context: Context, params: WorkerParameters) : Corouti
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<BackupReminderWorker>(6, TimeUnit.HOURS).build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
     }
 }

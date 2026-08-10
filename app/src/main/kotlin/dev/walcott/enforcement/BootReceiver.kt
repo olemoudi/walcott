@@ -33,11 +33,17 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                if (IdentityStore(context).current().enforcesLocally) {
+                val identity = IdentityStore(context).current()
+                if (identity.enforcesLocally) {
                     runCatching { EnforcementService.start(context) }
                         .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
                     // Alarms don't survive a reboot: re-arm the 30-min check-in chain.
                     runCatching { dev.walcott.sync.HeartbeatAlarm.schedule(context) }
+                }
+                // Same for the parent's catch-up chain, and for the same reason: without this a
+                // parent who reboots their phone silently falls back to WorkManager alone.
+                if (identity.effectiveMode == dev.walcott.sync.DeviceMode.PARENT) {
+                    runCatching { dev.walcott.sync.ParentCheckAlarm.schedule(context) }
                 }
             } finally {
                 pendingResult.finish()

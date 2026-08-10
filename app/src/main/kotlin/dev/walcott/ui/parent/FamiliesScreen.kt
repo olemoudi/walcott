@@ -130,6 +130,8 @@ fun FamiliesScreen(
     val spacing = Tokens.spacing
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    // What this parent's OWN phone still needs switched on (see DeviceSetup).
+    val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
     val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val requests by viewModel.pendingRequests.collectAsStateWithLifecycle()
@@ -280,6 +282,18 @@ fun FamiliesScreen(
                     },
                 )
             }
+        }
+
+        // The parent's own phone silently breaking the app: notifications turned off, or battery
+        // optimisation deferring the catch-up poll. Not a setup step that gets ticked once — both
+        // can be revoked months later — so it re-checks itself on every resume, and dismissing
+        // moves it to Settings → Device setup rather than deleting it (see DeviceSetup).
+        items(deviceSetup.toNag, key = { it.key }) { requirement ->
+            dev.walcott.ui.setup.SetupNudgeCard(
+                requirement = requirement,
+                onFixed = deviceSetup::refreshNow,
+                onDismiss = { deviceSetup.dismiss(requirement) },
+            )
         }
 
         // Onboarding coach: a brand-new family enforces nothing until apps are classified and

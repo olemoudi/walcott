@@ -43,6 +43,24 @@ class WalcottVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
     private lateinit var cm: ConnectivityManager
 
+    /**
+     * Where an allowed query is forwarded, newest network first (see [DnsUpstreams]). Followed
+     * live rather than read per query: reading LinkProperties is a binder call, and this sits in
+     * the path of every DNS lookup the device makes.
+     */
+    @Volatile private var upstreams: List<String> = listOf(DnsUpstreams.FALLBACK)
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onLinkPropertiesChanged(network: android.net.Network, link: android.net.LinkProperties) {
+            adoptUpstreams(link)
+        }
+
+        override fun onLost(network: android.net.Network) {
+            // Keep whatever we had: a query arriving between networks is better served by the
+            // last known resolver than by nothing, and the next onLinkPropertiesChanged fixes it.
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         cm = getSystemService(ConnectivityManager::class.java)
@@ -52,6 +70,21 @@ class WalcottVpnService : VpnService() {
                 blockedDomains = settings.blockedDomains
                 appRules = settings.toDomainAppRules()
             }
+        }
+        // Seed from the current network, then follow it. registerDefaultNetworkCallback reports
+        // the network the device actually uses, which is the one whose resolvers we want.
+        runCatching { cm.getLinkProperties(cm.activeNetwork) }.getOrNull()?.let { adoptUpstreams(it) }
+        runCatching { cm.registerDefaultNetworkCallback(networkCallback) }
+            .onFailure { DebugLog.w(TAG, "could not follow the network's DNS servers", it) }
+    }
+
+    /** Recomputes [upstreams] from a network's resolvers, logging only real changes. */
+    private fun adoptUpstreams(link: android.net.LinkProperties) {
+        val offered = runCatching { link.dnsServers.mapNotNull { it.hostAddress } }.getOrDefault(emptyList())
+        val chosen = DnsUpstreams.choose(offered, exclude = setOf(TUN_ADDR, SENTINEL_DNS))
+        if (chosen != upstreams) {
+            DebugLog.i(TAG, "DNS upstreams: ${chosen.joinToString()}")
+            upstreams = chosen
         }
     }
 
@@ -142,21 +175,36 @@ class WalcottVpnService : VpnService() {
         }
     }
 
-    /** Forwards the raw DNS query to a real upstream and relays the answer back to the tun. */
+    /**
+     * Forwards the raw DNS query to a real upstream and relays the answer back to the tun,
+     * trying each resolver in turn.
+     *
+     * An exhausted list answers SERVFAIL rather than nothing. Silence is the worst possible
+     * reply here: the asking app waits out its own timeout — seconds, on every lookup — and the
+     * child experiences a phone whose internet has mysteriously become slow, with no clue that a
+     * filter is involved. SERVFAIL fails immediately and lets the app say so.
+     */
     private fun forward(packet: ByteArray, dnsStart: Int, srcIp: InetAddress, srcPort: Int, output: FileOutputStream) {
         val query = packet.copyOfRange(dnsStart, packet.size)
-        val answer = runCatching {
-            DatagramSocket().use { socket ->
-                protect(socket)
-                socket.soTimeout = UPSTREAM_TIMEOUT_MS
-                socket.send(DatagramPacket(query, query.size, InetAddress.getByName(UPSTREAM_DNS), 53))
-                val buf = ByteArray(MAX_PACKET)
-                val reply = DatagramPacket(buf, buf.size)
-                socket.receive(reply)
-                buf.copyOf(reply.length)
+        for (upstream in upstreams) {
+            val answer = runCatching {
+                DatagramSocket().use { socket ->
+                    protect(socket)
+                    socket.soTimeout = UPSTREAM_TIMEOUT_MS
+                    socket.send(DatagramPacket(query, query.size, InetAddress.getByName(upstream), 53))
+                    val buf = ByteArray(MAX_PACKET)
+                    val reply = DatagramPacket(buf, buf.size)
+                    socket.receive(reply)
+                    buf.copyOf(reply.length)
+                }
+            }.getOrNull()
+            if (answer != null) {
+                writePacket(output, buildResponse(packet, dnsStart, answer))
+                return
             }
-        }.getOrNull() ?: return
-        writePacket(output, buildResponse(packet, dnsStart, answer))
+        }
+        DebugLog.w(TAG, "no upstream answered (${upstreams.joinToString()}); returning SERVFAIL")
+        writePacket(output, buildResponse(packet, dnsStart, servFail(packet, dnsStart)))
     }
 
     /** Best-effort attribution of the querying app via the socket owner UID. */
@@ -194,6 +242,18 @@ class WalcottVpnService : VpnService() {
         val dns = packet.copyOfRange(dnsStart, packet.size)
         dns[2] = (dns[2].toInt() or 0x80).toByte() // QR = 1
         dns[3] = 0x83.toByte() // RA=1, RCODE=3 (NXDOMAIN)
+        return dns
+    }
+
+    /**
+     * Turns the query bytes into a SERVFAIL response (QR=1, RCODE=2) — "this resolver is
+     * broken", not "this name does not exist". The distinction matters: NXDOMAIN is cached and
+     * would make a passing network problem look like a permanently missing domain.
+     */
+    private fun servFail(packet: ByteArray, dnsStart: Int): ByteArray {
+        val dns = packet.copyOfRange(dnsStart, packet.size)
+        dns[2] = (dns[2].toInt() or 0x80).toByte() // QR = 1
+        dns[3] = 0x82.toByte() // RA=1, RCODE=2 (SERVFAIL)
         return dns
     }
 
@@ -258,6 +318,7 @@ class WalcottVpnService : VpnService() {
 
     override fun onDestroy() {
         stopTunnel()
+        runCatching { cm.unregisterNetworkCallback(networkCallback) }
         scope.cancel()
         super.onDestroy()
     }
@@ -265,8 +326,12 @@ class WalcottVpnService : VpnService() {
     companion object {
         private const val TUN_ADDR = "10.111.222.1"
         private const val SENTINEL_DNS = "10.111.222.2"
-        private const val UPSTREAM_DNS = "1.1.1.1"
-        private const val UPSTREAM_TIMEOUT_MS = 5000
+        /**
+         * Per-resolver timeout. Short on purpose: with up to [DnsUpstreams.MAX_UPSTREAMS] to try,
+         * this bounds a fully dead list at a few seconds rather than the ~15 s that trying three
+         * resolvers at the old single-shot timeout would have cost every lookup.
+         */
+        private const val UPSTREAM_TIMEOUT_MS = 2000
         private const val MAX_PACKET = 32767
         private const val ACTION_STOP = "dev.walcott.net.STOP"
         private const val TAG = "WalcottVpn"

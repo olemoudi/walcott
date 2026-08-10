@@ -134,39 +134,11 @@ fun ChildStatusScreen(
 
     val context = LocalContext.current
 
-    // Without Device Owner nobody force-grants location, so if the child denied (or never got) the
-    // runtime prompt, location check-ins silently stop. Nudge to fix it; re-check on resume so the
-    // card disappears once granted from settings.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var locationGranted by remember { mutableStateOf(LocationPolicy.hasFineLocation(context)) }
-    // Usage access can't be force-granted (it's an AppOp), and without it the enforcement
-    // loop fails closed and suspends the managed apps — so the child needs to see why
-    // everything is locked and exactly where to fix it.
-    var usageAccessOn by remember { mutableStateOf(UsageAccess.granted(context)) }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                locationGranted = LocationPolicy.hasFineLocation(context)
-                usageAccessOn = UsageAccess.granted(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    val showLocationNudge = identity.role == Role.CHILD && !deviceOwner && !locationGranted
-    val locationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            locationGranted = true
-        } else {
-            // Only send to settings once the system won't prompt again (denied for good).
-            val activity = context.findActivity()
-            if (activity != null &&
-                !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.ACCESS_FINE_LOCATION)
-            ) {
-                openAppDetails(context)
-            }
-        }
-    }
+    // Everything this phone needs switched on — usage access, the accessibility blocker, location,
+    // the DNS filter, notifications, battery optimisation — in one place that re-checks itself on
+    // every resume (see DeviceSetup). It replaced two hand-rolled cards here that between them
+    // covered a third of the list.
+    val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { text ->
             scope.launch {
@@ -252,25 +224,18 @@ fun ChildStatusScreen(
                     })
                 }
             }
-            if (!usageAccessOn) {
-                item {
-                    UsageAccessCard(onFix = {
-                        runCatching {
-                            context.startActivity(
-                                android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
-                        }
-                    })
-                }
+            // Whatever this phone still needs, each with the button that opens the exact screen
+            // that grants it. Dismissed ones move to Settings → Device setup rather than vanishing.
+            items(deviceSetup.toNag, key = { it.key }) { requirement ->
+                dev.walcott.ui.setup.SetupNudgeCard(
+                    requirement = requirement,
+                    onFixed = deviceSetup::refreshNow,
+                    onDismiss = { deviceSetup.dismiss(requirement) },
+                )
             }
-            if (showLocationNudge) {
-                item {
-                    LocationPermissionCard(
-                        onFix = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
-                    )
-                }
-            }
+            // The undo: this device's settings screen is behind the parent PIN, so without this
+            // a child who hid a reminder could never bring it back.
+            item { dev.walcott.ui.setup.HiddenSetupReminderRow(deviceSetup) }
             state.bedtimeTonight?.let { window ->
                 if (!state.bedtimeActive) {
                     item { BedtimeTonightRow(window) }
@@ -385,25 +350,6 @@ fun ChildStatusScreen(
 /** A target for an extra-time request: all apps, or one app. */
 private data class RequestTarget(val key: String, val label: String)
 
-/** Unwraps the Activity behind a Compose context, for permission-rationale checks. */
-private fun android.content.Context.findActivity(): android.app.Activity? {
-    var ctx: android.content.Context? = this
-    while (ctx is android.content.ContextWrapper) {
-        if (ctx is android.app.Activity) return ctx
-        ctx = ctx.baseContext
-    }
-    return null
-}
-
-/** Opens this app's system settings page so location can be granted after a runtime denial. */
-private fun openAppDetails(context: android.content.Context) {
-    val intent = android.content.Intent(
-        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-        android.net.Uri.fromParts("package", context.packageName, null),
-    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { context.startActivity(intent) }
-}
-
 /** Honest line when the family channel hasn't worked for hours: "it's the connection, not you". */
 @Composable
 private fun ChannelOfflineCard(sinceMs: Long) {
@@ -471,61 +417,6 @@ private fun ClockWrongCard(onFix: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.clock_wrong_title), style = MaterialTheme.typography.titleMedium, color = color)
                 Text(stringResource(R.string.clock_wrong_desc), style = MaterialTheme.typography.bodySmall, color = color)
-            }
-        }
-    }
-}
-
-/** Heads-up on the child when location permission is missing (non-Device-Owner): check-ins won't run. */
-@Composable
-private fun LocationPermissionCard(onFix: () -> Unit) {
-    val spacing = Tokens.spacing
-    val color = MaterialTheme.colorScheme.error
-    WalcottCard(onClick = onFix, color = color.copy(alpha = 0.12f)) {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.LocationOn,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(28.dp),
-            )
-            Spacer(Modifier.width(spacing.md))
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.location_permission_title), style = MaterialTheme.typography.titleMedium, color = color)
-                Text(
-                    stringResource(R.string.location_permission_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = color,
-                )
-            }
-        }
-    }
-}
-
-/**
- * Heads-up when usage access is off: the enforcement loop is failing closed (apps with
- * limits stay suspended), so this explains the lock and deep-links the exact setting.
- */
-@Composable
-private fun UsageAccessCard(onFix: () -> Unit) {
-    val spacing = Tokens.spacing
-    val color = MaterialTheme.colorScheme.error
-    WalcottCard(onClick = onFix, color = color.copy(alpha = 0.12f)) {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.Lock,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(28.dp),
-            )
-            Spacer(Modifier.width(spacing.md))
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.usage_access_card_title), style = MaterialTheme.typography.titleMedium, color = color)
-                Text(
-                    stringResource(R.string.usage_access_card_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = color,
-                )
             }
         }
     }

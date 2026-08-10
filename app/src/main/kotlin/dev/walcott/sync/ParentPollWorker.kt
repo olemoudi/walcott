@@ -18,24 +18,26 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Parent-side catch-up: the ntfy WebSocket only lives while the app process does, so with the
- * app closed the parent would miss children's requests, tamper alerts and check-ins. This worker
- * polls the topic every ~15 min with the persisted `since=` cursor and replays anything missed
- * through the same apply path as the socket — snapshot-diff notifications fire from there, and
- * every apply is idempotent, so socket/poll overlap is harmless. No-op on non-parent devices.
+ * app closed the parent would miss children's requests, tamper alerts and check-ins. Polls each
+ * family's topic with the persisted `since=` cursor and replays anything missed through the same
+ * apply path as the socket — snapshot-diff notifications fire from there, and every apply is
+ * idempotent, so socket/poll overlap is harmless. No-op on non-parent devices.
+ *
+ * Driven from two places on purpose: [ParentPollWorker] (survives reboots by itself, deferred by
+ * Doze) and [ParentCheckAlarm] (needs re-arming after a reboot, but Doze honours it).
  */
-class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+object ParentPoll {
 
-    override suspend fun doWork(): Result {
-        val context = applicationContext
-        val app = context as? WalcottApplication ?: return Result.success()
-        if (app.identityStore.current().effectiveMode != DeviceMode.PARENT) return Result.success()
+    private const val TAG = "WalcottSync"
 
+    suspend fun pollAll(context: Context) {
+        val app = context.applicationContext as? WalcottApplication ?: return
+        if (app.identityStore.current().effectiveMode != DeviceMode.PARENT) return
         // One poll per family: each has its own topic, cursor and apply path.
         for (family in app.hub.allNow()) {
             runCatching { pollFamily(family) }
                 .onFailure { DebugLog.w(TAG, "poll failed for ${family.id}", it) }
         }
-        return Result.success() // best-effort: the next periodic run retries anyway
     }
 
     private suspend fun pollFamily(family: dev.walcott.FamilyScope) {
@@ -69,9 +71,17 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
         }
         if (applied > 0) DebugLog.i(TAG, "poll applied $applied message(s) to ${family.id}")
     }
+}
+
+/** The WorkManager half of [ParentPoll]: survives reboots on its own, but Doze defers it. */
+class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        ParentPoll.pollAll(applicationContext)
+        return Result.success() // best-effort: the next periodic run retries anyway
+    }
 
     companion object {
-        private const val TAG = "WalcottSync"
         private const val PERIODIC = "walcott-parent-poll"
 
         /** Idempotent ~15-min poll; only runs with a network connection. */
@@ -80,7 +90,10 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+                // UPDATE, not KEEP: with KEEP a release that changes the period or the
+                // constraints never reaches the installs that already have this scheduled, which
+                // is every install. The cadence would be frozen at whatever first shipped.
+                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
     }
 }

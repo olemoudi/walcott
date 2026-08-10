@@ -453,8 +453,6 @@
     <string name="enforcement_accessibility_child">Protección básica por Accesibilidad. Para protección completa, configura Walcott como Device Owner.</string>
     <string name="enforcement_off_title">%1$s sin protección</string>
     <string name="enforcement_off_text">El bloqueo no está activo en ese dispositivo.</string>
-    <string name="location_permission_title">Activa la ubicación</string>
-    <string name="location_permission_desc">La ubicación está desactivada, así que este dispositivo no aparece en el mapa. Toca para permitirla.</string>
     <string name="wrong_pin_title">PIN incorrecto en %1$s</string>
     <plurals name="wrong_pin_text">
         <item quantity="one">%1$d intento de desbloqueo fallido hasta ahora.</item>
@@ -476,7 +474,67 @@
     <!-- Check-in / falta de señal -->
     <string name="child_resting_line">Última señal hace %1$s — normal si el móvil está en reposo</string>
     <string name="child_stale_line">Sin señal desde hace %1$s — comprueba que Walcott siga activo en el móvil</string>
-    <string name="stale_channel_name">Alertas de protección</string>
+    <string name="urgent_channel_name">Alertas de protección</string>
+    <string name="status_channel_name">Novedades de estado</string>
+    <!-- El propio móvil del padre estorbando (se revisa siempre, no es un paso de setup) -->
+    <string name="parent_check_notifications_title">Las notificaciones están desactivadas</string>
+    <string name="parent_check_notifications_text">Walcott no puede avisarte de nada: ni de una petición de más tiempo, ni de una alerta de manipulación, ni de un hijo pidiendo que le liberen el móvil.</string>
+    <string name="parent_check_battery_title">El sistema está durmiendo a Walcott</string>
+    <string name="parent_check_battery_text">La optimización de batería retrasa lo que tardan en llegarte los mensajes de tus hijos con la app cerrada — horas, por la noche.</string>
+    <string name="parent_check_open_settings">Abrir ajustes</string>
+    <!-- Configuración del dispositivo: lo que este móvil necesita activado -->
+    <string name="req_notifications_title">Activa las notificaciones</string>
+    <string name="req_notifications_body">Sin ellas Walcott no puede avisarte de nada — ni de una petición de más tiempo, ni de una alerta, ni siquiera de que hay algo más aquí que arreglar.</string>
+    <string name="req_usage_access_title">Activa el acceso de uso</string>
+    <string name="req_usage_access_body">El tiempo de pantalla no se está contando, así que los límites diarios nunca se agotan. Walcott bloquea las apps limitadas hasta que vuelva.</string>
+    <string name="req_accessibility_title">Activa el servicio de accesibilidad de Walcott</string>
+    <string name="req_accessibility_body">Ahora mismo no se está bloqueando nada en este móvil. Sin Device Owner, esto es lo único que aplica las reglas.</string>
+    <string name="req_web_filter_title">Vuelve a activar el filtro web</string>
+    <string name="req_web_filter_body">Las webs bloqueadas se están cargando con normalidad. Puede que otra app de VPN haya tomado el control — solo puede haber una a la vez.</string>
+    <string name="req_location_permission_title">Permite la ubicación</string>
+    <string name="req_location_permission_body">Tu familia pidió poder encontrar este móvil, y ahora mismo no se puede localizar.</string>
+    <string name="req_location_service_title">Activa la ubicación</string>
+    <string name="req_location_service_body">La ubicación está apagada para todo el móvil, así que este dispositivo no se puede encontrar.</string>
+    <string name="req_battery_title">Deja que Walcott funcione en segundo plano</string>
+    <string name="req_battery_body">La optimización de batería retrasa los check-in horas con la app cerrada — de noche, eso son mensajes que nadie ve hasta la mañana.</string>
+    <string name="setup_action_turn_on">Activar</string>
+    <string name="setup_action_not_now">Ahora no</string>
+    <string name="setup_dismiss_title">¿Ocultar este recordatorio?</string>
+    <string name="setup_dismiss_consequence">Esto no se va a arreglar solo. Mientras siga desactivado:</string>
+    <string name="setup_dismiss_keep">Seguir recordándomelo</string>
+    <string name="setup_dismiss_continue">Ocultar igualmente</string>
+    <string name="setup_dismiss_confirm_title">Una cosa más</string>
+    <string name="setup_dismiss_where">Se queda en Ajustes → Configuración del dispositivo, donde puedes activarlo cuando quieras. Walcott no lo traerá de vuelta aquí salvo que empiece a funcionar y vuelva a romperse.</string>
+    <string name="setup_dismiss_hide">Lo entiendo, ocultar</string>
+    <plurals name="setup_hidden_count">
+        <item quantity="one">%d recordatorio oculto</item>
+        <item quantity="other">%d recordatorios ocultos</item>
+    </plurals>
+    <string name="setup_hidden_show">Mostrar</string>
+    <string name="device_setup_title">Configuración del dispositivo</string>
+    <string name="device_setup_intro">Esto hay que activarlo para que Walcott funcione bien en este móvil.</string>
+    <string name="device_setup_all_good">Todo está configurado</string>
+    <string name="device_setup_all_good_body">Este móvil tiene todo lo que Walcott necesita.</string>
+    <string name="device_setup_hidden_label">Oculto en la pantalla de inicio</string>
+    <string name="device_setup_restore">Volver a mostrarlo en la pantalla de inicio</string>
+    <string name="nav_device_setup_title">Configuración del dispositivo</string>
+    <string name="nav_device_setup_ok">Este móvil tiene activado todo lo que necesita</string>
+    <plurals name="nav_device_setup_pending">
+        <item quantity="one">Falta %d cosa por activar</item>
+        <item quantity="other">Faltan %d cosas por activar</item>
+    </plurals>
+    <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
+    <string name="whats_new_title">Novedades</string>
+    <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_38_0">
+        <item>Tu móvil ahora comprueba los mensajes de tus hijos incluso mientras duerme, así que una petición o un aviso ya no puede quedarse horas sin leer por la noche.</item>
+        <item>El filtro web ahora te avisa cuando no está funcionando de verdad — que otra app de VPN tomara el control parecía que todo iba bien.</item>
+        <item>Las webs bloqueadas se filtran usando el DNS de tu propia red, así que Walcott ya no rompe la navegación en redes que bloquean los DNS públicos.</item>
+        <item>Los móviles de los hijos detectan por sí solos los permisos revocados y explican cómo arreglarlos, en vez de esperar a que se lo pidan.</item>
+        <item>Los dos móviles comprueban ahora todo lo que Walcott necesita activado — y el botón de cada aviso abre la pantalla de ajustes exacta que lo concede. Lo que ocultes se queda en Ajustes → Configuración del dispositivo.</item>
+        <item>Los avisos se han separado en dos tipos, para que puedas silenciar «batería baja» sin silenciar «han cambiado el reloj».</item>
+        <item>Puedes apuntar Walcott a tu propio servidor de enlace si el predeterminado empieza a rechazar tus mensajes.</item>
+    </string-array>
     <string name="stale_alert_title">El móvil de %1$s podría estar sin protección</string>
     <string name="stale_alert_text">Walcott no da señales desde hace %1$s</string>
 
@@ -546,12 +604,6 @@
 
     <!-- Arreglos guiados que se muestran en el móvil del hijo -->
     <string name="fix_channel_name">Falta configurar algo</string>
-    <string name="fix_usage_access_title">Walcott necesita acceso de uso</string>
-    <string name="fix_usage_access_text">El tiempo de pantalla no se está contando. Toca aquí, busca Walcott en la lista y actívalo.</string>
-    <string name="fix_network_location_title">Activa la precisión de ubicación</string>
-    <string name="fix_network_location_text">Ahora mismo la ubicación no funciona en interiores. Toca aquí y activa la ubicación por Wi-Fi/red.</string>
-    <string name="fix_location_permission_title">Walcott necesita permiso de ubicación</string>
-    <string name="fix_location_permission_text">Toca aquí, abre Permisos y permite la Ubicación.</string>
 
     <!-- Historial de ubicación + línea de tiempo del mapa -->
     <string name="location_history_title">Historial de ubicación</string>
@@ -565,8 +617,6 @@
     <string name="map_recenter">Recentrar</string>
 
     <!-- Fail-closed de acceso de uso (home del hijo) -->
-    <string name="usage_access_card_title">Apps bloqueadas: falta el acceso de uso</string>
-    <string name="usage_access_card_desc">Walcott no puede contar el tiempo de pantalla, así que las apps con límite quedan bloqueadas. Toca aquí, busca Walcott y activa el acceso de uso.</string>
 
     <!-- QoL de familia: renombrar, quitar dispositivos, ajustes de la app, localización de familia, overrides por hijo -->
     <string name="action_edit">Editar</string>
@@ -578,6 +628,17 @@
     <string name="app_settings_section_appearance">Apariencia</string>
     <string name="app_settings_section_security">Acceso y copia de seguridad</string>
     <string name="app_settings_section_updates">Actualizaciones</string>
+    <!-- El relé por el que se hablan los móviles de la familia -->
+    <string name="app_settings_section_connection">Conexión</string>
+    <string name="relay_title">Servidor de enlace</string>
+    <string name="relay_desc">Tus móviles intercambian mensajes cifrados a través de este servidor. Él no puede leerlos.</string>
+    <string name="relay_dialog_help">Deja el predeterminado salvo que deje de funcionarte. Puedes apuntar Walcott a cualquier servidor ntfy, incluido uno tuyo.</string>
+    <string name="relay_field_label">Dirección del servidor</string>
+    <string name="relay_use_default">Usar el servidor predeterminado</string>
+    <string name="relay_error_invalid">Eso no parece la dirección de un servidor. Usa algo como ntfy.ejemplo.com.</string>
+    <string name="relay_error_locked">El servidor solo se puede cambiar antes de configurar el primer móvil de un hijo — un móvil ya emparejado se quedaría escuchando al anterior.</string>
+    <string name="relay_failing">Ahora mismo los mensajes no están llegando a este servidor.</string>
+    <string name="relay_rate_limited">Este servidor está rechazando tus mensajes por enviar demasiados. Un servidor propio no tiene ese límite.</string>
     <string name="app_settings_section_device">Este dispositivo</string>
     <string name="theme_title">Tema</string>
     <string name="theme_system">Sistema</string>
@@ -695,6 +756,21 @@
         <item quantity="one">Auto-test fallido: %d app que debería estar bloqueada no lo estaba realmente en el dispositivo. Walcott reaplica el bloqueo en cada check-in.</item>
         <item quantity="other">Auto-test fallido: %d apps que deberían estar bloqueadas no lo estaban realmente en el dispositivo. Walcott reaplica el bloqueo en cada check-in.</item>
     </plurals>
+    <!-- Filtro web activo / caído (el túnel puede ser rechazado, revocado o robado) -->
+    <string name="web_filter_down_title">%1$s: el filtro web no está funcionando</string>
+    <string name="web_filter_down_text">Las webs bloqueadas se están cargando con normalidad. Puede que otra app de VPN haya tomado el control, o que se le haya retirado el permiso al filtro.</string>
+    <string name="web_filter_down_child">El filtro web está desactivado en este dispositivo. Abre Walcott para volver a activarlo — puede que otra app de VPN haya ocupado su lugar.</string>
+    <string name="event_web_filter_back">%1$s: el filtro web vuelve a funcionar</string>
+    <!-- La app del hijo murió por una excepción no capturada -->
+    <string name="child_crashed_title">%1$s: Walcott se ha cerrado solo</string>
+    <plurals name="child_crashed_text">
+        <item quantity="one">La app se cerró inesperadamente una vez desde el último check-in. La protección se reinicia sola, pero conviene mirarlo.</item>
+        <item quantity="other">La app se cerró inesperadamente %d veces desde el último check-in. La protección se reinicia sola, pero conviene mirarlo.</item>
+    </plurals>
+    <plurals name="event_child_crashed">
+        <item quantity="one">Walcott se cerró solo en el móvil de %1$s</item>
+        <item quantity="other">Walcott se cerró solo %2$d veces en el móvil de %1$s</item>
+    </plurals>
     <!-- Detección de reloj manipulado -->
     <string name="clock_tamper_title">El reloj de %1$s parece cambiado</string>
     <string name="clock_tamper_text">El reloj del dispositivo va %1$s — puede que lo hayan cambiado para saltarse los límites</string>
@@ -733,6 +809,7 @@
     <string name="diag_location_permission">Permiso de ubicación</string>
     <string name="diag_gps">GPS</string>
     <string name="diag_network_location">Ubicación por Wi-Fi/red</string>
+    <string name="diag_web_filter">Filtro web</string>
     <string name="diag_battery">Batería</string>
     <string name="diag_battery_value">%1$d%%</string>
     <string name="diag_battery_charging">%1$d%% (cargando)</string>

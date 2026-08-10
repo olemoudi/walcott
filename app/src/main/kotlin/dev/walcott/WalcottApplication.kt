@@ -52,6 +52,7 @@ class WalcottApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         DebugLog.init(this)
+        dev.walcott.debug.CrashCounter.init(this)
         installCrashLogger()
         themeStore = ThemeStore(this)
         hub = FamilyHub(
@@ -91,9 +92,16 @@ class WalcottApplication : Application() {
         // Child-side watchdog: keep enforcement alive and re-assert Device Owner policies.
         WatchdogWorker.schedule(this)
 
-        // Child-side ~30-min check-in that Doze can't defer for hours (see HeartbeatAlarm).
+        // Child-side ~30-min check-in that Doze can't defer for hours (see HeartbeatAlarm), and
+        // the parent's mirror image of it: the catch-up poll that fetches a child's request or an
+        // emergency-release notice while the app is closed had only WorkManager behind it, which
+        // Doze defers for exactly as long as the parent's phone is resting.
         appScope.launch {
-            if (identityStore.current().enforcesLocally) dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
+            val id = identityStore.current()
+            if (id.enforcesLocally) dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
+            if (id.effectiveMode == dev.walcott.sync.DeviceMode.PARENT) {
+                dev.walcott.sync.ParentCheckAlarm.schedule(this@WalcottApplication)
+            }
         }
 
         // A release that stopped halfway leaves a device nobody manages but that is still owned

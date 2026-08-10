@@ -65,7 +65,8 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_PANIC_REQUEST, ParentEvent.TYPE_PANIC_RELEASED, ParentEvent.TYPE_PANIC_DENIED,
     ParentEvent.TYPE_PANIC_CANCELLED, ParentEvent.TYPE_DOMAINS, ParentEvent.TYPE_INSTALL_WINDOW,
     ParentEvent.TYPE_WRONG_APP, ParentEvent.TYPE_APP_TIME_OUT, ParentEvent.TYPE_BEDTIME,
-    ParentEvent.TYPE_SCREEN_FREE,
+    ParentEvent.TYPE_SCREEN_FREE, ParentEvent.TYPE_WEB_FILTER_DOWN, ParentEvent.TYPE_WEB_FILTER_BACK,
+    ParentEvent.TYPE_CHILD_CRASHED,
 )
 
 @Composable
@@ -164,6 +165,9 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_APP_TIME_OUT -> Icons.Outlined.Timer to neutral
         ParentEvent.TYPE_BEDTIME -> Icons.Outlined.Bedtime to neutral
         ParentEvent.TYPE_SCREEN_FREE -> Icons.Outlined.Schedule to neutral
+        ParentEvent.TYPE_WEB_FILTER_DOWN -> Icons.Outlined.Language to error
+        ParentEvent.TYPE_WEB_FILTER_BACK -> Icons.Filled.CheckCircle to good
+        ParentEvent.TYPE_CHILD_CRASHED -> Icons.Filled.Warning to warn
         else -> Icons.Outlined.Build to neutral
     }
 }
@@ -184,6 +188,10 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
         SyncNotifications.formatSkew(LocalContext.current, event.detail.toLongOrNull() ?: 0L),
     )
     ParentEvent.TYPE_INDOOR_LOCATION_OFF -> stringResource(R.string.net_location_off_title, name)
+    ParentEvent.TYPE_WEB_FILTER_DOWN -> stringResource(R.string.web_filter_down_title, name)
+    ParentEvent.TYPE_WEB_FILTER_BACK -> stringResource(R.string.event_web_filter_back, name)
+    ParentEvent.TYPE_CHILD_CRASHED ->
+        pluralStringResource(R.plurals.event_child_crashed, event.count, name, event.count)
     ParentEvent.TYPE_NEW_APP ->
         if (event.count > 0) {
             stringResource(R.string.event_new_app_more, name, event.detail, event.count)

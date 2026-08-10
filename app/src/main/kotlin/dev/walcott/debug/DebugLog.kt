@@ -97,9 +97,14 @@ object DebugLog {
      */
     fun crash(tag: String, message: String, t: Throwable) {
         Log.e(tag, message, t)
-        val entry = LogEntry(System.currentTimeMillis(), 'E', tag, "$message\n${Log.getStackTraceString(t)}")
+        val now = System.currentTimeMillis()
+        val entry = LogEntry(now, 'E', tag, "$message\n${Log.getStackTraceString(t)}")
         mutable.value = LogFormat.cap(mutable.value, entry, MAX_ENTRIES)
         file?.let { f -> runCatching { appendCapped(f, entry) } }
+        // A counter as well as a log line: the log is a 128 KB ring, so a device crashing in a
+        // loop overwrites the evidence of the first one, and the parent only ever sees the tail
+        // if they ask for a DIAGNOSE. The tally is what reaches them on the next heartbeat.
+        runCatching { CrashCounter.record(now) }
     }
 
     /** Whole buffer as text, for copy/share. */

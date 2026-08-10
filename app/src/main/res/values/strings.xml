@@ -454,8 +454,6 @@
     <string name="enforcement_accessibility_child">Basic protection via Accessibility. For full protection, set Walcott as Device Owner.</string>
     <string name="enforcement_off_title">%1$s is unprotected</string>
     <string name="enforcement_off_text">Blocking is not active on this device.</string>
-    <string name="location_permission_title">Turn on location</string>
-    <string name="location_permission_desc">Location is off, so this device can\'t be found on the map. Tap to allow it.</string>
     <string name="wrong_pin_title">Wrong PIN on %1$s</string>
     <plurals name="wrong_pin_text">
         <item quantity="one">%1$d failed unlock attempt so far.</item>
@@ -477,7 +475,67 @@
     <!-- Check-in staleness -->
     <string name="child_resting_line">Last signal %1$s ago — normal while the phone is resting</string>
     <string name="child_stale_line">No signal for %1$s — check that Walcott is still running on the device</string>
-    <string name="stale_channel_name">Protection alerts</string>
+    <string name="urgent_channel_name">Protection alerts</string>
+    <string name="status_channel_name">Status updates</string>
+    <!-- The parent's own phone getting in the way (re-checked, not a one-off setup step) -->
+    <string name="parent_check_notifications_title">Notifications are turned off</string>
+    <string name="parent_check_notifications_text">Walcott can\'t tell you anything: not a request for more time, not a tamper alert, not a child asking to be released.</string>
+    <string name="parent_check_battery_title">Walcott is being put to sleep</string>
+    <string name="parent_check_battery_text">Battery optimisation delays how quickly your children\'s messages reach you while the app is closed — by hours, overnight.</string>
+    <string name="parent_check_open_settings">Open settings</string>
+    <!-- Device setup: what this phone needs switched on, nagged on the home and listed in settings -->
+    <string name="req_notifications_title">Turn on notifications</string>
+    <string name="req_notifications_body">Walcott can\'t tell you anything without them — not a request for more time, not an alert, not even that something else here needs fixing.</string>
+    <string name="req_usage_access_title">Turn on usage access</string>
+    <string name="req_usage_access_body">Screen time isn\'t being counted, so daily limits never run down. Walcott blocks the limited apps until this comes back.</string>
+    <string name="req_accessibility_title">Turn on Walcott\'s accessibility service</string>
+    <string name="req_accessibility_body">Nothing on this phone is being blocked right now. Without Device Owner, this is the only thing that applies the rules.</string>
+    <string name="req_web_filter_title">Turn web filtering back on</string>
+    <string name="req_web_filter_body">The blocked sites are loading normally. Another VPN app may have taken over — only one can run at a time.</string>
+    <string name="req_location_permission_title">Allow location</string>
+    <string name="req_location_permission_body">Your family asked to be able to find this phone, and right now it can\'t be located.</string>
+    <string name="req_location_service_title">Turn on location</string>
+    <string name="req_location_service_body">Location is switched off for the whole phone, so this device can\'t be found.</string>
+    <string name="req_battery_title">Let Walcott run in the background</string>
+    <string name="req_battery_body">Battery optimisation delays check-ins by hours while the app is closed — overnight, that means messages nobody sees until morning.</string>
+    <string name="setup_action_turn_on">Turn on</string>
+    <string name="setup_action_not_now">Not now</string>
+    <string name="setup_dismiss_title">Hide this reminder?</string>
+    <string name="setup_dismiss_consequence">This won\'t fix itself. While it stays off:</string>
+    <string name="setup_dismiss_keep">Keep reminding me</string>
+    <string name="setup_dismiss_continue">Hide anyway</string>
+    <string name="setup_dismiss_confirm_title">One more thing</string>
+    <string name="setup_dismiss_where">It stays in Settings → Device setup, where you can turn it on at any time. Walcott won\'t bring it back here unless it starts working and then breaks again.</string>
+    <string name="setup_dismiss_hide">I understand, hide it</string>
+    <plurals name="setup_hidden_count">
+        <item quantity="one">%d reminder hidden</item>
+        <item quantity="other">%d reminders hidden</item>
+    </plurals>
+    <string name="setup_hidden_show">Show</string>
+    <string name="device_setup_title">Device setup</string>
+    <string name="device_setup_intro">These need switching on for Walcott to work properly on this phone.</string>
+    <string name="device_setup_all_good">Everything is set up</string>
+    <string name="device_setup_all_good_body">This phone has everything Walcott needs.</string>
+    <string name="device_setup_hidden_label">Hidden from the home screen</string>
+    <string name="device_setup_restore">Show this on the home screen again</string>
+    <string name="nav_device_setup_title">Device setup</string>
+    <string name="nav_device_setup_ok">Everything this phone needs is switched on</string>
+    <plurals name="nav_device_setup_pending">
+        <item quantity="one">%d thing needs switching on</item>
+        <item quantity="other">%d things need switching on</item>
+    </plurals>
+    <!-- What changed, shown once after the app updates itself -->
+    <string name="whats_new_title">What\'s new</string>
+    <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_38_0">
+        <item>Your phone now checks for your children\'s messages even while it\'s asleep, so a request or an alert can\'t sit unread for hours overnight.</item>
+        <item>Web filtering now tells you when it isn\'t actually running — another VPN app taking over used to look like everything was fine.</item>
+        <item>Blocked sites are filtered using your own network\'s DNS, so Walcott no longer breaks browsing on networks that block public resolvers.</item>
+        <item>Children\'s phones now spot revoked permissions by themselves and say how to fix them, instead of waiting to be asked.</item>
+        <item>Both phones now check everything Walcott needs switched on — and each reminder\'s button opens the exact settings screen that grants it. Anything you hide stays in Settings → Device setup.</item>
+        <item>Alerts are split into two kinds, so you can silence "battery low" without silencing "the clock was changed".</item>
+        <item>You can point Walcott at your own relay server if the default one starts refusing your messages.</item>
+    </string-array>
     <string name="stale_alert_title">%1$s\'s phone may be unprotected</string>
     <string name="stale_alert_text">Walcott hasn\'t checked in for %1$s</string>
 
@@ -547,12 +605,6 @@
 
     <!-- Guided fixes shown on the child device -->
     <string name="fix_channel_name">Setup needed</string>
-    <string name="fix_usage_access_title">Walcott needs usage access</string>
-    <string name="fix_usage_access_text">Screen time isn\'t being counted. Tap here, find Walcott in the list and turn it on.</string>
-    <string name="fix_network_location_title">Turn on location accuracy</string>
-    <string name="fix_network_location_text">Location doesn\'t work indoors right now. Tap here and turn on Wi-Fi/network location.</string>
-    <string name="fix_location_permission_title">Walcott needs location permission</string>
-    <string name="fix_location_permission_text">Tap here, open Permissions and allow Location.</string>
 
     <!-- Location history + map timeline -->
     <string name="location_history_title">Location history</string>
@@ -566,8 +618,6 @@
     <string name="map_recenter">Re-centre</string>
 
     <!-- Usage access fail-closed (child home) -->
-    <string name="usage_access_card_title">Apps locked: usage access is off</string>
-    <string name="usage_access_card_desc">Walcott can\'t count screen time, so apps with limits stay locked. Tap here, find Walcott and turn usage access on.</string>
 
     <!-- Family QoL: rename, legacy device removal, app settings, family location, per-child overrides -->
     <string name="action_edit">Edit</string>
@@ -579,6 +629,17 @@
     <string name="app_settings_section_appearance">Appearance</string>
     <string name="app_settings_section_security">Access and backup</string>
     <string name="app_settings_section_updates">Updates</string>
+    <!-- The relay the family's phones talk through -->
+    <string name="app_settings_section_connection">Connection</string>
+    <string name="relay_title">Relay server</string>
+    <string name="relay_desc">Your phones exchange encrypted messages through this server. It can\'t read them.</string>
+    <string name="relay_dialog_help">Leave the default unless it stops working for you. You can point Walcott at any ntfy server, including one you run yourself.</string>
+    <string name="relay_field_label">Server address</string>
+    <string name="relay_use_default">Use the default server</string>
+    <string name="relay_error_invalid">That doesn\'t look like a server address. Use something like ntfy.example.com.</string>
+    <string name="relay_error_locked">The server can only be changed before the first child phone is set up — a paired phone would be left listening to the old one.</string>
+    <string name="relay_failing">Messages aren\'t getting through to this server right now.</string>
+    <string name="relay_rate_limited">This server is refusing your messages for sending too many. A server of your own has no such limit.</string>
     <string name="app_settings_section_device">This device</string>
     <string name="theme_title">Theme</string>
     <string name="theme_system">System</string>
@@ -696,6 +757,21 @@
         <item quantity="one">Self-test failed: %d app that should be blocked was not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
         <item quantity="other">Self-test failed: %d apps that should be blocked were not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
     </plurals>
+    <!-- Web filter running / not running (the tunnel can be refused, revoked or taken over) -->
+    <string name="web_filter_down_title">%1$s: web filtering isn\'t running</string>
+    <string name="web_filter_down_text">The blocked sites are loading normally. Another VPN app may have taken over, or the filter\'s permission was withdrawn.</string>
+    <string name="web_filter_down_child">Web filtering is switched off on this device. Open Walcott to turn it back on — another VPN app may have taken its place.</string>
+    <string name="event_web_filter_back">%1$s: web filtering is running again</string>
+    <!-- The child app died of an uncaught exception -->
+    <string name="child_crashed_title">%1$s: Walcott crashed</string>
+    <plurals name="child_crashed_text">
+        <item quantity="one">The app closed unexpectedly once since the last check-in. Protection restarts itself, but it\'s worth a look.</item>
+        <item quantity="other">The app closed unexpectedly %d times since the last check-in. Protection restarts itself, but it\'s worth a look.</item>
+    </plurals>
+    <plurals name="event_child_crashed">
+        <item quantity="one">Walcott crashed on %1$s\'s phone</item>
+        <item quantity="other">Walcott crashed %2$d times on %1$s\'s phone</item>
+    </plurals>
     <!-- Clock-tamper detection -->
     <string name="clock_tamper_title">%1$s\'s clock looks changed</string>
     <string name="clock_tamper_text">The device clock is %1$s — it may have been changed to dodge time limits</string>
@@ -734,6 +810,7 @@
     <string name="diag_location_permission">Location permission</string>
     <string name="diag_gps">GPS</string>
     <string name="diag_network_location">Wi-Fi/network location</string>
+    <string name="diag_web_filter">Web filtering</string>
     <string name="diag_battery">Battery</string>
     <string name="diag_battery_value">%1$d%%</string>
     <string name="diag_battery_charging">%1$d%% (charging)</string>

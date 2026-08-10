@@ -121,7 +121,7 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<StaleChildWorker>(1, TimeUnit.HOURS).build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
     }
 }

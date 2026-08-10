@@ -14,6 +14,8 @@ class FamilyHealthTest {
         gaps: List<String> = emptyList(),
         skewMs: Long = 0,
         panic: PanicRequest? = null,
+        webFilterExpected: Boolean = false,
+        webFilterOn: Boolean = true,
     ) = ChildSnapshot(
         deviceId = deviceId,
         displayName = deviceId,
@@ -24,6 +26,8 @@ class FamilyHealthTest {
         enforcementGaps = gaps,
         clockSkewMs = skewMs,
         panic = panic,
+        webFilterExpected = webFilterExpected,
+        webFilterOn = webFilterOn,
     )
 
     @Test
@@ -41,6 +45,25 @@ class FamilyHealthTest {
         assertEquals(1, FamilyHealth.alerts(listOf(child("c", gaps = listOf("com.x"))), seen, now))
         assertEquals(1, FamilyHealth.alerts(listOf(child("d", skewMs = -6 * 60 * 60 * 1000L)), seen, now))
         assertEquals(1, FamilyHealth.alerts(listOf(child("e", panic = PanicRequest("p", 0, 0))), seen, now))
+        assertEquals(
+            1,
+            FamilyHealth.alerts(
+                listOf(child("a", webFilterExpected = true, webFilterOn = false)), seen, now,
+            ),
+        )
+    }
+
+    @Test
+    fun `a web filter is only down when the rules asked for one`() {
+        // No filter configured: there is no tunnel to miss, however the flag reads.
+        assertEquals(false, FamilyHealth.webFilterDown(child("a", webFilterOn = false)))
+        // A legacy child reports neither half, and must never look broken.
+        assertEquals(false, FamilyHealth.webFilterDown(child("a")))
+        assertEquals(false, FamilyHealth.webFilterDown(child("a", webFilterExpected = true)))
+        assertEquals(
+            true,
+            FamilyHealth.webFilterDown(child("a", webFilterExpected = true, webFilterOn = false)),
+        )
     }
 
     @Test

@@ -67,7 +67,7 @@ private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY_CHOOSER, SETUP_PRESETS, SETUP_WIZARD, FAMILY,
     CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
-    APP_SETTINGS, DEBUG_LOGS, PANIC, ACTIVITY, CHILD_HEALTH, DOMAIN_MONITOR, DOMAIN_REVIEW,
+    APP_SETTINGS, DEBUG_LOGS, DEVICE_SETUP, PANIC, ACTIVITY, CHILD_HEALTH, DOMAIN_MONITOR, DOMAIN_REVIEW,
 }
 
 @Composable
@@ -221,7 +221,7 @@ fun WalcottApp(
             -> Screen.FAMILY
             // Reached from the home gear on the parent, from the device hub on a child.
             Screen.APP_SETTINGS -> if (parentMode) Screen.FAMILIES else Screen.FAMILY
-            Screen.DEBUG_LOGS -> Screen.APP_SETTINGS
+            Screen.DEBUG_LOGS, Screen.DEVICE_SETUP -> Screen.APP_SETTINGS
             Screen.APP_DETAIL -> Screen.APPS
             Screen.FAMILY_CHOOSER -> Screen.FAMILIES
             Screen.SETUP_PRESETS -> Screen.FAMILIES
@@ -438,6 +438,7 @@ fun WalcottApp(
                         onAllowInstalls = { durationMs -> viewModel.allowInstallsFor(durationMs) },
                         onEndInstallWindow = { viewModel.endInstallExemption() },
                         onOpenDebugLogs = { screen = Screen.DEBUG_LOGS },
+                        onOpenDeviceSetup = { screen = Screen.DEVICE_SETUP },
                         onChangeMode = {
                             viewModel.resetDeviceMode()
                             screen = Screen.MODE_SELECT
@@ -446,6 +447,10 @@ fun WalcottApp(
                         onBack = ::back,
                     )
                     Screen.DEBUG_LOGS -> DebugLogScreen(onBack = ::back)
+                    Screen.DEVICE_SETUP -> dev.walcott.ui.setup.DeviceSetupScreen(
+                        handle = dev.walcott.ui.setup.rememberDeviceSetup(),
+                        onBack = ::back,
+                    )
                 }
             }
         }

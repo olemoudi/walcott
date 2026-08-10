@@ -174,6 +174,18 @@ class WalcottViewModel(
     fun discardDomainRequest(batchId: String) = viewModelScope.launch { sync.discardDomainBatch(batchId) }
 
     suspend fun becomeParent(familyName: String) = sync.becomeParent(familyName)
+
+    /** The relay this family talks through, and whether it can still be changed (see [setRelayServer]). */
+    val relayServer: StateFlow<String> =
+        sync.identity.map { it.ntfyServer }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), dev.walcott.sync.RelayServer.DEFAULT)
+
+    /** Whether messages are currently being rejected by the relay (see [dev.walcott.sync.PublishHealth]). */
+    val publishHealth: StateFlow<dev.walcott.sync.PublishHealth.Status> = dev.walcott.sync.PublishHealth.status
+
+    suspend fun setRelayServer(server: String): dev.walcott.sync.SyncManager.RelayChangeResult =
+        sync.setRelayServer(server)
+
     suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)
     fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }
     fun resetDeviceMode() = viewModelScope.launch { sync.resetDeviceMode() }

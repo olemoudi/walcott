@@ -292,6 +292,11 @@ fun ChildDetailScreen(
                 item { EnforcementGapCard(snapshot.enforcementGaps.size) }
             }
 
+            // --- Web filter asked for but not running (consent, or another VPN app) ---
+            if (snapshot != null && dev.walcott.sync.FamilyHealth.webFilterDown(snapshot)) {
+                item { WebFilterDownCard() }
+            }
+
             // --- Clock tamper (device clock far off the sync server's) ---
             if (snapshot != null && ClockGuard.isTampered(snapshot.clockSkewMs)) {
                 item { ClockTamperCard(snapshot.clockSkewMs) }
@@ -937,6 +942,28 @@ private fun UsageAccessWarningCard() {
     }
 }
 
+/**
+ * The rules ask for a DNS filter and the child's tunnel isn't up, so every blocked domain is
+ * resolving normally. Same silent-failure class as the self-test gap: the child looks healthy
+ * from every other angle, because publishing never depended on the tunnel.
+ */
+@Composable
+private fun WebFilterDownCard() {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                stringResource(R.string.web_filter_down_text),
+                style = MaterialTheme.typography.bodyMedium,
+                color = color,
+            )
+        }
+    }
+}
+
 /** The self-test caught apps that should be suspended but aren't — the silent failure class. */
 @Composable
 private fun EnforcementGapCard(count: Int) {
@@ -1287,6 +1314,15 @@ private fun LiveHealthCard(
                 value = stringResource(if (snapshot.networkLocationOn) R.string.summary_on else R.string.summary_off),
                 ok = snapshot.networkLocationOn,
             )
+            // Only when the rules ask for one: a family that filters nothing has no tunnel to
+            // miss, and a row reading "off" would read as something broken.
+            if (snapshot.webFilterExpected) {
+                DiagRow(
+                    label = stringResource(R.string.diag_web_filter),
+                    value = stringResource(if (snapshot.webFilterOn) R.string.summary_on else R.string.summary_off),
+                    ok = snapshot.webFilterOn,
+                )
+            }
             if (snapshot.batteryPercent in 0..100) {
                 DiagRow(
                     label = stringResource(R.string.diag_battery),

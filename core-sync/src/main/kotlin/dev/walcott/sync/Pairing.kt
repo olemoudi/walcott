@@ -16,7 +16,7 @@ data class PairingPayload(
     val topic: String,
     val familyKeyB64: String,
     val parentPublicKeyB64: String,
-    val ntfyServer: String = "https://ntfy.sh",
+    val ntfyServer: String = RelayServer.DEFAULT,
     val childId: String = "",
     val childName: String = "",
     val familyName: String = "",

@@ -524,6 +524,29 @@ data class ChildSnapshot(
      * short-lived: it is the parent's activity wall that keeps them, not the snapshot.
      */
     val ruleEvents: List<ChildEvent> = emptyList(),
+    /**
+     * Whether the rules ask this device for a DNS filter, and whether the tunnel is actually up.
+     *
+     * They are different questions. Only one VPN can be active on Android at a time, consent can
+     * be withdrawn, another app can take the tun, and a device-policy call can be refused — every
+     * one of those ends with `establish()` returning null and the filter quietly off. Until now
+     * only "filtering is configured" reached the parent, so a child could show a healthy web
+     * filter while nothing at all was being filtered.
+     *
+     * The defaults say "nothing expected, nothing wrong", so a legacy child raises no alarm.
+     */
+    val webFilterExpected: Boolean = false,
+    val webFilterOn: Boolean = true,
+    /**
+     * Uncaught exceptions this install has died of, and when the last one happened.
+     *
+     * Cumulative, like [pinWrongTotal], on purpose: the parent alerts on GROWTH between two
+     * snapshots, which needs no reset handshake, cannot double-count a re-emitted snapshot, and
+     * cannot be confused by one that was lost on the way. 0 = legacy child, or one that has
+     * never crashed.
+     */
+    val crashTotal: Int = 0,
+    val lastCrashMs: Long = 0,
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */

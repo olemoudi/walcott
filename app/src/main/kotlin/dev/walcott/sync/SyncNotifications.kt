@@ -15,7 +15,26 @@ import dev.walcott.R
 object SyncNotifications {
 
     private const val CHANNEL = "walcott_requests"
-    private const val ALERT_CHANNEL = "walcott_alerts"
+
+    /**
+     * Parent alerts used to share one channel at maximum importance, which made Android's own
+     * per-channel controls useless to the person receiving them: silencing "the battery is at
+     * 18%" also silenced "the clock has been changed" and "your child is asking to be released".
+     * A parent who mutes the noise loses the alarm, so most keep all of it and stop reading any.
+     *
+     * Two channels instead, split by what the parent is supposed to DO about it:
+     *
+     * - [URGENT_CHANNEL]: something is wrong with the protection itself, or the child is asking
+     *   for their phone back. Worth interrupting for.
+     * - [STATUS_CHANNEL]: worth knowing, not worth waking up for — a low battery, a phone that
+     *   has gone quiet, a newly installed app.
+     *
+     * New ids on purpose: a channel's importance is immutable once created, so the old one is
+     * deleted rather than reused (the same trick the quiet child-side channels needed).
+     */
+    private const val URGENT_CHANNEL = "walcott_urgent"
+    private const val STATUS_CHANNEL = "walcott_status"
+    private const val OLD_ALERT_CHANNEL = "walcott_alerts"
 
     /** Intent extra + values used to deep-link a notification tap to a screen. */
     const val EXTRA_DEST = "walcott_dest"
@@ -43,7 +62,7 @@ object SyncNotifications {
     /** Alert when a child device has been silent for a long time (see [Staleness]). */
     fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String, childId: String = "") =
         post(
-            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            context, STATUS_CHANNEL, R.string.status_channel_name,
             title = context.getString(R.string.stale_alert_title, childName),
             text = context.getString(R.string.stale_alert_text, silence),
             notifId = deviceId.hashCode(),
@@ -52,7 +71,7 @@ object SyncNotifications {
 
     /** Alert when a child device reports that blocking is no longer active (tamper/lapse). */
     fun notifyEnforcementInactive(context: Context, childName: String, deviceId: String, childId: String = "") = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
         title = context.getString(R.string.enforcement_off_title, childName),
         text = context.getString(R.string.enforcement_off_text),
         notifId = "enf".hashCode() + deviceId.hashCode(),
@@ -61,7 +80,7 @@ object SyncNotifications {
 
     /** Alert when a registered child device has never checked in (enrollment likely didn't finish). */
     fun notifyNeverReported(context: Context, childName: String, childId: String) = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, STATUS_CHANNEL, R.string.status_channel_name,
         title = context.getString(R.string.never_reported_title, childName),
         text = context.getString(R.string.never_reported_text),
         notifId = "never".hashCode() + childId.hashCode(),
@@ -70,7 +89,7 @@ object SyncNotifications {
 
     /** Alert when a child loses full (Device Owner) protection but a weaker backend remains. */
     fun notifyEnforcementDegraded(context: Context, childName: String, deviceId: String, childId: String = "") = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
         title = context.getString(R.string.enforcement_degraded_title, childName),
         text = context.getString(R.string.enforcement_degraded_text),
         notifId = "deg".hashCode() + deviceId.hashCode(),
@@ -79,7 +98,7 @@ object SyncNotifications {
 
     /** Alert when a child device reports wrong parent-PIN attempts (someone guessing the PIN). */
     fun notifyWrongPin(context: Context, childName: String, total: Int, deviceId: String, childId: String = "") = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
         title = context.getString(R.string.wrong_pin_title, childName),
         text = context.resources.getQuantityString(R.plurals.wrong_pin_text, total, total),
         notifId = "pin".hashCode() + deviceId.hashCode(),
@@ -88,7 +107,7 @@ object SyncNotifications {
 
     /** Alert when usage access is off on a child: screen-time budgets silently stop counting. */
     fun notifyUsageAccessLost(context: Context, childName: String, deviceId: String, childId: String = "") = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
         title = context.getString(R.string.usage_access_off_title, childName),
         text = context.getString(R.string.usage_access_off_text),
         notifId = "usage".hashCode() + deviceId.hashCode(),
@@ -98,7 +117,7 @@ object SyncNotifications {
     /** Alert when a child's self-test reports blocked apps that are NOT actually suspended. */
     fun notifyEnforcementGap(context: Context, childName: String, count: Int, deviceId: String, childId: String = "") =
         post(
-            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            context, URGENT_CHANNEL, R.string.urgent_channel_name,
             title = context.getString(R.string.enforcement_gap_title, childName),
             text = context.resources.getQuantityString(R.plurals.enforcement_gap_text, count, count),
             notifId = "gap".hashCode() + deviceId.hashCode(),
@@ -108,7 +127,7 @@ object SyncNotifications {
     /** Alert when a child's clock disagrees with the sync server far beyond drift (tamper). */
     fun notifyClockTamper(context: Context, childName: String, skewMs: Long, deviceId: String, childId: String = "") =
         post(
-            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            context, URGENT_CHANNEL, R.string.urgent_channel_name,
             title = context.getString(R.string.clock_tamper_title, childName),
             text = context.getString(R.string.clock_tamper_text, formatSkew(context, skewMs)),
             notifId = "clock".hashCode() + deviceId.hashCode(),
@@ -126,9 +145,40 @@ object SyncNotifications {
         return context.getString(if (skewMs < 0) R.string.skew_behind else R.string.skew_ahead, amount)
     }
 
+    /**
+     * Alert when the rules ask a child for a DNS filter and the tunnel isn't up. Consent
+     * withdrawn, another VPN app holding the tun, or a refused device-policy call all look
+     * identical from here — and all mean the blocked domains are resolving normally.
+     */
+    fun notifyWebFilterDown(context: Context, childName: String, deviceId: String, childId: String = "") = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = context.getString(R.string.web_filter_down_title, childName),
+        text = context.getString(R.string.web_filter_down_text),
+        notifId = "webfilter".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
+    /**
+     * Alert when a child device has died of an uncaught exception since the last check-in.
+     * [count] is how many new ones, not the lifetime total — "it crashed again" is the news.
+     */
+    fun notifyChildCrashed(
+        context: Context,
+        childName: String,
+        count: Int,
+        deviceId: String,
+        childId: String = "",
+    ) = post(
+        context, STATUS_CHANNEL, R.string.status_channel_name,
+        title = context.getString(R.string.child_crashed_title, childName),
+        text = context.resources.getQuantityString(R.plurals.child_crashed_text, count, count),
+        notifId = "crash".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
     /** Alert when a child's reported locations include mock (spoofed) fixes. */
     fun notifyMockLocation(context: Context, childName: String, deviceId: String, childId: String = "") = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
         title = context.getString(R.string.mock_location_title, childName),
         text = context.getString(R.string.mock_location_text),
         notifId = "mock".hashCode() + deviceId.hashCode(),
@@ -138,7 +188,7 @@ object SyncNotifications {
     /** Alert when a child device drops below the low-battery mark unplugged (it may die soon). */
     fun notifyLowBattery(context: Context, childName: String, percent: Int, deviceId: String, childId: String = "") =
         post(
-            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            context, STATUS_CHANNEL, R.string.status_channel_name,
             title = context.getString(R.string.low_battery_title, childName),
             text = context.getString(R.string.low_battery_text, percent),
             notifId = "batt".hashCode() + deviceId.hashCode(),
@@ -147,7 +197,7 @@ object SyncNotifications {
 
     /** Alert when network (Wi-Fi/cell) location is off on a child: indoor tracking stops working. */
     fun notifyNetworkLocationOff(context: Context, childName: String, deviceId: String, childId: String = "") = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, STATUS_CHANNEL, R.string.status_channel_name,
         title = context.getString(R.string.net_location_off_title, childName),
         text = context.getString(R.string.net_location_off_text),
         notifId = "netloc".hashCode() + deviceId.hashCode(),
@@ -183,7 +233,7 @@ object SyncNotifications {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         post(
-            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            context, URGENT_CHANNEL, R.string.urgent_channel_name,
             title = context.getString(
                 if (released) R.string.panic_released_title else R.string.panic_alert_title,
                 childName,
@@ -236,7 +286,7 @@ object SyncNotifications {
 
     /** A child installed app(s) the family hasn't classified yet (blocked until classified). */
     fun notifyNewApp(context: Context, childName: String, label: String, extraCount: Int, deviceId: String) = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, STATUS_CHANNEL, R.string.status_channel_name,
         title = context.getString(R.string.new_app_title, childName),
         text = if (extraCount > 0) {
             context.getString(R.string.new_app_text_more, label, extraCount)
@@ -299,7 +349,7 @@ object SyncNotifications {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         post(
-            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            context, STATUS_CHANNEL, R.string.status_channel_name,
             title = context.getString(R.string.install_window_open_title, childName),
             text = context.getString(R.string.install_window_open_text, remaining),
             notifId = "installwin".hashCode() + deviceId.hashCode(),
@@ -312,7 +362,7 @@ object SyncNotifications {
 
     /** A different app than the approved one was installed during a window (and removed). */
     fun notifyWrongApp(context: Context, childName: String, pkg: String, deviceId: String, childId: String = "") = post(
-        context, ALERT_CHANNEL, R.string.stale_channel_name,
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
         title = context.getString(R.string.wrong_app_title, childName),
         text = context.getString(R.string.wrong_app_text, pkg),
         notifId = "wrongapp".hashCode() + deviceId.hashCode(),
@@ -380,7 +430,7 @@ object SyncNotifications {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         post(
-            context, ALERT_CHANNEL, R.string.stale_channel_name,
+            context, STATUS_CHANNEL, R.string.status_channel_name,
             title = who(
                 context.getString(
                     if (neverBackedUp) R.string.backup_reminder_title_never else R.string.backup_reminder_title_stale,
@@ -408,8 +458,11 @@ object SyncNotifications {
     ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // The single all-importance-HIGH channel these were split out of; deleting it is what
+            // makes an updated install actually quieten down (see URGENT_CHANNEL).
+            nm.deleteNotificationChannel(OLD_ALERT_CHANNEL)
             nm.createNotificationChannel(
-                NotificationChannel(channel, context.getString(channelNameRes), NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(channel, context.getString(channelNameRes), importanceOf(channel)),
             )
         }
         val openIntent = Intent(context, MainActivity::class.java)
@@ -426,9 +479,21 @@ object SyncNotifications {
             .setContentText(text)
             .setAutoCancel(true)
             .setContentIntent(tap)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Pre-O phones have no channels, so the priority is what separates them there.
+            .setPriority(
+                if (importanceOf(channel) == NotificationManager.IMPORTANCE_HIGH) {
+                    NotificationCompat.PRIORITY_HIGH
+                } else {
+                    NotificationCompat.PRIORITY_DEFAULT
+                },
+            )
             .apply { actions.forEach { addAction(it) } }
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(notifId, notification) }
     }
+
+    /** How loud a channel is. [STATUS_CHANNEL] lands in the shade without a sound or heads-up. */
+    private fun importanceOf(channel: String): Int =
+        if (channel == STATUS_CHANNEL) NotificationManager.IMPORTANCE_DEFAULT
+        else NotificationManager.IMPORTANCE_HIGH
 }

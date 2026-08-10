@@ -58,6 +58,9 @@ data class ParentEvent(
         const val TYPE_ENFORCEMENT_GAP = "enforcement_gap"
         const val TYPE_ENFORCEMENT_GAP_CLEARED = "enforcement_gap_cleared"
         const val TYPE_CLOCK_TAMPER = "clock_tamper"
+        const val TYPE_WEB_FILTER_DOWN = "web_filter_down"
+        const val TYPE_WEB_FILTER_BACK = "web_filter_back"
+        const val TYPE_CHILD_CRASHED = "child_crashed"
         const val TYPE_INDOOR_LOCATION_OFF = "indoor_location_off"
         const val TYPE_NEW_APP = "new_app"
         const val TYPE_WRONG_PIN = "wrong_pin"
@@ -249,6 +252,17 @@ data class SyncState(
     val selfTestNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for clock tampering (cleared once the skew is back to normal). */
     val clockTamperNotified: Set<String> = emptySet(),
+    /**
+     * deviceIds already alerted for a web filter that the rules ask for but that isn't running
+     * (cleared when the tunnel comes back, so a later lapse alerts again).
+     */
+    val webFilterNotified: Set<String> = emptySet(),
+    /**
+     * Child-side throttle for the self-repair nudges: fix key -> wall-clock ms of the last
+     * notification. Lives here rather than in memory because the check runs from an alarm whose
+     * process may not have survived since the previous one (see [dev.walcott.sync.ChildHealthCheck]).
+     */
+    val childFixNotifiedAt: Map<String, Long> = emptyMap(),
     /**
      * deviceId -> the last health report, as parents before [diagHistory] stored it. Kept only
      * so those reports survive the update: the first new report for a device migrates it into

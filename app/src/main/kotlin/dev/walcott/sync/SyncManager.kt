@@ -416,6 +416,43 @@ class SyncManager(
         publishSelf()
     }
 
+    /** Outcome of trying to move a family to a different relay (see [setRelayServer]). */
+    enum class RelayChangeResult { OK, INVALID, HAS_CHILDREN }
+
+    /**
+     * Moves this family to a different relay.
+     *
+     * Refused the moment the family has enrolled a child, and that limit is deliberate rather
+     * than laziness: a child learns the relay from its pairing QR and from nowhere else, so
+     * switching it under a paired child would leave that phone listening to a server nobody
+     * publishes on — no rules, no granted time, no remote commands, and no way to tell it where
+     * everyone went. Recovering means re-enrolling the device, which on a Device Owner child is
+     * a factory reset. A migration that carried children across is a real feature; silently
+     * risking a family's phones on a settings screen is not the way to ship it.
+     *
+     * Before the first child, none of that applies: nobody has been told anything yet.
+     */
+    suspend fun setRelayServer(server: String): RelayChangeResult {
+        val id = identityStore.current()
+        if (id.role != Role.PARENT) return RelayChangeResult.HAS_CHILDREN
+        val normalized = RelayServer.normalize(server) ?: return RelayChangeResult.INVALID
+        // Both registers count: a child enrolled in the registry may not have checked in yet,
+        // and a legacy child may have checked in without ever being in the registry.
+        val enrolled = settingsStore.current().children.isNotEmpty() ||
+            syncStore.current().children.isNotEmpty()
+        if (enrolled) return RelayChangeResult.HAS_CHILDREN
+        if (normalized == id.ntfyServer) return RelayChangeResult.OK
+        identityStore.save(id.copy(ntfyServer = normalized))
+        dev.walcott.debug.DebugLog.i(TAG, "relay changed to $normalized")
+        // The cursor belongs to the old server's message stream; carrying it over would ask the
+        // new one to replay from a timestamp that means nothing there.
+        syncStore.update { it.copy(ntfySinceSec = 0) }
+        sinceCache = 0
+        connect(identityStore.current())
+        publishSelf()
+        return RelayChangeResult.OK
+    }
+
     /** Pair this device as a child from a scanned per-child (or legacy) QR. Returns success. */
     suspend fun pairAsChild(pairingText: String): Boolean {
         val payload = PairingPayload.decode(pairingText) ?: return false
@@ -1066,6 +1103,12 @@ class SyncManager(
     }
 
     /** Records the heartbeat self-test's result; publishes on change so the parent hears promptly. */
+    /** Persists the child's self-repair nudge throttle (see [ChildHealthCheck]). */
+    suspend fun recordChildFixNudges(notifiedAt: Map<String, Long>) {
+        if (notifiedAt == syncStore.current().childFixNotifiedAt) return
+        syncStore.update { it.copy(childFixNotifiedAt = notifiedAt) }
+    }
+
     suspend fun recordEnforcementGap(packages: List<String>) {
         if (syncStore.current().enforcementGaps == packages) return
         syncStore.update { it.copy(enforcementGaps = packages, childVersion = it.childVersion + 1) }
@@ -1540,9 +1583,11 @@ class SyncManager(
                         .filterNot { it.isSystem }
                         .map { InstalledAppInfo(it.packageName, it.label) }
                 }
+                val settings = settingsStore.current()
                 // History off (the default) reports only the current position; on, the 48h
                 // trail is decimated so it can't push the snapshot past ntfy's message cap.
-                val historyOn = settingsStore.current().resolveForChild(id.childId).locationHistoryEnabled
+                val historyOn = settings.resolveForChild(id.childId).locationHistoryEnabled
+                val crashes = dev.walcott.debug.CrashCounter.current()
                 val locations = if (historyOn) {
                     LocationTrail.compress(repository.recentLocations(), System.currentTimeMillis())
                 } else {
@@ -1584,6 +1629,15 @@ class SyncManager(
                     tzOffsetMinutes = java.time.OffsetDateTime.now().offset.totalSeconds / 60,
                     publishNonce = nonce,
                     ruleEvents = ChildEventLog.plus(s.ruleEvents, emptyList(), System.currentTimeMillis()),
+                    // Asked for versus actually up: the tunnel can be refused, revoked or stolen
+                    // by another VPN app, and none of that was visible from the parent's side.
+                    webFilterExpected = settings.hasWebFilter(),
+                    // Grace-guarded: every process start has the tunnel down for a few seconds
+                    // while the service establishes it, and reporting that would alert the parent
+                    // after every reboot and every self-update (see VpnStatus.GRACE_MS).
+                    webFilterOn = !dev.walcott.net.VpnStatus.settledDown(),
+                    crashTotal = crashes.total,
+                    lastCrashMs = crashes.lastAtMs,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -2133,6 +2187,44 @@ class SyncManager(
             }
         } else if (!usageOff && snapshot.deviceId in before.usageAccessNotified) {
             syncStore.update { it.copy(usageAccessNotified = it.usageAccessNotified - snapshot.deviceId) }
+        }
+
+        // The rules ask for a DNS filter and the tunnel isn't up: the blocked domains are
+        // resolving normally and nothing else says so — publishing keeps working, the child
+        // looks healthy. One alert per outage; the recovery clears it so a relapse re-alerts.
+        val filterDown = snapshot.webFilterExpected && !snapshot.webFilterOn
+        if (filterDown && snapshot.deviceId !in before.webFilterNotified) {
+            SyncNotifications.notifyWebFilterDown(context, who, snapshot.deviceId, snapshot.childId)
+            syncStore.update {
+                it.copy(webFilterNotified = it.webFilterNotified + snapshot.deviceId)
+                    .plusEvent(event(ParentEvent.TYPE_WEB_FILTER_DOWN, snapshot))
+            }
+        } else if (!filterDown && snapshot.deviceId in before.webFilterNotified) {
+            // Worth a line of its own: "the filter is running again" is the answer to the
+            // question the alert asked, and without it the feed only ever records failures.
+            syncStore.update {
+                it.copy(webFilterNotified = it.webFilterNotified - snapshot.deviceId)
+                    .plusEvent(event(ParentEvent.TYPE_WEB_FILTER_BACK, snapshot))
+            }
+        }
+
+        // The child app died of an uncaught exception since the last snapshot. Counted
+        // cumulatively by the child, so the news is the GROWTH — that needs no reset handshake
+        // and a re-emitted snapshot can't raise it twice. The version guard mirrors mergeChild's
+        // accept rule so a replayed older snapshot can't manufacture one either. A child seen
+        // for the first time raises nothing: its tally is history this parent never lived.
+        val newCrashes = if (prevChild == null || snapshot.version < prevChild.version) {
+            0
+        } else {
+            snapshot.crashTotal - prevChild.crashTotal
+        }
+        if (newCrashes > 0) {
+            SyncNotifications.notifyChildCrashed(
+                context, who, newCrashes, snapshot.deviceId, snapshot.childId,
+            )
+            syncStore.update {
+                it.plusEvent(event(ParentEvent.TYPE_CHILD_CRASHED, snapshot, count = newCrashes))
+            }
         }
 
         // Alert once when mock (spoofed) fixes appear in the trail; clear when it's clean again.

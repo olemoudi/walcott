@@ -140,6 +140,12 @@
             android:name=".sync.HeartbeatReceiver"
             android:exported="false" />
 
+        <!-- The parent's ~15-minute catch-up alarm (see ParentCheckAlarm): WorkManager alone is
+             deferred by Doze for hours, which is when nobody is watching the socket either. -->
+        <receiver
+            android:name=".sync.ParentCheckReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".WalcottAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
