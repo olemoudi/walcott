@@ -336,6 +336,8 @@ class EnforcementService : LifecycleService() {
         // 2s tick was pure binder churn — the set only changes on (un)installs and
         // classification edits, both of which invalidate it explicitly below.
         var managed: Set<String> = emptySet()
+        // What screen time is COUNTED for: wider than `managed`, which is what may be blocked.
+        var tracked: Set<String> = emptySet()
         var managedFetchedAt = 0L
         // Suspension is only re-asserted when the target state changes (or periodically as
         // a self-heal), instead of N isPackageSuspended binder calls per tick.
@@ -414,14 +416,21 @@ class EnforcementService : LifecycleService() {
             val extra = extraToday // manually granted + idle-earned
             if (inventoryDirty || nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS) {
                 managed = repo.managedPackagesNow()
+                tracked = repo.trackedPackagesNow()
                 managedFetchedAt = nowClock
                 inventoryDirty = false
             }
 
-            // Credit time only on consecutive sightings of the same managed app, so the
-            // slow idle tick can't attribute time actually spent elsewhere.
+            // Credit time only on consecutive sightings of the same app, so the slow idle tick
+            // can't attribute time actually spent elsewhere.
+            //
+            // Against `tracked`, not `managed`: counting is not enforcing. The managed set is
+            // non-system apps only, so on a phone whose browser and video app ship as system apps
+            // — most of them — the hours that actually went somewhere were the ones the parent
+            // could not see. A parent decides to set a limit BECAUSE they saw the time; making
+            // the limit a precondition for seeing it had that backwards.
             val creditedUsage = foreground != null && foreground == lastForeground &&
-                foreground in managed && deltaSeconds in 1..MAX_CREDIT_SECONDS
+                foreground in tracked && deltaSeconds in 1..MAX_CREDIT_SECONDS
             // One counter per app, always: every limit is now an app's own, and an app with no
             // limit today may be given one tomorrow — a counter that only started then would
             // hand back a day the child already spent.

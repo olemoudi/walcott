@@ -175,6 +175,7 @@
     <string name="request_time_for">Más tiempo para %1$s</string>
     <string name="no_requests">Sin peticiones pendientes</string>
     <string name="usage_today">Uso de hoy</string>
+    <string name="usage_other_apps">Otras apps</string>
     <string name="approve">Aprobar</string>
     <string name="deny">Denegar</string>
     <string name="request_summary">%1$s · %2$d min</string>
@@ -526,6 +527,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_41_0">
+        <item>El tiempo de pantalla vuelve a funcionar. Desde que los límites pasaron a ser por app, el uso que reportaba el móvil del niño se descartaba antes de llegarte, y por eso todo salía a cero.</item>
+        <item>Ahora ves el desglose app por app tengas límites puestos o no — incluidas las apps que vienen con el móvil, como el navegador o la de vídeo, que antes no se contaban.</item>
+        <item>La media diaria se verá baja un par de semanas, mientras salen de la ventana los días vacíos que se registraron.</item>
+    </string-array>
     <string-array name="whats_new_0_40_0">
         <item>Mientras tienes Walcott abierto vigila la conexión más de cerca, para que una respuesta que estás esperando no se quede atascada por un enlace que se cayó sin avisar. Con la app cerrada vuelve a gastar lo mínimo.</item>
     </string-array>

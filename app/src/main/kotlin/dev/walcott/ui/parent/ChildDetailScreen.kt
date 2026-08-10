@@ -868,10 +868,9 @@ private fun UsageTodayCard(snapshot: ChildSnapshot, position: CardPosition = Car
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
                 // Usage is per app now; the child's own reported app list names each package,
                 // and only the busiest few are worth a row.
-                val labels = snapshot.apps.associate { it.packageName to it.label }
                 snapshot.usage.sortedByDescending { it.seconds }.take(USAGE_ROWS).forEach { entry ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(labels[entry.categoryId] ?: entry.categoryId, Modifier.weight(1f))
+                        Text(usageLabel(entry, snapshot.apps), Modifier.weight(1f))
                         Text(Duration.ofSeconds(entry.seconds).humanize(), style = MaterialTheme.typography.bodyMedium)
                     }
                 }

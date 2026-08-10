@@ -102,8 +102,16 @@ class WalcottRepository(
     suspend fun usageNow(): Map<String, Duration> =
         db.usage().getDay(today()).associate { it.categoryId to Duration.ofSeconds(it.seconds) }
 
-    /** Today's per-category usage only (strips per-app package counters), for the parent report. */
-    suspend fun reportedUsageNow(): Map<String, Duration> = usageNow().filterKeys { !it.contains('.') }
+    /**
+     * Today's counters as reported to the parent.
+     *
+     * This used to strip every key containing a dot, which was right while counters were keyed by
+     * CATEGORY: it removed the per-app detail and left the category totals. When limits became
+     * per app the counters started being keyed by package name — and package names always contain
+     * a dot — so the same filter stopped removing the detail and started removing everything. The
+     * parent has been shown, and has been accumulating into its ledger, nothing but zeros since.
+     */
+    suspend fun reportedUsageNow(): Map<String, Duration> = usageNow()
 
     suspend fun extraNow(): Map<String, Duration> =
         db.usage().getExtraDay(today()).associate { it.categoryId to Duration.ofSeconds(it.seconds) }
@@ -115,7 +123,8 @@ class WalcottRepository(
     suspend fun weeklyUsage(): Map<Long, Map<String, Duration>> {
         val end = today()
         return db.usage().getRange(end - 6, end)
-            .filterNot { it.categoryId.contains('.') }
+            // Same story as reportedUsageNow: this filter removed the per-app detail back when
+            // counters were per category, and removes the whole week now that they are per app.
             .groupBy { it.epochDay }
             .mapValues { (_, rows) -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
@@ -123,6 +132,9 @@ class WalcottRepository(
 
     /** Every user-installed app on this device: with no categories, they are all managed. */
     suspend fun managedPackagesNow(): Set<String> = inventory.managedPackages()
+
+    /** What screen time is counted for — wider than the managed set (see [AppInventory.trackedPackages]). */
+    suspend fun trackedPackagesNow(): Set<String> = inventory.trackedPackages()
 
     suspend fun addUsageSeconds(categoryId: String, seconds: Long) =
         db.usage().addSeconds(categoryId, today(), seconds)

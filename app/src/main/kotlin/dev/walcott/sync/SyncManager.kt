@@ -1637,8 +1637,17 @@ class SyncManager(
                 // Stamped now and remembered with the local clock as it reads at this instant:
                 // when this message comes back, those two are what measure the clock.
                 val nonce = java.util.concurrent.ThreadLocalRandom.current().nextLong()
+                // Capped, with the tail folded into one bucket so the daily totals the parent
+                // sums stay exact (see UsageReport). Seven days of per-app rows would otherwise
+                // be the biggest thing in the message.
                 val history = repository.weeklyUsage().map { (day, usage) ->
-                    DayUsage(day, usage.map { UsageEntry(it.key, it.value.seconds) })
+                    DayUsage(
+                        day,
+                        UsageReport.cap(
+                            usage.map { UsageEntry(it.key, it.value.seconds) },
+                            UsageReport.MAX_PER_HISTORY_DAY,
+                        ),
+                    )
                 }
                 // PackageManager enumeration is blocking; keep it off the caller's thread.
                 val apps = withContext(Dispatchers.IO) {
@@ -1662,7 +1671,10 @@ class SyncManager(
                     childId = id.childId,
                     version = s.childVersion,
                     epochDay = today,
-                    usage = repository.reportedUsageNow().map { UsageEntry(it.key, it.value.seconds) },
+                    usage = UsageReport.cap(
+                        repository.reportedUsageNow().map { UsageEntry(it.key, it.value.seconds) },
+                        UsageReport.MAX_TODAY,
+                    ),
                     extra = repository.extraNow().map { UsageEntry(it.key, it.value.seconds) },
                     requests = s.pendingRequests,
                     history = history,

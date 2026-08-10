@@ -102,10 +102,9 @@ private fun ChildUsageCard(child: ChildSnapshot, onGiveBonus: () -> Unit) {
             } else {
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
                 // Usage is per app now, so the child's own reported app list names it.
-                val labels = child.apps.associate { it.packageName to it.label }
                 child.usage.sortedByDescending { it.seconds }.take(USAGE_ROWS).forEach { entry ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(labels[entry.categoryId] ?: entry.categoryId, Modifier.weight(1f))
+                        Text(usageLabel(entry, child.apps), Modifier.weight(1f))
                         Text(Duration.ofSeconds(entry.seconds).humanize(), style = MaterialTheme.typography.bodyMedium)
                     }
                 }

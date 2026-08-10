@@ -115,6 +115,28 @@ class AppInventory(context: Context) {
     fun managedPackages(): Set<String> =
         launchableApps().filterNot { it.isSystem }.map { it.packageName }.toSet() - ownPackage
 
+    /**
+     * Packages whose screen time is COUNTED — deliberately wider than [managedPackages], which is
+     * about what may be blocked.
+     *
+     * A parent asked to see what the phone is being used for cannot be shown only the apps they
+     * happen to limit, and least of all only the non-system ones: on most phones the browser, the
+     * video app and the gallery ship as system apps, so the very apps a day disappears into were
+     * the ones missing from the report. Knowing is what leads to setting a limit; requiring the
+     * limit first to be allowed to know had it backwards.
+     *
+     * The launcher is excluded because "time on the home screen" is an artefact of walking
+     * between apps, not something anyone did. Walcott excludes itself for the same reason.
+     */
+    fun trackedPackages(): Set<String> =
+        launchableApps().map { it.packageName }.toSet() - ownPackage - setOfNotNull(homePackage())
+
+    /** The current home app, asked of the system the way [dialerPackage] is. */
+    private fun homePackage(): String? = runCatching {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        pm.resolveActivity(intent, 0)?.activityInfo?.packageName?.takeIf { it != RESOLVER_PACKAGE }
+    }.getOrNull()
+
     fun icon(packageName: String): Drawable? =
         runCatching { pm.getApplicationIcon(packageName) }.getOrNull()
 
