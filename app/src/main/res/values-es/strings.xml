@@ -526,6 +526,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_39_0">
+        <item>Walcott gasta bastante menos batería en los dos móviles: despierta la radio unas diez veces menos y deja de rehacer trabajo que ya tenía hecho.</item>
+        <item>Un móvil que no consigue ubicación — en interiores o en modo avión — ya no enciende el GPS cada minuto para que le digan lo mismo.</item>
+        <item>La ubicación reutiliza un dato reciente cuando lo hay, en vez de pedir siempre uno nuevo.</item>
+    </string-array>
     <string-array name="whats_new_0_38_0">
         <item>Tu móvil ahora comprueba los mensajes de tus hijos incluso mientras duerme, así que una petición o un aviso ya no puede quedarse horas sin leer por la noche.</item>
         <item>El filtro web ahora te avisa cuando no está funcionando de verdad — que otra app de VPN tomara el control parecía que todo iba bien.</item>

@@ -21,10 +21,21 @@ object Http {
      * remote command stop arriving while the device still looks healthy to the parent, because
      * publishing is a separate HTTP call and keeps working.
      *
-     * With a ping interval the pong that doesn't come fails the socket within ~a minute, which
-     * is what makes [dev.walcott.sync.NtfyTransport]'s reconnect fire at all. Shares the pools.
+     * With a ping interval the pong that doesn't come fails the socket within ~a ping, which is
+     * what makes [dev.walcott.sync.NtfyTransport]'s reconnect fire at all. Shares the pools.
+     *
+     * FOUR MINUTES, not the thirty seconds this started at. A ping is a tiny packet, but on a
+     * mobile network it drags the radio out of idle and the RRC tail then holds it up for another
+     * five to ten seconds — so a 30 s ping kept the radio awake something like a third of the
+     * time, on both phones, for ever. Four minutes is comfortably inside the carrier and NAT
+     * timeouts a keepalive exists to beat (5-30 min is the usual range), and it costs about a
+     * tenth of the wakeups.
+     *
+     * What that buys back in detection latency is affordable because it was never the only line
+     * of defence: a dead socket is noticed within ~8 minutes here, and the child's 30-minute
+     * heartbeat rebuilds anything this misses ([dev.walcott.sync.ChannelHealth.needsReconnect]).
      */
     val webSocketClient: OkHttpClient by lazy {
-        client.newBuilder().pingInterval(30, TimeUnit.SECONDS).build()
+        client.newBuilder().pingInterval(4, TimeUnit.MINUTES).build()
     }
 }

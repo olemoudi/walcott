@@ -32,8 +32,17 @@ import kotlinx.coroutines.launch
  */
 object ParentCheckAlarm {
 
-    /** How often the parent catches up while the app is closed. */
-    const val INTERVAL_MS = 15 * 60 * 1000L
+    /**
+     * How often the parent catches up while the app is closed.
+     *
+     * Half-hourly, matching the child's own check-in: a child publishes at most every ~30
+     * minutes anyway, so polling twice as often mostly fetched nothing. It started at fifteen,
+     * which also meant firing in lockstep with [ParentPollWorker] and doing the same request
+     * twice whenever the phone happened to be awake — ninety-six wakeups a day to duplicate a
+     * worker's work. Thirty is still far inside the hours Doze can defer that worker for, which
+     * is the whole reason this alarm exists.
+     */
+    const val INTERVAL_MS = 30 * 60 * 1000L
 
     private const val TAG = "WalcottParentCheck"
     private const val REQUEST_CODE = 4712

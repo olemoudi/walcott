@@ -527,6 +527,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_39_0">
+        <item>Walcott uses noticeably less battery on both phones: it wakes the radio about a tenth as often, and stops re-reading work it had already done.</item>
+        <item>A phone that can\'t get a location — indoors, or in aeroplane mode — no longer keeps powering up its GPS every minute to be told the same thing.</item>
+        <item>Location now reuses a recent fix when there is one, instead of always asking for a new one.</item>
+    </string-array>
     <string-array name="whats_new_0_38_0">
         <item>Your phone now checks for your children\'s messages even while it\'s asleep, so a request or an alert can\'t sit unread for hours overnight.</item>
         <item>Web filtering now tells you when it isn\'t actually running — another VPN app taking over used to look like everything was fine.</item>

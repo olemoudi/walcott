@@ -59,8 +59,37 @@ class AppInventory(context: Context) {
         pm.resolveActivity(intent, 0)?.activityInfo?.packageName?.takeIf { it != RESOLVER_PACKAGE }
     }.getOrNull()
 
-    /** Launchable apps, sorted by name. Excludes Walcott itself. */
+    @Volatile private var launchable: List<InstalledApp>? = null
+    @Volatile private var launchableReadAt = 0L
+
+    /**
+     * Launchable apps, sorted by name. Excludes Walcott itself.
+     *
+     * Cached, because building this is not cheap and nothing about it changes between installs:
+     * it queries every launcher activity on the device and then loads a LABEL for each one, which
+     * means opening that app's resources. On a phone with eighty apps that is eighty resource
+     * loads — and the child publishes a snapshot carrying this list every fifteen minutes, for
+     * ever, to say the same thing every time.
+     *
+     * [invalidate] is called by the package receivers that already exist for exactly this event,
+     * so the cache is normally exact rather than merely fresh; the TTL is only a backstop for a
+     * process with no receiver registered.
+     */
     fun launchableApps(): List<InstalledApp> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        launchable?.let { if (now - launchableReadAt <= LAUNCHABLE_TTL_MS) return it }
+        val fresh = readLaunchableApps()
+        launchable = fresh
+        launchableReadAt = now
+        return fresh
+    }
+
+    /** Drops the cached app list; call when a package is added or removed. */
+    fun invalidate() {
+        launchable = null
+    }
+
+    private fun readLaunchableApps(): List<InstalledApp> {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         return pm.queryIntentActivities(intent, 0)
             .asSequence()
@@ -99,6 +128,9 @@ class AppInventory(context: Context) {
     private companion object {
         /** How long the resolved apps are trusted; they change about as often as never. */
         const val REACH_OUT_TTL_MS = 60 * 60 * 1000L
+
+        /** Backstop only — the package receivers invalidate this the moment it goes stale. */
+        const val LAUNCHABLE_TTL_MS = 10 * 60 * 1000L
 
         /** The system's "which app should open this?" chooser, not an app in its own right. */
         const val RESOLVER_PACKAGE = "android"

@@ -70,6 +70,7 @@ class AppBlockerService : AccessibilityService() {
     // wave the new app through until the next policy edit.
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            app.repository.inventory.invalidate()
             scope.launch { runCatching { managed = app.repository.managedPackagesNow() } }
         }
     }

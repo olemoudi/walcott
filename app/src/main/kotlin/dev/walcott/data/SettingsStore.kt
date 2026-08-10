@@ -38,9 +38,33 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
         return seen
     }
 
+    /**
+     * The last blob decoded and what it decoded to, so the same JSON is never parsed twice.
+     *
+     * This is not a micro-optimisation. [settings] is a cold flow: every collector re-runs
+     * [decode] on every emission, and [current] is `settings.first()`, so each call parses the
+     * whole policy afresh. The enforcement loop asks for the config AND the idle-earn config on
+     * every tick — two full parses of a large object graph every two seconds while a child is
+     * using a limited app, plus one per emission in the VPN service, the accessibility blocker
+     * and each screen collecting it.
+     *
+     * The policy only changes when someone edits it or a parent snapshot arrives, which is
+     * roughly never in these terms. Comparing the raw string first costs a memory scan against a
+     * full parse, and the common case is DataStore handing back the identical instance, which
+     * `===` settles immediately. [PolicySettings] is an immutable data class, so handing the same
+     * instance to every caller is safe.
+     */
+    // ONE volatile holding both halves, not two: written separately, a reader racing an update
+    // could see the new raw string beside the previously decoded object and hand out the wrong
+    // policy — on a child device, the wrong set of blocked apps.
+    private class Decoded(val raw: String, val settings: PolicySettings)
+
+    @Volatile private var cache: Decoded? = null
+
     private fun decode(raw: String?): PolicySettings {
         if (raw == null) return PolicySettings() // fresh install, nothing stored yet
-        return runCatching { json.decodeFromString(serializer, raw) }
+        cache?.let { hit -> if (raw === hit.raw || raw == hit.raw) return hit.settings }
+        val decoded = runCatching { json.decodeFromString(serializer, raw) }
             // Anything written when limits were per category arrives in the shape the rest of
             // the app no longer speaks. Converting on READ rather than in a one-shot migration
             // means it also covers a policy that arrives over the wire from a parent who hasn't
@@ -49,8 +73,14 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
             .getOrElse {
                 corruptionSeen = true
                 dev.walcott.debug.DebugLog.e(TAG, "stored policy is unreadable; falling back to empty", it)
-                PolicySettings()
+                // Deliberately NOT cached. The flag has to be re-raised on every read while the
+                // corruption lasts (see [corruptionSeen]) — caching the fallback would raise it
+                // exactly once, and a consumer that had already taken it would never see it
+                // again, stranding a child with every app blocked.
+                return PolicySettings()
             }
+        cache = Decoded(raw, decoded)
+        return decoded
     }
 
     val settings: Flow<PolicySettings> = dataStore.data.map { prefs -> decode(prefs[key]) }

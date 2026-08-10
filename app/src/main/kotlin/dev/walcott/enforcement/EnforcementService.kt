@@ -68,12 +68,25 @@ class EnforcementService : LifecycleService() {
         }
     }
 
+    /**
+     * Today's counters, followed rather than polled.
+     *
+     * The loop needs both on every tick, and reading them was two SQLite queries every two
+     * seconds. Room already knows when they change — the loop's own writes are what change the
+     * usage half — so it pushes, and the tick just reads memory. Seeded from the database at
+     * start-up so the first ticks aren't decided on an empty map.
+     */
+    @Volatile private var usageToday: Map<String, java.time.Duration> = emptyMap()
+    @Volatile private var extraToday: Map<String, java.time.Duration> = emptyMap()
+
     /** Set when a package is (un)installed, so the managed-set cache refreshes immediately. */
     @Volatile private var inventoryDirty = true
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             inventoryDirty = true
             val app = application as WalcottApplication
+            // The app list itself is cached now, and this is the event it is cached against.
+            app.repository.inventory.invalidate()
             val realChange = intent?.action in
                 setOf(Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_REMOVED) &&
                 intent?.getBooleanExtra(Intent.EXTRA_REPLACING, false) == false
@@ -130,6 +143,7 @@ class EnforcementService : LifecycleService() {
         // Grant location before startForeground so the service can claim the location FGS type.
         LocationPolicy.ensureEnforced(this)
         startForegroundCompat()
+        observeCounters()
         lifecycleScope.launch { runLoopResilient() }
         observeWebFilter()
         observeDeviceRestrictions()
@@ -186,11 +200,17 @@ class EnforcementService : LifecycleService() {
                     if (minutes <= 0) return@collectLatest
                     val sampler = LocationSampler(this@EnforcementService)
                     val periodMs = minutes * 60_000L
+                    // Consecutive cycles that produced nothing, so a device that cannot be
+                    // located backs off instead of retrying at full price for ever.
+                    var failures = 0
                     while (currentCoroutineContext().isActive) {
                         val startedAt = SystemClock.elapsedRealtime()
                         var gotFix = false
                         runCatching {
-                            val fix = sampler.currentFix()
+                            // A fix from anyone, less than a third of a period old, is as good as
+                            // ours and costs nothing: a phone on a desk reports the same place
+                            // whether or not we spin its GPS to hear it.
+                            val fix = sampler.currentFix(maxCacheAgeMs = periodMs / 3)
                             if (fix != null) {
                                 app.repository.recordLocation(fix)
                                 gotFix = true
@@ -201,22 +221,38 @@ class EnforcementService : LifecycleService() {
                             app.syncManager.publishLocationUpdate()
                         }.onFailure { DebugLog.e(LOC_TAG, "location sampling cycle failed", it) }
 
-                        // Sleep the REMAINDER of the period, not a full one: acquiring a fix can
-                        // take up to a minute (three providers, each with its own timeout), and
-                        // adding that to every cycle made the real interval drift well past the
-                        // one the parent chose. A failed cycle retries sooner — a device that
-                        // just walked outdoors shouldn't stay unlocatable for a whole period.
+                        // Sleep the REMAINDER of the period, not a full one: acquiring a fix takes
+                        // real time, and adding that to every cycle made the interval drift well
+                        // past the one the parent chose. A failed cycle retries sooner — a device
+                        // that just walked outdoors shouldn't stay unlocatable for a whole period.
                         //
-                        // The floor is what keeps that safe: with no fix available the sampler
-                        // burns its full timeout on every provider, so subtracting the elapsed
-                        // time would leave a zero wait and spin the GPS continuously — exactly
-                        // in the indoors/airplane-mode case where it can never succeed.
-                        val target = if (gotFix) periodMs else minOf(RETRY_LOCATION_MILLIS, periodMs)
+                        // But it retries sooner only for a while. A phone that cannot be located
+                        // usually cannot be located for hours (indoors, aeroplane mode, no sky),
+                        // and a fixed one-minute retry meant powering the radio every ninety
+                        // seconds all afternoon to be told the same thing. Each failure doubles
+                        // the wait, up to the interval the parent asked for; one success resets
+                        // it. The floor stays as the last guard against a zero wait.
+                        failures = if (gotFix) 0 else failures + 1
+                        val backoff = RETRY_LOCATION_MILLIS shl (failures - 1).coerceIn(0, MAX_LOCATION_BACKOFF_SHIFT)
+                        val target = if (gotFix) periodMs else minOf(backoff, periodMs)
                         val elapsed = SystemClock.elapsedRealtime() - startedAt
                         delay((target - elapsed).coerceAtLeast(MIN_LOCATION_GAP_MILLIS))
                     }
                 }
         }
+    }
+
+    /** Keeps [usageToday] / [extraToday] current, so the tick never has to query for them. */
+    private fun observeCounters() {
+        val repo = (application as WalcottApplication).repository
+        lifecycleScope.launch {
+            // Seeded before the flows have emitted, so the very first ticks decide on real
+            // numbers rather than on "nothing has been used today".
+            runCatching { usageToday = repo.usageNow() }
+            runCatching { extraToday = repo.effectiveExtraNow() }
+        }
+        lifecycleScope.launch { repo.usageTodayAllFlow.collect { usageToday = it } }
+        lifecycleScope.launch { repo.effectiveExtraTodayFlow.collect { extraToday = it } }
     }
 
     /** Starts/stops the DNS filter VPN as web-filter rules appear or disappear. */
@@ -291,6 +327,11 @@ class EnforcementService : LifecycleService() {
         var lastForeground: String? = null
         var lastUsageAccess: Boolean? = null
         var lastClockTrusted: Boolean? = null
+        // Usage access, re-read at most every USAGE_ACCESS_TTL_MILLIS (an AppOps binder call).
+        var usageAccessCached = true
+        var usageAccessCheckedAt = 0L
+        // Last direct database read of the counters (see the resync below).
+        var lastCounterResyncAt = 0L
         // Managed-set cache: enumerating PackageManager (launchable apps + labels) on every
         // 2s tick was pure binder churn — the set only changes on (un)installs and
         // classification edits, both of which invalidate it explicitly below.
@@ -356,8 +397,21 @@ class EnforcementService : LifecycleService() {
             // Fresh clock for rule evaluation: a screen-off park above can span minutes.
             val now = LocalDateTime.now()
 
-            val usage = repo.usageNow()
-            val extra = repo.effectiveExtraNow() // manually granted + idle-earned
+            // Read from memory, kept current by observeCounters(). Room pushes the change the
+            // moment addUsageSeconds below writes it, so the next tick already sees it.
+            //
+            // Re-read straight from the database once a minute anyway. Everything else in this
+            // loop fails closed; this is the one place where a subscription that quietly stopped
+            // delivering would fail OPEN — frozen counters mean budgets that never run out, which
+            // is the failure a child would least mind and most notice. One query a minute against
+            // thirty is still the whole saving, and it makes the freeze self-correcting.
+            if (nowClock - lastCounterResyncAt > COUNTER_RESYNC_MILLIS) {
+                usageToday = repo.usageNow()
+                extraToday = repo.effectiveExtraNow()
+                lastCounterResyncAt = nowClock
+            }
+            val usage = usageToday
+            val extra = extraToday // manually granted + idle-earned
             if (inventoryDirty || nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS) {
                 managed = repo.managedPackagesNow()
                 managedFetchedAt = nowClock
@@ -384,7 +438,17 @@ class EnforcementService : LifecycleService() {
             // the apps come back the moment the permission does. A Device Owner can't grant or
             // pin usage access (it's an AppOp, out of setPermissionGrantState's reach), so this
             // is the strongest enforcement available.
-            val usageAccessOk = UsageAccess.grantedForEnforcement(this)
+            //
+            // Cached for a few seconds: it is an AppOps binder round trip, and this loop runs
+            // every two seconds while a child is using a limited app. (The accessibility backend
+            // was given this same cache in 0.37 on the belief that this loop already had one — it
+            // did not.) Staleness costs nothing here: a revocation is still caught within the
+            // window, and the periodic re-assert applies the consequence either way.
+            if (nowClock - usageAccessCheckedAt > USAGE_ACCESS_TTL_MILLIS) {
+                usageAccessCached = UsageAccess.grantedForEnforcement(this)
+                usageAccessCheckedAt = nowClock
+            }
+            val usageAccessOk = usageAccessCached
             if (usageAccessOk != lastUsageAccess) {
                 if (lastUsageAccess != null) {
                     DebugLog.w(TAG, "usage access changed: granted=$usageAccessOk")
@@ -548,6 +612,12 @@ class EnforcementService : LifecycleService() {
         private const val INVENTORY_TTL_MILLIS = 60_000L
         /** Periodic full re-assert of suspension state, catching any external drift. */
         private const val REASSERT_MILLIS = 30_000L
+
+        /** How long the cached usage-access answer is trusted (an AppOps binder call). */
+        private const val USAGE_ACCESS_TTL_MILLIS = 10_000L
+
+        /** Safety net against a counter subscription that stops delivering (see the loop). */
+        private const val COUNTER_RESYNC_MILLIS = 60_000L
         // Idle-earn cadence, kept coarse so screen-off earning costs few wakeups/writes: the
         // child wakes ~every 5 min while the screen is off to accrue idle, and batched idle is
         // flushed into earned time on the same period. Earned time needs no finer precision.
@@ -555,8 +625,11 @@ class EnforcementService : LifecycleService() {
         private const val IDLE_STEP_MILLIS = 5 * 60_000L
         /** Cap on idle credited per accrual, so a long screen-off park can't dump hours at once. */
         private const val MAX_IDLE_STEP_SECONDS = 360L
-        /** Backoff after a cycle that produced no fix (indoors, GPS warming up, airplane mode). */
+        /** First backoff after a cycle that produced no fix (indoors, GPS warming up, airplane mode). */
         private const val RETRY_LOCATION_MILLIS = 60_000L
+
+        /** Caps the doubling at 2^4 = 16 minutes, before the period's own cap applies. */
+        private const val MAX_LOCATION_BACKOFF_SHIFT = 4
         /** Hard floor between sampling cycles, so a never-succeeding fix can't spin the radio. */
         private const val MIN_LOCATION_GAP_MILLIS = 30_000L
         /** Screen-off checkpoint publish, skipped if anything published this recently. */

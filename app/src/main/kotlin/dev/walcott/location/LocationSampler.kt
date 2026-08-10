@@ -25,8 +25,18 @@ class LocationSampler(private val context: Context) {
 
     private val lm = context.getSystemService(LocationManager::class.java)
 
-    /** Best current fix, or the freshest cached one, or null if unavailable. */
-    suspend fun currentFix(timeoutMs: Long = FIX_TIMEOUT_MS): LocationPoint? {
+    /**
+     * Best current fix, or the freshest cached one, or null if unavailable.
+     *
+     * [maxCacheAgeMs] is the battery lever: a cached fix at least that fresh is returned without
+     * powering anything at all. Someone else's fix — a maps app, a weather widget, the system
+     * itself — is free to us, and a phone sitting on a desk produces the same coordinates whether
+     * we spin the GPS or not. Pass 0 to insist on a live attempt.
+     */
+    suspend fun currentFix(
+        timeoutMs: Long = FIX_TIMEOUT_MS,
+        maxCacheAgeMs: Long = 0,
+    ): LocationPoint? {
         val lm = lm ?: run { DebugLog.w(TAG, "no LocationManager service"); return null }
         if (!hasPermission()) { DebugLog.w(TAG, "location permission not granted"); return null }
         // Prefer the platform fused provider (API 31+, better/faster with less battery), then GPS.
@@ -35,24 +45,43 @@ class LocationSampler(private val context: Context) {
             add(LocationManager.GPS_PROVIDER)
             add(LocationManager.NETWORK_PROVIDER)
         }.filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+
+        // Free first: a recent enough fix from anyone means no radio at all this cycle.
+        if (maxCacheAgeMs > 0) {
+            val fresh = freshestCached(lm, providers)
+            if (fresh != null && System.currentTimeMillis() - fresh.time <= maxCacheAgeMs) {
+                DebugLog.i(TAG, "using a cached fix (${(System.currentTimeMillis() - fresh.time) / 1000}s old)")
+                return fresh.toPoint()
+            }
+        }
+
         val locationOn = runCatching { lm.isLocationEnabled }.getOrDefault(false)
         DebugLog.i(TAG, "requesting fix; locationEnabled=$locationOn enabled providers=$providers")
 
-        for (provider in providers) {
-            val loc = withTimeoutOrNull(timeoutMs) { requestSingle(lm, provider) }
+        // The first provider gets the full budget; the rest get a short one. Every provider used
+        // to get the full 20 s, so a cycle where none of them can answer — indoors, aeroplane
+        // mode — burnt a solid minute of GPS and radio before giving up, and then did it again a
+        // moment later. The fallbacks are worth a try, not another twenty seconds each.
+        providers.forEachIndexed { index, provider ->
+            val budget = if (index == 0) timeoutMs else FALLBACK_TIMEOUT_MS
+            val loc = withTimeoutOrNull(budget) { requestSingle(lm, provider) }
             if (loc != null) {
                 DebugLog.i(TAG, "live fix from $provider acc=${if (loc.hasAccuracy()) loc.accuracy else -1f}m")
                 return loc.toPoint()
             }
         }
-        // Fall back to the most recent cached fix from any provider.
-        val cached = (providers + LocationManager.PASSIVE_PROVIDER)
-            .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
-            .maxByOrNull { it.time }
+        // Fall back to the most recent cached fix from any provider, at any age.
+        val cached = freshestCached(lm, providers)
         if (cached == null) DebugLog.w(TAG, "no live fix and no cached location available")
         else DebugLog.i(TAG, "no live fix; using cached location")
         return cached?.toPoint()
     }
+
+    /** The newest last-known fix across [providers] plus the (free) passive one. */
+    private fun freshestCached(lm: LocationManager, providers: List<String>): Location? =
+        (providers + LocationManager.PASSIVE_PROVIDER)
+            .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
+            .maxByOrNull { it.time }
 
     private suspend fun requestSingle(lm: LocationManager, provider: String): Location? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -110,6 +139,9 @@ class LocationSampler(private val context: Context) {
 
     companion object {
         private const val FIX_TIMEOUT_MS = 20_000L
+
+        /** Budget for each provider after the first: a try, not a second full wait. */
+        private const val FALLBACK_TIMEOUT_MS = 5_000L
         private const val TAG = "WalcottLocation"
     }
 }

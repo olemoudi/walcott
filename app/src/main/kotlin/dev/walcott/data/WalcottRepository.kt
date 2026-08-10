@@ -55,11 +55,23 @@ class WalcottRepository(
         }
     }.distinctUntilChanged()
 
-    /** Today's usage per category, reactive across midnight rollovers (per-app counters stripped). */
-    val usageTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
+    /**
+     * Today's counters exactly as stored — per-app package counters included — reactive across
+     * midnight rollovers.
+     *
+     * What the enforcement loop watches instead of querying. It used to call [usageNow] and
+     * [extraNow] on every tick, which is two database reads every two seconds while a child is
+     * using a limited app; Room's invalidation tracker pushes the same numbers for free the
+     * moment they change, and the loop's own writes are what change them.
+     */
+    val usageTodayAllFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
         db.usage().observeDay(day)
-            .map { rows -> rows.filterNot { it.categoryId.contains('.') }.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+            .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
+
+    /** Today's usage per category, reactive across midnight rollovers (per-app counters stripped). */
+    val usageTodayFlow: Flow<Map<String, Duration>> =
+        usageTodayAllFlow.map { it.filterKeys { key -> !key.contains('.') } }
 
     val extraTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
         db.usage().observeExtraDay(day)
