@@ -58,6 +58,7 @@ data class ParentEvent(
         const val TYPE_ENFORCEMENT_GAP = "enforcement_gap"
         const val TYPE_ENFORCEMENT_GAP_CLEARED = "enforcement_gap_cleared"
         const val TYPE_CLOCK_TAMPER = "clock_tamper"
+        const val TYPE_RULES_APPLIED = "rules_applied"
         const val TYPE_WEB_FILTER_DOWN = "web_filter_down"
         const val TYPE_WEB_FILTER_BACK = "web_filter_back"
         const val TYPE_CHILD_CRASHED = "child_crashed"
@@ -252,6 +253,23 @@ data class SyncState(
     val selfTestNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for clock tampering (cleared once the skew is back to normal). */
     val clockTamperNotified: Set<String> = emptySet(),
+    /**
+     * A rule edit is written locally but not yet published (see [dev.walcott.data.PolicyPush]).
+     *
+     * PERSISTED, and that is the point rather than a detail: a child refuses a policy whose
+     * version has not gone up (the replay gate), so a held edit lost to a process death would
+     * never be adopted — the periodic re-emit would keep publishing it under the old version and
+     * every child would keep rejecting it, for ever. The flag is what lets the next start-up
+     * notice and push.
+     */
+    val pendingPolicyPush: Boolean = false,
+    /** Edits accumulated in the current burst; drives how long the hold lasts. */
+    val policyEditBurst: Int = 0,
+    /** The policy as last put on the wire, so the screens can say which settings are still local. */
+    val deployedPolicyJson: String = "",
+    /** deviceId -> the parent version that child has confirmed, and when it did. */
+    val policyConfirmedVersion: Map<String, Long> = emptyMap(),
+    val policyConfirmedAtMs: Map<String, Long> = emptyMap(),
     /**
      * deviceIds already alerted for a web filter that the rules ask for but that isn't running
      * (cleared when the tunnel comes back, so a later lapse alerts again).

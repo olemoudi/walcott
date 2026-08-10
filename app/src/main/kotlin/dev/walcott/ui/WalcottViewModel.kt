@@ -101,6 +101,30 @@ class WalcottViewModel(
         sync.state.map { it.children }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val lastSeen: StateFlow<Map<String, Long>> =
         sync.state.map { it.lastSeen }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    /**
+     * The settings edited on this phone that are not on the wire yet (see [PolicyDiff]), so each
+     * screen can mark exactly what it is showing that no child has been told about.
+     *
+     * Recomputed from the deployed snapshot rather than tracked as the edits happen: a set built
+     * by remembering "what did I touch" drifts the moment a value is changed and changed back,
+     * and would then mark a setting as pending for ever.
+     */
+    val pendingPolicyKeys: StateFlow<Set<String>> =
+        combine(sync.state, repository.settingsFlow) { state, current ->
+            val deployed = state.deployedPolicyJson.takeIf { it.isNotBlank() }?.let {
+                runCatching { policyJson.decodeFromString(dev.walcott.data.PolicySettings.serializer(), it) }
+                    .getOrNull()
+            }
+            dev.walcott.data.PolicyDiff.changedKeys(deployed, current)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private val policyJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+    /** deviceId -> when that child last confirmed it had the parent's rules. */
+    val policyConfirmedAt: StateFlow<Map<String, Long>> =
+        sync.state.map { it.policyConfirmedAtMs }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** The parent's current rules version, to tell which children have caught up. */
     val parentVersion: StateFlow<Long> =
         sync.state.map { it.parentVersion }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)

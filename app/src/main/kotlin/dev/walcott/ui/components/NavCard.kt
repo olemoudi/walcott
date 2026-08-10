@@ -26,6 +26,8 @@ fun NavCard(
     subtitle: String,
     onClick: () -> Unit,
     position: CardPosition = CardPosition.Single,
+    /** True while this section holds a rule edit that hasn't been sent yet (see PendingChip). */
+    pending: Boolean = false,
 ) {
     val spacing = Tokens.spacing
     WalcottCard(onClick = onClick, position = position) {
@@ -35,6 +37,7 @@ fun NavCard(
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (pending) PendingChip(Modifier.padding(top = 4.dp))
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

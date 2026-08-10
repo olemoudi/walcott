@@ -78,6 +78,7 @@ import android.content.Intent
 import android.provider.Settings
 import dev.walcott.R
 import dev.walcott.data.ChildEntry
+import dev.walcott.data.PolicyDiff
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.EnforcementStatus
@@ -92,6 +93,7 @@ import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.ModeBadge
 import dev.walcott.ui.components.NavCard
+import dev.walcott.ui.components.PendingChip
 import dev.walcott.ui.components.PermissionFixRow
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
@@ -130,6 +132,8 @@ fun FamiliesScreen(
     val spacing = Tokens.spacing
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    // Rule edits still sitting on this phone, waiting out the coalescing window (see PolicyPush).
+    val pendingKeys by viewModel.pendingPolicyKeys.collectAsStateWithLifecycle()
     // What this parent's OWN phone still needs switched on (see DeviceSetup).
     val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
@@ -337,12 +341,18 @@ fun FamiliesScreen(
         item { SectionHeader(stringResource(R.string.home_section_manage)) }
         item {
             CardGroup {
+                // Each row says whether what it leads to is waiting to be sent, so a parent can
+                // see from here that a change of theirs is still on this phone.
                 NavCard(
                     Icons.Outlined.Schedule,
                     stringResource(R.string.nav_limits_title),
                     stringResource(R.string.nav_limits_subtitle),
                     onOpenBudgets,
                     position = CardPosition.First,
+                    pending = pendingKeys.any {
+                        it == PolicyDiff.DEFAULT_BUDGET || it == PolicyDiff.BEDTIME ||
+                            it == PolicyDiff.SCREEN_FREE || it.startsWith("app:")
+                    },
                 )
                 NavCard(
                     Icons.Outlined.CalendarMonth,
@@ -350,6 +360,7 @@ fun FamiliesScreen(
                     stringResource(R.string.nav_calendar_subtitle),
                     onOpenCalendar,
                     position = CardPosition.Middle,
+                    pending = PolicyDiff.CALENDAR in pendingKeys,
                 )
                 NavCard(
                     Icons.Outlined.Groups,
@@ -357,6 +368,13 @@ fun FamiliesScreen(
                     stringResource(R.string.nav_family_settings_subtitle),
                     onOpenFamily,
                     position = CardPosition.Last,
+                    // The family hub is everything that isn't the two rows above.
+                    pending = pendingKeys.any {
+                        it in setOf(
+                            PolicyDiff.WEB_FILTER, PolicyDiff.RESTRICTIONS, PolicyDiff.EARN,
+                            PolicyDiff.LOCATION, PolicyDiff.NEW_APP_ALERTS, PolicyDiff.FAMILY_NAME,
+                        )
+                    },
                 )
             }
         }
@@ -398,6 +416,7 @@ fun FamiliesScreen(
                         avg7 = ledger?.let { UsageLedger.averageDaily(it, childToday!!, days = 7) },
                         avg30 = ledger?.let { UsageLedger.averageDaily(it, childToday!!, days = 30) },
                         showMap = snapshot != null && locationOn,
+                        pending = PolicyDiff.childKey(entry.childId) in pendingKeys,
                         position = cardPosition(index, settings.children.size),
                         onClick = { onOpenChild(entry.childId) },
                         onOpenMap = { onOpenMap(entry.childId) },
@@ -540,6 +559,8 @@ private fun ChildRow(
     avg30: UsageLedger.Average?,
     /** Show the map shortcut (location on for this child, or a trail already reported). */
     showMap: Boolean,
+    /** This child's own rules were edited here and haven't been sent yet (see PolicyDiff). */
+    pending: Boolean,
     position: CardPosition = CardPosition.Single,
     onClick: () -> Unit,
     onOpenMap: () -> Unit,
@@ -611,6 +632,9 @@ private fun ChildRow(
                         },
                     )
                 }
+                // Edited here and not sent yet, then sent and not confirmed yet: two states,
+                // in the order they happen.
+                if (pending) PendingChip(Modifier.padding(top = Tokens.spacing.xs))
                 if (snapshot != null) StatusChips(snapshot, parentVersion)
             }
             if (showMap) {

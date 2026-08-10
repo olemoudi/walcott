@@ -66,7 +66,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_PANIC_CANCELLED, ParentEvent.TYPE_DOMAINS, ParentEvent.TYPE_INSTALL_WINDOW,
     ParentEvent.TYPE_WRONG_APP, ParentEvent.TYPE_APP_TIME_OUT, ParentEvent.TYPE_BEDTIME,
     ParentEvent.TYPE_SCREEN_FREE, ParentEvent.TYPE_WEB_FILTER_DOWN, ParentEvent.TYPE_WEB_FILTER_BACK,
-    ParentEvent.TYPE_CHILD_CRASHED,
+    ParentEvent.TYPE_CHILD_CRASHED, ParentEvent.TYPE_RULES_APPLIED,
 )
 
 @Composable
@@ -168,6 +168,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_WEB_FILTER_DOWN -> Icons.Outlined.Language to error
         ParentEvent.TYPE_WEB_FILTER_BACK -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_CHILD_CRASHED -> Icons.Filled.Warning to warn
+        ParentEvent.TYPE_RULES_APPLIED -> Icons.Filled.CheckCircle to good
         else -> Icons.Outlined.Build to neutral
     }
 }
@@ -190,6 +191,7 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_INDOOR_LOCATION_OFF -> stringResource(R.string.net_location_off_title, name)
     ParentEvent.TYPE_WEB_FILTER_DOWN -> stringResource(R.string.web_filter_down_title, name)
     ParentEvent.TYPE_WEB_FILTER_BACK -> stringResource(R.string.event_web_filter_back, name)
+    ParentEvent.TYPE_RULES_APPLIED -> stringResource(R.string.event_rules_applied, name)
     ParentEvent.TYPE_CHILD_CRASHED ->
         pluralStringResource(R.plurals.event_child_crashed, event.count, name, event.count)
     ParentEvent.TYPE_NEW_APP ->

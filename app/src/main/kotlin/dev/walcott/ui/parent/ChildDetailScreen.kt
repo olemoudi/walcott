@@ -115,6 +115,7 @@ fun ChildDetailScreen(
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
+    val policyConfirmedAt by viewModel.policyConfirmedAt.collectAsStateWithLifecycle()
     val diagHistory by viewModel.diagHistory.collectAsStateWithLifecycle()
     val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
@@ -218,6 +219,7 @@ fun ChildDetailScreen(
                     LinkedCard(
                         snapshot,
                         rulesSyncing = snapshot.appliedPolicyVersion in 1 until parentVersion,
+                        rulesConfirmedAtMs = policyConfirmedAt[snapshot.deviceId] ?: 0L,
                         onShowCode = { showCode = true },
                     )
                 }
@@ -724,7 +726,12 @@ private fun EnrollInstallStep(mode: EnrollMode) {
 }
 
 @Composable
-private fun LinkedCard(snapshot: ChildSnapshot, rulesSyncing: Boolean, onShowCode: () -> Unit) {
+private fun LinkedCard(
+    snapshot: ChildSnapshot,
+    rulesSyncing: Boolean,
+    rulesConfirmedAtMs: Long,
+    onShowCode: () -> Unit,
+) {
     val spacing = Tokens.spacing
     WalcottCard {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
@@ -740,13 +747,25 @@ private fun LinkedCard(snapshot: ChildSnapshot, rulesSyncing: Boolean, onShowCod
                     stringResource(R.string.child_detail_linked, snapshot.displayName),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                // A rule edit is on its way: honest about eventual consistency, and clears
-                // the moment the child confirms the new version.
+                // Rules in flight, or the positive counterpart. Saying "up to date, confirmed at
+                // X" matters as much as the warning: a healthy child used to be shown by the
+                // ABSENCE of a line, which is also exactly what a child that has never reported
+                // anything looks like — so the one state a parent most wants to confirm was the
+                // one the screen said nothing about.
                 if (rulesSyncing) {
                     Text(
                         stringResource(R.string.detail_rules_syncing),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFB26A00),
+                    )
+                } else if (rulesConfirmedAtMs > 0) {
+                    Text(
+                        stringResource(
+                            R.string.detail_rules_current,
+                            android.text.format.DateUtils.getRelativeTimeSpanString(rulesConfirmedAtMs).toString(),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 // Battery at a glance (legacy children report -1 and show nothing).

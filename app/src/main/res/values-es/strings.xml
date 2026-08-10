@@ -162,6 +162,9 @@
     <!-- Indicador de sincronización de reglas (lado padre) -->
     <string name="chip_rules_syncing">Actualizando reglas</string>
     <string name="detail_rules_syncing">Enviando los últimos cambios de reglas — se aplicarán en el próximo check-in</string>
+    <string name="detail_rules_current">Reglas al día — confirmado %1$s</string>
+    <string name="event_rules_applied">%1$s aplicó las nuevas reglas</string>
+    <string name="pending_push_chip">Actualizando…</string>
 
     <!-- Sync: panel del padre / peticiones -->
     <string name="nav_children_title">Hijos y peticiones</string>
@@ -527,6 +530,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_42_0">
+        <item>Los cambios de reglas esperan unos segundos antes de enviarse, así que tocar varias cosas de una sentada le llega a tus hijos como un solo cambio en vez de irles llegando a medias.</item>
+        <item>Lo que hayas cambiado y aún no se haya enviado se marca con «Actualizando…», para que una regla que sigue en tu móvil no se confunda con una que ya ha llegado.</item>
+        <item>La ficha de cada hijo dice «Reglas al día» con la hora en que lo confirmó, en vez de dejarte interpretar la ausencia de un aviso.</item>
+    </string-array>
     <string-array name="whats_new_0_41_0">
         <item>El tiempo de pantalla vuelve a funcionar. Desde que los límites pasaron a ser por app, el uso que reportaba el móvil del niño se descartaba antes de llegarte, y por eso todo salía a cero.</item>
         <item>Ahora ves el desglose app por app tengas límites puestos o no — incluidas las apps que vienen con el móvil, como el navegador o la de vídeo, que antes no se contaban.</item>

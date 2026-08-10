@@ -240,15 +240,19 @@ class SyncManager(
                 // not tear down the collector and leave the parent silently no longer syncing
                 // its edits for the rest of the process.
                 settingsStore.settings.drop(1).collect {
-                    runCatching { publishConfigChanged() }
-                        .onFailure { dev.walcott.debug.DebugLog.e(TAG, "publish on settings change failed", it) }
-                    // What the reminder ladder measures a saved backup against: a file older
-                    // than the last edit is stale and worth nagging about.
-                    syncStore.update { s -> s.copy(lastPolicyEditAtMs = System.currentTimeMillis()) }
+                    runCatching { onPolicyEdited() }
+                        .onFailure { dev.walcott.debug.DebugLog.e(TAG, "scheduling the policy push failed", it) }
                 }
             }
         } else {
             null
+        }
+        // A burst of edits that was still being held when the process died: the child would
+        // reject it for ever after (its version never went up), so push it now.
+        if (id.role == Role.PARENT && syncStore.current().pendingPolicyPush) {
+            dev.walcott.debug.DebugLog.i(TAG, "publishing a rule edit held across a restart")
+            runCatching { flushPolicyPush() }
+                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "flushing the held policy failed", it) }
         }
         // Re-emit heals lost messages from the moment a device is paired — including devices
         // paired during this process's lifetime (pairing used to publish exactly once).
@@ -279,6 +283,13 @@ class SyncManager(
      * the end rather than one per flick.
      */
     suspend fun setInteractive(nowInteractive: Boolean) {
+        // Putting the app away is the clearest possible "I have finished editing": there is
+        // nothing left to coalesce with, so the held policy goes now instead of making a child
+        // wait out the rest of a window nobody is going to add to.
+        if (!nowInteractive) {
+            runCatching { flushPolicyPush() }
+                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "flushing on background failed", it) }
+        }
         desiredInteractive = nowInteractive
         modeSwitchJob?.cancel()
         val id = identityStore.current()
@@ -1244,8 +1255,59 @@ class SyncManager(
         publishSelf()
     }
 
-    private suspend fun publishConfigChanged() {
-        syncStore.update { it.copy(parentVersion = it.parentVersion + 1) }
+    private var policyPushJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * A rule was edited: mark it pending and (re)start the hold (see [dev.walcott.data.PolicyPush]).
+     *
+     * The edit is already saved locally — the screens show it, and the child's copy is what lags.
+     * Everything here is about WHEN it goes on the wire.
+     */
+    private suspend fun onPolicyEdited() {
+        val now = System.currentTimeMillis()
+        val edits = syncStore.current().let { if (it.pendingPolicyPush) it.policyEditBurst + 1 else 1 }
+        syncStore.update {
+            it.copy(
+                pendingPolicyPush = true,
+                policyEditBurst = edits,
+                // What the reminder ladder measures a saved backup against: a file older than
+                // the last edit is stale and worth nagging about.
+                lastPolicyEditAtMs = now,
+            )
+        }
+        val hold = dev.walcott.data.PolicyPush.holdMs(edits)
+        dev.walcott.debug.DebugLog.i(TAG, "rule edit $edits held for ${hold / 1000}s")
+        policyPushJob?.cancel()
+        policyPushJob = scope.launch {
+            delay(hold)
+            runCatching { flushPolicyPush() }
+                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "publishing the held policy failed", it) }
+        }
+    }
+
+    /**
+     * Publishes whatever is being held, now. Called when the hold expires, when the parent puts
+     * the app away (they have plainly stopped editing), and at start-up for a burst interrupted
+     * by a process death.
+     */
+    suspend fun flushPolicyPush() {
+        policyPushJob?.cancel()
+        policyPushJob = null
+        if (!syncStore.current().pendingPolicyPush) return
+        // Bump the version and clear the flag in ONE write, then publish.
+        //
+        // The bump is what makes the edit adoptable at all — a child refuses a policy whose
+        // version hasn't moved — so once it has happened, even a publish that never leaves the
+        // phone is repaired by the next re-emit. That is what makes it safe to stop calling this
+        // pending, and stopping is necessary: the publish below is what records the deployed
+        // policy, and it only does so once nothing is being held.
+        syncStore.update {
+            it.copy(
+                parentVersion = it.parentVersion + 1,
+                pendingPolicyPush = false,
+                policyEditBurst = 0,
+            )
+        }
         publishSelf()
     }
 
@@ -1630,6 +1692,18 @@ class SyncManager(
                 )
                 val rotation = id.rotationCertB64.takeIf { it.isNotBlank() }?.let { KeyRotation.decode(it) }
                 transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, signingKey(id), rotation))
+                // What is now on the wire, so the screens can tell an edit that has gone out from
+                // one still sitting on this phone (see PolicyDiff). Recorded at publish, not at
+                // confirmation: "not yet sent" and "sent but not yet confirmed" are different
+                // states with different chips, and this is the boundary between them.
+                //
+                // Never while a push is being held. The periodic re-emit publishes the current
+                // policy WITHOUT bumping the version, so mid-hold it puts an edit on the wire
+                // that every child will reject — counting that as deployed would clear the
+                // pending chips for a change that has not actually taken anywhere.
+                if (!state.pendingPolicyPush && state.deployedPolicyJson != snapshot.policyJson) {
+                    syncStore.update { it.copy(deployedPolicyJson = snapshot.policyJson) }
+                }
             }
             Role.CHILD -> {
                 val s = syncStore.current()
@@ -2262,6 +2336,28 @@ class SyncManager(
             }
         } else if (!usageOff && snapshot.deviceId in before.usageAccessNotified) {
             syncStore.update { it.copy(usageAccessNotified = it.usageAccessNotified - snapshot.deviceId) }
+        }
+
+        // The child has caught up with the parent's rules. Recorded so the detail screen can say
+        // "up to date, confirmed at X" instead of leaving the parent to read meaning into the
+        // ABSENCE of a warning — which is also what a child that has never reported looks like.
+        // Only a version that actually moved forward counts, so a re-emitted snapshot can't
+        // restamp the time and make a stale confirmation look fresh.
+        val confirmedBefore = before.policyConfirmedVersion[snapshot.deviceId] ?: 0L
+        if (snapshot.appliedPolicyVersion > confirmedBefore) {
+            val caughtUp = snapshot.appliedPolicyVersion >= before.parentVersion
+            syncStore.update {
+                it.copy(
+                    policyConfirmedVersion =
+                        it.policyConfirmedVersion + (snapshot.deviceId to snapshot.appliedPolicyVersion),
+                    policyConfirmedAtMs =
+                        it.policyConfirmedAtMs + (snapshot.deviceId to System.currentTimeMillis()),
+                ).let { s ->
+                    // Only worth a line on the wall once they are actually current: a child
+                    // stepping through a backlog of versions is one event, not four.
+                    if (caughtUp) s.plusEvent(event(ParentEvent.TYPE_RULES_APPLIED, snapshot)) else s
+                }
+            }
         }
 
         // The rules ask for a DNS filter and the tunnel isn't up: the blocked domains are

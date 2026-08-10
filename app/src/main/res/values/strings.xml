@@ -163,6 +163,9 @@
     <!-- Parent-side rules sync indicator -->
     <string name="chip_rules_syncing">Updating rules</string>
     <string name="detail_rules_syncing">Sending the latest rule changes — they\'ll apply on the next check-in</string>
+    <string name="detail_rules_current">Rules up to date — confirmed %1$s</string>
+    <string name="event_rules_applied">%1$s applied the new rules</string>
+    <string name="pending_push_chip">Updating…</string>
 
     <!-- Sync: parent dashboard / requests -->
     <string name="nav_children_title">Children and requests</string>
@@ -528,6 +531,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_42_0">
+        <item>Rule changes now wait a few seconds before being sent, so editing several things in one sitting reaches your children as one change instead of half-finished ones arriving on their phones.</item>
+        <item>Anything you\'ve changed but not sent yet is marked "Updating…", so a rule sitting on your phone is never mistaken for one that has arrived.</item>
+        <item>A child\'s page now says "Rules up to date" with the time they confirmed it, instead of leaving you to read meaning into the absence of a warning.</item>
+    </string-array>
     <string-array name="whats_new_0_41_0">
         <item>Screen time is working again. Since limits became per-app, the usage a child\'s phone reported was being thrown away before it reached you, so everything showed zero.</item>
         <item>You now see the breakdown app by app whether or not you\'ve set any limits — including apps that came with the phone, like the browser or the video app, which were never counted before.</item>
