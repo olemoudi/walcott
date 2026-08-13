@@ -125,6 +125,40 @@ class InstallGuardTest {
     }
 
     @Test
+    fun `turning the install block off releases every open case`() {
+        // The rule that created the case has been withdrawn. Holding the apps suspended under it
+        // would be enforcing a setting the family turned off — and nothing would ever clear them,
+        // because the only pass that closes a case is the one this state skips.
+        val ledger = listOf(UnauthorizedApp("com.sneaky", atMs = now, suspended = true))
+        assertEquals(
+            emptyList<UnauthorizedApp>(),
+            InstallGuard.retained(ledger, installed = setOf("com.sneaky"), installsBlocked = false),
+        )
+    }
+
+    @Test
+    fun `a case whose app is gone closes even on a pass that judges nobody`() {
+        // The bug this exists for: a case left open for an app that is no longer installed is a
+        // trap for the NEXT install of that same package — including the parent approving it
+        // properly — which walks into a stale accusation and is suspended and removed.
+        val ledger = listOf(UnauthorizedApp("com.sneaky", atMs = now))
+        assertEquals(
+            emptyList<UnauthorizedApp>(),
+            InstallGuard.retained(ledger, installed = setOf("com.launcher"), installsBlocked = true),
+        )
+    }
+
+    @Test
+    fun `a live case survives a pass that judges nobody`() {
+        // A blanket window (the parent standing at the phone) must not amnesty a case that is
+        // still real: the app is still installed, and still not supposed to be.
+        val ledger = listOf(UnauthorizedApp("com.sneaky", atMs = now, removalAttempts = 2))
+        val kept = InstallGuard.retained(ledger, installed = setOf("com.sneaky"), installsBlocked = true)
+        assertEquals(1, kept.size)
+        assertEquals(2, kept.first().removalAttempts)
+    }
+
+    @Test
     fun `the ledger is capped, and says how much it dropped`() {
         val ledger = (1..InstallGuard.MAX_QUARANTINE).map { UnauthorizedApp("com.app$it", atMs = now) }
         val installed = ledger.map { it.pkg }.toSet() + "com.newest"

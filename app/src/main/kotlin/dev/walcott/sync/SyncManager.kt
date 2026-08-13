@@ -1001,10 +1001,27 @@ class SyncManager(
             DeviceRestrictions.KEY_INSTALLS in settingsStore.current().deviceRestrictions
 
         // Seed on first sight, and keep the baseline current whenever there is nothing to judge:
-        // both must leave the ledger alone and neither can be allowed to indict what it finds.
+        // neither can be allowed to INDICT what it finds. Closing cases is a different matter —
+        // a pass that judges nobody still has to let people go (see InstallGuard.retained), or a
+        // withdrawn rule and a finished case both go on suspending apps with nothing left to
+        // clear them.
         if (!s.installBaselineSeeded || !InstallGuard.guarding(installsBlocked, blanketWindow)) {
-            syncStore.update { it.copy(knownPackages = installed, installBaselineSeeded = true) }
-            return false
+            val keep = InstallGuard.retained(s.unauthorizedApps, installed, installsBlocked)
+            val freed = s.unauthorizedApps.filterNot { entry -> keep.any { it.pkg == entry.pkg } }
+            syncStore.update {
+                it.copy(
+                    knownPackages = installed,
+                    installBaselineSeeded = true,
+                    unauthorizedApps = keep,
+                    childVersion = if (freed.isEmpty()) it.childVersion else it.childVersion + 1,
+                )
+            }
+            if (freed.isEmpty()) return false
+            dev.walcott.debug.DebugLog.i(TAG, "quarantine released: ${freed.joinToString { it.pkg }}")
+            // Only the ones still here can be un-suspended; the rest are gone, which is why
+            // their case closed in the first place.
+            runCatching { enforcer.release(freed.map { it.pkg }.filter { it in installed }) }
+            return true
         }
 
         val approved = InstallGuard.approved(

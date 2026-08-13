@@ -1,0 +1,109 @@
+package dev.walcott.sim
+
+import dev.walcott.sync.RemoteAction
+
+/**
+ * The harness as a program you can sit in front of.
+ *
+ * The scenarios in the test suite are the point, but half of what a harness is worth is being
+ * able to drive the thing by hand: pair the emulator, push a rule, watch what comes back, try
+ * the case you have not written a test for yet. That is what this is.
+ *
+ *     ./gradlew :parent-sim:run --args="serve"
+ *
+ * It stands the relay up, enrols whatever device adb can see, and then reads one command per
+ * line from stdin:
+ *
+ *     policy installs                 arm the install block
+ *     policy none                     clear every restriction
+ *     limit com.some.app 30           30 minutes a day for one app
+ *     cmd diagnose                    remote command, optionally `cmd uninstall_app com.x`
+ *     resolve <requestId> yes 15      answer a child's request, granting 15 minutes
+ *     watch                           print child snapshots as they land
+ *     dump                            what the child last reported
+ *     quit
+ */
+fun main(args: Array<String>) {
+    val relay = MockRelay().start()
+    val parent = ParentSim(relay.localUrl, advertisedRelay = relay.emulatorUrl).start()
+    val device = ChildDevice()
+
+    println("relay: ${relay.localUrl} (device sees ${relay.emulatorUrl})")
+    println("topic: ${parent.topic}")
+
+    if (args.firstOrNull() == "qr") {
+        // Just print the pairing text, for pasting into a seed broadcast by hand.
+        println(parent.pairingFor())
+        return
+    }
+
+    if (!device.isAvailable()) {
+        println("no device: start an emulator, or use the pairing text above by hand")
+        println(parent.pairingFor())
+        return
+    }
+
+    println("pairing " + ChildDevice.PACKAGE + "…")
+    device.pair(parent.pairingFor())
+    val first = runCatching { parent.awaitChild { true } }.getOrNull()
+    println(if (first != null) "paired: ${first.deviceId} (${first.displayName})" else "no check-in yet")
+
+    var policyVersion = 1L
+    while (true) {
+        val line = readlnOrNull()?.trim() ?: break
+        val parts = line.split(" ").filter { it.isNotBlank() }
+        when (parts.firstOrNull()) {
+            null -> Unit
+            "quit", "exit" -> break
+            "policy" -> {
+                policyVersion++
+                val restrictions = parts.drop(1).filterNot { it == "none" }.toSet()
+                parent.pushPolicy(PolicyJson.build(version = policyVersion, restrictions = restrictions))
+                println("pushed policy v$policyVersion restrictions=$restrictions")
+            }
+            "limit" -> {
+                val pkg = parts.getOrNull(1) ?: continue
+                val minutes = parts.getOrNull(2)?.toIntOrNull() ?: 30
+                policyVersion++
+                parent.pushPolicy(
+                    PolicyJson.build(version = policyVersion, dailyMinutes = mapOf(pkg to minutes)),
+                )
+                println("pushed policy v$policyVersion: $pkg = $minutes min/day")
+            }
+            "cmd" -> {
+                val deviceId = parent.children.keys.firstOrNull()
+                if (deviceId == null) { println("no child yet"); continue }
+                val action = parts.getOrNull(1) ?: RemoteAction.DIAGNOSE
+                val id = parent.sendCommand(deviceId, action, parts.getOrNull(2).orEmpty())
+                val ack = runCatching { parent.awaitAck(id) }.getOrNull()
+                println("$action -> ${ack?.let { "ok=${it.ok} ${it.detail}" } ?: "no ack"}")
+            }
+            "resolve" -> {
+                val requestId = parts.getOrNull(1) ?: continue
+                val approved = parts.getOrNull(2) != "no"
+                parent.resolve(requestId, approved, parts.getOrNull(3)?.toIntOrNull() ?: 0)
+                println("resolved $requestId approved=$approved")
+            }
+            "watch" -> {
+                val seen = parent.childHistory.size
+                println("watching; next snapshot…")
+                runCatching { parent.awaitChild { parent.childHistory.size > seen } }
+                    .onSuccess { println(describe(it)) }
+                    .onFailure { println("nothing arrived") }
+            }
+            "dump" -> parent.children.values.forEach { println(describe(it)) }
+            else -> println("? $line")
+        }
+    }
+    parent.stop()
+    relay.stop()
+}
+
+private fun describe(snapshot: dev.walcott.sync.ChildSnapshot): String = buildString {
+    append("${snapshot.deviceId} v${snapshot.version} policy=v${snapshot.appliedPolicyVersion}")
+    append(" enforcement=${snapshot.enforcement}")
+    if (snapshot.requests.isNotEmpty()) append(" requests=${snapshot.requests.map { it.requestId.take(8) }}")
+    if (snapshot.asks.isNotEmpty()) append(" asks=${snapshot.asks.map { it.kind + ":" + it.text }}")
+    if (snapshot.unauthorized.isNotEmpty()) append(" quarantined=${snapshot.unauthorized.map { it.pkg }}")
+    snapshot.lastCommand?.let { append(" lastAck=${it.detail}") }
+}

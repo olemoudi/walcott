@@ -72,10 +72,26 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     // as a real child, through the same code path the QR uses — so one emulator
                     // can play the parent, publish, and then become the child that receives it.
                     "pair" -> {
+                        // `--ez fresh true` wipes first, in THIS coroutine. Doing it as a separate
+                        // `mode reset` broadcast looks equivalent and is not: each broadcast
+                        // finishes its own goAsync work independently, so a wipe can land after
+                        // the pairing it was meant to precede and quietly un-pair the device.
+                        if (intent.getBooleanExtra("fresh", false)) {
+                            target.identityStore.save(dev.walcott.sync.FamilyIdentity())
+                            target.syncStore.update { dev.walcott.sync.SyncState() }
+                        }
                         val ok = target.syncManager.pairAsChild(intent.getStringExtra("pair_with").orEmpty())
-                        DebugLog.i("WalcottSeed", "pairAsChild ok=$ok")
+                        DebugLog.i("WalcottSeed", "pairAsChild ok=$ok fresh=${intent.getBooleanExtra("fresh", false)}")
                     }
-                    "reset" -> target.identityStore.save(dev.walcott.sync.FamilyIdentity())
+                    // A fresh install has no identity AND no history: no pending requests, no
+                    // applied-command ledger, no quarantine cases, no baseline. Clearing only the
+                    // identity left all of that behind, which is not what "as a fresh install
+                    // would start" means — and on a Device Owner device, where `pm clear` is
+                    // refused, this hook is the only wipe there is.
+                    "reset" -> {
+                        target.identityStore.save(dev.walcott.sync.FamilyIdentity())
+                        target.syncStore.update { dev.walcott.sync.SyncState() }
+                    }
                     // `--es mode local_backup [--es local_backup_slots daily,weekly,monthly]`:
                     // writes the shared-storage copies now, and logs what this install can see
                     // afterwards. Exists to answer the scoped-storage question on a device rather
@@ -136,6 +152,62 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (intent.getStringExtra("reconcile_installs") != null) {
                     target.syncManager.reconcileInstalls()
                     DebugLog.i("WalcottSeed", "install reconciliation done")
+                }
+                // `--es block_uninstall com.pkg` / `--es unblock_uninstall com.pkg`: makes the OS
+                // itself refuse to remove a package.
+                //
+                // This is how the case the quarantine ledger exists for — a removal that keeps
+                // failing — is reproduced for real instead of mocked. On an emulator a Device
+                // Owner uninstall always succeeds within a second, so without this the retry
+                // loop, the "their phone couldn't remove it" reporting and the parent's "let it
+                // stay" answer are all unreachable: the app is gone before anyone can look.
+                intent.getStringExtra("block_uninstall")?.let { pkg ->
+                    val dpm = app.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+                    val admin = dev.walcott.WalcottAdminReceiver.componentName(app)
+                    runCatching { dpm.setUninstallBlocked(admin, pkg, true) }
+                        .onSuccess { DebugLog.i("WalcottSeed", "uninstall blocked for $pkg") }
+                        .onFailure { DebugLog.w("WalcottSeed", "could not block uninstall of $pkg", it) }
+                }
+                intent.getStringExtra("unblock_uninstall")?.let { pkg ->
+                    val dpm = app.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+                    val admin = dev.walcott.WalcottAdminReceiver.componentName(app)
+                    runCatching { dpm.setUninstallBlocked(admin, pkg, false) }
+                        .onSuccess { DebugLog.i("WalcottSeed", "uninstall unblocked for $pkg") }
+                }
+                // `--es ask "kind:text"` and `--es request_time "target:minutes:reason"`: the two
+                // things a CHILD initiates, through the real paths a tap on its home screen takes.
+                // Without them the child→parent direction can only be tested by driving a UI,
+                // which is the one thing a headless harness cannot do.
+                intent.getStringExtra("ask")?.let { spec ->
+                    val kind = spec.substringBefore(':')
+                    target.syncManager.askFor(kind, spec.substringAfter(':', ""))
+                    DebugLog.i("WalcottSeed", "asked for $spec")
+                }
+                intent.getStringExtra("request_time")?.let { spec ->
+                    val parts = spec.split(":", limit = 3)
+                    target.syncManager.requestExtraTime(
+                        categoryId = parts.getOrElse(0) { dev.walcott.rules.ExtraTime.ALL_APPS },
+                        minutes = parts.getOrNull(1)?.toIntOrNull() ?: 15,
+                        reason = parts.getOrElse(2) { "" },
+                    )
+                    DebugLog.i("WalcottSeed", "requested extra time: $spec")
+                }
+                // `--es publish now`: publish this device's snapshot immediately. The regular
+                // heartbeat is throttled (it must be — it rides on wakeups that happen anyway),
+                // so a test that has just changed something on the device has no other way to
+                // make it say so without waiting the throttle out.
+                if (intent.getStringExtra("publish") != null) {
+                    target.syncManager.publishHealthUpdate()
+                    DebugLog.i("WalcottSeed", "published on request")
+                }
+                // `--es heartbeat now`: the whole ~30-minute check-in, on demand — self-test,
+                // socket repair, health check, expiries, install reconciliation and the publish.
+                // HeartbeatReceiver itself is (rightly) not exported, so without this a test
+                // would have to wait half an hour or depend on `adb root`, and the second is not
+                // available on every image the app has to work on.
+                if (intent.getStringExtra("heartbeat") != null) {
+                    dev.walcott.sync.HeartbeatAlarm.runCheckIn(context)
+                    DebugLog.i("WalcottSeed", "heartbeat check-in done")
                 }
                 // `--es ntfy_server http://10.0.2.2:8099`: points this device's channel at a local
                 // sink, so a parent->child exchange can be exercised when ntfy.sh is rate-limiting.

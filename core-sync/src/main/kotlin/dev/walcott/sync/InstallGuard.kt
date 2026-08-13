@@ -55,6 +55,32 @@ object InstallGuard {
         installsBlocked && !blanketWindowOpen
 
     /**
+     * What is left of the ledger on a pass that judges nothing (see [guarding]).
+     *
+     * The early return used to leave the ledger untouched, on the reasoning that a pass which
+     * indicts nobody should also exonerate nobody. That was wrong twice over, and both ways
+     * ended with an app the family never chose to lose:
+     *
+     *  - **The family turned the install block off.** Installing is no longer a violation, so
+     *    there is no longer such a thing as an unauthorized app here. Leaving cases open keeps
+     *    suspending apps under a rule that has been withdrawn, and nothing will ever clear them:
+     *    the only code that closes a case is the pass this state skips.
+     *  - **The case's app is already gone.** A case ends when its app does. Holding the entry
+     *    means the next install of that same package — including the parent approving it
+     *    properly, in its own window — walks straight into a stale accusation and is suspended
+     *    and removed, because a still-open case is kept for any package that is installed.
+     *
+     * So: with the block withdrawn, nothing is retained; otherwise only cases whose app is
+     * still here. Neither branch can create a case — that is still [fresh]'s job alone.
+     */
+    fun retained(
+        current: List<UnauthorizedApp>,
+        installed: Set<String>,
+        installsBlocked: Boolean,
+    ): List<UnauthorizedApp> =
+        if (!installsBlocked) emptyList() else current.filter { it.pkg in installed }
+
+    /**
      * The packages allowed to appear right now: the open window's target, plus the last one
      * for as long as [LATE_LANDING_GRACE_MS] allows.
      */

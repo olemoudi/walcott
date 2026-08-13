@@ -532,6 +532,9 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_44_0">
+        <item>Corregido: una app que hubiera sido bloqueada una vez ya no se podía instalar nunca más — aunque la aprobaras tú, desaparecía del móvil de tu hijo a los pocos segundos de llegar.</item>
+    </string-array>
     <string-array name="whats_new_0_43_0">
         <item>Si aparece en el móvil de un hijo una app que nadie ha aprobado, allí queda bloqueada al instante y se elimina, y a ti se te dice cuál era — con la opción de dejarla.</item>
         <item>Aprobar una app ahora lleva a tu hijo directo a ella en Google Play, con su nombre real en vez de un nombre de paquete, así que no queda nada que averiguar.</item>
