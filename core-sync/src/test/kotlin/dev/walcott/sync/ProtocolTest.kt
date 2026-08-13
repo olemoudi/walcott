@@ -67,6 +67,25 @@ class ProtocolTest {
     }
 
     @Test
+    fun `quarantined apps round-trip through an envelope`() {
+        // The one field a parent acts on destructively (remove it from their child's phone), so
+        // the package must arrive exactly as it left — a mangled one would remove nothing, or
+        // something else.
+        val snapshot = ChildSnapshot(
+            deviceId = "dev-1",
+            displayName = "Ana",
+            version = 5,
+            epochDay = 20_000,
+            unauthorized = listOf(
+                UnauthorizedApp("com.sneaky.app", "Sneaky", atMs = 1_700_000_000_000, suspended = true),
+            ),
+        )
+        val wire = SyncProtocol.encodeChild(snapshot, familyKey)
+        val decoded = SyncProtocol.decode(wire, familyKey, parent.public) as IncomingMessage.FromChild
+        assertEquals(snapshot.unauthorized, decoded.snapshot.unauthorized)
+    }
+
+    @Test
     fun `child locations round-trip through an envelope`() {
         val snapshot = ChildSnapshot(
             deviceId = "dev-1",

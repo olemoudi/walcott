@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -292,6 +293,17 @@ fun ChildDetailScreen(
             // --- Self-test gap ("looks healthy, isn't blocking") ---
             if (snapshot != null && snapshot.enforcementGaps.isNotEmpty()) {
                 item { EnforcementGapCard(snapshot.enforcementGaps.size) }
+            }
+
+            // --- Apps that appeared unapproved: suspended there, waiting for the parent's call ---
+            if (snapshot != null) {
+                items(snapshot.unauthorized, key = { "unauth${it.pkg}" }) { entry ->
+                    UnauthorizedAppCard(
+                        entry = entry,
+                        onRemove = { viewModel.removeChildApp(snapshot.deviceId, entry.pkg) },
+                        onAllow = { viewModel.allowChildApp(snapshot.deviceId, entry.pkg) },
+                    )
+                }
             }
 
             // --- Web filter asked for but not running (consent, or another VPN app) ---
@@ -982,6 +994,72 @@ private fun WebFilterDownCard() {
     }
 }
 
+/**
+ * An app that appeared on the child device without being approved.
+ *
+ * It is already suspended there and its removal is already being retried, so the card reports
+ * rather than asks — except for the one decision that is the parent's: letting it stay. The
+ * removal button is here too, because a retry that keeps failing needs a way to be pushed again.
+ */
+@Composable
+private fun UnauthorizedAppCard(
+    entry: dev.walcott.sync.UnauthorizedApp,
+    onRemove: () -> Unit,
+    onAllow: () -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    var answered by remember(entry.pkg) { mutableStateOf(false) }
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(spacing.md))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.unauthorized_app_card_title, entry.label.ifBlank { entry.pkg }),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = color,
+                    )
+                    Text(
+                        entry.pkg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                stringResource(
+                    // Suspension is the promise being made on this screen, so a device that
+                    // could not deliver it says so instead of implying the app is harmless now.
+                    if (entry.suspended) R.string.unauthorized_app_card_state
+                    else R.string.unauthorized_app_card_state_unsuspended,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (answered) {
+                Text(
+                    stringResource(R.string.remote_command_sent),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    Button(
+                        onClick = { answered = true; onRemove() },
+                        modifier = Modifier.weight(1f),
+                    ) { Text(stringResource(R.string.unauthorized_app_remove)) }
+                    OutlinedButton(
+                        onClick = { answered = true; onAllow() },
+                        modifier = Modifier.weight(1f),
+                    ) { Text(stringResource(R.string.unauthorized_app_allow)) }
+                }
+            }
+        }
+    }
+}
+
 /** The self-test caught apps that should be suspended but aren't — the silent failure class. */
 @Composable
 private fun EnforcementGapCard(count: Int) {
@@ -1272,6 +1350,9 @@ internal fun remoteResultLabel(context: android.content.Context, detail: String)
     "already_installed" -> context.getString(R.string.remote_result_already_installed)
     "no_package" -> context.getString(R.string.remote_result_no_package)
     "wrong_app_removed" -> context.getString(R.string.remote_result_wrong_app)
+    "removing" -> context.getString(R.string.remote_result_removing)
+    "not_installed" -> context.getString(R.string.remote_result_not_installed)
+    "allowed" -> context.getString(R.string.remote_result_allowed)
     "waiting_parent" -> context.getString(R.string.remote_result_waiting_parent)
     "diag_sent" -> context.getString(R.string.remote_result_diag_sent)
     else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail

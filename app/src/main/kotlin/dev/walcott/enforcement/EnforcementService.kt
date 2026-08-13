@@ -90,21 +90,21 @@ class EnforcementService : LifecycleService() {
             val realChange = intent?.action in
                 setOf(Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_REMOVED) &&
                 intent?.getBooleanExtra(Intent.EXTRA_REPLACING, false) == false
-            // A genuinely NEW install (not an app self-update) during a parent-pushed install
-            // window closes that window at once, re-arming the install block so the child can't
-            // slip a second app in behind the pushed one.
-            if (intent?.action == Intent.ACTION_PACKAGE_ADDED && realChange &&
-                app.syncManager.pendingInstall.value.isNotEmpty()
-            ) {
-                // The added package tells closeInstallWindow whether the pushed app itself
-                // landed (ack "installed" to the parent) or something else closed the window.
-                val added = intent.data?.schemeSpecificPart
-                lifecycleScope.launch { runCatching { app.syncManager.closeInstallWindow(added) } }
-            } else if (realChange) {
-                // The parent's app list should follow reality in seconds, not at the next
-                // heartbeat: a new (or removed) app publishes now, throttled so a batch of
-                // installs during an open window costs one message a minute, not one each.
+            if (realChange) {
+                // A genuinely NEW install (not an app self-update) closes any pushed-install
+                // window and is then judged against what was approved: the approved app is
+                // acknowledged, anything else is quarantined (see SyncManager.reconcileInstalls).
+                // A removal is reconciled too — it is how a quarantine case closes.
+                val added = if (intent?.action == Intent.ACTION_PACKAGE_ADDED) {
+                    intent.data?.schemeSpecificPart
+                } else {
+                    null
+                }
                 lifecycleScope.launch {
+                    runCatching { app.syncManager.onPackageChanged(added) }
+                    // The parent's app list should follow reality in seconds, not at the next
+                    // heartbeat: a new (or removed) app publishes now, throttled so a batch of
+                    // installs during an open window costs one message a minute, not one each.
                     runCatching { app.syncManager.publishHeartbeatIfStale(PACKAGE_PUBLISH_MIN_MS) }
                 }
             }
@@ -149,6 +149,13 @@ class EnforcementService : LifecycleService() {
         observeDeviceRestrictions()
         scheduleUpdateChecks()
         scheduleLocationSampling()
+        // Catch up on whatever happened while this service wasn't running. The package receiver
+        // lives in this process, so a device that was off — or a service an OEM battery saver
+        // killed — witnesses no install at all; without this pass, that is exactly when an app
+        // could arrive unseen.
+        lifecycleScope.launch {
+            runCatching { (application as WalcottApplication).syncManager.reconcileInstalls() }
+        }
     }
 
     override fun onDestroy() {
@@ -350,6 +357,9 @@ class EnforcementService : LifecycleService() {
         // What the child has already been warned about, so a 2-second loop says each thing once.
         val warnings = TimeWarnings()
         var lastAppliedManaged: Set<String>? = null
+        // Apps quarantined by the install guard: suspended regardless of what the rules say,
+        // because they are not supposed to be on this phone at all.
+        var lastAppliedQuarantine: Set<String>? = null
         var lastApplyAt = 0L
         // Idle-earn: idle seconds are batched locally and flushed to the store ~once a minute,
         // so a child idling all evening doesn't hammer DataStore. Screen-off counts as idle.
@@ -544,12 +554,19 @@ class EnforcementService : LifecycleService() {
             }
 
             // Re-assert on change, plus periodically so external state drift self-heals.
+            //
+            // The quarantine rides along on both sides of the call: on the managed side so a
+            // package without a launcher icon is still reachable by the reconciliation, and on
+            // the blocked side because no rule will ever ask for it — an app nobody approved
+            // has no policy, only a verdict.
+            val quarantined = app.syncManager.quarantined.value
             if (blocked != lastAppliedBlocked || managed != lastAppliedManaged ||
-                nowClock - lastApplyAt > REASSERT_MILLIS
+                quarantined != lastAppliedQuarantine || nowClock - lastApplyAt > REASSERT_MILLIS
             ) {
-                enforcer.apply(managed, blocked)
+                enforcer.apply(managed + quarantined, blocked + quarantined)
                 lastAppliedBlocked = blocked
                 lastAppliedManaged = managed
+                lastAppliedQuarantine = quarantined
                 lastApplyAt = nowClock
             }
 

@@ -154,6 +154,8 @@
     <string name="request_waiting_button">Sent — waiting for an answer</string>
     <string name="notice_approved_time">Approved! +%1$d min of %2$s</string>
     <string name="notice_approved_app">You can install %1$s now</string>
+    <string name="notice_approved_app_ask">Your parents said yes to %1$s</string>
+    <string name="notice_approved_app_ask_desc">Find it in Google Play, tap Share and pick Walcott — that installs it.</string>
     <string name="notice_approved_other">They said yes: %1$s</string>
     <string name="notice_denied">Not this time</string>
     <string name="notice_denied_desc">Your request wasn\'t approved</string>
@@ -531,6 +533,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_43_0">
+        <item>If an app turns up on a child\'s phone that nobody approved, it\'s blocked there straight away and removed, and you\'re told which app it was — with the option to let it stay.</item>
+        <item>Approving an app now takes your child straight to it in Google Play, with its real name instead of a package name, so there\'s nothing left to work out.</item>
+        <item>Saying yes to a written "can I have an app?" is now just an answer. To install it, have them share the app from Google Play — that installs exactly that one app.</item>
+    </string-array>
     <string-array name="whats_new_0_42_0">
         <item>Rule changes now wait a few seconds before being sent, so editing several things in one sitting reaches your children as one change instead of half-finished ones arriving on their phones.</item>
         <item>Anything you\'ve changed but not sent yet is marked "Updating…", so a rule sitting on your phone is never mistaken for one that has arrived.</item>
@@ -588,7 +595,7 @@
     <string name="ask_text_label_other">What do you need?</string>
     <string name="ask_summary_app">Wants to install: %1$s</string>
     <string name="ask_summary_other">Asks for: %1$s</string>
-    <string name="ask_approve_hint">Approving opens a 15-minute install window on their phone</string>
+    <string name="ask_approve_hint">Approving is an answer, not an install: to install it, have them share the app from Google Play</string>
 
     <!-- Parent app lock -->
     <string name="app_lock_setting_title">Lock this app</string>
@@ -703,7 +710,7 @@
     <string name="install_share_not_linked">This phone isn\'t linked to a family yet.</string>
     <!-- The child's side of the share: ask the parents for exactly this app -->
     <string name="install_request_title">Ask your parents for this app?</string>
-    <string name="install_request_body">A request for %1$s will be sent. If they approve, it installs by itself.</string>
+    <string name="install_request_body">A request for %1$s will be sent. If they approve, Google Play opens on this phone with the app ready to install.</string>
     <string name="install_request_send">Send request</string>
     <string name="install_request_sent">Request sent to your parents</string>
     <string name="install_request_duplicate">You already asked for this app</string>
@@ -720,8 +727,8 @@
     <string name="app_card_blocked">Not available right now</string>
     <string name="ask_install_hint">Approving installs only this app; everything else stays blocked.</string>
     <string name="install_channel_name">App install requests</string>
-    <string name="install_prompt_title">Install requested</string>
-    <string name="install_prompt_text">Tap to install %1$s from Play.</string>
+    <string name="install_prompt_title">You can install %1$s</string>
+    <string name="install_prompt_text">Tap here to open it in Google Play, then tap Install.</string>
     <string name="remote_result_install_opened">opened on the child device</string>
     <string name="remote_result_installed">app installed</string>
     <string name="remote_result_already_installed">it was already installed</string>
@@ -733,9 +740,20 @@
     <string name="pending_op_locate">Location request</string>
     <string name="pending_op_meta">%1$s · sent %2$s ago</string>
     <string name="pending_op_waiting_install">Opened on the device — waiting for the install in Play</string>
-    <!-- Parent-pushed install (child home) -->
-    <string name="install_child_card_title">Your parents want to install an app</string>
-    <string name="install_child_card_desc">Tap to open %1$s in Google Play and install it.</string>
+    <!-- Approved install waiting to be finished (child home) -->
+    <string name="install_child_card_title">You can install %1$s</string>
+    <string name="install_child_card_desc">Tap here to open it in Google Play, then tap Install.</string>
+    <!-- An app appeared on a child device that nobody approved -->
+    <string name="unauthorized_app_title">Unapproved app on %1$s\'s phone</string>
+    <string name="unauthorized_app_text">"%1$s" was installed without approval. It\'s blocked and is being removed.</string>
+    <string name="unauthorized_app_remove">Remove</string>
+    <string name="unauthorized_app_allow">Let it stay</string>
+    <string name="unauthorized_app_card_title">"%1$s" was installed without approval</string>
+    <string name="unauthorized_app_card_state">It\'s blocked on their phone and is being removed.</string>
+    <string name="unauthorized_app_card_state_unsuspended">Their phone couldn\'t block it — remove it from here.</string>
+    <string name="remote_result_removing">removing it</string>
+    <string name="remote_result_not_installed">that app isn\'t installed there</string>
+    <string name="remote_result_allowed">the app may stay</string>
     <string name="update_wifi_only_title">Update on Wi-Fi only</string>
     <string name="update_wifi_only_desc">Child devices download updates only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
     <string name="update_wifi_following_family">Following the family setting: %1$s</string>

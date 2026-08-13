@@ -122,6 +122,21 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     "local_backup_list" ->
                         DebugLog.i("WalcottSeed", "visible to this install: ${dev.walcott.sync.LocalBackupStore.listOwn(app)}")
                 }
+                // `--es open_install_window com.some.app`: opens the tight, single-app install
+                // window a parent's approval would open, without needing the parent half. The
+                // point of testing is what happens when a DIFFERENT app lands in it (see
+                // InstallGuard) — which cannot be reproduced any other way, since with the block
+                // armed nothing, adb included, can install at all.
+                intent.getStringExtra("open_install_window")?.let { pkg ->
+                    target.syncManager.openInstallForPush(pkg, "debug-cmd", pkg.substringAfterLast('.'))
+                    DebugLog.i("WalcottSeed", "install window open for $pkg")
+                }
+                // `--es reconcile_installs now`: runs the install guard's reconciliation on demand,
+                // instead of waiting for a package broadcast or the next heartbeat.
+                if (intent.getStringExtra("reconcile_installs") != null) {
+                    target.syncManager.reconcileInstalls()
+                    DebugLog.i("WalcottSeed", "install reconciliation done")
+                }
                 // `--es ntfy_server http://10.0.2.2:8099`: points this device's channel at a local
                 // sink, so a parent->child exchange can be exercised when ntfy.sh is rate-limiting.
                 intent.getStringExtra("ntfy_server")?.let { url ->

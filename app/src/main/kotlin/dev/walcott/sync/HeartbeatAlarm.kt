@@ -91,6 +91,11 @@ object HeartbeatAlarm {
         // them (see SyncEngine.REQUEST_TTL_MS — an unanswered one blocks asking again).
         runCatching { app.syncManager.expireStaleRequests() }
             .onFailure { DebugLog.e(TAG, "expiring stale requests failed", it) }
+        // What is installed versus what was approved (see InstallGuard). Here and not only on the
+        // package broadcast, because that broadcast reaches a receiver in a process that may not
+        // have been alive — and because a removal the OS refused has to be retried by somebody.
+        runCatching { app.syncManager.reconcileInstalls() }
+            .onFailure { DebugLog.e(TAG, "install reconciliation failed", it) }
         runCatching { app.syncManager.publishHeartbeatIfStale(PUBLISH_MIN_INTERVAL_MS) }
             .onFailure { DebugLog.e(TAG, "heartbeat publish failed", it) }
         // An emergency release must die the moment the channel fails on it. While the channel

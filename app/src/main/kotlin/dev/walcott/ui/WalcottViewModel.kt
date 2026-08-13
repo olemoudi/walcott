@@ -133,6 +133,7 @@ class WalcottViewModel(
     val installExemption: StateFlow<Long> = sync.installExemption
     /** Package of a parent-pushed install still waiting for its tap on this device, or "". */
     val pendingInstall: StateFlow<String> = sync.pendingInstall
+    val pendingInstallLabel: StateFlow<String> = sync.pendingInstallLabel
     /** This device's own unanswered requests/asks, for the child home's "waiting" section. */
     val myPendingRequests: StateFlow<List<dev.walcott.sync.ExtraTimeRequest>> = sync.myPendingRequests
     val myPendingAsks: StateFlow<List<dev.walcott.sync.ChildRequest>> = sync.myPendingAsks
@@ -152,6 +153,15 @@ class WalcottViewModel(
 
     /** Approves a child's one-app install request: resolve and push the single-app install. */
     fun approveInstallAsk(requestId: String) = viewModelScope.launch { sync.approveInstallAsk(requestId) }
+
+    /** The two answers to an app that appeared on a child device unapproved (see InstallGuard). */
+    fun removeChildApp(deviceId: String, pkg: String) = viewModelScope.launch {
+        sync.sendCommand(deviceId, dev.walcott.sync.RemoteAction.UNINSTALL_APP, arg = pkg)
+    }
+
+    fun allowChildApp(deviceId: String, pkg: String) = viewModelScope.launch {
+        sync.sendCommand(deviceId, dev.walcott.sync.RemoteAction.ALLOW_APP, arg = pkg)
+    }
 
     // --- Domain monitor: the child device, driven by a parent holding it ---
 

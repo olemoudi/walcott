@@ -32,9 +32,6 @@ object DeviceRestrictions {
     const val KEY_APPS_CONTROL = "apps_control"
     const val KEY_UNKNOWN_SOURCES = "unknown_sources"
 
-    /** How long an approved generic app ask keeps installs open on the child device. */
-    const val INSTALL_EXEMPTION_MS = 15 * 60 * 1000L
-
     /** The PIN-gated window choices: a quick errand, a session, and "I don't know" (8 h). */
     const val INSTALL_EXEMPTION_SHORT_MS = 10 * 60 * 1000L
     const val INSTALL_EXEMPTION_MEDIUM_MS = 30 * 60 * 1000L

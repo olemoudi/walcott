@@ -351,6 +351,12 @@ data class RemoteCommand(
     val issuedAtMs: Long,
     /** Action payload (e.g. the package name for [RemoteAction.INSTALL_APP]); "" when unused. */
     val arg: String = "",
+    /**
+     * Human name for [arg] when the child can't resolve one itself: an app it is being asked to
+     * install isn't installed yet, so its own package manager has nothing but the package name
+     * to show. "" on legacy parents, and the child falls back to the package.
+     */
+    val label: String = "",
 )
 
 /** Actions a parent can trigger remotely on a child device. */
@@ -387,6 +393,19 @@ object RemoteAction {
     const val DENY_PANIC = "deny_panic"
 
     /**
+     * Remove an app from the child device ([RemoteCommand.arg] = package). A Device Owner
+     * uninstalls silently; the app stays quarantined ([ChildSnapshot.unauthorized]) until it
+     * is actually gone, so a refused or interrupted removal is retried rather than lost.
+     */
+    const val UNINSTALL_APP = "uninstall_app"
+
+    /**
+     * Let a quarantined app stay ([RemoteCommand.arg] = package): the parent looked at what
+     * slipped in and decided it is fine. Drops it from the quarantine and un-suspends it.
+     */
+    const val ALLOW_APP = "allow_app"
+
+    /**
      * [CommandAck.detail] lifecycle of an [INSTALL_APP]: "opened" means the prompt reached the
      * child (nothing installed yet); a second ack with "installed" follows when the pushed
      * package actually lands. "already_installed" short-circuits both.
@@ -395,9 +414,38 @@ object RemoteAction {
     const val DETAIL_INSTALLED = "installed"
     const val DETAIL_ALREADY_INSTALLED = "already_installed"
 
-    /** A different app than the approved one landed during the window; it was removed. */
+    /** [UNINSTALL_APP]/[ALLOW_APP] outcomes. "removing" = the uninstall was handed to the OS. */
+    const val DETAIL_REMOVING = "removing"
+    const val DETAIL_NOT_INSTALLED = "not_installed"
+    const val DETAIL_ALLOWED = "allowed"
+
+    /**
+     * A different app than the approved one landed during the window; it was removed.
+     *
+     * No longer produced: the quarantine ledger ([ChildSnapshot.unauthorized]) reports this
+     * now, with retries and the parent's two answers. Still read, because a parent can be
+     * updated while a child still runs a build that acks this way.
+     */
     const val DETAIL_WRONG_APP_REMOVED = "wrong_app_removed"
 }
+
+/**
+ * An app that appeared on the child device without being approved, and what has been done
+ * about it. Quarantined means suspended right now: reversible, instant, and it survives a
+ * failed uninstall — which is the whole reason the removal isn't the only answer.
+ */
+@Serializable
+data class UnauthorizedApp(
+    val pkg: String,
+    /** The app's own label, resolved on the child where it is installed; "" if unknown. */
+    val label: String = "",
+    /** When it was first noticed (child wall clock). */
+    val atMs: Long = 0,
+    /** Whether the OS accepted the suspension. False is a real gap, and says so on screen. */
+    val suspended: Boolean = false,
+    /** How many times removal has been attempted, so a stuck one is visible rather than silent. */
+    val removalAttempts: Int = 0,
+)
 
 /** How a child device says a [RemoteCommand] went, echoed back in its snapshot. */
 @Serializable
@@ -547,6 +595,12 @@ data class ChildSnapshot(
      */
     val crashTotal: Int = 0,
     val lastCrashMs: Long = 0,
+    /**
+     * Apps that appeared here without approval, quarantined and awaiting the parent's answer
+     * (see [UnauthorizedApp]). Empty on a healthy device and on every legacy child, so it costs
+     * nothing on the wire until it matters. Capped by [InstallGuard.MAX_QUARANTINE].
+     */
+    val unauthorized: List<UnauthorizedApp> = emptyList(),
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */

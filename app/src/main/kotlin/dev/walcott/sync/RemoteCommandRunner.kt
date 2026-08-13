@@ -6,6 +6,7 @@ import dev.walcott.debug.DebugLog
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.enforcement.UsageAccess
+import dev.walcott.install.PlayIntents
 import dev.walcott.location.LocationPolicy
 import dev.walcott.location.LocationSampler
 import dev.walcott.update.UpdateCheckOutcome
@@ -27,11 +28,16 @@ class RemoteCommandRunner(
     private val context: Context,
     private val repository: WalcottRepository,
     /** Opens the tight, self-closing install window for a parent-pushed install. */
-    private val openInstallForPush: suspend (pkg: String, commandId: String) -> Unit = { _, _ -> },
+    private val openInstallForPush: suspend (pkg: String, commandId: String, label: String) -> Unit =
+        { _, _, _ -> },
     /** Publishes the health report a [RemoteAction.DIAGNOSE] asks for. */
     private val publishDiagnostics: suspend () -> Unit = {},
     /** Refuses the child's pending emergency release (see [RemoteAction.DENY_PANIC]). */
     private val denyPanic: suspend (requestId: String) -> Pair<Boolean, String> = { false to "unsupported" },
+    /** Removes an app and keeps retrying until it is gone (see [RemoteAction.UNINSTALL_APP]). */
+    private val removeApp: suspend (pkg: String) -> Boolean = { false },
+    /** Lets a quarantined app stay (see [RemoteAction.ALLOW_APP]). */
+    private val allowApp: suspend (pkg: String) -> Boolean = { false },
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -41,7 +47,9 @@ class RemoteCommandRunner(
                 RemoteAction.UPDATE_NOW -> updateNow()
                 RemoteAction.REAPPLY_POLICY -> reapplyPolicy()
                 RemoteAction.REQUEST_PERMISSIONS -> requestPermissions()
-                RemoteAction.INSTALL_APP -> installApp(command.arg, command.id)
+                RemoteAction.INSTALL_APP -> installApp(command.arg, command.id, command.label)
+                RemoteAction.UNINSTALL_APP -> uninstallApp(command.arg)
+                RemoteAction.ALLOW_APP -> allowQuarantined(command.arg)
                 RemoteAction.DIAGNOSE -> diagnose()
                 RemoteAction.DENY_PANIC -> denyPanic(command.arg)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
@@ -91,21 +99,60 @@ class RemoteCommandRunner(
     }
 
     /**
-     * Assisted Play install: opens the tight install window and prompts the child to tap
-     * Install in Play. Play can't be driven silently, so this is the honest ceiling — the
-     * window slams shut the moment anything installs (see EnforcementService's package
-     * receiver), keeping the opportunity to sneak in an alternative app minimal. "opened"
-     * only means the prompt reached the device; a second "installed" ack follows from
-     * [SyncManager.closeInstallWindow] when the package actually lands.
+     * Assisted Play install: opens the tight install window, puts the child in front of the
+     * app's Play page and leaves one thing to do — tap Install.
+     *
+     * Play cannot be driven silently by anyone who isn't a managed-Play EMM, so that last tap
+     * is the honest ceiling. What CAN be removed is the part where the child has to work out
+     * that Play is where to go: the page opens by itself when the phone is in someone's hands
+     * ([openPlayNow]), and the notification stays as the way back when it isn't.
+     *
+     * "opened" only means the prompt reached the device; a second "installed" ack follows from
+     * [SyncManager.closeInstallWindow] when the package actually lands, and anything else that
+     * lands instead is quarantined by [SyncManager.reconcileInstalls].
      */
-    private suspend fun installApp(pkg: String, commandId: String): Pair<Boolean, String> {
+    private suspend fun installApp(pkg: String, commandId: String, label: String): Pair<Boolean, String> {
         if (pkg.isBlank()) return false to "no_package"
         if (runCatching { context.packageManager.getApplicationInfo(pkg, 0) }.isSuccess) {
             return true to RemoteAction.DETAIL_ALREADY_INSTALLED
         }
-        openInstallForPush(pkg, commandId)
-        InstallPromptNotifications.notify(context, pkg)
+        openInstallForPush(pkg, commandId, label)
+        InstallPromptNotifications.notify(context, pkg, label)
+        openPlayNow(pkg)
         return true to RemoteAction.DETAIL_INSTALL_OPENED
+    }
+
+    /**
+     * Opens the app's Play page right now, if there is anyone there to see it.
+     *
+     * Only with the screen on and unlocked: an activity launched into a locked phone is a
+     * window nobody saw, sitting on top of whatever the child opens next. As Device Owner the
+     * background start is allowed; when it isn't, the notification and the home card are the
+     * fallback and nothing is lost.
+     */
+    private fun openPlayNow(pkg: String) {
+        val power = context.getSystemService(android.os.PowerManager::class.java)
+        val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+        if (power?.isInteractive != true || keyguard?.isKeyguardLocked != false) return
+        runCatching { context.startActivity(PlayIntents.storePage(context, pkg)) }
+            .onFailure { DebugLog.w(TAG, "could not open Play for $pkg: ${it.javaClass.simpleName}") }
+    }
+
+    /**
+     * Removes an app from this device. The removal is not confirmed here: a Device Owner
+     * uninstall is silent but asynchronous, and it can be refused — so the app is quarantined
+     * (suspended, hence unusable immediately) and retried until it is really gone.
+     */
+    private suspend fun uninstallApp(pkg: String): Pair<Boolean, String> {
+        if (pkg.isBlank()) return false to "no_package"
+        return if (removeApp(pkg)) true to RemoteAction.DETAIL_REMOVING
+        else true to RemoteAction.DETAIL_NOT_INSTALLED
+    }
+
+    /** Lets a quarantined app stay: un-suspends it and closes its case. */
+    private suspend fun allowQuarantined(pkg: String): Pair<Boolean, String> {
+        if (pkg.isBlank()) return false to "no_package"
+        return if (allowApp(pkg)) true to RemoteAction.DETAIL_ALLOWED else false to "not_quarantined"
     }
 
     /** Publishes the health report; the report itself travels as its own message kind. */

@@ -46,7 +46,11 @@ object PanicRelease {
         // 2. Give the apps back. Computed BEFORE the policy is wiped: the managed set is
         // derived from the assignments, and afterwards there would be nothing to unsuspend.
         runCatching {
+            // The quarantine is in there explicitly: an app suspended by the install guard
+            // answers to no rule and may have no launcher icon, so neither of the other two
+            // sets is guaranteed to name it — and this is the last chance to give it back.
             val managed = app.repository.managedPackagesNow() +
+                app.syncManager.quarantined.value +
                 withContext(Dispatchers.IO) { app.repository.inventory.launchableApps().map { it.packageName } }
             Enforcer(context).releaseAll(managed)
         }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }
@@ -101,8 +105,12 @@ object PanicRelease {
         // this point, and a released device that kept an app suspended has no enforcement loop
         // left to ever unsuspend it.
         runCatching {
+            val inventory = AppInventory(context)
+            // Every user app, not only the ones with an icon: the policy is gone, so this list
+            // is all there is to go on, and a suspended app missing from it stays suspended for
+            // ever on a device that no longer has an enforcement loop.
             val installed = withContext(Dispatchers.IO) {
-                AppInventory(context).launchableApps().map { it.packageName }.toSet()
+                inventory.launchableApps().map { it.packageName }.toSet() + inventory.userPackages().orEmpty()
             }
             Enforcer(context).releaseAll(installed)
         }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }

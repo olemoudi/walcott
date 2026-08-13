@@ -171,7 +171,7 @@ class ShareInstallActivity : ComponentActivity() {
                     targets = enrolled,
                     onDismiss = { finish() },
                     onConfirm = { target ->
-                        app.pushAppInstall(target.deviceId, pkg)
+                        app.pushAppInstall(target.deviceId, pkg, label)
                         Toast.makeText(this, getString(R.string.install_share_sent, target.name), Toast.LENGTH_SHORT).show()
                         finish()
                     },

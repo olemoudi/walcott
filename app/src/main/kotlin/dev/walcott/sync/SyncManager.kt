@@ -845,19 +845,25 @@ class SyncManager(
     val pendingInstall: StateFlow<String> =
         syncStore.state.map { it.pendingInstallPackage }.stateIn(scope, SharingStarted.Eagerly, "")
 
+    /** Its human name, as the parent's device sent it; "" before it is known. */
+    val pendingInstallLabel: StateFlow<String> =
+        syncStore.state.map { it.pendingInstallLabel }.stateIn(scope, SharingStarted.Eagerly, "")
+
     /**
      * Opens the tight, self-closing window for a parent-pushed install of [pkg]. The safety
      * cap is short: [closeInstallWindow] normally slams it shut on the first install, so this
      * ceiling only matters if nothing installs at all. [reopenInstallWindow] re-extends it
      * whenever the child actually engages, so this first window expiring costs nothing.
      */
-    suspend fun openInstallForPush(pkg: String, commandId: String) {
+    suspend fun openInstallForPush(pkg: String, commandId: String, label: String = "") {
         val until = System.currentTimeMillis() + INSTALL_PUSH_EXEMPTION_MS
-        syncStore.update {
-            it.copy(
+        syncStore.update { state ->
+            state.copy(
                 installExemptionUntilMs = until,
                 pendingInstallPackage = pkg,
                 pendingInstallCommandId = commandId,
+                // Kept across a reopen: the second call comes from a tap, which knows no label.
+                pendingInstallLabel = label.ifBlank { state.pendingInstallLabel },
             )
         }
         // Synchronous lift, mirroring closeInstallWindow's re-arm: the child may be looking
@@ -884,23 +890,27 @@ class SyncManager(
      * immediately (not just via the collector), so the child can't slip a second install in.
      * When [installedPkg] is the pushed package itself, the "opened" acknowledgement is
      * upgraded to "installed" so the parent sees the install actually completed.
+     *
+     * Closing is all this does. What landed — the approved app, something else, or both — is
+     * judged by [reconcileInstalls], which runs right after and, unlike a window, is still
+     * there when the second app arrives three seconds later.
      */
     suspend fun closeInstallWindow(installedPkg: String? = null) {
         val s = syncStore.current()
         if (s.pendingInstallPackage.isEmpty()) return
         val pushedLanded = installedPkg == s.pendingInstallPackage && s.pendingInstallCommandId.isNotEmpty()
-        // The window was opened for ONE approved app; Play can't be told to install only that
-        // one, so the guarantee is enforced after the fact: anything else that lands during
-        // the window is removed on the spot (Device Owner uninstalls silently) and the parent
-        // sees which app was tried instead of the approved one.
-        val sneaked = installedPkg != null && !pushedLanded && s.pendingInstallCommandId.isNotEmpty()
         syncStore.update {
             it.copy(
                 installExemptionUntilMs = 0,
                 pendingInstallPackage = "",
                 pendingInstallCommandId = "",
-                lastCommandAck = when {
-                    pushedLanded -> CommandAck(
+                pendingInstallLabel = "",
+                // Remembered so an approved app that lands late is still recognised as approved
+                // (see InstallGuard.LATE_LANDING_GRACE_MS).
+                lastWindowPackage = s.pendingInstallPackage,
+                lastWindowClosedAtMs = System.currentTimeMillis(),
+                lastCommandAck = if (pushedLanded) {
+                    CommandAck(
                         id = s.pendingInstallCommandId,
                         action = RemoteAction.INSTALL_APP,
                         ok = true,
@@ -908,17 +918,10 @@ class SyncManager(
                         completedAtMs = System.currentTimeMillis(),
                         arg = s.pendingInstallPackage,
                     )
-                    sneaked -> CommandAck(
-                        id = s.pendingInstallCommandId,
-                        action = RemoteAction.INSTALL_APP,
-                        ok = false,
-                        detail = RemoteAction.DETAIL_WRONG_APP_REMOVED,
-                        completedAtMs = System.currentTimeMillis(),
-                        arg = installedPkg,
-                    )
-                    else -> it.lastCommandAck
+                } else {
+                    it.lastCommandAck
                 },
-                childVersion = if (pushedLanded || sneaked) it.childVersion + 1 else it.childVersion,
+                childVersion = if (pushedLanded) it.childVersion + 1 else it.childVersion,
             )
         }
         InstallPromptNotifications.cancel(context, s.pendingInstallPackage)
@@ -926,11 +929,7 @@ class SyncManager(
         runCatching {
             DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = 0)
         }
-        if (sneaked) {
-            dev.walcott.debug.DebugLog.w(TAG, "unauthorized install during window: $installedPkg — removing")
-            runCatching { silentUninstall(installedPkg!!) }
-        }
-        if (pushedLanded || sneaked) publishSelf()
+        if (pushedLanded) publishSelf()
     }
 
     /** Device Owner silent uninstall (no-op elsewhere); the result lands in the debug log only. */
@@ -943,6 +942,171 @@ class SyncManager(
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
         ).intentSender
         context.packageManager.packageInstaller.uninstall(pkg, sender)
+    }
+
+    // --- Install guard: what turned up that nobody approved (see InstallGuard) ---
+
+    /** Apps quarantined right now; the enforcement loop keeps exactly these suspended. */
+    val quarantined: StateFlow<Set<String>> = syncStore.state
+        .map { s -> s.unauthorizedApps.map { it.pkg }.toSet() }
+        .stateIn(scope, SharingStarted.Eagerly, emptySet())
+
+    private val enforcer by lazy { dev.walcott.enforcement.Enforcer(context) }
+    private val installGuardMutex = Mutex()
+
+    /** A package appeared or disappeared: close any window it answers, then judge what is here. */
+    suspend fun onPackageChanged(added: String?) {
+        if (added != null) closeInstallWindow(added)
+        reconcileInstalls()
+    }
+
+    /**
+     * Compares what is installed against what was, and answers for the difference.
+     *
+     * This is the guarantee behind "approving one app installs one app". The install block is
+     * all-or-nothing, so during any window the child could tap Install on something else, queue
+     * three downloads at once, or let Play flush a queue it had been sitting on — and the old
+     * close-on-first-install only ever caught the first of them. Here, everything that appeared
+     * unapproved is suspended on the spot and reported to the parent, and the case stays open
+     * (retried on every package event and every heartbeat) until the app is really gone or the
+     * parent says it may stay.
+     *
+     * Runs on package events, on service start and on the heartbeat, so a device that was off,
+     * killed by an OEM battery saver, or simply not listening still reconciles: the check does
+     * not depend on having witnessed the install.
+     *
+     * The publish is deliberately outside the lock: it is a network call, and the package
+     * receiver that fires during it has better things to do than wait for a socket.
+     */
+    suspend fun reconcileInstalls() {
+        if (installGuardMutex.withLock { withContext(Dispatchers.IO) { reconcileLocked() } }) {
+            publishSelf()
+        }
+    }
+
+    /** The reconciliation itself; returns whether the parent needs to hear about it. */
+    private suspend fun reconcileLocked(): Boolean {
+        // Null, not empty: a device with no user apps at all is a normal state to record as the
+        // baseline. Only a PackageManager that could not answer is a reason to judge nothing.
+        val installed = repository.inventory.userPackages() ?: return false
+        val s = syncStore.current()
+        val now = System.currentTimeMillis()
+        val blanketWindow = s.installExemptionUntilMs > now && s.pendingInstallPackage.isEmpty()
+        // Device Owner is part of the question, not just of the answer: the install block is a
+        // user restriction only a Device Owner can set, so anywhere else there is no block to
+        // violate and every install is legitimate. Without this, the same policy read on a
+        // PARENT's phone — which holds the same settings — would quarantine the parent's own
+        // apps, and an accessibility-only child would be punished for a block it never had.
+        val installsBlocked = enforcer.isDeviceOwner() &&
+            DeviceRestrictions.KEY_INSTALLS in settingsStore.current().deviceRestrictions
+
+        // Seed on first sight, and keep the baseline current whenever there is nothing to judge:
+        // both must leave the ledger alone and neither can be allowed to indict what it finds.
+        if (!s.installBaselineSeeded || !InstallGuard.guarding(installsBlocked, blanketWindow)) {
+            syncStore.update { it.copy(knownPackages = installed, installBaselineSeeded = true) }
+            return false
+        }
+
+        val approved = InstallGuard.approved(
+            s.pendingInstallPackage, s.lastWindowPackage, s.lastWindowClosedAtMs, now,
+        )
+        val fresh = InstallGuard
+            .fresh(installed, s.knownPackages, approved, s.unauthorizedApps.map { it.pkg }.toSet())
+            .map { UnauthorizedApp(pkg = it, label = repository.inventory.label(it) ?: it, atMs = now) }
+        val dropped = InstallGuard.overflow(s.unauthorizedApps, fresh, installed)
+        if (dropped > 0) {
+            dev.walcott.debug.DebugLog.w(TAG, "quarantine at capacity: $dropped case(s) not tracked")
+        }
+        val open = InstallGuard.nextQuarantine(s.unauthorizedApps, fresh, installed)
+        if (open.isEmpty() && s.unauthorizedApps.isEmpty()) {
+            syncStore.update { it.copy(knownPackages = installed) }
+            return false
+        }
+        if (fresh.isNotEmpty()) {
+            dev.walcott.debug.DebugLog.w(
+                TAG, "unauthorized install(s): ${fresh.joinToString { it.pkg }} — quarantining",
+            )
+        }
+
+        // Suspend before removing: it takes effect immediately, it survives a refused or
+        // interrupted uninstall, and it is the part that can be taken back if the parent
+        // decides the app may stay.
+        val suspended = enforcer.quarantine(open.map { it.pkg })
+        val updated = open.map { entry ->
+            runCatching { silentUninstall(entry.pkg) }
+            val attempts = entry.removalAttempts + 1
+            if (attempts == STUCK_REMOVAL_ATTEMPTS) {
+                dev.walcott.debug.DebugLog.w(TAG, "${entry.pkg} survived $attempts removal attempts")
+            }
+            entry.copy(suspended = entry.pkg in suspended, removalAttempts = attempts)
+        }
+        val resolved = s.unauthorizedApps.filter { it.pkg !in installed }
+        if (resolved.isNotEmpty()) {
+            dev.walcott.debug.DebugLog.i(TAG, "quarantine cleared: ${resolved.joinToString { it.pkg }}")
+        }
+        syncStore.update { it.copy(knownPackages = installed, unauthorizedApps = updated) }
+
+        // Only tell the parent when the answer changed. A retry that failed the same way it
+        // failed fifteen minutes ago is not news, and a snapshot per heartbeat for the lifetime
+        // of a stuck case would be the loudest thing on the channel.
+        val changed = fresh.isNotEmpty() || resolved.isNotEmpty() ||
+            updated.any { entry -> s.unauthorizedApps.any { it.pkg == entry.pkg && it.suspended != entry.suspended } }
+        if (changed) syncStore.update { it.copy(childVersion = it.childVersion + 1) }
+        return changed
+    }
+
+    /**
+     * Remote fix: remove an app now (the parent's "remove" answer). Works on any user app, not
+     * only a quarantined one — "get that off their phone" is the same request either way.
+     */
+    suspend fun removeAppNow(pkg: String): Boolean = installGuardMutex.withLock {
+        withContext(Dispatchers.IO) { removeAppLocked(pkg) }
+    }
+
+    private suspend fun removeAppLocked(pkg: String): Boolean {
+        val installed = repository.inventory.userPackages() ?: return false
+        if (pkg.isBlank() || pkg !in installed) return false
+        // Suspended first so the app is unusable from this instant, whatever the uninstall does.
+        val suspended = runCatching { enforcer.quarantine(listOf(pkg)) }.getOrDefault(emptySet())
+        runCatching { silentUninstall(pkg) }
+        // Tracked from here on even if it was never quarantined, so a removal the OS refuses is
+        // retried on the next pass and visible, instead of a button that silently did nothing.
+        val entry = syncStore.current().unauthorizedApps.firstOrNull { it.pkg == pkg }
+        syncStore.update {
+            it.copy(
+                unauthorizedApps = InstallGuard.nextQuarantine(
+                    it.unauthorizedApps.filterNot { open -> open.pkg == pkg },
+                    listOf(
+                        UnauthorizedApp(
+                            pkg = pkg,
+                            label = entry?.label ?: repository.inventory.label(pkg) ?: pkg,
+                            atMs = entry?.atMs ?: System.currentTimeMillis(),
+                            suspended = pkg in suspended,
+                            removalAttempts = (entry?.removalAttempts ?: 0) + 1,
+                        ),
+                    ),
+                    installed,
+                ),
+                childVersion = it.childVersion + 1,
+            )
+        }
+        return true
+    }
+
+    /** Remote fix: let a quarantined app stay (the parent's "allow" answer). */
+    suspend fun allowAppNow(pkg: String): Boolean = installGuardMutex.withLock {
+        val s = syncStore.current()
+        if (s.unauthorizedApps.none { it.pkg == pkg }) return@withLock false
+        syncStore.update {
+            it.copy(
+                unauthorizedApps = it.unauthorizedApps.filterNot { entry -> entry.pkg == pkg },
+                // Into the baseline, or the next reconciliation would quarantine it all over again.
+                knownPackages = it.knownPackages + pkg,
+                childVersion = it.childVersion + 1,
+            )
+        }
+        runCatching { enforcer.release(listOf(pkg)) }
+        true
     }
 
     suspend fun requestExtraTime(categoryId: String, minutes: Int, reason: String, targetLabel: String = "") {
@@ -1080,7 +1244,9 @@ class SyncManager(
         val ask = owner?.asks?.firstOrNull { it.requestId == requestId }
         if (owner == null || ask == null || ask.pkg.isBlank()) return
         resolveRequest(requestId, approved = true, grantedMinutes = 0)
-        sendCommand(owner.deviceId, RemoteAction.INSTALL_APP, arg = ask.pkg)
+        // The label travels with it: the app isn't installed on the child yet, so its own
+        // package manager has nothing to show but the package name.
+        sendCommand(owner.deviceId, RemoteAction.INSTALL_APP, arg = ask.pkg, label = ask.text)
     }
 
     /** Parent asks a child device to report its current location on its next check-in. */
@@ -1100,14 +1266,14 @@ class SyncManager(
      * Parent queues a remote fix for a child device (see [RemoteAction]). Applied on the
      * child's next check-in and acknowledged back in its snapshot.
      */
-    suspend fun sendCommand(targetDeviceId: String, action: String, arg: String = "") {
+    suspend fun sendCommand(targetDeviceId: String, action: String, arg: String = "", label: String = "") {
         val now = System.currentTimeMillis()
         syncStore.update { s ->
             s.copy(
                 parentVersion = s.parentVersion + 1,
                 commands = SyncEngine.withCommand(
                     s.commands,
-                    RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, action, now, arg),
+                    RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, action, now, arg, label),
                     now,
                 ),
             )
@@ -1787,6 +1953,7 @@ class SyncManager(
                     webFilterOn = !dev.walcott.net.VpnStatus.settledDown(),
                     crashTotal = crashes.total,
                     lastCrashMs = crashes.lastAtMs,
+                    unauthorized = s.unauthorizedApps,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -2081,18 +2248,15 @@ class SyncManager(
         }
 
         // Apply resolutions to our pending requests and asks, idempotently.
-        val asksById = s.pendingAsks.associateBy { it.requestId }
-        val pendingIds = s.pendingRequests.map { it.requestId }.toSet() + asksById.keys
+        val pendingIds = s.pendingRequests.map { it.requestId }.toSet() +
+            s.pendingAsks.map { it.requestId }
         val freshResolutions = SyncEngine.newResolutions(snapshot, pendingIds, s.appliedResolutionIds)
-        var approvedAppAsk = false
         for (resolution in freshResolutions) {
             if (!resolution.approved) continue
             if (resolution.grantedMinutes > 0) {
                 val req = s.pendingRequests.firstOrNull { it.requestId == resolution.requestId }
                 if (req != null) repository.grantExtraMinutes(req.categoryId, resolution.grantedMinutes.toLong())
             }
-            // An approved app ask opens the timed install window on this device.
-            if (asksById[resolution.requestId]?.kind == ChildRequest.KIND_APP) approvedAppAsk = true
         }
 
         // Apply bonuses addressed to this device, idempotently.
@@ -2134,11 +2298,6 @@ class SyncManager(
                 appliedResolutionIds = it.appliedResolutionIds + resolvedIds,
                 appliedBonusIds = it.appliedBonusIds + bonusIds,
                 lastNotice = noticeFromResolution ?: noticeFromBonus ?: it.lastNotice,
-                installExemptionUntilMs = if (approvedAppAsk) {
-                    System.currentTimeMillis() + DeviceRestrictions.INSTALL_EXEMPTION_MS
-                } else {
-                    it.installExemptionUntilMs
-                },
             )
         }
         // The pending list shrank (and possibly the rules changed): tell the parent now.
@@ -2160,9 +2319,11 @@ class SyncManager(
             RemoteCommandRunner(
                 context,
                 repository,
-                openInstallForPush = { pkg, id -> openInstallForPush(pkg, id) },
+                openInstallForPush = { pkg, id, label -> openInstallForPush(pkg, id, label) },
                 publishDiagnostics = { publishDiagnostics() },
                 denyPanic = { requestId -> denyPanic(requestId) },
+                removeApp = { pkg -> removeAppNow(pkg) },
+                allowApp = { pkg -> allowAppNow(pkg) },
             )
         }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
@@ -2287,6 +2448,35 @@ class SyncManager(
                 it.plusEvent(event(ParentEvent.TYPE_WRONG_APP, snapshot, detail = wrongAppAck.arg))
             }
         }
+        // Apps that turned up on the child without approval (see InstallGuard). The child has
+        // already suspended them and is already removing them, so this alert is not a request
+        // for permission: it names the app, and offers the one call that is the parent's —
+        // let it stay. One notification per app, so two offenders don't overwrite each other.
+        //
+        // Guarded by the same version rule mergeChild accepts on, or a replayed older snapshot
+        // would resurrect a case the parent has already answered.
+        if (prevChild == null || snapshot.version >= prevChild.version) {
+            val quarantinedBefore = prevChild?.unauthorized.orEmpty().map { it.pkg }.toSet()
+            for (entry in snapshot.unauthorized) {
+                if (entry.pkg in quarantinedBefore) continue
+                val name = entry.label.ifBlank { entry.pkg }
+                SyncNotifications.notifyUnauthorizedApp(
+                    context, who, name, entry.pkg, snapshot.deviceId, snapshot.childId,
+                )
+                syncStore.update {
+                    it.plusEvent(event(ParentEvent.TYPE_WRONG_APP, snapshot, detail = name))
+                }
+            }
+            // Case closed on the child (removed, or allowed): take the alert down with it.
+            val stillQuarantined = snapshot.unauthorized.map { it.pkg }.toSet()
+            for (pkg in quarantinedBefore - stillQuarantined) {
+                runCatching {
+                    androidx.core.app.NotificationManagerCompat.from(context)
+                        .cancel(UnauthorizedAppReceiver.notificationId(snapshot.deviceId, pkg))
+                }
+            }
+        }
+
         if (prevChild?.enforcement == EnforcementStatus.DEVICE_OWNER &&
             snapshot.enforcement != EnforcementStatus.DEVICE_OWNER &&
             snapshot.enforcement != EnforcementStatus.UNKNOWN &&
@@ -2642,6 +2832,14 @@ class SyncManager(
          * Kept short to minimize the opportunity to sneak in an alternative app.
          */
         private const val INSTALL_PUSH_EXEMPTION_MS = 5 * 60 * 1000L
+
+        /**
+         * After this many failed removals, the debug log says so once. A Device Owner uninstall
+         * that keeps being refused is a real gap — the app is still suspended, but it is not
+         * going away, and the only surface that can say that out loud is the log the health
+         * report carries.
+         */
+        private const val STUCK_REMOVAL_ATTEMPTS = 4
         // Re-emits only heal lost messages: real changes (settings edits, requests,
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.

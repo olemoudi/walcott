@@ -175,6 +175,24 @@ data class SyncState(
     val pendingInstallPackage: String = "",
     /** The [RemoteCommand.id] behind [pendingInstallPackage], to ack "installed" when it lands. */
     val pendingInstallCommandId: String = "",
+    /** Human name of [pendingInstallPackage] — the app isn't installed, so nothing else knows it. */
+    val pendingInstallLabel: String = "",
+    /**
+     * The last window's target and when it closed, so an approved app that lands late is still
+     * recognised as approved (see [InstallGuard.LATE_LANDING_GRACE_MS]).
+     */
+    val lastWindowPackage: String = "",
+    val lastWindowClosedAtMs: Long = 0,
+    /**
+     * Non-system packages as of the last reconciliation — the baseline anything new is judged
+     * against (see [InstallGuard]). [installBaselineSeeded] separates "nothing installed yet"
+     * from "never looked": without it the first pass after an update would report every app on
+     * the phone as an unauthorized install.
+     */
+    val knownPackages: Set<String> = emptySet(),
+    val installBaselineSeeded: Boolean = false,
+    /** Open quarantine cases: apps that appeared unapproved, suspended until the parent answers. */
+    val unauthorizedApps: List<UnauthorizedApp> = emptyList(),
     /** requestedAtMs of the newest location request this child has already answered. */
     val appliedLocationRequestMs: Long = 0,
     /** Version of the newest parent snapshot whose rules this child has adopted. */

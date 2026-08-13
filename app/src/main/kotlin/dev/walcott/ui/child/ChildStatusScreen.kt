@@ -115,6 +115,7 @@ fun ChildStatusScreen(
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val channelOfflineSince by viewModel.channelOfflineSince.collectAsStateWithLifecycle()
     val pendingInstall by viewModel.pendingInstall.collectAsStateWithLifecycle()
+    val pendingInstallLabel by viewModel.pendingInstallLabel.collectAsStateWithLifecycle()
     val myRequests by viewModel.myPendingRequests.collectAsStateWithLifecycle()
     val myAsks by viewModel.myPendingAsks.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
@@ -198,7 +199,9 @@ fun ChildStatusScreen(
             if (pendingInstall.isNotEmpty()) {
                 item {
                     PendingInstallCard(
-                        pkg = pendingInstall,
+                        // The name the parent's device sent: the app isn't installed here yet,
+                        // so the package name is all this device could work out by itself.
+                        appName = pendingInstallLabel.ifBlank { pendingInstall },
                         onOpen = {
                             runCatching {
                                 context.startActivity(
@@ -436,8 +439,11 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
             stringResource(R.string.notice_expired, categoryName)
         !notice.approved -> stringResource(R.string.notice_denied)
         notice.kind == "time" -> stringResource(R.string.notice_approved_time, notice.minutes, categoryName)
-        notice.kind == ChildRequest.KIND_APP || notice.kind == ChildRequest.KIND_INSTALL ->
-            stringResource(R.string.notice_approved_app, notice.text)
+        // An install ask is answered with the app itself: it arrives with its own prompt.
+        notice.kind == ChildRequest.KIND_INSTALL -> stringResource(R.string.notice_approved_app, notice.text)
+        // A written "can I have an app?" is answered with a yes, and nothing else — installing
+        // it means sharing it from Play, which is the path that installs exactly that one app.
+        notice.kind == ChildRequest.KIND_APP -> stringResource(R.string.notice_approved_app_ask, notice.text)
         else -> stringResource(R.string.notice_approved_other, notice.text)
     }
     val subtitle = when {
@@ -445,6 +451,7 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
             stringResource(R.string.notice_expired_desc)
         !notice.approved && notice.text.isNotBlank() -> notice.text
         !notice.approved -> stringResource(R.string.notice_denied_desc)
+        notice.kind == ChildRequest.KIND_APP -> stringResource(R.string.notice_approved_app_ask_desc)
         else -> null
     }
     val positive = notice.approved
@@ -527,9 +534,9 @@ private fun WaitingCard(texts: List<String>) {
     }
 }
 
-/** A parent pushed an app to install: the tap that opens Play (window re-opens on tap). */
+/** An approved app waiting to be installed: the tap that opens Play (window re-opens on tap). */
 @Composable
-private fun PendingInstallCard(pkg: String, onOpen: () -> Unit) {
+private fun PendingInstallCard(appName: String, onOpen: () -> Unit) {
     val spacing = Tokens.spacing
     WalcottCard(onClick = onOpen, color = MaterialTheme.colorScheme.secondaryContainer) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
@@ -542,12 +549,12 @@ private fun PendingInstallCard(pkg: String, onOpen: () -> Unit) {
             Spacer(Modifier.width(spacing.md))
             Column(Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.install_child_card_title),
+                    stringResource(R.string.install_child_card_title, appName),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 Text(
-                    stringResource(R.string.install_child_card_desc, pkg),
+                    stringResource(R.string.install_child_card_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )

@@ -360,6 +360,46 @@ object SyncNotifications {
         )
     }
 
+    /**
+     * An app appeared on a child device that nobody approved. It is already suspended there and
+     * a removal is already under way, so this is not a request for permission — it is the parent
+     * being told, with the one decision that is actually theirs: let it stay, or make sure it goes.
+     */
+    fun notifyUnauthorizedApp(
+        context: Context,
+        childName: String,
+        appLabel: String,
+        pkg: String,
+        deviceId: String,
+        childId: String = "",
+    ) {
+        fun action(intentAction: String, labelRes: Int): NotificationCompat.Action {
+            val intent = Intent(context, UnauthorizedAppReceiver::class.java)
+                .setAction(intentAction)
+                .putExtra(UnauthorizedAppReceiver.EXTRA_DEVICE_ID, deviceId)
+                .putExtra(UnauthorizedAppReceiver.EXTRA_PACKAGE, pkg)
+            return NotificationCompat.Action(
+                0,
+                context.getString(labelRes),
+                PendingIntent.getBroadcast(
+                    context, (intentAction + deviceId + pkg).hashCode(), intent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
+        }
+        post(
+            context, URGENT_CHANNEL, R.string.urgent_channel_name,
+            title = context.getString(R.string.unauthorized_app_title, childName),
+            text = context.getString(R.string.unauthorized_app_text, appLabel),
+            notifId = UnauthorizedAppReceiver.notificationId(deviceId, pkg),
+            dest = childDest(childId),
+            actions = listOf(
+                action(UnauthorizedAppReceiver.ACTION_REMOVE, R.string.unauthorized_app_remove),
+                action(UnauthorizedAppReceiver.ACTION_ALLOW, R.string.unauthorized_app_allow),
+            ),
+        )
+    }
+
     /** A different app than the approved one was installed during a window (and removed). */
     fun notifyWrongApp(context: Context, childName: String, pkg: String, deviceId: String, childId: String = "") = post(
         context, URGENT_CHANNEL, R.string.urgent_channel_name,

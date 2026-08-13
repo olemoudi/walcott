@@ -198,13 +198,20 @@ class WalcottApplication : Application() {
      * Pushes an assisted app install to a child from the share-sheet flow. Runs on the app
      * scope (not the launching activity's) so it survives the activity finishing immediately.
      */
-    fun pushAppInstall(deviceId: String, pkg: String) {
+    fun pushAppInstall(deviceId: String, pkg: String, label: String = "") {
         appScope.launch {
             // The push has to leave from the family that device belongs to — its topic and its
             // keys — which on a parent holding several is not necessarily the one on screen
             // (the share sheet lists every family's children).
             val family = hub.scopeForDevice(deviceId) ?: hub.active
-            family.syncManager.sendCommand(deviceId, dev.walcott.sync.RemoteAction.INSTALL_APP, arg = pkg)
+            family.syncManager.sendCommand(
+                deviceId,
+                dev.walcott.sync.RemoteAction.INSTALL_APP,
+                arg = pkg,
+                // Read off the Play page being shared: the child can't resolve a name for an
+                // app it hasn't installed, and "com.some.package" is not an answer to a child.
+                label = label,
+            )
         }
     }
 

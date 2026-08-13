@@ -60,6 +60,24 @@ class Enforcer(context: Context) {
         }
     }
 
+    /**
+     * Suspends [packages] outright, outside the rules, and answers which ones the OS actually
+     * suspended — the quarantine for apps that appeared without approval (see
+     * [dev.walcott.sync.InstallGuard]). Verified rather than assumed, because "we asked" and
+     * "it is blocked" are different claims and the parent is shown one of them.
+     */
+    fun quarantine(packages: List<String>): Set<String> {
+        if (packages.isEmpty() || !isDeviceOwner()) return emptySet()
+        suspend(packages, true)
+        return packages.filter { runCatching { dpm.isPackageSuspended(admin, it) }.getOrDefault(false) }.toSet()
+    }
+
+    /** Lifts the suspension of [packages] (the parent allowed a quarantined app to stay). */
+    fun release(packages: List<String>) {
+        if (packages.isEmpty() || !isDeviceOwner()) return
+        suspend(packages, false)
+    }
+
     private fun isInstalled(packageName: String): Boolean =
         runCatching { pm.getApplicationInfo(packageName, 0) }.isSuccess
 

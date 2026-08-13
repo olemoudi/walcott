@@ -49,6 +49,8 @@ class AppBlockerService : AccessibilityService() {
     @Volatile private var clockTrusted: Boolean = true
     @Volatile private var usage: Map<String, Duration> = emptyMap()
     @Volatile private var extra: Map<String, Duration> = emptyMap()
+    /** Apps quarantined by the install guard: blocked whatever the rules say about them. */
+    @Volatile private var quarantined: Set<String> = emptySet()
 
     private var lastNotifiedPkg: String? = null
     private var lastNotifiedAt = 0L
@@ -91,6 +93,7 @@ class AppBlockerService : AccessibilityService() {
                 clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(it.clockSkewMs)
             }
         }
+        scope.launch { app.syncManager.quarantined.collectLatest { quarantined = it } }
         scope.launch { app.repository.usageTodayFlow.collectLatest { usage = it } }
         scope.launch { app.repository.effectiveExtraTodayFlow.collectLatest { extra = it } }
         ContextCompat.registerReceiver(
@@ -119,6 +122,15 @@ class AppBlockerService : AccessibilityService() {
         if (!enforcing) return
         val pkg = event.packageName?.toString() ?: return
         val cfg = config ?: return
+        // Quarantined first, and before the managed check: an app that appeared without approval
+        // answers to no rule, so nothing below would ever block it. Suspension is the real
+        // mechanism (this only runs on a Device Owner device); this is what still stands between
+        // the child and the app on the one path that matters — the OS refusing to suspend it.
+        if (pkg != packageName && pkg in quarantined) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            notifyBlocked(pkg)
+            return
+        }
         if (pkg == packageName || pkg !in managed) return
         // Mirror the Device Owner path's fail-closed rules: without the usage counter or with a
         // clock we can't trust, every managed app is blocked (see RuleEngine.blockedPackages).

@@ -116,6 +116,26 @@ class AppInventory(context: Context) {
         launchableApps().filterNot { it.isSystem }.map { it.packageName }.toSet() - ownPackage
 
     /**
+     * Every non-system package installed here, whether or not it has an icon — the baseline the
+     * install guard judges new arrivals against (see [dev.walcott.sync.InstallGuard]).
+     *
+     * Wider than [managedPackages] on purpose, and read straight from the system rather than
+     * from the launchable cache: "what turned up on this phone" must not depend on the app
+     * having a launcher activity, which is precisely what something arriving quietly would skip.
+     *
+     * Null means the question could not be answered, and is not the same as the empty set: a
+     * child's phone with nothing installed but Walcott is a perfectly ordinary state — a fresh
+     * one, in fact — and treating it as a failure would leave the guard unseeded until the first
+     * app arrived, which is exactly the app it exists to catch.
+     */
+    fun userPackages(): Set<String>? = runCatching {
+        pm.getInstalledApplications(0)
+            .filterNot { it.isSystemApp() }
+            .map { it.packageName }
+            .toSet() - ownPackage
+    }.getOrNull()
+
+    /**
      * Packages whose screen time is COUNTED — deliberately wider than [managedPackages], which is
      * about what may be blocked.
      *

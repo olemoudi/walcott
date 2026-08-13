@@ -179,6 +179,11 @@
             android:name=".sync.InstallReminderReceiver"
             android:exported="false" />
 
+        <!-- Remove/Allow actions on the "an app appeared unapproved" alert. -->
+        <receiver
+            android:name=".sync.UnauthorizedAppReceiver"
+            android:exported="false" />
+
         <!-- Hands the encrypted family backup to the share sheet (email-to-self and the like). -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -153,6 +153,8 @@
     <string name="request_waiting_button">Enviada — esperando respuesta</string>
     <string name="notice_approved_time">¡Aprobado! +%1$d min de %2$s</string>
     <string name="notice_approved_app">Ya puedes instalar %1$s</string>
+    <string name="notice_approved_app_ask">Tus padres han dicho que sí a %1$s</string>
+    <string name="notice_approved_app_ask_desc">Búscala en Google Play, toca Compartir y elige Walcott — así se instala.</string>
     <string name="notice_approved_other">Te han dicho que sí: %1$s</string>
     <string name="notice_denied">Esta vez no</string>
     <string name="notice_denied_desc">Tu petición no ha sido aprobada</string>
@@ -530,6 +532,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_43_0">
+        <item>Si aparece en el móvil de un hijo una app que nadie ha aprobado, allí queda bloqueada al instante y se elimina, y a ti se te dice cuál era — con la opción de dejarla.</item>
+        <item>Aprobar una app ahora lleva a tu hijo directo a ella en Google Play, con su nombre real en vez de un nombre de paquete, así que no queda nada que averiguar.</item>
+        <item>Decir que sí a un «¿me dejáis una app?» escrito es solo eso, una respuesta. Para instalarla, que comparta la app desde Google Play — así se instala exactamente esa.</item>
+    </string-array>
     <string-array name="whats_new_0_42_0">
         <item>Los cambios de reglas esperan unos segundos antes de enviarse, así que tocar varias cosas de una sentada le llega a tus hijos como un solo cambio en vez de irles llegando a medias.</item>
         <item>Lo que hayas cambiado y aún no se haya enviado se marca con «Actualizando…», para que una regla que sigue en tu móvil no se confunda con una que ya ha llegado.</item>
@@ -587,7 +594,7 @@
     <string name="ask_text_label_other">¿Qué necesitas?</string>
     <string name="ask_summary_app">Quiere instalar: %1$s</string>
     <string name="ask_summary_other">Pide: %1$s</string>
-    <string name="ask_approve_hint">Al aprobar se abre una ventana de instalación de 15 minutos en su móvil</string>
+    <string name="ask_approve_hint">Aprobar es una respuesta, no una instalación: para instalarla, que comparta la app desde Google Play</string>
 
     <!-- Bloqueo de la app del padre -->
     <string name="app_lock_setting_title">Bloquear esta app</string>
@@ -702,7 +709,7 @@
     <string name="install_share_not_linked">Este móvil aún no está vinculado a una familia.</string>
     <!-- El lado del hijo al compartir: pedir a los padres exactamente esta app -->
     <string name="install_request_title">¿Pedir esta app a tus padres?</string>
-    <string name="install_request_body">Se enviará una petición para %1$s. Si la aprueban, se instalará sola.</string>
+    <string name="install_request_body">Se enviará una petición para %1$s. Si la aprueban, se abrirá Google Play en este móvil con la app lista para instalar.</string>
     <string name="install_request_send">Enviar petición</string>
     <string name="install_request_sent">Petición enviada a tus padres</string>
     <string name="install_request_duplicate">Ya has pedido esta app</string>
@@ -719,8 +726,8 @@
     <string name="app_card_blocked">No disponible ahora mismo</string>
     <string name="ask_install_hint">Aprobar instala solo esta app; todo lo demás sigue bloqueado.</string>
     <string name="install_channel_name">Peticiones de instalación</string>
-    <string name="install_prompt_title">Instalación solicitada</string>
-    <string name="install_prompt_text">Toca para instalar %1$s desde Play.</string>
+    <string name="install_prompt_title">Ya puedes instalar %1$s</string>
+    <string name="install_prompt_text">Toca aquí para abrirla en Google Play y pulsa Instalar.</string>
     <string name="remote_result_install_opened">abierto en el móvil del hijo</string>
     <string name="remote_result_installed">app instalada</string>
     <string name="remote_result_already_installed">ya estaba instalada</string>
@@ -732,9 +739,20 @@
     <string name="pending_op_locate">Petición de ubicación</string>
     <string name="pending_op_meta">%1$s · enviada hace %2$s</string>
     <string name="pending_op_waiting_install">Abierta en el dispositivo — esperando la instalación en Play</string>
-    <!-- Instalación enviada por los padres (inicio del hijo) -->
-    <string name="install_child_card_title">Tus padres quieren instalar una app</string>
-    <string name="install_child_card_desc">Toca para abrir %1$s en Google Play e instalarla.</string>
+    <!-- Instalación aprobada pendiente de terminar (inicio del hijo) -->
+    <string name="install_child_card_title">Ya puedes instalar %1$s</string>
+    <string name="install_child_card_desc">Toca aquí para abrirla en Google Play y pulsa Instalar.</string>
+    <!-- Una app apareció en el móvil del hijo sin que nadie la aprobara -->
+    <string name="unauthorized_app_title">App sin aprobar en el móvil de %1$s</string>
+    <string name="unauthorized_app_text">Se instaló «%1$s» sin aprobación. Está bloqueada y se está eliminando.</string>
+    <string name="unauthorized_app_remove">Eliminar</string>
+    <string name="unauthorized_app_allow">Dejarla</string>
+    <string name="unauthorized_app_card_title">Se instaló «%1$s» sin aprobación</string>
+    <string name="unauthorized_app_card_state">Está bloqueada en su móvil y se está eliminando.</string>
+    <string name="unauthorized_app_card_state_unsuspended">Su móvil no ha podido bloquearla — elimínala desde aquí.</string>
+    <string name="remote_result_removing">eliminándola</string>
+    <string name="remote_result_not_installed">esa app no está instalada allí</string>
+    <string name="remote_result_allowed">la app puede quedarse</string>
     <string name="update_wifi_only_title">Actualizar solo con Wi-Fi</string>
     <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
     <string name="update_wifi_following_family">Sigue el ajuste de la familia: %1$s</string>
