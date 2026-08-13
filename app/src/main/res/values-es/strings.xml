@@ -532,6 +532,9 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_45_0">
+        <item>Corregido un caso poco frecuente en el que el móvil de un hijo podía quedarse con las reglas anteriores en vez de las que acababas de enviar — sobre todo justo después de reconectarse, y seguía así hasta que cambiabas algo de nuevo.</item>
+    </string-array>
     <string-array name="whats_new_0_44_0">
         <item>Corregido: una app que hubiera sido bloqueada una vez ya no se podía instalar nunca más — aunque la aprobaras tú, desaparecía del móvil de tu hijo a los pocos segundos de llegar.</item>
     </string-array>

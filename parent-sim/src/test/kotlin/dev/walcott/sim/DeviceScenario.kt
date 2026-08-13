@@ -34,14 +34,11 @@ abstract class DeviceScenario {
         // passed. If the device is not ready, the run should say so where someone will read it.
         precondition("a device is attached", device.isAvailable())
         precondition("dev.walcott is installed", device.isWalcottInstalled())
-        // Repaired rather than skipped: the emulated Wi-Fi interface vanishes under a long run,
-        // and a suite that skips itself reports success while testing nothing.
-        precondition("the device has a network", device.repairNetwork())
-
         relay = MockRelay().start()
-        // Two addresses for one relay: this process reaches it on loopback, the device reaches
-        // it through the emulator's host alias.
-        parent = ParentSim(relay.localUrl, advertisedRelay = relay.emulatorUrl).start()
+        // The device reaches the relay over `adb reverse`, on its own loopback, so none of this
+        // depends on the emulator's network stack — the part that vanishes under a long run.
+        device.reversePort(relay.port)
+        parent = ParentSim(relay.localUrl, advertisedRelay = relay.loopbackUrl).start()
 
         // Leave the device the way a scenario expects to find it: no family, no restrictions.
         // The policy goes first — a leftover install block would refuse the next `adb install`
@@ -89,6 +86,7 @@ abstract class DeviceScenario {
         // Restrictions are the one thing that outlives the app's own state and can break the
         // NEXT run before it starts, so they come off explicitly rather than by being forgotten.
         runCatching { device.seedPolicy(PolicyJson.minimal()) }
+        runCatching { device.clearReverse(relay.port) }
         runCatching { parent.stop() }
         runCatching { relay.stop() }
     }
@@ -103,6 +101,29 @@ abstract class DeviceScenario {
     }
 
     /**
+     * Keeps asking the child to say its current state until [predicate] holds.
+     *
+     * Not every change the child records reaches the parent promptly: a wall entry, for
+     * instance, bumps the version but its publish is deliberately throttled, so a burst of them
+     * costs one message rather than ten. Waiting passively for that means waiting out the
+     * throttle — or, if nothing else changes, the next re-emit. Asking repeatedly is what a
+     * scenario wants: it is the child's own state either way.
+     */
+    protected fun childEventuallyReports(
+        timeoutMs: Long = 60_000,
+        predicate: (dev.walcott.sync.ChildSnapshot) -> Boolean,
+    ): dev.walcott.sync.ChildSnapshot {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            parent.children.values.firstOrNull(predicate)?.let { return it }
+            device.publish()
+            runCatching { parent.awaitChild(timeoutMs = 4_000, predicate = predicate) }
+                .getOrNull()?.let { return it }
+        }
+        throw AssertionError("the child never reported the expected state within ${timeoutMs}ms")
+    }
+
+    /**
      * Waits for something to become true ON THE DEVICE — the OS's answer, not the app's claim
      * about it. Asserting through `dumpsys` is the difference between "we asked for a package to
      * be suspended" and "it is suspended", and the whole reason a scenario runs on a device.
@@ -114,6 +135,26 @@ abstract class DeviceScenario {
             Thread.sleep(1_000)
         }
         throw AssertionError("device never reached: $what (within ${timeoutMs}ms)")
+    }
+
+    /**
+     * Puts a real third-party app on the device and answers its package name.
+     *
+     * A freshly wiped emulator has none — Walcott leaves itself off the list it offers up to be
+     * blocked, and everything else is a system package. So any scenario about "the apps on this
+     * phone" has to supply one rather than assume one, or it is testing an empty list.
+     */
+    protected fun installFixtureApp(which: Fixture = Fixture.FIRST): String {
+        val url = requireNotNull(javaClass.classLoader.getResource(which.apk)) { "missing ${which.apk}" }
+        val result = device.install(java.io.File(url.toURI()).absolutePath)
+        check(result.contains("Success")) { "could not install ${which.apk}: $result" }
+        return which.pkg
+    }
+
+    /** The throwaway apps in test resources (see their README). */
+    protected enum class Fixture(val apk: String, val pkg: String, val label: String) {
+        FIRST("unapproved-app.apk", "com.sneaky.notapproved", "Sneaky Game"),
+        SECOND("second-unapproved-app.apk", "com.sneaky.second", "Second Sneak"),
     }
 
     /** Asserts the device does NOT reach [what] while the window lasts. */

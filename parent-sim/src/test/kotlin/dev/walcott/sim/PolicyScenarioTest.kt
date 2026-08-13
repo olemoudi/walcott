@@ -71,6 +71,40 @@ class PolicyScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `two policies published in the same instant leave the child on the newer one`() {
+        // Not an exotic shape: every resolution, command and bonus publishes its own snapshot,
+        // so a parent answering a request while a rule edit goes out produces two in the same
+        // instant — and a child reconnecting with a cursor is handed the whole backlog at once.
+        //
+        // Applied concurrently, the replay gate stops meaning anything. It is a read-modify-
+        // write: both snapshots read the same applied version, both decide they are newer, and
+        // the last WRITE wins rather than the highest version. The child then enforces the older
+        // rules while reporting the newer ones, and nothing corrects it until the next edit.
+        parent.pushPolicy(PolicyJson.build(version = 2, restrictions = emptySet()))
+        parent.pushPolicy(PolicyJson.build(version = 3, restrictions = installBlock))
+
+        awaitDevice("the newer of two simultaneous policies applied") { device.installBlocked() }
+        val reported = childReports { it.appliedPolicyVersion >= parent.currentVersion() }
+        assertEquals(
+            parent.currentVersion(),
+            reported.appliedPolicyVersion,
+            "the child should be on the newest snapshot it has seen",
+        )
+    }
+
+    @Test
+    fun `a burst of snapshots is applied in order, not in whichever order they finish`() {
+        // The same guarantee walked the other way: the newest says "no restrictions", so ending
+        // on an OLDER one would leave a device locked down by rules the family has withdrawn.
+        parent.pushPolicy(PolicyJson.build(version = 2, restrictions = installBlock))
+        awaitDevice("the install block armed") { device.installBlocked() }
+
+        parent.pushPolicy(PolicyJson.build(version = 3, restrictions = installBlock))
+        parent.pushPolicy(PolicyJson.build(version = 4, restrictions = emptySet()))
+        awaitDevice("the newest of the burst applied") { !device.installBlocked() }
+    }
+
+    @Test
     fun `the periodic re-emit does not re-apply rules it already delivered`() {
         val pushed = parent.pushPolicy(PolicyJson.build(version = 2, restrictions = installBlock))
         val applied = childReports { it.appliedPolicyVersion >= pushed.version }.appliedPolicyVersion

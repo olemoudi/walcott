@@ -84,6 +84,17 @@ class RemoteCommandScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `an update check on demand is acknowledged either way`() {
+        // "Update now" reaches for GitHub, which may or may not be reachable from wherever this
+        // runs — so the contract under test is that the child ANSWERS, with the outcome, rather
+        // than leaving the parent's pending operation hanging for ever.
+        val commandId = parent.sendCommand(deviceId, RemoteAction.UPDATE_NOW)
+        val ack = parent.awaitAck(commandId)
+        assertEquals(RemoteAction.UPDATE_NOW, ack.action)
+        assertTrue(ack.detail.isNotBlank(), "an update attempt must say what happened")
+    }
+
+    @Test
     fun `asking for permissions is acknowledged rather than silently dropped`() {
         val commandId = parent.sendCommand(deviceId, RemoteAction.REQUEST_PERMISSIONS)
         val ack = parent.awaitAck(commandId)

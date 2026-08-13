@@ -76,6 +76,19 @@ class MockRelay {
     /** Base URL as seen from inside the emulator, where the host is 10.0.2.2. */
     val emulatorUrl: String get() = "http://10.0.2.2:${server.port}"
 
+    /** The port this is listening on, for `adb reverse`. */
+    val port: Int get() = server.port
+
+    /**
+     * Base URL for a device that has this port reversed onto its own loopback.
+     *
+     * Preferred over [emulatorUrl] for scenarios: `adb reverse` carries the connection over the
+     * adb transport rather than the emulator's network stack, and that stack is exactly what
+     * disappears under a long run — the interface vanishes from the guest kernel and every
+     * socket fails while adb goes on working perfectly.
+     */
+    val loopbackUrl: String get() = "http://127.0.0.1:${server.port}"
+
     /** Everything published to [topic] so far, oldest first. */
     fun published(topic: String): List<Message> = topics[topic]?.messages?.toList().orEmpty()
 

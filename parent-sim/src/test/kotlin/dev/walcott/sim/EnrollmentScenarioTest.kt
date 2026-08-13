@@ -44,7 +44,8 @@ class EnrollmentScenarioTest : DeviceScenario() {
         // pairAsChild (keep the deviceId across re-pairs) and there was no way to check it
         // without a device that actually re-pairs.
         val firstId = deviceId
-        val secondParent = ParentSim(relay.localUrl, advertisedRelay = relay.emulatorUrl).start()
+        // Same relay, same route: over `adb reverse`, like the family this scenario starts in.
+        val secondParent = ParentSim(relay.localUrl, advertisedRelay = relay.loopbackUrl).start()
         try {
             device.pair(secondParent.pairingFor(childId = "other-id", childName = "Renamed"))
             val afterRepair = secondParent.awaitChild { it.childId == "other-id" }

@@ -192,6 +192,31 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     )
                     DebugLog.i("WalcottSeed", "requested extra time: $spec")
                 }
+                // `--ez start_panic true` / `--ez cancel_panic true`: the emergency release, from
+                // the child's side, through the same gated call its own screen makes. Pair with
+                // `--ez panic_ready true`, which satisfies the gates (fresh channel, a parent new
+                // enough) that would otherwise need a day of real elapsed time.
+                if (intent.getBooleanExtra("start_panic", false)) {
+                    val ok = target.syncManager.startPanic()
+                    DebugLog.i("WalcottSeed", "startPanic ok=$ok")
+                }
+                if (intent.getBooleanExtra("cancel_panic", false)) {
+                    target.syncManager.cancelPanic()
+                    DebugLog.i("WalcottSeed", "panic withdrawn")
+                }
+                // `--es add_usage "com.some.app=1800,com.other=600"`: seconds onto this device's
+                // OWN counters, through the same call the usage sampler makes. An emulator that
+                // nobody has used has no screen time to report, so the reporting path — the one
+                // that silently shipped empty stats to every parent for six releases — could not
+                // otherwise be exercised at all.
+                intent.getStringExtra("add_usage")?.let { spec ->
+                    for (entry in spec.split(",").filter { it.isNotBlank() }) {
+                        val pkg = entry.substringBefore('=')
+                        val seconds = entry.substringAfter('=', "").toLongOrNull() ?: continue
+                        target.repository.addUsageSeconds(pkg, seconds)
+                    }
+                    DebugLog.i("WalcottSeed", "usage seeded: $spec")
+                }
                 // `--es publish now`: publish this device's snapshot immediately. The regular
                 // heartbeat is throttled (it must be — it rides on wakeups that happen anyway),
                 // so a test that has just changed something on the device has no other way to

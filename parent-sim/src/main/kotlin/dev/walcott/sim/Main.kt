@@ -25,10 +25,18 @@ import dev.walcott.sync.RemoteAction
  */
 fun main(args: Array<String>) {
     val relay = MockRelay().start()
-    val parent = ParentSim(relay.localUrl, advertisedRelay = relay.emulatorUrl).start()
     val device = ChildDevice()
+    // Over `adb reverse` when there is a device: the emulator's own network stack is the part
+    // that gives out under a long session, and nothing here needs it.
+    val advertised = if (device.isAvailable()) {
+        device.reversePort(relay.port)
+        relay.loopbackUrl
+    } else {
+        relay.emulatorUrl
+    }
+    val parent = ParentSim(relay.localUrl, advertisedRelay = advertised).start()
 
-    println("relay: ${relay.localUrl} (device sees ${relay.emulatorUrl})")
+    println("relay: ${relay.localUrl} (device sees $advertised)")
     println("topic: ${parent.topic}")
 
     if (args.firstOrNull() == "qr") {
@@ -44,7 +52,7 @@ fun main(args: Array<String>) {
     }
 
     println("pairing " + ChildDevice.PACKAGE + "…")
-    device.pair(parent.pairingFor())
+    device.pairFresh(parent.pairingFor())
     val first = runCatching { parent.awaitChild { true } }.getOrNull()
     println(if (first != null) "paired: ${first.deviceId} (${first.displayName})" else "no check-in yet")
 
@@ -101,7 +109,10 @@ fun main(args: Array<String>) {
 
 private fun describe(snapshot: dev.walcott.sync.ChildSnapshot): String = buildString {
     append("${snapshot.deviceId} v${snapshot.version} policy=v${snapshot.appliedPolicyVersion}")
-    append(" enforcement=${snapshot.enforcement}")
+    append(" enforcement=${snapshot.enforcement} usageAccess=${snapshot.usageAccessOn}")
+    if (snapshot.usage.isNotEmpty()) append(" usage=${snapshot.usage.map { it.categoryId + ":" + it.seconds }}")
+    if (snapshot.ruleEvents.isNotEmpty()) append(" events=${snapshot.ruleEvents.map { it.kind + ":" + it.pkg }}")
+    if (snapshot.enforcementGaps.isNotEmpty()) append(" gaps=${snapshot.enforcementGaps}")
     if (snapshot.requests.isNotEmpty()) append(" requests=${snapshot.requests.map { it.requestId.take(8) }}")
     if (snapshot.asks.isNotEmpty()) append(" asks=${snapshot.asks.map { it.kind + ":" + it.text }}")
     if (snapshot.unauthorized.isNotEmpty()) append(" quarantined=${snapshot.unauthorized.map { it.pkg }}")

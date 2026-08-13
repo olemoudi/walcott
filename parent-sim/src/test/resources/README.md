@@ -5,8 +5,15 @@ is deciding what to do about a package that turned up, so a scenario has to be a
 turn up — and every real app is either a system package (which the guard deliberately ignores)
 or far too big to keep in a repository.
 
-They contain no code at all (`android:hasCode="false"`), just a manifest with a package name and
-a label, so nothing about them can influence the behaviour under test.
+They contain no code at all (`android:hasCode="false"`), just a manifest with a package name, a
+label and a launcher activity that could never actually start — so nothing about them can
+influence the behaviour under test.
+
+The launcher activity is not decoration. The app list a parent classifies from is built from
+apps that HAVE a launcher entry (`AppInventory.launchableApps`), deliberately: it is about what
+may be blocked. The install guard reads a wider list (`userPackages`) precisely because
+something arriving quietly would skip having an icon. A fixture without a launcher activity can
+therefore exercise the guard and nothing else, which is a confusing thing to discover twice.
 
 Regenerate with the SDK's build tools:
 
@@ -15,7 +22,14 @@ cat > AndroidManifest.xml <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.sneaky.notapproved">
-    <application android:hasCode="false" android:label="Sneaky Game" />
+    <application android:hasCode="false" android:label="Sneaky Game">
+        <activity android:name=".Main" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>
 EOF
 

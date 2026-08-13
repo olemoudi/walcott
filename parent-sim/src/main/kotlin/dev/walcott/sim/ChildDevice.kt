@@ -113,6 +113,22 @@ class ChildDevice(
     fun requestExtraTime(target: String, minutes: Int, reason: String = "please") =
         seed("--es", "request_time", "$target:$minutes:$reason")
 
+    /** Seconds onto this device's own screen-time counters, as the usage sampler would. */
+    fun addUsage(vararg entries: Pair<String, Long>) =
+        seed("--es", "add_usage", entries.joinToString(",") { "${it.first}=${it.second}" })
+
+    /** Satisfies the emergency release's start gates without waiting a day of real time. */
+    fun panicReady() = seed("--ez", "panic_ready", "true")
+
+    /** The child requests the 24-hour emergency release, through its own gated call. */
+    fun startPanic() = seed("--ez", "start_panic", "true")
+
+    /** The child withdraws its own request. */
+    fun cancelPanic() = seed("--ez", "cancel_panic", "true")
+
+    /** Clears a seeded request and any standing refusal. */
+    fun clearPanic() = seed("--ez", "panic_clear", "true")
+
     /** Runs the ~30-minute check-in now, so a scenario needn't wait half an hour for one. */
     fun heartbeat() = seed("--es", "heartbeat", "now")
 
@@ -193,6 +209,27 @@ class ChildDevice(
             Thread.sleep(500)
         }
         check(!isInstalled(pkg)) { "could not remove $pkg from the device" }
+    }
+
+    /**
+     * Makes the host's [port] answer on the device's own loopback, over the adb transport.
+     *
+     * The device then reaches the relay without involving its network stack at all — which is
+     * the difference between a suite that survives the emulator losing its Wi-Fi interface and
+     * one that spends its time diagnosing that.
+     */
+    fun reversePort(port: Int) {
+        run("reverse", "tcp:$port", "tcp:$port")
+    }
+
+    fun clearReverse(port: Int) {
+        runCatching { run("reverse", "--remove", "tcp:$port") }
+    }
+
+    /** Puts a fix under the device, so "locate now" has something to find. */
+    fun setLocation(latitude: Double, longitude: Double) {
+        // The console takes longitude first, which is the opposite of how everyone says it.
+        run("emu", "geo", "fix", longitude.toString(), latitude.toString())
     }
 
     fun clearLogcat() {

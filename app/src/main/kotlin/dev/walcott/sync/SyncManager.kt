@@ -2177,7 +2177,26 @@ class SyncManager(
     /** Cached icon bytes for [pkg], or null if not fetched yet (parent-side render). */
     fun iconBytes(pkg: String): ByteArray? = iconStore.read(pkg)
 
-    private suspend fun applyParentSnapshot(snapshot: ParentSnapshot, rotationAdopted: Boolean) {
+    /**
+     * Applied one at a time, because the replay gate below is a read-modify-write.
+     *
+     * Two parent snapshots arriving close together used to be applied concurrently: both read
+     * the same `appliedParentVersion`, both decided they were newer than it, and both wrote —
+     * so the LAST WRITE won rather than the highest version. The child could end up enforcing
+     * the older policy while reporting it had applied the newer one, and nothing would correct
+     * it until the parent next edited a rule.
+     *
+     * Not a rare shape, either. Every resolution, command and bonus publishes its own snapshot,
+     * so a parent answering a request while a rule edit goes out produces two in the same
+     * instant — and a child reconnecting with a `since=` cursor is handed the whole backlog at
+     * once, which is the common case rather than the exotic one.
+     */
+    private val parentSnapshotMutex = Mutex()
+
+    private suspend fun applyParentSnapshot(snapshot: ParentSnapshot, rotationAdopted: Boolean) =
+        parentSnapshotMutex.withLock { applyParentSnapshotLocked(snapshot, rotationAdopted) }
+
+    private suspend fun applyParentSnapshotLocked(snapshot: ParentSnapshot, rotationAdopted: Boolean) {
         val id = identityStore.current()
         // Replay gate: an old captured envelope is still validly signed, so freshness must
         // come from the version counter (see SyncEngine.adoptsPolicy). Everything below the

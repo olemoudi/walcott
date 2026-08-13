@@ -30,6 +30,12 @@ application {
     mainClass.set("dev.walcott.sim.MainKt")
 }
 
+// Gradle hands a JavaExec an empty stdin unless told otherwise, so the CLI's whole command loop
+// read end-of-input and exited immediately — it looked like it had simply done nothing.
+tasks.named<JavaExec>("run") {
+    standardInput = System.`in`
+}
+
 /**
  * The default test task is the hermetic half: relay and parent talking to each other on this
  * machine, no device involved. It runs in CI, so it must never need an emulator — the

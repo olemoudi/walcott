@@ -93,10 +93,14 @@ one unable to start.
 
 ### The emulator loses its network
 
-Under a long run the emulated Wi-Fi interface disappears from the kernel entirely. adb keeps
-working, so the device looks healthy while every socket fails with `ENETUNREACH`. The harness
-detects it and repairs it (`svc wifi disable/enable`) before skipping anything; if you are
-driving by hand, that is the fix.
+Under a long run the emulated Wi-Fi interface disappears from the guest kernel entirely. adb
+keeps working, so the device looks perfectly healthy while every socket fails with
+`ENETUNREACH`, and `-feature -Wifi` does not prevent it (the AVD uses virtio-wifi regardless).
+
+The suite is not exposed to this: the relay is reached over `adb reverse`, on the device's own
+loopback, which travels on the adb transport rather than the emulator's network stack. Debug
+builds permit cleartext to `127.0.0.1` for exactly that reason. `svc wifi disable/enable`
+recreates the interface if you need real connectivity for something else.
 
 ### Keep the debug build's versionCode equal to the published one
 
@@ -118,7 +122,28 @@ All in `PolicySeedReceiver` (debug builds only; absent from release):
 | `--es heartbeat now` | The whole ~30-minute check-in, on demand. |
 | `--es ask "kind:text"`, `--es request_time "target:minutes:reason"` | The two things a *child* initiates. |
 | `--es open_install_window <pkg>`, `--es reconcile_installs now` | The install guard's two moving parts. |
+| `--es add_usage "pkg=SECONDS,…"` | Seconds onto the device's own screen-time counters, through the sampler's own call. An emulator nobody has used has no screen time to report. |
+| `--ez panic_ready true`, `--ez start_panic true`, `--ez cancel_panic true`, `--ez panic_clear true` | The emergency release from the child's side, without waiting a day of real time for its gates. |
 | `--es block_uninstall <pkg>` / `--es unblock_uninstall <pkg>` | Make the OS genuinely refuse to remove a package, which is the only way to reproduce a stuck removal on an emulator. |
+
+## What the device suite covers
+
+| Area | Scenarios | The thing only two devices can show |
+| --- | --- | --- |
+| Enrolment | 5 | A real QR rewrites a device's identity and it reports back; a re-pair keeps its id. |
+| Rules | 7 | Applied by the OS; a signed snapshot at an already-applied version is refused. |
+| Remote commands | 8 | Acknowledged, and applied exactly once across re-emits and relay replays. |
+| Requests | 6 | A child asks, a parent answers, and the grant lands exactly once. |
+| Install guard | 10 | An app really appears, is really suspended, and the parent's two answers really land. |
+| Emergency release | 6 | The child's one door out, and a refusal that has to reach it and stick. |
+| Reporting | 6 | Screen time per app, the app list, battery, enforcement backend, a clean bill of health. |
+| Bonuses | 5 | Granted once, on the right phone, however often the snapshot repeats. |
+| Locate & icons | 6 | A fix and a rendered icon, both answered once and marked as answered. |
+| The wall | 3 | A limit set here, time counted there, and the moment it ran out reported back. |
+
+Still uncovered, and worth knowing: the domain monitor's chunked delivery and its acks, key
+rotation after a parent restores from backup, and the reported flags for a web filter that is
+expected but down. Each needs the child to be in a state the harness cannot yet arrange.
 
 ## What it has already caught
 
