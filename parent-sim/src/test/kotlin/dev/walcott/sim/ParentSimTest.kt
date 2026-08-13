@@ -55,7 +55,7 @@ class ParentSimTest {
         private val parentPublic = FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(payload.parentPublicKeyB64))
         private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
         val fromParent = CopyOnWriteArrayList<ParentSnapshot>()
-        private val arrived = CountDownLatch(1)
+        private val opened = CountDownLatch(1)
         private var version = 0L
 
         val topic: String get() = payload.topic
@@ -63,22 +63,32 @@ class ParentSimTest {
         val childId: String get() = payload.childId
         val childName: String get() = payload.childName
 
+        /**
+         * Subscribes, and does not return until the socket is actually open.
+         *
+         * Opening is asynchronous. Returning early leaves a window in which the parent can
+         * publish to a subscriber that is not subscribed yet — the message is simply not there,
+         * and the test that notices reads like the parent failed to send it. On a loaded machine
+         * that window is wide enough to lose the first snapshot every time.
+         */
         fun connect(): ProtocolChild {
             client.newWebSocket(
                 Request.Builder()
                     .url("${payload.ntfyServer.replaceFirst("http", "ws")}/${payload.topic}/ws")
                     .build(),
                 object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                        opened.countDown()
+                    }
+
                     override fun onMessage(webSocket: WebSocket, text: String) {
                         val body = NtfyEvent.messageBody(text) ?: return
                         val decoded = SyncProtocol.decode(body, familyKey, parentPublic) ?: return
-                        if (decoded is IncomingMessage.FromParent) {
-                            fromParent += decoded.snapshot
-                            arrived.countDown()
-                        }
+                        if (decoded is IncomingMessage.FromParent) fromParent += decoded.snapshot
                     }
                 },
             )
+            check(opened.await(10, TimeUnit.SECONDS)) { "the child's socket never opened" }
             return this
         }
 

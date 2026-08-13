@@ -99,16 +99,28 @@ class ParentSim(
             familyName = familyName,
         ).encode()
 
-    /** Subscribes to the family topic. Idempotent. */
+    /**
+     * Subscribes to the family topic, and does not return until the socket is open. Idempotent.
+     *
+     * The wait is the point. Opening is asynchronous, and a parent that returns from `start()`
+     * unsubscribed will miss whatever is published in the next few milliseconds — on a loaded
+     * machine, reliably the child's first check-in. The symptom is a device that paired
+     * perfectly and appears never to have spoken.
+     */
     fun start(): ParentSim {
         if (socket != null) return this
         val wsUrl = relayBase.trimEnd('/').replaceFirst("http", "ws") + "/$topic/ws"
+        val opened = CountDownLatch(1)
         socket = client.newWebSocket(
             Request.Builder().url(wsUrl).build(),
             object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) = opened.countDown()
                 override fun onMessage(webSocket: WebSocket, text: String) = onEvent(text)
             },
         )
+        check(opened.await(SOCKET_OPEN_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+            "the parent's socket never opened against $relayBase"
+        }
         return this
     }
 
@@ -330,5 +342,8 @@ class ParentSim(
          * new enough (see PanicProtocol), so a sim reporting 0 would silently disable them.
          */
         const val PARENT_VERSION_CODE = 9_999
+
+        /** How long [start] waits for its subscription before calling the relay unreachable. */
+        const val SOCKET_OPEN_TIMEOUT_SEC = 15L
     }
 }
