@@ -140,8 +140,9 @@
             android:name=".sync.HeartbeatReceiver"
             android:exported="false" />
 
-        <!-- The parent's ~15-minute catch-up alarm (see ParentCheckAlarm): WorkManager alone is
-             deferred by Doze for hours, which is when nobody is watching the socket either. -->
+        <!-- The parent's catch-up alarm (see ParentCheckAlarm): WorkManager alone is deferred by
+             Doze for hours, which is when nobody is watching the socket either. Its interval is
+             10 or 30 minutes depending on whether any child is alive to ask (ParentCadence). -->
         <receiver
             android:name=".sync.ParentCheckReceiver"
             android:exported="false" />

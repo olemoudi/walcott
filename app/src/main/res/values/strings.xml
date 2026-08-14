@@ -11,11 +11,17 @@
     <!-- Child home -->
     <string name="child_greeting">Hi 👋</string>
     <string name="hero_today_title">Your time today</string>
-    <string name="hero_all_free">All free</string>
-    <plurals name="hero_available_count">
-        <item quantity="one">%d with time available</item>
-        <item quantity="other">%d with time available</item>
+    <!-- The hero says what is about to bite, not how many apps are fine. -->
+    <plurals name="hero_running_low">
+        <item quantity="one">%d app is running out</item>
+        <item quantity="other">%d apps are running out</item>
     </plurals>
+    <string name="hero_nothing_urgent">Nothing is running out</string>
+    <string name="home_section_running_low">Running out</string>
+    <!-- Each app counts separately against this — it is not a shared screen-time pot, and
+         saying so is the difference between a limit the child understands and one they don't. -->
+    <string name="home_limit_default">%1$s a day for each app</string>
+    <string name="home_limit_bedtime">Sleep %1$s – %2$s</string>
     <string name="bedtime_title">Bedtime</string>
     <string name="bedtime_subtitle">Apps rest until tomorrow</string>
     <string name="settings_content_desc">Parent mode</string>
@@ -311,7 +317,6 @@
     <string name="child_greeting_named">Hi %1$s 👋</string>
     <string name="join_family_title">Join your family</string>
     <string name="join_family_desc">Ask a parent for your code and scan it here</string>
-    <string name="bedtime_tonight">Bedtime tonight</string>
     <string name="bedtime_range">%1$s – %2$s</string>
 
     <!-- Change device mode (child gated area) -->
@@ -592,11 +597,12 @@
     <string name="install_window_open_text">%1$s left before the block comes back on its own.</string>
     <string name="install_window_reblock">Re-block now</string>
     <string name="event_install_window">Installs are still allowed on %1$s\'s phone</string>
-    <string name="ask_card_title">Ask your parents for something</string>
-    <string name="ask_card_desc">An app or anything else — they\'ll see it in Walcott</string>
-    <string name="ask_dialog_title">Ask for something</string>
-    <string name="ask_kind_app">An app</string>
-    <string name="ask_kind_other">Something else</string>
+    <!-- Child home: the two things worth a card of their own, and the one that isn't. -->
+    <string name="ask_app_card_title">Ask for an app</string>
+    <string name="ask_app_card_desc">So your parents can install it for you</string>
+    <string name="ask_other_row">Ask for something else</string>
+    <string name="ask_dialog_title_app">Ask for an app</string>
+    <string name="ask_dialog_title_other">Ask for something else</string>
     <string name="ask_text_label_app">Which app?</string>
     <string name="ask_text_label_other">What do you need?</string>
     <string name="ask_summary_app">Wants to install: %1$s</string>

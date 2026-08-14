@@ -104,4 +104,64 @@ class PlayLinkTest {
         assertEquals("", PlayLink.parseLabel(null, "com.duolingo"))
         assertEquals("", PlayLink.parseLabel(null, null))
     }
+
+    @Test
+    fun `the exact sentence the play store sends is stripped, quotes and all`() {
+        // Seen in the wild: the child's home read 'You can install Check out "Google Docs now'.
+        val shared = "Check out \"Google Docs\"\n" +
+            "https://play.google.com/store/apps/details?id=com.google.android.apps.docs.editors.docs"
+        assertEquals("Google Docs", PlayLink.parseLabel(null, shared))
+        assertEquals("Google Docs", PlayLink.parseLabel("Check out \"Google Docs\"", shared))
+    }
+
+    @Test
+    fun `play's own sentence is stripped instead of becoming the request title`() {
+        val url = "https://play.google.com/store/apps/details?id=com.duolingo"
+        assertEquals("Duolingo", PlayLink.parseLabel(null, "Check out Duolingo\n$url"))
+        assertEquals("Duolingo", PlayLink.parseLabel(null, "Check out this app: Duolingo\n$url"))
+        assertEquals("Duolingo", PlayLink.parseLabel(null, "Echa un vistazo a Duolingo\n$url"))
+        assertEquals("Duolingo", PlayLink.parseLabel(null, "Mira: Duolingo\n$url"))
+    }
+
+    @Test
+    fun `boilerplate is stripped from the subject too, not only from the text`() {
+        // The subject wins over the text, so leaving it uncleaned would have shown the sentence
+        // on exactly the shares that set one.
+        assertEquals(
+            "Duolingo",
+            PlayLink.parseLabel("Check out Duolingo", "Check out Duolingo\nhttps://play.google.com/store/apps/details?id=com.duolingo"),
+        )
+    }
+
+    @Test
+    fun `a subject that is nothing but boilerplate falls through to the text`() {
+        assertEquals(
+            "Duolingo",
+            PlayLink.parseLabel("Check out", "Duolingo\nhttps://play.google.com/store/apps/details?id=com.duolingo"),
+        )
+    }
+
+    @Test
+    fun `the store's trailing shop line is dropped`() {
+        assertEquals("Duolingo", PlayLink.parseLabel("Duolingo - Apps on Google Play", null))
+        assertEquals("Duolingo", PlayLink.parseLabel("Duolingo – Aplicaciones en Google Play", null))
+    }
+
+    @Test
+    fun `an app whose real name starts like a lead-in keeps it`() {
+        // The single-word lead-ins only count with a separator behind them, so these survive.
+        assertEquals("Mira Fitness", PlayLink.parseLabel("Mira Fitness", null))
+        assertEquals("Try Guys", PlayLink.parseLabel("Try Guys", null))
+        assertEquals("Descubre", PlayLink.parseLabel("Descubre", null))
+    }
+
+    @Test
+    fun `an unrecognised phrasing is left exactly as it arrives`() {
+        // The strip is cosmetic: a locale or wording we don't know must degrade to today's
+        // behaviour, never to an empty or mangled title.
+        assertEquals(
+            "Schau dir Duolingo an",
+            PlayLink.parseLabel("Schau dir Duolingo an", null),
+        )
+    }
 }

@@ -29,7 +29,30 @@ class TimeWarningsTest {
         // Still the 30-minute warning's territory further down the countdown.
         assertNull(warnings.due(budget(9), nowMinute + 19))
         assertEquals(5, warnings.due(budget(4), nowMinute + 24))
-        assertNull(warnings.due(budget(1), nowMinute + 27))
+        // The last minute is its own rung and clears the bar again.
+        assertEquals(1, warnings.due(budget(1), nowMinute + 27))
+        repeat(20) { assertNull(warnings.due(budget(1), nowMinute + 28)) }
+    }
+
+    @Test
+    fun `a countdown announces every rung on the way down, and only once each`() {
+        // The whole point of the one-minute rung: five minutes is long enough to forget you
+        // were warned, and "it just closed with no warning" is the complaint it answers.
+        val warnings = TimeWarnings()
+        assertEquals(30, warnings.due(budget(30), nowMinute))
+        assertNull(warnings.due(budget(20), nowMinute + 10))
+        assertNull(warnings.due(budget(6), nowMinute + 24))
+        assertEquals(5, warnings.due(budget(5), nowMinute + 25))
+        assertNull(warnings.due(budget(3), nowMinute + 27))
+        assertEquals(1, warnings.due(budget(1), nowMinute + 29))
+    }
+
+    @Test
+    fun `bedtime's last minute is announced too`() {
+        val warnings = TimeWarnings()
+        assertEquals(30, warnings.due(bedtime(30), nowMinute))
+        assertEquals(5, warnings.due(bedtime(5), nowMinute + 25))
+        assertEquals(1, warnings.due(bedtime(1), nowMinute + 29))
     }
 
     @Test

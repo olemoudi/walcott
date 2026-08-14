@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,31 +27,26 @@ import kotlinx.coroutines.launch
  * next. The worker stays as well, because the two fail differently: the worker survives a reboot
  * on its own and this doesn't, and this survives Doze and the worker doesn't.
  *
- * Battery: one wakeup every 15 minutes on the PARENT's phone, which is an ordinary phone the
- * user is holding — no foreground service, no location, and the poll is a single HTTP request
- * that usually returns nothing.
+ * Battery: at most one wakeup every ten minutes on the PARENT's phone, which is an ordinary
+ * phone the user is holding — no foreground service, no location, and the poll is a single HTTP
+ * request that usually returns nothing. How often it really fires is [ParentCadence]'s call.
  */
 object ParentCheckAlarm {
-
-    /**
-     * How often the parent catches up while the app is closed.
-     *
-     * Half-hourly, matching the child's own check-in: a child publishes at most every ~30
-     * minutes anyway, so polling twice as often mostly fetched nothing. It started at fifteen,
-     * which also meant firing in lockstep with [ParentPollWorker] and doing the same request
-     * twice whenever the phone happened to be awake — ninety-six wakeups a day to duplicate a
-     * worker's work. Thirty is still far inside the hours Doze can defer that worker for, which
-     * is the whole reason this alarm exists.
-     */
-    const val INTERVAL_MS = 30 * 60 * 1000L
 
     private const val TAG = "WalcottParentCheck"
     private const val REQUEST_CODE = 4712
 
-    /** Schedules (or re-schedules) the next catch-up. Idempotent — the PendingIntent is unique. */
-    fun schedule(context: Context) {
+    /**
+     * Schedules (or re-schedules) the next catch-up. Idempotent — the PendingIntent is unique,
+     * so a second call replaces the pending alarm rather than stacking another one.
+     *
+     * Defaults to the fast cadence because every caller that can't yet know better — boot, app
+     * start, the receiver re-arming before it has polled — should err towards hearing a child
+     * sooner. [runCheck] re-paces it the moment it has the state to judge.
+     */
+    fun schedule(context: Context, intervalMs: Long = ParentCadence.FAST_MS) {
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return
-        val at = System.currentTimeMillis() + INTERVAL_MS
+        val at = System.currentTimeMillis() + intervalMs
         runCatching {
             alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pendingIntent(context))
         }.onFailure { DebugLog.e(TAG, "could not schedule the parent catch-up", it) }
@@ -77,13 +73,29 @@ object ParentCheckAlarm {
         }
         runCatching { ParentPoll.pollAll(context) }
             .onFailure { DebugLog.e(TAG, "parent catch-up poll failed", it) }
+        // Re-pace the chain now that the poll has refreshed what the children look like. This
+        // replaces the fast default the receiver armed before doing any of it — that one is the
+        // safety net for a poll that throws, this one is the considered answer.
+        runCatching { schedule(context, nextInterval(context)) }
+            .onFailure { DebugLog.w(TAG, "could not re-pace the parent catch-up", it) }
+    }
+
+    /** The cadence the freshest check-in across every family justifies (see [ParentCadence]). */
+    private suspend fun nextInterval(context: Context): Long {
+        val app = context.applicationContext as? WalcottApplication ?: return ParentCadence.FAST_MS
+        val newestSeen = app.hub.allNow()
+            .flatMap { family -> family.syncStore.current().lastSeen.values }
+            .maxOrNull()
+        return ParentCadence.nextIntervalMs(newestSeen, System.currentTimeMillis())
     }
 }
 
-/** Fires every [ParentCheckAlarm.INTERVAL_MS]; re-arms itself first so the chain can't break. */
+/** Fires on the cadence [ParentCadence] set; re-arms itself first so the chain can't break. */
 class ParentCheckReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        // Re-arm before doing any work: if the poll below throws, the chain still survives.
+        // Re-arm before doing any work: if the poll below throws, the chain still survives. At
+        // the fast cadence deliberately — the failure this guards is one where nothing was
+        // learned, and the cheap mistake to make with no information is waking up too often.
         ParentCheckAlarm.schedule(context)
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {

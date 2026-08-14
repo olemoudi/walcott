@@ -142,6 +142,9 @@ class EnforcementService : LifecycleService() {
         )
         // Grant location before startForeground so the service can claim the location FGS type.
         LocationPolicy.ensureEnforced(this)
+        // Same idea, for the permission every warning and every answer has to pass through:
+        // a child device should not be able to end up enforcing rules it cannot explain.
+        NotificationPolicy.ensureGranted(this)
         startForegroundCompat()
         observeCounters()
         lifecycleScope.launch { runLoopResilient() }

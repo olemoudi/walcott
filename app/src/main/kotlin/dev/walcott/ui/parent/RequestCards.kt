@@ -15,14 +15,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.install.PlayIntents
 import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.DomainAsk
 import dev.walcott.sync.SyncManager
+import dev.walcott.ui.components.AppIcon
 import dev.walcott.ui.components.MinutesChips
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.format.humanize
@@ -43,31 +47,58 @@ import dev.walcott.ui.theme.Tokens
  * forty" was always expressible on the wire — [SyncManager.resolveRequest] has carried the
  * granted amount since the beginning, and the child applies exactly that — but the button used
  * to hard-code whatever was asked for, so the only honest answers were all of it or none.
+ *
+ * The app's icon leads the card when the target is one app. The parent doesn't have the child's
+ * apps installed, so it comes from the cache the children fill over sync
+ * ([dev.walcott.sync.IconSync]) — which already holds it, because the same list that feeds the
+ * parent's app screens is what asks for icons in the first place.
  */
 @Composable
 fun ExtraTimeRequestCard(
     pending: SyncManager.PendingRequest,
     settings: dev.walcott.data.PolicySettings,
+    viewModel: dev.walcott.ui.WalcottViewModel,
     onResolve: (approved: Boolean, minutes: Int) -> Unit,
 ) {
     val spacing = Tokens.spacing
     val key = pending.request.categoryId
+    // "All apps" is a sentinel, not a package: there is no one icon that stands for it.
+    val targetPackage = key.takeIf { it != dev.walcott.rules.ExtraTime.ALL_APPS && it.isNotBlank() }
     // The target is one app or all of them — name it the way the child chose.
     val targetName = when {
-        key == dev.walcott.rules.ExtraTime.ALL_APPS -> stringResource(R.string.request_all_apps)
+        targetPackage == null -> stringResource(R.string.request_all_apps)
         pending.request.targetLabel.isNotBlank() -> pending.request.targetLabel
         else -> key
     }
     // Starts at what was asked for, so the common answer stays one tap.
     var minutes by remember(pending.request.requestId) { mutableStateOf(pending.request.minutes) }
+    // An icon that arrives after the card is drawn (the cache fills in the background) redraws
+    // it, rather than leaving a placeholder until the parent navigates away and back.
+    val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
 
     WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-            Text(pending.childName, style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(R.string.request_summary, targetName, pending.request.minutes),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (targetPackage != null) {
+                    AppIcon(
+                        packageName = targetPackage,
+                        inventory = viewModel.repository.inventory,
+                        size = 40.dp,
+                        remoteLoader = { viewModel.childAppIcon(it) },
+                        refreshKey = iconRefresh,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                    Text(pending.childName, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.request_summary, targetName, pending.request.minutes),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             SpentTodayLine(pending, settings)
             if (pending.request.reason.isNotBlank()) {
                 Text(

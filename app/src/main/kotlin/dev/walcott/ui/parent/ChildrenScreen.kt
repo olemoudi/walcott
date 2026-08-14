@@ -58,6 +58,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                     ExtraTimeRequestCard(
                         pending = pending,
                         settings = settings,
+                        viewModel = viewModel,
                         onResolve = { approved, minutes ->
                             viewModel.resolveRequest(pending.request.requestId, approved, minutes)
                         },

@@ -111,12 +111,16 @@ class SyncManager(
      * build keeps re-sending a request forever, and a question from last week has no business
      * sitting above today's on the parent's home. Judged when the store changes rather than on
      * a timer — a child publishes at least every half hour, so the list is never stale for long.
+     *
+     * Repeats collapse the same way ([SyncEngine.newestPerTarget]): an impatient child asking
+     * three times about one app is one card, not three — three of which would let the parent
+     * grant the same request three times over.
      */
     val pendingRequests: StateFlow<List<PendingRequest>> = syncStore.state.map { s ->
         val now = System.currentTimeMillis()
         val resolved = s.resolutions.map { it.requestId }.toSet()
         s.children.flatMap { child ->
-            child.requests.map { request ->
+            SyncEngine.newestPerTarget(child.requests).map { request ->
                 PendingRequest(
                     childName = child.displayName,
                     request = request,

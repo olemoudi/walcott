@@ -82,7 +82,6 @@ import dev.walcott.R
 import dev.walcott.enforcement.UsageAccess
 import dev.walcott.location.LocationPolicy
 import dev.walcott.rules.BlockReason
-import dev.walcott.rules.TimeWindow
 import dev.walcott.sync.ChildRequest
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
@@ -127,11 +126,19 @@ fun ChildStatusScreen(
 
     var pending by remember { mutableStateOf<AppStatusUi?>(null) }
     var pendingRemote by remember { mutableStateOf<AppStatusUi?>(null) }
-    var showAsk by remember { mutableStateOf(false) }
+    // Two entry points into the same ask, each arriving with its kind already decided: the
+    // chips that used to choose between them made "ask for an app" invisible.
+    var showAskApp by remember { mutableStateOf(false) }
+    var showAskOther by remember { mutableStateOf(false) }
     // "Request more time" flow: pick a target (all apps or one app), then the minutes.
     var showRequestSheet by remember { mutableStateOf(false) }
     var requestTarget by remember { mutableStateOf<RequestTarget?>(null) }
     val myApps by viewModel.myApps.collectAsStateWithLifecycle()
+
+    // The apps worth showing: the ones with minutes left, not every limited app on the phone.
+    val lowApps = remember(state.apps) {
+        state.apps.filter { dev.walcott.rules.CloseWatch.runningLow(it.remaining, it.blocked) }
+    }
 
     val context = LocalContext.current
 
@@ -169,7 +176,9 @@ fun ChildStatusScreen(
                     })
                 }
             }
-            item { HeroCard(state) }
+            // What is about to bite, and the rules that shape the day. Everything below is
+            // either an exception (an alert, a pending answer) or something to DO.
+            item { HeroCard(state, lowApps.size) }
             // Honest channel health: without this, a dead channel (server unreachable,
             // network filtered) looks exactly like a dead app — to the child AND to the
             // parent asking "did you get my extra time?".
@@ -239,37 +248,41 @@ fun ChildStatusScreen(
             // The undo: this device's settings screen is behind the parent PIN, so without this
             // a child who hid a reminder could never bring it back.
             item { dev.walcott.ui.setup.HiddenSetupReminderRow(deviceSetup) }
-            state.bedtimeTonight?.let { window ->
-                if (!state.bedtimeActive) {
-                    item { BedtimeTonightRow(window) }
+            // Only the apps about to run out (see CloseWatch.runningLow). Listing every limited
+            // app put a wall of cards between the child and the two things they came here to do,
+            // and a card reading "1h 40m left" is not news — it is the ones with minutes left
+            // that the child needs, and those now carry the way to ask for more.
+            if (lowApps.isNotEmpty()) {
+                item { SectionLabel(stringResource(R.string.home_section_running_low)) }
+                items(lowApps, key = { "app-" + it.packageName }) { app ->
+                    AppCard(
+                        app,
+                        inventory = viewModel.repository.inventory,
+                        // While this app's request is unanswered the button says so, instead of
+                        // inviting a duplicate.
+                        requestPending = myRequests.any { it.categoryId == app.packageName },
+                        onRequestExtra = {
+                            if (identity.role == Role.CHILD) pendingRemote = app else pending = app
+                        },
+                    )
                 }
             }
-            // The two things the child comes here to DO, above what they have left: asking is
-            // the point of this screen, and it used to sit under a list that grows with every
-            // app they install — off the bottom of the screen on a phone with a few of them.
+            // The two things a child actually opens this app for, at the top of what they can
+            // do and given equal, unmistakable weight. Asking for an app used to be a chip
+            // inside the "ask for something" dialog — one tap and one guess away from being
+            // found at all.
             if (identity.role == Role.CHILD) {
-                item {
-                    RequestTimeCard(onClick = { showRequestSheet = true })
-                }
-                item { AskCard(onClick = { showAsk = true }) }
+                item { RequestTimeCard(onClick = { showRequestSheet = true }) }
+                item { AskAppCard(onClick = { showAskApp = true }) }
+                // Deliberately not a card: free-form messages are the rarest thing here, and
+                // giving them a third identical block taught the eye that all three are the
+                // same kind of thing.
+                item { AskOtherRow(onClick = { showAskOther = true }) }
             }
             // Everything sent and still unanswered, so "did it go through?" has an answer.
             // Kept with the cards that send them rather than with the apps.
             if (myAsks.isNotEmpty()) {
                 item { WaitingCard(myAsks.map { it.text }) }
-            }
-            // One row per app with a limit today: the rules the child actually lives with,
-            // closest to running out first.
-            items(state.apps, key = { "app-" + it.packageName }) { app ->
-                AppCard(
-                    app,
-                    // While this app's request is unanswered the button says so, instead of
-                    // inviting a duplicate.
-                    requestPending = myRequests.any { it.categoryId == app.packageName },
-                    onRequestExtra = {
-                        if (identity.role == Role.CHILD) pendingRemote = app else pending = app
-                    },
-                )
             }
             // The way out when the parents lost their phone AND the PIN: deliberately a plain
             // line at the very bottom, not a card. It has to be findable in a real emergency
@@ -316,12 +329,15 @@ fun ChildStatusScreen(
             },
         )
     }
-    if (showAsk) {
+    if (showAskApp || showAskOther) {
+        val kind = if (showAskApp) ChildRequest.KIND_APP else ChildRequest.KIND_OTHER
         AskDialog(
-            onDismiss = { showAsk = false },
-            onSend = { kind, text ->
+            kind = kind,
+            onDismiss = { showAskApp = false; showAskOther = false },
+            onSend = { text ->
                 viewModel.askFor(kind, text)
-                showAsk = false
+                showAskApp = false
+                showAskOther = false
                 Toast.makeText(context, R.string.request_sent, Toast.LENGTH_SHORT).show()
             },
         )
@@ -429,8 +445,15 @@ private fun ClockWrongCard(onFix: () -> Unit) {
 @Composable
 private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Unit) {
     val spacing = Tokens.spacing
-    // The grant's target: one app (its label travelled in the notice) or everything.
-    val categoryName = notice.text.ifBlank { stringResource(R.string.request_all_apps) }
+    // The grant's target. "Everything" is only ever said when the request really was for
+    // everything: falling back to it whenever the label was missing is what turned every
+    // single-app approval into "15 minutes for all apps" (see SyncEngine.latestResolutionSummary).
+    // The package name is a poor label but a true one, and beats naming the wrong thing.
+    val everything = stringResource(R.string.request_all_apps)
+    val categoryName = notice.text.ifBlank {
+        notice.categoryId.takeIf { it.isNotBlank() && it != dev.walcott.rules.ExtraTime.ALL_APPS }
+            ?: everything
+    }
     val title = when {
         notice.kind == "bonus" -> stringResource(R.string.notice_bonus, notice.minutes, categoryName)
         // Ahead of the plain denial: nobody said no, nobody said anything (see
@@ -667,23 +690,27 @@ private fun RequestTimeDialog(title: String, onDismiss: () -> Unit, onSend: (Int
     )
 }
 
-/** Entry point for the child to ask the parents for something (an app, anything). */
+/**
+ * Asking for an app, given the same weight as asking for time — the other reason a child opens
+ * Walcott at all. It was a chip inside a generic "ask for something" dialog, which is one tap and
+ * one guess away from not existing.
+ */
 @Composable
-private fun AskCard(onClick: () -> Unit) {
+private fun AskAppCard(onClick: () -> Unit) {
     val spacing = Tokens.spacing
     WalcottCard(onClick = onClick) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Filled.WavingHand,
+                Icons.Outlined.InstallMobile,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp),
             )
             Spacer(Modifier.width(spacing.md))
             Column {
-                Text(stringResource(R.string.ask_card_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.ask_app_card_title), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    stringResource(R.string.ask_card_desc),
+                    stringResource(R.string.ask_app_card_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -692,46 +719,86 @@ private fun AskCard(onClick: () -> Unit) {
     }
 }
 
+/**
+ * "Ask for something else": a plain row, not a card.
+ *
+ * A free-form message to a parent is the rarest thing on this screen and the one with no shape —
+ * there is nothing for the app to do with it beyond passing it on. Three identical cards taught
+ * the eye that the three were equals; this one is reachable, legible, and quiet.
+ */
 @Composable
-private fun AskDialog(onDismiss: () -> Unit, onSend: (String, String) -> Unit) {
+private fun AskOtherRow(onClick: () -> Unit) {
     val spacing = Tokens.spacing
-    var kind by remember { mutableStateOf(ChildRequest.KIND_APP) }
-    var text by remember { mutableStateOf("") }
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.WavingHand,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(spacing.sm))
+        Text(
+            stringResource(R.string.ask_other_row),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Quiet label above a group of rows, so the home reads as sections rather than a stack. */
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = Tokens.spacing.sm, top = Tokens.spacing.xs),
+    )
+}
+
+/**
+ * The ask itself, for a [kind] the caller has already chosen.
+ *
+ * It used to open on "an app / something else" chips, which is a question the child had already
+ * answered by deciding to tap something — and it hid the commoner of the two behind a control
+ * nobody reads. Each entry point now arrives knowing what it is for.
+ */
+@Composable
+private fun AskDialog(kind: String, onDismiss: () -> Unit, onSend: (String) -> Unit) {
+    val app = kind == ChildRequest.KIND_APP
+    var text by remember(kind) { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.ask_dialog_title)) },
+        title = {
+            Text(
+                stringResource(
+                    if (app) R.string.ask_dialog_title_app else R.string.ask_dialog_title_other,
+                ),
+            )
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    dev.walcott.ui.components.ChoiceChip(
-                        selected = kind == ChildRequest.KIND_APP,
-                        onClick = { kind = ChildRequest.KIND_APP },
-                        label = stringResource(R.string.ask_kind_app),
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = {
+                    Text(
+                        stringResource(
+                            if (app) R.string.ask_text_label_app else R.string.ask_text_label_other,
+                        ),
                     )
-                    dev.walcott.ui.components.ChoiceChip(
-                        selected = kind == ChildRequest.KIND_OTHER,
-                        onClick = { kind = ChildRequest.KIND_OTHER },
-                        label = stringResource(R.string.ask_kind_other),
-                    )
-                }
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = {
-                        Text(
-                            stringResource(
-                                if (kind == ChildRequest.KIND_APP) R.string.ask_text_label_app
-                                else R.string.ask_text_label_other,
-                            ),
-                        )
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         },
         confirmButton = {
-            TextButton(enabled = text.isNotBlank(), onClick = { onSend(kind, text.trim()) }) {
+            TextButton(enabled = text.isNotBlank(), onClick = { onSend(text.trim()) }) {
                 Text(stringResource(R.string.send_request))
             }
         },
@@ -803,38 +870,18 @@ private fun Header(identity: FamilyIdentity, familyName: String, onOpenParent: (
     }
 }
 
-/** Small heads-up with tonight's bedtime window, hidden while bedtime is active. */
+/**
+ * The one thing the child should read first: what is about to close, and the rules that shape
+ * the rest of the day.
+ *
+ * It used to count the apps that were FINE ("2 with time available"), which is the reassuring
+ * half of the news and the half nobody needs — a child opens this screen because something is
+ * running out, and the number that answers that question was nowhere on it. The limits below
+ * are the standing rules, kept here rather than scattered down the page, so "why did it stop"
+ * has an answer in the same glance.
+ */
 @Composable
-private fun BedtimeTonightRow(window: TimeWindow) {
-    val spacing = Tokens.spacing
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.Bedtime,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(spacing.sm))
-            Text(
-                stringResource(R.string.bedtime_tonight),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                stringResource(R.string.bedtime_range, window.start.hhmm(), window.end.hhmm()),
-                style = MaterialTheme.typography.titleSmall,
-            )
-        }
-    }
-}
-
-@Composable
-private fun HeroCard(state: ChildUiState) {
+private fun HeroCard(state: ChildUiState, runningLow: Int) {
     val spacing = Tokens.spacing
     // The signature gradient marks "your time today"; bedtime swaps to the calm container.
     val heroBrush = Tokens.heroBrush
@@ -855,11 +902,11 @@ private fun HeroCard(state: ChildUiState) {
             transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) },
             label = "hero",
         ) { bedtime ->
-            Row(
-                Modifier.padding(spacing.xl),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (bedtime) {
+            if (bedtime) {
+                Row(
+                    Modifier.padding(spacing.xl),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Icon(
                         Icons.Filled.Bedtime, contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -878,31 +925,79 @@ private fun HeroCard(state: ChildUiState) {
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
-                } else {
-                    Column {
-                        Text(
-                            stringResource(R.string.hero_today_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                        Spacer(Modifier.height(spacing.xs))
-                        val available = state.apps.count { !it.blocked }
-                        // No limited apps at all is the honest "nothing is capped today", not a
-                        // setup that is missing something: limits are opt-in now.
-                        val summary = if (state.apps.isEmpty()) {
-                            stringResource(R.string.hero_pending_setup)
-                        } else {
-                            pluralStringResource(R.plurals.hero_available_count, available, available)
+                }
+            } else {
+                Column(Modifier.padding(spacing.xl)) {
+                    Text(
+                        stringResource(R.string.hero_today_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(Modifier.height(spacing.xs))
+                    // No limited apps at all is the honest "nothing is capped today", not a
+                    // setup that is missing something: limits are opt-in now.
+                    val summary = when {
+                        state.apps.isEmpty() -> stringResource(R.string.hero_pending_setup)
+                        runningLow > 0 ->
+                            pluralStringResource(R.plurals.hero_running_low, runningLow, runningLow)
+                        else -> stringResource(R.string.hero_nothing_urgent)
+                    }
+                    Text(
+                        summary,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    // The standing rules, as short lines rather than cards of their own. Absent
+                    // entirely when the family has set none, which is a real configuration.
+                    val bedtimeTonight = state.bedtimeTonight
+                    if (state.defaultBudget != null || bedtimeTonight != null) {
+                        Spacer(Modifier.height(spacing.md))
+                        state.defaultBudget?.let { budget ->
+                            // "for each app", never "screen time": the engine gives every app
+                            // its own allowance rather than one shared pot, and a child told
+                            // otherwise would count their day wrong (see FamilyConfig).
+                            HeroLimitLine(
+                                Icons.Outlined.Schedule,
+                                stringResource(R.string.home_limit_default, budget.humanize()),
+                            )
                         }
-                        Text(
-                            summary,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
+                        bedtimeTonight?.let { window ->
+                            HeroLimitLine(
+                                Icons.Filled.Bedtime,
+                                stringResource(
+                                    R.string.home_limit_bedtime,
+                                    window.start.hhmm(),
+                                    window.end.hhmm(),
+                                ),
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** One standing rule inside the hero: an icon and a short line, on the gradient. */
+@Composable
+private fun HeroLimitLine(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    val spacing = Tokens.spacing
+    Row(
+        Modifier.padding(top = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(spacing.sm))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onPrimary,
+        )
     }
 }
 
@@ -913,13 +1008,21 @@ private fun HeroCard(state: ChildUiState) {
  * anything else on the screen.
  */
 @Composable
-private fun AppCard(app: AppStatusUi, requestPending: Boolean, onRequestExtra: () -> Unit) {
+private fun AppCard(
+    app: AppStatusUi,
+    inventory: dev.walcott.data.AppInventory,
+    requestPending: Boolean,
+    onRequestExtra: () -> Unit,
+) {
     val spacing = Tokens.spacing
     val accent = MaterialTheme.colorScheme.primary
 
     WalcottCard {
         Column(Modifier.padding(horizontal = spacing.lg, vertical = spacing.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // The app is installed here, so this is a local lookup — no sync involved.
+                AppIcon(app.packageName, inventory, size = 32.dp)
+                Spacer(Modifier.width(spacing.md))
                 Text(
                     app.label,
                     style = MaterialTheme.typography.titleSmall,
@@ -946,30 +1049,34 @@ private fun AppCard(app: AppStatusUi, requestPending: Boolean, onRequestExtra: (
                     )
                 }
             }
-            if (app.blocked) {
+            // Every card here is one the child can act on: the home only shows apps that are
+            // running out (CloseWatch.runningLow), and the reason to show them is that asking
+            // for more is now possible. Gating the shortcut on "blocked" used to leave the last
+            // minute — the one moment a child most wants it — with a card that said "1m left"
+            // and offered nothing to do about it.
+            Spacer(Modifier.height(spacing.sm))
+            if (!app.blocked) {
+                BudgetBar(fraction = fractionUsed(app), color = accent)
                 Spacer(Modifier.height(spacing.sm))
-                if (requestPending) {
-                    // Already asked: say so instead of inviting a duplicate request.
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Outlined.HourglassEmpty,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.width(spacing.xs))
-                        Text(
-                            stringResource(R.string.request_waiting_button),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    RequestExtraButton(accent, onRequestExtra)
+            }
+            if (requestPending) {
+                // Already asked: say so instead of inviting a duplicate request.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.HourglassEmpty,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(spacing.xs))
+                    Text(
+                        stringResource(R.string.request_waiting_button),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             } else {
-                Spacer(Modifier.height(spacing.sm))
-                BudgetBar(fraction = fractionUsed(app), color = accent)
+                RequestExtraButton(accent, onRequestExtra)
             }
         }
     }

@@ -11,11 +11,17 @@
     <!-- Pantalla del niño -->
     <string name="child_greeting">Hola 👋</string>
     <string name="hero_today_title">Tu tiempo de hoy</string>
-    <string name="hero_all_free">Todo libre</string>
-    <plurals name="hero_available_count">
-        <item quantity="one">%d con tiempo disponible</item>
-        <item quantity="other">%d con tiempo disponible</item>
+    <!-- The hero says what is about to bite, not how many apps are fine. -->
+    <plurals name="hero_running_low">
+        <item quantity="one">Se te acaba el tiempo en %d app</item>
+        <item quantity="other">Se te acaba el tiempo en %d apps</item>
     </plurals>
+    <string name="hero_nothing_urgent">No se te acaba nada</string>
+    <string name="home_section_running_low">Se está acabando</string>
+    <!-- Each app counts separately against this — it is not a shared screen-time pot, and
+         saying so is the difference between a limit the child understands and one they don't. -->
+    <string name="home_limit_default">%1$s al día para cada app</string>
+    <string name="home_limit_bedtime">Dormir %1$s – %2$s</string>
     <string name="bedtime_title">Hora de dormir</string>
     <string name="bedtime_subtitle">Las apps descansan hasta mañana</string>
     <string name="settings_content_desc">Modo padre</string>
@@ -310,7 +316,6 @@
     <string name="child_greeting_named">Hola %1$s 👋</string>
     <string name="join_family_title">Únete a tu familia</string>
     <string name="join_family_desc">Pide tu código a un padre y escanéalo aquí</string>
-    <string name="bedtime_tonight">Esta noche se duerme</string>
     <string name="bedtime_range">%1$s – %2$s</string>
 
     <!-- Cambiar modo del dispositivo (área con PIN del hijo) -->
@@ -591,11 +596,12 @@
     <string name="install_window_open_text">Quedan %1$s para que el bloqueo vuelva solo.</string>
     <string name="install_window_reblock">Volver a bloquear</string>
     <string name="event_install_window">Las instalaciones siguen permitidas en el móvil de %1$s</string>
-    <string name="ask_card_title">Pide algo a tus padres</string>
-    <string name="ask_card_desc">Una app o cualquier otra cosa — lo verán en Walcott</string>
-    <string name="ask_dialog_title">Pedir algo</string>
-    <string name="ask_kind_app">Una app</string>
-    <string name="ask_kind_other">Otra cosa</string>
+    <!-- Child home: the two things worth a card of their own, and the one that isn't. -->
+    <string name="ask_app_card_title">Pedir una app</string>
+    <string name="ask_app_card_desc">Para que tus padres te la instalen</string>
+    <string name="ask_other_row">Pedir otra cosa</string>
+    <string name="ask_dialog_title_app">Pedir una app</string>
+    <string name="ask_dialog_title_other">Pedir otra cosa</string>
     <string name="ask_text_label_app">¿Qué app?</string>
     <string name="ask_text_label_other">¿Qué necesitas?</string>
     <string name="ask_summary_app">Quiere instalar: %1$s</string>

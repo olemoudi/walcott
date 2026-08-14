@@ -130,7 +130,9 @@ class DeviceSetupTest {
 
     @Test
     fun `dismissing hides a nudge from the home but not from the list`() {
-        val unmet = DeviceSetup.unmet(healthy().copy(usageAccessGranted = false, ignoringBatteryOptimizations = false))
+        val unmet = DeviceSetup.unmet(
+            healthy(deviceOwner = false).copy(usageAccessGranted = false, ignoringBatteryOptimizations = false),
+        )
         assertEquals(2, unmet.size)
         val nag = DeviceSetup.toNag(unmet, setOf(DeviceRequirement.USAGE_ACCESS.key))
         assertEquals(listOf(DeviceRequirement.BATTERY_OPTIMIZATION), nag)
@@ -140,12 +142,29 @@ class DeviceSetupTest {
     fun `a dismissal dies with the outage it was about`() {
         val dismissed = setOf(DeviceRequirement.USAGE_ACCESS.key, DeviceRequirement.BATTERY_OPTIMIZATION.key)
         // Usage access is fixed; battery is still wrong.
-        val unmet = DeviceSetup.unmet(healthy().copy(ignoringBatteryOptimizations = false))
+        val unmet = DeviceSetup.unmet(healthy(deviceOwner = false).copy(ignoringBatteryOptimizations = false))
         val surviving = DeviceSetup.survivingDismissals(unmet, dismissed)
         assertEquals(setOf(DeviceRequirement.BATTERY_OPTIMIZATION.key), surviving)
         // So when usage access breaks again, it is nagged about rather than silently hidden.
-        val later = DeviceSetup.unmet(healthy().copy(usageAccessGranted = false, ignoringBatteryOptimizations = false))
+        val later = DeviceSetup.unmet(
+            healthy(deviceOwner = false).copy(usageAccessGranted = false, ignoringBatteryOptimizations = false),
+        )
         assertEquals(listOf(DeviceRequirement.USAGE_ACCESS), DeviceSetup.toNag(later, surviving))
+    }
+
+    @Test
+    fun `a device owner is not asked to change what the system will not let it change`() {
+        // Settings shows "Battery optimization not available" for the app that owns the device:
+        // the card sent the child to a screen with no switch on it.
+        val owner = healthy(deviceOwner = true).copy(ignoringBatteryOptimizations = false)
+        assertEquals(emptyList<DeviceRequirement>(), DeviceSetup.unmet(owner))
+        // Everywhere the switch does exist — a parent's phone, an accessibility-only child —
+        // it is still asked for, and that is where it matters most (the catch-up poll).
+        val parent = healthy(enforcingChild = false, deviceOwner = false)
+            .copy(ignoringBatteryOptimizations = false)
+        assertEquals(listOf(DeviceRequirement.BATTERY_OPTIMIZATION), DeviceSetup.unmet(parent))
+        val accessibilityChild = healthy(deviceOwner = false).copy(ignoringBatteryOptimizations = false)
+        assertTrue(DeviceRequirement.BATTERY_OPTIMIZATION in DeviceSetup.unmet(accessibilityChild))
     }
 
     @Test

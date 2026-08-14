@@ -25,8 +25,20 @@ data class ClosingSoon(
  */
 object CloseWatch {
 
-    /** How long before a close the child hears about it. */
-    val WARN_MINUTES = listOf(30, 5)
+    /**
+     * How long before a close the child hears about it.
+     *
+     * Three rungs, descending: the half hour is a heads-up, the five minutes are "find a save
+     * point", and the last minute is the one that stops the screen dying mid-sentence. The last
+     * one matters most and was the one missing — five minutes of warning is plenty of time to
+     * forget you were warned, and the complaint it answers is never "nobody told me half an hour
+     * ago", it is "it just closed".
+     *
+     * Each rung is announced at most once per countdown ([dev.walcott.enforcement.TimeWarnings]),
+     * and the enforcement loop samples every two seconds while a limited app is in the
+     * foreground, so a one-minute rung is comfortably inside what it can see.
+     */
+    val WARN_MINUTES = listOf(30, 5, 1)
 
     private val HORIZON: Duration = Duration.ofMinutes(WARN_MINUTES.max().toLong())
 
@@ -73,6 +85,32 @@ object CloseWatch {
     /** The warning [left] has earned — the smallest threshold it has reached — or null. */
     fun thresholdFor(left: Duration): Int? =
         WARN_MINUTES.filter { left <= Duration.ofMinutes(it.toLong()) }.minOrNull()
+
+    /**
+     * How little has to be left of an app's time before it is worth the child's attention.
+     *
+     * One threshold, doing two jobs that must not disagree: which apps earn a place on the
+     * child's home, and which cards offer the shortcut to ask for more. Two numbers would put a
+     * card on screen that says "running out" and offers nothing to do about it, which is the
+     * exact shape of the problem this replaced.
+     *
+     * Comfortably above the five-minute warning rung, so by the time the banner fires the card
+     * the child reaches for is already there.
+     */
+    val RUNNING_LOW_BELOW: Duration = Duration.ofMinutes(10)
+
+    /**
+     * Whether an app is close enough to the end to be shown, and offered more time. [remaining]
+     * is null once the app is blocked, which is the clearest possible yes.
+     *
+     * The shortcut used to appear only after the app had already closed, which put the one
+     * moment a child most wants it — watching the last minute tick away — in a dead zone: the
+     * card read "1m left" and offered nothing, and the only way through was to go back into the
+     * app, be shut out of it, and come back. Asking BEFORE the screen dies is the entire point
+     * of knowing it is about to.
+     */
+    fun runningLow(remaining: Duration?, blocked: Boolean): Boolean =
+        blocked || (remaining != null && remaining <= RUNNING_LOW_BELOW)
 
     /** The first minute after [now], within the horizon, where [test] answers something. */
     private inline fun <T : Any> firstMinute(

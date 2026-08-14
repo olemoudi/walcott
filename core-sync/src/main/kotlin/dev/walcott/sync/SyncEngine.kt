@@ -138,6 +138,48 @@ object SyncEngine {
     fun requestExpired(createdAtEpochMs: Long, nowMs: Long): Boolean =
         createdAtEpochMs > 0 && nowMs - createdAtEpochMs > REQUEST_TTL_MS
 
+    /**
+     * Of one child's pending time requests, the newest for each target.
+     *
+     * A child who asks for ten more minutes of the same app three times has asked one question
+     * three times, not three questions, and the parent should be shown one card. It matters more
+     * than tidiness: each card carries its own grant button, so three of them let a parent hand
+     * out three separate grants for the same ask without ever noticing they were the same one.
+     *
+     * The child is supposed not to send duplicates in the first place, but only one of its two
+     * request paths refuses to, and a child on an older build goes on sending them regardless —
+     * so the parent collapses them at the point of display, where it holds for every child it
+     * will ever talk to.
+     *
+     * Collapsing by target rather than resolving the losers is deliberate: the older requests are
+     * still real, still the child's, and still expire on their own ([requestExpired]). This
+     * decides what to SHOW, and nothing here answers anything on the parent's behalf.
+     *
+     * Order is by each target's first appearance, so an answered card doesn't reshuffle the rest.
+     */
+    fun newestPerTarget(requests: List<ExtraTimeRequest>): List<ExtraTimeRequest> {
+        if (requests.size < 2) return requests
+        val newest = LinkedHashMap<String, ExtraTimeRequest>()
+        for (request in requests) {
+            val held = newest[request.categoryId]
+            if (held == null || supersedes(request, held)) newest[request.categoryId] = request
+        }
+        return newest.values.toList()
+    }
+
+    /**
+     * Whether [candidate] is the later of two requests for the same target. Ties break on the id
+     * — arbitrary, but stable, so the parent's list can't flip between two cards from one read to
+     * the next. Two requests sharing a millisecond means a legacy child sending 0 timestamps, in
+     * which case any consistent answer is as good as another.
+     */
+    private fun supersedes(candidate: ExtraTimeRequest, held: ExtraTimeRequest): Boolean =
+        if (candidate.createdAtEpochMs != held.createdAtEpochMs) {
+            candidate.createdAtEpochMs > held.createdAtEpochMs
+        } else {
+            candidate.requestId > held.requestId
+        }
+
     /** Pseudo-action for a pending "locate now" in [pendingOps] (not a [RemoteAction]). */
     const val ACTION_LOCATE = "locate_now"
 
@@ -245,7 +287,13 @@ object SyncEngine {
                         grantedMinutes = resolution.grantedMinutes,
                         categoryId = request.categoryId,
                         kind = "",
-                        text = "",
+                        // What the child asked ABOUT, which is the whole point of the answer.
+                        // Left empty here for a long time while the screen that renders it read
+                        // "" as "everything", so approving fifteen minutes of one app told the
+                        // child they had fifteen minutes of all of them. The label is the
+                        // child's own — this runs on the device that sent the request — and the
+                        // expiry notice already used it (see SyncManager.expireStaleRequests).
+                        text = request.targetLabel,
                         resolvedAtMs = resolution.resolvedAtEpochMs,
                     )
                 } ?: asksById[resolution.requestId]?.let { ask ->

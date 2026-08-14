@@ -116,7 +116,8 @@ object DeviceSetup {
      * - the accessibility blocker is the fallback for devices that are NOT Device Owner — on one
      *   that is, suspension does the blocking and the service is redundant;
      * - location is only asked for by a family that turned tracking on;
-     * - the web filter only exists where the rules define one.
+     * - the web filter only exists where the rules define one;
+     * - battery optimisation cannot be changed on a Device Owner, so it is not asked for there.
      */
     fun unmet(facts: DeviceFacts): List<DeviceRequirement> {
         val unmet = mutableListOf<DeviceRequirement>()
@@ -134,7 +135,15 @@ object DeviceSetup {
                 if (!facts.locationServiceEnabled) unmet += DeviceRequirement.LOCATION_SERVICE
             }
         }
-        if (!facts.ignoringBatteryOptimizations) unmet += DeviceRequirement.BATTERY_OPTIMIZATION
+        // Battery optimisation is the system's to decide on a fully managed device: Settings
+        // lists Walcott as "Battery optimization not available" and offers no switch, because
+        // the OS reserves that call for the app that owns the device. Asking anyway sent the
+        // child to a screen where the one thing they had been told to do could not be done —
+        // the exact failure this list exists to avoid, and worse than saying nothing, because
+        // an instruction that visibly cannot be followed teaches that the others are noise too.
+        if (!facts.ignoringBatteryOptimizations && !facts.deviceOwner) {
+            unmet += DeviceRequirement.BATTERY_OPTIMIZATION
+        }
         return unmet.sortedByDescending { it.critical }
     }
 

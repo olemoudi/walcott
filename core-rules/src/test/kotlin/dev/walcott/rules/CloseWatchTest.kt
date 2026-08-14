@@ -1,7 +1,9 @@
 package dev.walcott.rules
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.DayOfWeek
 import java.time.Duration
@@ -133,6 +135,54 @@ class CloseWatchTest {
         assertEquals(30, CloseWatch.thresholdFor(Duration.ofMinutes(30)))
         assertEquals(30, CloseWatch.thresholdFor(Duration.ofMinutes(6)))
         assertEquals(5, CloseWatch.thresholdFor(Duration.ofMinutes(5)))
-        assertEquals(5, CloseWatch.thresholdFor(Duration.ZERO))
+        assertEquals(5, CloseWatch.thresholdFor(Duration.ofMinutes(2)))
+        assertEquals(1, CloseWatch.thresholdFor(Duration.ofMinutes(1)))
+        assertEquals(1, CloseWatch.thresholdFor(Duration.ZERO))
+    }
+
+    @Test
+    fun `the last minute is announced even after the five-minute one was`() {
+        // The rungs are only useful if each earns its own warning: TimeWarnings keeps the
+        // smallest already said, so a descending countdown must keep clearing that bar.
+        val warnings = dev.walcott.rules.CloseWatch.WARN_MINUTES
+        assertEquals(listOf(30, 5, 1), warnings)
+        val ladder = listOf(30, 5, 1).map { CloseWatch.thresholdFor(Duration.ofMinutes(it.toLong())) }
+        assertEquals(listOf(30, 5, 1), ladder)
+    }
+
+    @Test
+    fun `an app is shown as running low before it closes, not after`() {
+        // The reported dead zone: the card read "1m left" and offered nothing to act on.
+        assertTrue(CloseWatch.runningLow(Duration.ofMinutes(1), blocked = false))
+        assertTrue(CloseWatch.runningLow(Duration.ofSeconds(90), blocked = false))
+        assertTrue(CloseWatch.runningLow(Duration.ofMinutes(10), blocked = false))
+        // Blocked is the clearest yes, and carries no remaining at all.
+        assertTrue(CloseWatch.runningLow(null, blocked = true))
+        // With real time left it stays off the home: every limited app on one screen was the
+        // list the child had to scroll past to reach anything they came to do.
+        assertFalse(CloseWatch.runningLow(Duration.ofMinutes(11), blocked = false))
+        assertFalse(CloseWatch.runningLow(Duration.ofHours(2), blocked = false))
+        // An app with no limit at all has nothing to ask about.
+        assertFalse(CloseWatch.runningLow(null, blocked = false))
+    }
+
+    @Test
+    fun `the card is already on screen by the time the banner fires`() {
+        // The banner's loudest rungs must never announce something the home is not showing,
+        // or the child is told to act on a card that isn't there.
+        CloseWatch.WARN_MINUTES.filter { it <= CloseWatch.RUNNING_LOW_BELOW.toMinutes() }
+            .forEach { rung ->
+                assertTrue(
+                    CloseWatch.runningLow(Duration.ofMinutes(rung.toLong()), blocked = false),
+                    "the $rung-minute warning fires on an app the home would hide",
+                )
+            }
+    }
+
+    @Test
+    fun `the horizon still reaches the largest threshold`() {
+        // Adding a smaller rung must not shrink how far ahead nextClose looks: the 30-minute
+        // warning is only reachable while the horizon covers it.
+        assertEquals(30, CloseWatch.WARN_MINUTES.max())
     }
 }

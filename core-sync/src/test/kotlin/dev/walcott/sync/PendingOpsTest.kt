@@ -184,6 +184,10 @@ class PendingOpsTest {
     private fun timeRequest(id: String) =
         ExtraTimeRequest(requestId = id, categoryId = "games", minutes = 15, createdAtEpochMs = now)
 
+    private fun appTimeRequest(id: String, pkg: String, label: String) = ExtraTimeRequest(
+        requestId = id, categoryId = pkg, minutes = 15, createdAtEpochMs = now, targetLabel = label,
+    )
+
     private fun appAsk(id: String) =
         ChildRequest(requestId = id, kind = ChildRequest.KIND_APP, text = "Minecraft", createdAtEpochMs = now)
 
@@ -197,6 +201,20 @@ class PendingOpsTest {
         assertEquals(true, summary?.approved)
         assertEquals(30, summary?.grantedMinutes)
         assertEquals("games", summary?.categoryId)
+    }
+
+    @Test
+    fun `an approved time request names the app it was about`() {
+        // The bug this pins: the summary left `text` empty for every time request, and the
+        // child's notice card read an empty label as "all apps" — so approving fifteen minutes
+        // of one app told the child they had fifteen minutes of every app on the phone.
+        val summary = SyncEngine.latestResolutionSummary(
+            fresh = listOf(Resolution("r1", approved = true, grantedMinutes = 15, resolvedAtEpochMs = now)),
+            requests = listOf(appTimeRequest("r1", "com.roblox.client", "Roblox")),
+            asks = emptyList(),
+        )
+        assertEquals("Roblox", summary?.text)
+        assertEquals("com.roblox.client", summary?.categoryId)
     }
 
     @Test
