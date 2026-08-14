@@ -1214,6 +1214,11 @@ class SyncManager(
                 }
             }
         }
+        // The card and the notification are two views of one question: answering either must
+        // retire both. Without this, a parent who answered in the app kept a live Approve button
+        // in their own shade — harmless to tap (the resolution is idempotent) but an invitation
+        // to wonder whether the first answer took.
+        SyncNotifications.cancelRequest(context, requestId)
         publishSelf()
     }
 
@@ -1230,6 +1235,26 @@ class SyncManager(
      * lets the one that owns it act, so a stale notification (or a second tap on the same one)
      * quietly does nothing instead of granting twice.
      */
+    /**
+     * What became of [requestId] in THIS family, for a notification tap that finds no card to
+     * answer. The decision itself is [SyncEngine.requestState]; this only reads the store.
+     */
+    suspend fun requestState(requestId: String): SyncEngine.RequestState {
+        val state = syncStore.current()
+        val createdAt = buildMap {
+            state.children.forEach { child ->
+                child.requests.forEach { put(it.requestId, it.createdAtEpochMs) }
+                child.asks.forEach { put(it.requestId, it.createdAtEpochMs) }
+            }
+        }
+        return SyncEngine.requestState(
+            requestId = requestId,
+            resolvedIds = state.resolutions.mapTo(mutableSetOf()) { it.requestId },
+            createdAtByRequestId = createdAt,
+            nowMs = System.currentTimeMillis(),
+        )
+    }
+
     suspend fun resolveFromNotification(requestId: String, approved: Boolean): Boolean {
         val s = syncStore.current()
         if (s.resolutions.any { it.requestId == requestId }) return false

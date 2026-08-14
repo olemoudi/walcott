@@ -195,6 +195,28 @@ class WalcottApplication : Application() {
     }
 
     /**
+     * What became of the request behind a notification, asked of every family this phone holds.
+     *
+     * Cross-family for the same reason the Approve button is
+     * ([dev.walcott.sync.RequestActionReceiver]): notifications are the one surface a parent
+     * sees all their families through, and nothing in the intent names which one a request
+     * came from. The first family that recognises the id answers; the rest have never heard
+     * of it, and "never heard of it" is not an answer.
+     */
+    suspend fun requestState(requestId: String): dev.walcott.sync.SyncEngine.RequestState {
+        val unknown = dev.walcott.sync.SyncEngine.RequestState.UNKNOWN
+        // A plain loop, not a sequence: reading a family's store suspends, and it also lets the
+        // first real answer stop the rest.
+        for (family in hub.allNow()) {
+            val state = runCatching { family.syncManager.requestState(requestId) }
+                .onFailure { DebugLog.w(TAG, "could not read request state for ${family.id}", it) }
+                .getOrDefault(unknown)
+            if (state != unknown) return state
+        }
+        return unknown
+    }
+
+    /**
      * Pushes an assisted app install to a child from the share-sheet flow. Runs on the app
      * scope (not the launching activity's) so it survives the activity finishing immediately.
      */

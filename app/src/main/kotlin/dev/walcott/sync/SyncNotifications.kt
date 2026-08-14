@@ -44,6 +44,26 @@ object SyncNotifications {
     /** Prefix + childId: a tap lands on that child's detail screen instead of the bare home. */
     const val DEST_CHILD_PREFIX = "child:"
 
+    /**
+     * Prefix + requestId: a tap on a child's request carries WHICH request, so the app can say
+     * what became of it when there is no longer a card to show (see [SyncManager.requestState]).
+     */
+    const val DEST_REQUEST_PREFIX = "request:"
+
+    private fun requestDest(requestId: String): String? =
+        requestId.takeIf { it.isNotBlank() }?.let { DEST_REQUEST_PREFIX + it }
+
+    /**
+     * Retires both notifications a request could have posted, whichever kind it was. Called
+     * when the answer happened somewhere other than this notification — in the app, or from
+     * the other button — so no shade is left offering a question that has one.
+     */
+    fun cancelRequest(context: Context, requestId: String) {
+        val nm = NotificationManagerCompat.from(context)
+        runCatching { nm.cancel(("request$requestId").hashCode()) }
+        runCatching { nm.cancel(("ask$requestId").hashCode()) }
+    }
+
     const val NOTIF_BACKUP_REMINDER = 4207
 
     /** Deep-link target for a per-child alert; legacy devices (blank childId) open the home. */
@@ -306,6 +326,7 @@ object SyncNotifications {
             title = context.getString(R.string.sync_ask_title, childName),
             text = text,
             notifId = notifId,
+            dest = requestDest(requestId),
             actions = answerActions(context, requestId, notifId, context.getString(R.string.approve), quickAnswer),
         )
     }
@@ -324,6 +345,7 @@ object SyncNotifications {
             title = context.getString(R.string.sync_install_ask_title, childName),
             text = context.getString(R.string.sync_install_ask_text, appLabel),
             notifId = notifId,
+            dest = requestDest(requestId),
             // Approving here opens the single-app install window, exactly as the card does.
             actions = answerActions(context, requestId, notifId, context.getString(R.string.approve), quickAnswer),
         )
@@ -442,6 +464,7 @@ object SyncNotifications {
             title = context.getString(R.string.sync_request_title),
             text = context.getString(R.string.sync_request_text, childName, minutes),
             notifId = notifId,
+            dest = requestDest(requestId),
             actions = answerActions(
                 context, requestId, notifId,
                 context.getString(R.string.request_grant_minutes, minutes), quickAnswer,

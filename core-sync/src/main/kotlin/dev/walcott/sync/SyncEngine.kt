@@ -138,6 +138,44 @@ object SyncEngine {
     fun requestExpired(createdAtEpochMs: Long, nowMs: Long): Boolean =
         createdAtEpochMs > 0 && nowMs - createdAtEpochMs > REQUEST_TTL_MS
 
+    /** What a notification's request turned out to be by the time somebody tapped it. */
+    enum class RequestState {
+        /** No family on this phone has ever heard of it. */
+        UNKNOWN,
+
+        /** Still waiting for an answer — its card is on the parent's home. */
+        PENDING,
+
+        /** Somebody answered it: this parent in the app, or another parent on their own phone. */
+        ANSWERED,
+
+        /** Nobody answered in time and it retired itself (see [REQUEST_TTL_MS]). */
+        EXPIRED,
+    }
+
+    /**
+     * What became of [requestId], for a notification tap that finds no card to answer.
+     *
+     * A parent who taps a request and lands on a home with nothing on it cannot tell whether
+     * they already dealt with it, the other parent did, or it simply ran out — so they go
+     * looking, or ask. The three are told apart because they are different facts.
+     *
+     * Answered is checked FIRST and that ordering is the whole rule: an answered request goes on
+     * ageing like any other, so a resolution from three days ago would read as "expired" — which
+     * would tell a parent nobody replied to a child they had in fact replied to.
+     */
+    fun requestState(
+        requestId: String,
+        resolvedIds: Set<String>,
+        createdAtByRequestId: Map<String, Long>,
+        nowMs: Long,
+    ): RequestState = when {
+        requestId in resolvedIds -> RequestState.ANSWERED
+        requestId !in createdAtByRequestId -> RequestState.UNKNOWN
+        requestExpired(createdAtByRequestId.getValue(requestId), nowMs) -> RequestState.EXPIRED
+        else -> RequestState.PENDING
+    }
+
     /**
      * Of one child's pending time requests, the newest for each target.
      *

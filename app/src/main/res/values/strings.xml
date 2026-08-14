@@ -598,6 +598,9 @@
     <string name="install_window_reblock">Re-block now</string>
     <string name="event_install_window">Installs are still allowed on %1$s\'s phone</string>
     <!-- Child home: the two things worth a card of their own, and the one that isn't. -->
+    <!-- Tapping a request notification that no longer has a card behind it. -->
+    <string name="request_already_answered">You already answered this request.</string>
+    <string name="request_no_longer_waiting">This request is no longer waiting for an answer.</string>
     <string name="ask_app_card_title">Ask for an app</string>
     <string name="ask_app_card_desc">So your parents can install it for you</string>
     <string name="ask_other_row">Ask for something else</string>

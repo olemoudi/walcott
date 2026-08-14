@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
@@ -121,6 +122,7 @@ fun WalcottApp(
     // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
     var gateAllowCreate by remember { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
+    val context = LocalContext.current
 
     // A notification deep-link (e.g. "new app installed" -> Apps). Honored in parent mode only;
     // the child's settings live behind the PIN gate, so we never jump a child straight in.
@@ -133,6 +135,25 @@ fun WalcottApp(
         }
         if (startDest == SyncNotifications.DEST_APP_SETTINGS && parentMode) {
             screen = Screen.APP_SETTINGS
+            onDestConsumed()
+        }
+        // A request notification that outlived its request. The parent taps expecting a card to
+        // answer and lands on a home without one — from which they cannot tell whether they
+        // already dealt with it, the other parent did, or it simply ran out. Say which.
+        // A request still waiting says nothing: its card is the first thing on this screen.
+        if (startDest?.startsWith(SyncNotifications.DEST_REQUEST_PREFIX) == true && parentMode) {
+            val requestId = startDest.removePrefix(SyncNotifications.DEST_REQUEST_PREFIX)
+            val app = context.applicationContext as? dev.walcott.WalcottApplication
+            val message = when (app?.requestState(requestId)) {
+                dev.walcott.sync.SyncEngine.RequestState.ANSWERED -> R.string.request_already_answered
+                // Expired and unknown are one message: both mean there is nothing left to
+                // answer, and the parent has no use for the difference between them.
+                dev.walcott.sync.SyncEngine.RequestState.EXPIRED,
+                dev.walcott.sync.SyncEngine.RequestState.UNKNOWN,
+                -> R.string.request_no_longer_waiting
+                else -> null
+            }
+            message?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }
             onDestConsumed()
         }
         // Health alerts land on the affected child, so the message behind the notification

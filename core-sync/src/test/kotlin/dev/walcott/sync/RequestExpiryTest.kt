@@ -1,5 +1,6 @@
 package dev.walcott.sync
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -12,6 +13,62 @@ import org.junit.jupiter.api.Test
  * button permanently dead, and pinned a week-old question above everything current on the
  * parent's home.
  */
+class RequestStateTest {
+
+    private val now = 1_700_000_000_000L
+    private val fresh = mapOf("r1" to now - 60_000)
+    private val old = mapOf("r1" to now - SyncEngine.REQUEST_TTL_MS - 1)
+
+    @Test
+    fun `a request still waiting reads as pending`() {
+        assertEquals(
+            SyncEngine.RequestState.PENDING,
+            SyncEngine.requestState("r1", emptySet(), fresh, now),
+        )
+    }
+
+    @Test
+    fun `an answered request says so, however long ago it was answered`() {
+        // The ordering that matters: an answered request keeps ageing like any other, so
+        // checking expiry first would tell a parent nobody replied to a child they replied to
+        // three days ago. That is the exact confusion the message exists to end.
+        assertEquals(
+            SyncEngine.RequestState.ANSWERED,
+            SyncEngine.requestState("r1", setOf("r1"), old, now),
+        )
+        assertEquals(
+            SyncEngine.RequestState.ANSWERED,
+            SyncEngine.requestState("r1", setOf("r1"), fresh, now),
+        )
+        // Answered by the OTHER parent, so this phone never had it pending at all.
+        assertEquals(
+            SyncEngine.RequestState.ANSWERED,
+            SyncEngine.requestState("r1", setOf("r1"), emptyMap(), now),
+        )
+    }
+
+    @Test
+    fun `a request nobody answered in time reads as expired, not answered`() {
+        assertEquals(
+            SyncEngine.RequestState.EXPIRED,
+            SyncEngine.requestState("r1", emptySet(), old, now),
+        )
+    }
+
+    @Test
+    fun `a request this phone has never heard of is unknown`() {
+        assertEquals(
+            SyncEngine.RequestState.UNKNOWN,
+            SyncEngine.requestState("r1", emptySet(), emptyMap(), now),
+        )
+        // Another family's resolutions must not answer for this one.
+        assertEquals(
+            SyncEngine.RequestState.UNKNOWN,
+            SyncEngine.requestState("r1", setOf("r2"), mapOf("r2" to now), now),
+        )
+    }
+}
+
 class RequestExpiryTest {
 
     private val now = 1_700_000_000_000L

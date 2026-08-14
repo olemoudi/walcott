@@ -597,6 +597,9 @@
     <string name="install_window_reblock">Volver a bloquear</string>
     <string name="event_install_window">Las instalaciones siguen permitidas en el móvil de %1$s</string>
     <!-- Child home: the two things worth a card of their own, and the one that isn't. -->
+    <!-- Tapping a request notification that no longer has a card behind it. -->
+    <string name="request_already_answered">Esta petición ya la has revisado.</string>
+    <string name="request_no_longer_waiting">Esta petición ya no está esperando respuesta.</string>
     <string name="ask_app_card_title">Pedir una app</string>
     <string name="ask_app_card_desc">Para que tus padres te la instalen</string>
     <string name="ask_other_row">Pedir otra cosa</string>
