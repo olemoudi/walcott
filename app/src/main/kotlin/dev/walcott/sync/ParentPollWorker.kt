@@ -84,9 +84,23 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
     companion object {
         private const val PERIODIC = "walcott-parent-poll"
 
-        /** Idempotent ~15-min poll; only runs with a network connection. */
+        /**
+         * How often the worker polls. Two hours, and deliberately far slower than the alarm.
+         *
+         * These two were spaced apart on purpose — a worker on the same cadence as the alarm
+         * spends a wakeup making a request the alarm just made — and 0.46 took the alarm from
+         * thirty minutes to ten without moving this, putting them back in lockstep and costing
+         * a parent's phone about ninety-six wakeups a day to learn nothing.
+         *
+         * The worker is not the thing that keeps latency down; the alarm is, because Doze
+         * honours it. What this is for is the case the alarm cannot cover — a chain that never
+         * got re-armed — and a backstop does not need to be frequent, it needs to exist.
+         */
+        private const val PERIOD_HOURS = 2L
+
+        /** Idempotent backstop poll; only runs with a network connection. */
         fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<ParentPollWorker>(15, TimeUnit.MINUTES)
+            val request = PeriodicWorkRequestBuilder<ParentPollWorker>(PERIOD_HOURS, TimeUnit.HOURS)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .build()
             WorkManager.getInstance(context)

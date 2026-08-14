@@ -539,6 +539,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_47_0">
+        <item>Los horarios sin pantalla son ahora una sola lista: cada regla elige sus días y dice por sí misma si se aplica en festivos — las secciones de entre semana, finde y días especiales han desaparecido. Tus reglas actuales se han convertido solas.</item>
+        <item>Corregido, en hijos protegidos sin propiedad total del dispositivo: un límite diario por app no descontaba ni bloqueaba nada. La hora de dormir y los horarios sin pantalla no estaban afectados.</item>
+        <item>Tu propio móvil se despierta menos veces a mirar si hay mensajes de tus hijos, sin que estos lleguen más tarde.</item>
+    </string-array>
     <string-array name="whats_new_0_46_0">
         <item>Las peticiones de tu hijo te llegan mucho antes con la app cerrada — unos cinco minutos, en vez de hasta media hora.</item>
         <item>Corregido: aprobar tiempo extra para una app le decía a tu hijo que era para todas.</item>

@@ -69,9 +69,13 @@ class WalcottRepository(
             .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
 
-    /** Today's usage per category, reactive across midnight rollovers (per-app counters stripped). */
-    val usageTodayFlow: Flow<Map<String, Duration>> =
-        usageTodayAllFlow.map { it.filterKeys { key -> !key.contains('.') } }
+    // usageTodayFlow used to sit here: the same map with every key containing a dot removed,
+    // which since limits went per app in 0.35 meant every counter there was. It was left over
+    // from the category era and read like a reasonable default, so it quietly caught two
+    // callers that needed the opposite — the child's own home (which then showed time left it
+    // was not counting down) and the accessibility blocker (whose budgets therefore never
+    // fired at all). Deleted rather than fixed: there is no caller that wants usage with the
+    // usage taken out, and leaving it would only wait for a third.
 
     val extraTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
         db.usage().observeExtraDay(day)

@@ -94,7 +94,13 @@ class AppBlockerService : AccessibilityService() {
             }
         }
         scope.launch { app.syncManager.quarantined.collectLatest { quarantined = it } }
-        scope.launch { app.repository.usageTodayFlow.collectLatest { usage = it } }
+        // ALL the counters, packages included. The stripped flow this used to read filters out
+        // every key containing a dot — every package name — so `usage` never held anything the
+        // rules could count against, `used` was always zero, and on a child WITHOUT Device Owner
+        // a daily budget never ran down and never blocked. Bedtime and screen-free windows read
+        // the clock, so they kept working, which is what made it survive: the one backend that
+        // could not enforce a budget looked like it was enforcing everything else.
+        scope.launch { app.repository.usageTodayAllFlow.collectLatest { usage = it } }
         scope.launch { app.repository.effectiveExtraTodayFlow.collectLatest { extra = it } }
         ContextCompat.registerReceiver(
             this,

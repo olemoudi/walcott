@@ -439,7 +439,7 @@ class WalcottViewModel(
 
     // Reloads the 7-day history whenever today's usage changes.
     val weeklyUsage: StateFlow<Map<Long, Map<String, java.time.Duration>>> =
-        repository.usageTodayFlow.map { repository.weeklyUsage() }
+        repository.usageTodayAllFlow.map { repository.weeklyUsage() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /**

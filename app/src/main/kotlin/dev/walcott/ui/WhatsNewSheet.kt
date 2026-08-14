@@ -69,26 +69,37 @@ fun WhatsNewSheet(store: WhatsNewStore) {
     }
 
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = sheetState) {
+        // The button sits OUTSIDE the scrolling part, and that is the whole point of the nesting:
+        // it used to be the last child of the scroll, so a release with eight things to say
+        // pushed the only way out below the fold. The way out of a sheet shown to a child who
+        // did not ask for it must not be something you have to go looking for.
         Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            Modifier.fillMaxWidth()
                 .padding(horizontal = Tokens.spacing.screen)
                 .padding(bottom = Tokens.spacing.lg)
                 .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(Tokens.spacing.md),
         ) {
-            Text(stringResource(R.string.whats_new_title), style = MaterialTheme.typography.headlineSmall)
-            releases.forEach { release ->
-                Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.xs)) {
-                    Text(
-                        release.name,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    stringArrayResource(release.bulletsRes).forEach { bullet ->
-                        Row(Modifier.fillMaxWidth()) {
-                            Text("•", style = MaterialTheme.typography.bodyMedium)
-                            Spacer(Modifier.width(Tokens.spacing.sm))
-                            Text(bullet, style = MaterialTheme.typography.bodyMedium)
+            Column(
+                // fill = false so a short release note still wraps to its own height instead of
+                // stretching the sheet to full screen.
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Tokens.spacing.md),
+            ) {
+                Text(stringResource(R.string.whats_new_title), style = MaterialTheme.typography.headlineSmall)
+                releases.forEach { release ->
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.xs)) {
+                        Text(
+                            release.name,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        stringArrayResource(release.bulletsRes).forEach { bullet ->
+                            Row(Modifier.fillMaxWidth()) {
+                                Text("•", style = MaterialTheme.typography.bodyMedium)
+                                Spacer(Modifier.width(Tokens.spacing.sm))
+                                Text(bullet, style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }
