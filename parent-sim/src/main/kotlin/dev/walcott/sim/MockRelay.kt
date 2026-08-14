@@ -39,6 +39,17 @@ class MockRelay {
     private class Topic {
         val messages = CopyOnWriteArrayList<Message>()
         val sockets = CopyOnWriteArrayList<WebSocket>()
+
+        /**
+         * Held while a subscriber is being taken on, and while a message is going out.
+         *
+         * Concurrent collections make each individual operation safe and say nothing about the
+         * pair that matters: replaying a backlog and joining the broadcast list have to happen
+         * with no gap between them, or a message published in that gap reaches neither — it is
+         * too late for the replay and too early for the broadcast. Real ntfy does not have this
+         * problem because it is one server holding one list; the double has to be told.
+         */
+        val gate = Any()
     }
 
     private val server = MockWebServer()
@@ -121,7 +132,9 @@ class MockRelay {
     fun replay(topic: String, index: Int) {
         val state = topics[topic] ?: return
         val message = state.messages.getOrNull(index) ?: return
-        state.sockets.forEach { it.send(eventJson(message)) }
+        // Same gate as a first delivery: a replay landing half-way through a subscription would
+        // reach a socket that is about to receive the backlog containing it, or none at all.
+        synchronized(state.gate) { state.sockets.forEach { it.send(eventJson(message)) } }
     }
 
     /** Publishes [body] to [topic] as any client would. Used by the parent sim. */
@@ -133,8 +146,10 @@ class MockRelay {
             dropCounts[topic] = toDrop - 1
             return
         }
-        state.messages += message
-        state.sockets.forEach { it.send(eventJson(message)) }
+        synchronized(state.gate) {
+            state.messages += message
+            state.sockets.forEach { it.send(eventJson(message)) }
+        }
     }
 
     private fun route(request: RecordedRequest): MockResponse {
@@ -172,11 +187,17 @@ class MockRelay {
         val state = topics.computeIfAbsent(topicName) { Topic() }
         return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
-                webSocket.send("""{"event":"open","topic":"$topicName"}""")
-                if (since > 0) {
-                    state.messages.filter { it.timeSec >= since }.forEach { webSocket.send(eventJson(it)) }
+                synchronized(state.gate) {
+                    if (since > 0) {
+                        state.messages.filter { it.timeSec >= since }.forEach { webSocket.send(eventJson(it)) }
+                    }
+                    state.sockets += webSocket
                 }
-                state.sockets += webSocket
+                // Sent LAST, and that is what makes it usable as a signal: a subscriber that has
+                // seen this frame is in the broadcast list, so a test (or the sim) can publish
+                // straight after it without racing its own subscription. The client's own onOpen
+                // fires on the handshake, which is strictly earlier and proves nothing.
+                webSocket.send("""{"event":"open","topic":"$topicName"}""")
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {

@@ -31,9 +31,20 @@ class MockRelayTest {
 
     private class Collector : WebSocketListener() {
         val frames = CopyOnWriteArrayList<String>()
-        val opened = CountDownLatch(1)
-        override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) = opened.countDown()
-        override fun onMessage(webSocket: WebSocket, text: String) { frames += text }
+
+        /**
+         * Counted down by the relay's "open" FRAME, not by the client's onOpen callback.
+         *
+         * The callback fires on the HTTP handshake, which happens before the relay has put this
+         * socket in its broadcast list — so a publish straight afterwards could be delivered to
+         * nobody, and the test would fail having proved nothing about framing. The frame is sent
+         * last, after the subscription is live, so waiting for it is exact.
+         */
+        val subscribed = CountDownLatch(1)
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            frames += text
+            if (NtfyEvent.messageBody(text) == null) subscribed.countDown()
+        }
         fun bodies() = frames.mapNotNull { NtfyEvent.messageBody(it) }
     }
 
@@ -44,7 +55,7 @@ class MockRelayTest {
             Request.Builder().url("${relay.localUrl.replaceFirst("http", "ws")}/$topic/ws$suffix").build(),
             collector,
         )
-        assertTrue(collector.opened.await(5, TimeUnit.SECONDS), "socket never opened")
+        assertTrue(collector.subscribed.await(5, TimeUnit.SECONDS), "relay never confirmed the subscription")
         return collector
     }
 
@@ -85,8 +96,14 @@ line2"}"""
         // with a cursor and expects the gap filled, not skipped.
         post("t3", "first")
         Thread.sleep(1_100) // the cursor's resolution is one second
-        val cutoff = System.currentTimeMillis() / 1000
         post("t3", "second")
+        // Read the cutoff off the relay's own record rather than the wall clock. What this test
+        // means is "a cursor sitting between these two messages", and asking the clock for that
+        // makes the assertion depend on where a second boundary happened to fall relative to two
+        // sleeps — which is a property of the machine, not of the relay.
+        val (first, second) = relay.published("t3")
+        assertTrue(second.timeSec > first.timeSec, "the two messages need distinct seconds")
+        val cutoff = second.timeSec
         val collector = subscribe("t3", since = cutoff)
         waitFor(collector, 1)
         assertEquals(listOf("second"), collector.bodies())
