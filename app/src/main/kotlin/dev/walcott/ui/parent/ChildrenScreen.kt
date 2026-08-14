@@ -74,7 +74,7 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 item { Text(stringResource(R.string.no_children), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
                 items(children, key = { it.deviceId }) { child ->
-                    ChildUsageCard(child, onGiveBonus = { bonusTarget = child })
+                    ChildUsageCard(child, viewModel, onGiveBonus = { bonusTarget = child })
                 }
             }
         }
@@ -93,7 +93,11 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ChildUsageCard(child: ChildSnapshot, onGiveBonus: () -> Unit) {
+private fun ChildUsageCard(
+    child: ChildSnapshot,
+    viewModel: dev.walcott.ui.WalcottViewModel,
+    onGiveBonus: () -> Unit,
+) {
     val spacing = Tokens.spacing
     WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
@@ -104,10 +108,7 @@ private fun ChildUsageCard(child: ChildSnapshot, onGiveBonus: () -> Unit) {
                 HorizontalDivider(Modifier.padding(vertical = spacing.sm))
                 // Usage is per app now, so the child's own reported app list names it.
                 child.usage.sortedByDescending { it.seconds }.take(USAGE_ROWS).forEach { entry ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(usageLabel(entry, child.apps), Modifier.weight(1f))
-                        Text(Duration.ofSeconds(entry.seconds).humanize(), style = MaterialTheme.typography.bodyMedium)
-                    }
+                    UsageRow(entry, child.apps, viewModel)
                 }
             }
             Spacer(Modifier.size(spacing.sm))

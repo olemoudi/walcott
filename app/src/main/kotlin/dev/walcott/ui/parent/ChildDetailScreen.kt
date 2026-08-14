@@ -334,6 +334,7 @@ fun ChildDetailScreen(
                         val hasHistory = snapshot.history.isNotEmpty()
                         UsageTodayCard(
                             snapshot,
+                            viewModel,
                             position = if (hasHistory) CardPosition.First else CardPosition.Single,
                             onGiveBonus = { showBonus = true },
                         )
@@ -888,7 +889,12 @@ private fun StatTile(value: String, label: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun UsageTodayCard(snapshot: ChildSnapshot, position: CardPosition = CardPosition.Single, onGiveBonus: () -> Unit) {
+private fun UsageTodayCard(
+    snapshot: ChildSnapshot,
+    viewModel: dev.walcott.ui.WalcottViewModel,
+    position: CardPosition = CardPosition.Single,
+    onGiveBonus: () -> Unit,
+) {
     val spacing = Tokens.spacing
     WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
@@ -900,10 +906,7 @@ private fun UsageTodayCard(snapshot: ChildSnapshot, position: CardPosition = Car
                 // Usage is per app now; the child's own reported app list names each package,
                 // and only the busiest few are worth a row.
                 snapshot.usage.sortedByDescending { it.seconds }.take(USAGE_ROWS).forEach { entry ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(usageLabel(entry, snapshot.apps), Modifier.weight(1f))
-                        Text(Duration.ofSeconds(entry.seconds).humanize(), style = MaterialTheme.typography.bodyMedium)
-                    }
+                    UsageRow(entry, snapshot.apps, viewModel)
                 }
             }
             Spacer(Modifier.size(spacing.sm))
