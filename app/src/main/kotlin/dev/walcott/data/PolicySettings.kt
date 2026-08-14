@@ -6,6 +6,7 @@ import dev.walcott.rules.DomainAppRule
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.rules.IdleEarnConfig
 import dev.walcott.rules.SchoolCalendar
+import dev.walcott.rules.SpecialDays
 import dev.walcott.rules.TimeWindow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -43,9 +44,33 @@ data class WindowDto(
      * device over-blocks (the window fires every day) rather than silently stopping.
      */
     val days: List<Int> = emptyList(),
-    /** Whether the window stands down on calendar special days (see [TimeWindow.skipSpecialDays]). */
+    /** Whether the window stands down on calendar special days ([SpecialDays.NEVER]). */
     val skipSpecialDays: Boolean = false,
+    /**
+     * Whether the window applies ONLY on calendar special days ([SpecialDays.ONLY]).
+     *
+     * Additive, and kept beside [skipSpecialDays] rather than replacing it with one field: a
+     * child on an older build decodes the policy with `ignoreUnknownKeys` and simply does not
+     * see this, so such a window fires every day instead of only on special ones. That is the
+     * strict direction — more blocking than the parent asked for, never less — and it lasts
+     * until that device takes the update, which it does silently and by itself.
+     *
+     * The pair is written from [SpecialDays] and read back through [specialDays], so the
+     * impossible combination (both true) can only arrive from hand-written JSON; it is resolved
+     * there rather than trusted.
+     */
+    val onlySpecialDays: Boolean = false,
 ) {
+    /** The three-state rule these two flags encode (see [SpecialDays]). */
+    val specialDays: SpecialDays
+        get() = when {
+            // "Only" wins a contradiction: it is the newer, more specific intent, and the pair
+            // is only ever contradictory in JSON nobody's editor wrote.
+            onlySpecialDays -> SpecialDays.ONLY
+            skipSpecialDays -> SpecialDays.NEVER
+            else -> SpecialDays.ALWAYS
+        }
+
     /**
      * This window as the engine wants it, or null when either end isn't a minute of any day.
      * Nullable on purpose: this conversion happens inside the enforcement loop, where an
@@ -62,7 +87,15 @@ data class WindowDto(
             // Unparseable day numbers are dropped rather than thrown — this runs inside the
             // enforcement loop, same reasoning as [byDayType].
             days = days.mapNotNullTo(mutableSetOf()) { runCatching { DayOfWeek.of(it) }.getOrNull() },
-            skipSpecialDays = skipSpecialDays,
+            specialDays = specialDays,
+        )
+    }
+
+    companion object {
+        /** A window carrying [rule], with the flag pair the wire expects written consistently. */
+        fun withSpecialDays(window: WindowDto, rule: SpecialDays): WindowDto = window.copy(
+            skipSpecialDays = rule == SpecialDays.NEVER,
+            onlySpecialDays = rule == SpecialDays.ONLY,
         )
     }
 }
@@ -237,6 +270,118 @@ private const val LEGACY_GENERAL_CATEGORY = "other"
  * Runs at the store's read path, so every screen and the engine see the new shape from the first
  * launch after the update, whether or not anything has been written since.
  */
+/** ISO day numbers Monday–Friday, and Saturday–Sunday: what each day-type section meant. */
+private val WEEKDAY_DAYS = (1..5).toList()
+private val WEEKEND_DAYS = listOf(6, 7)
+
+/**
+ * Folds a screen-free schedule that was filed under day types into one list of rules that say
+ * which days they apply on.
+ *
+ * The editor used to ask the same question twice. A rule went into a "weekdays" or "weekend"
+ * section AND carried a day-of-week picker, and special days were a third list behind their own
+ * switch — three controls for one idea, and the sections were the ones nobody could explain.
+ * Since every rule already names its days, the sections were only ever a coarser way of saying
+ * the same thing, so they become days:
+ *
+ *  - a weekday-section rule keeps the weekdays it named, or gains Mon–Fri if it named none;
+ *  - a weekend-section rule the same with Sat–Sun;
+ *  - a rule that was under "special days have their own rules" becomes [SpecialDays.ONLY],
+ *    which says on the rule what the section used to say around it;
+ *  - rules that land identically are merged, because the same rule written twice is one rule.
+ *
+ * Behaviour is unchanged for any family without vacations or a weekend edge. Where those exist
+ * it approximates, and in the direction that keeps a rule rather than dropping it: the one thing
+ * the sections could express and days cannot is "a weekday rule stands down on the Friday
+ * afternoon the calendar already calls the weekend". That edge is a BUDGET idea — it exists so
+ * Friday evening spends the weekend's allowance — and applying it to an explicit clock window
+ * was always the odd part. A parent who does not want Friday now unticks Friday.
+ *
+ * Idempotent, and runs on read like [migratedFromCategories], so it also converts a policy
+ * arriving over the wire from a parent who has not updated yet.
+ */
+fun PolicySettings.migratedToDayPickedWindows(): PolicySettings {
+    fun fold(byDayType: Map<String, List<WindowDto>>, holidayOwnRules: Boolean): Map<String, List<WindowDto>> {
+        if (byDayType.isEmpty()) return byDayType
+        // Keyed by everything EXCEPT the days, so the same window written into two sections comes
+        // out as one rule covering both — which is what "22:00–23:00, every day" was, said twice
+        // because the editor made the parent say it twice. Insertion-ordered so the list a family
+        // knows keeps its order.
+        val folded = LinkedHashMap<Triple<Int, Int, SpecialDays>, WindowDto>()
+        fun add(window: WindowDto) {
+            val key = Triple(window.startMinute, window.endMinute, window.specialDays)
+            val held = folded[key]
+            folded[key] = if (held == null) {
+                window
+            } else {
+                // Either side naming no days means "every day", which swallows the other.
+                val days = if (held.days.isEmpty() || window.days.isEmpty()) emptyList()
+                else (held.days + window.days).distinct().sorted()
+                held.copy(days = days)
+            }
+        }
+        for ((dayType, windows) in byDayType) {
+            for (window in windows) {
+                when (dayType) {
+                    // A null narrowing means the rule named only days its own section could
+                    // never match — a weekday rule ticked for Saturday alone. It never fired,
+                    // and it is dropped rather than carried over: an empty day list means EVERY
+                    // day, so keeping it would turn a rule that did nothing into one that fires
+                    // all week.
+                    DayType.SCHOOL.name ->
+                        window.days.narrowedTo(WEEKDAY_DAYS)?.let { add(window.copy(days = it)) }
+                    DayType.WEEKEND.name ->
+                        window.days.narrowedTo(WEEKEND_DAYS)?.let { add(window.copy(days = it)) }
+                    // Only meaningful while the family had opted into separate special-day rules.
+                    // With the switch off this list is a MIRROR of the weekend's (see
+                    // withHolidayMirroringWeekend), and re-adding it would resurrect weekend
+                    // rules as holiday-only ones nobody wrote.
+                    DayType.HOLIDAY.name ->
+                        if (holidayOwnRules) add(WindowDto.withSpecialDays(window, SpecialDays.ONLY))
+                    else -> add(window) // a day type this build doesn't know: keep it whole
+                }
+            }
+        }
+        val collapsed = folded.values.toList()
+        // The same list under every day type: the wire keeps its shape, so a child that has not
+        // updated still finds windows where it looks for them, and each rule's own days and
+        // special-day state do the filtering that the sections used to do.
+        return DayType.entries.associate { it.name to collapsed }
+    }
+
+    // Nothing filed under day types anywhere, or every list already identical across them:
+    // either way there is nothing to fold, and returning `this` keeps the read path free of
+    // pointless copies (it runs on every decode).
+    val schedules = listOf(allAppsBlockedWindows) + appPolicies.values.map { it.blockedWindows } +
+        children.mapNotNull { it.overrides.allAppsBlockedWindows }
+    if (schedules.all { it.isEmpty() || it.values.distinct().size <= 1 }) return this
+
+    return copy(
+        allAppsBlockedWindows = fold(allAppsBlockedWindows, specialDaysOwnRules),
+        appPolicies = appPolicies.mapValues { (_, policy) ->
+            policy.copy(blockedWindows = fold(policy.blockedWindows, specialDaysOwnRules))
+        },
+        children = children.map { child ->
+            val overrides = child.overrides
+            val windows = overrides.allAppsBlockedWindows ?: return@map child
+            child.copy(
+                overrides = overrides.copy(
+                    // The special-days opt-in is family-wide; a child override never had one of its own.
+                    allAppsBlockedWindows = fold(windows, specialDaysOwnRules),
+                ),
+            )
+        },
+    )
+}
+
+/**
+ * [this] restricted to [allowed], all of [allowed] when it named no days at all, or null when
+ * the two do not overlap — a rule that could never have fired, which must not become one that
+ * fires every day (an empty day list means "every day").
+ */
+private fun List<Int>.narrowedTo(allowed: List<Int>): List<Int>? =
+    if (isEmpty()) allowed else filter { it in allowed }.takeIf { it.isNotEmpty() }
+
 fun PolicySettings.migratedFromCategories(): PolicySettings {
     val familyLegacy = budgets.isNotEmpty() || blockedWindows.isNotEmpty() ||
         assignments.isNotEmpty() || earnRules.isNotEmpty()

@@ -56,6 +56,33 @@ data class SchoolCalendar(
 }
 
 /** Time window [start, end); may cross midnight (e.g. 21:30–07:30). */
+/**
+ * What a time window does when the calendar calls the day special (a holiday, a vacation day).
+ *
+ * The day-of-week picker on a rule and the calendar's special days are different questions —
+ * "which weekdays" and "except when the day is not a normal one" — so they are answered
+ * separately, on the same rule, instead of by filing the rule into one of several lists.
+ */
+enum class SpecialDays {
+    /** The weekday filter is the whole answer; a holiday changes nothing. */
+    ALWAYS,
+
+    /** Stands down on special days: "no screens Mon–Fri 17:00–19:00 for homework", not on a
+     *  bank-holiday Tuesday. */
+    NEVER,
+
+    /** Applies ONLY on special days — the rule a family wants for holidays and no other day. */
+    ONLY,
+    ;
+
+    /** Whether a window carrying this applies on a day the calendar calls [special]. */
+    fun appliesOn(special: Boolean): Boolean = when (this) {
+        ALWAYS -> true
+        NEVER -> !special
+        ONLY -> special
+    }
+}
+
 data class TimeWindow(
     val start: LocalTime,
     val end: LocalTime,
@@ -65,10 +92,14 @@ data class TimeWindow(
      */
     val days: Set<DayOfWeek> = emptySet(),
     /**
-     * When true the window stands down on calendar special days, so "no screens Mon–Fri
-     * 17:00–19:00 for homework" doesn't fire on a bank-holiday Tuesday.
+     * How this window treats the calendar's special days (holidays, vacations).
+     *
+     * Three states rather than the boolean it replaced, because the editor used to express the
+     * third by putting a whole separate LIST of windows under a "special days" section — one
+     * more axis on a screen that already had two. [SpecialDays.ONLY] says the same thing on the
+     * axis the parent is already using, so the section could go.
      */
-    val skipSpecialDays: Boolean = false,
+    val specialDays: SpecialDays = SpecialDays.ALWAYS,
 ) {
     operator fun contains(time: LocalTime): Boolean =
         if (start <= end) time >= start && time < end
@@ -84,7 +115,7 @@ data class TimeWindow(
      */
     fun appliesAt(at: LocalDateTime, specialDay: Boolean = false): Boolean {
         if (at.toLocalTime() !in this) return false
-        if (skipSpecialDays && specialDay) return false
+        if (!specialDays.appliesOn(specialDay)) return false
         if (days.isEmpty()) return true
         // A window that crosses midnight belongs to the day it STARTED on: at 01:00 inside a
         // 21:30–07:30 window, the day the parent picked is yesterday's.

@@ -795,6 +795,12 @@
     <string name="all_apps_windows_hint">Every app is blocked during these hours, on the days you pick — meals, homework, family time.</string>
     <string name="window_add">Add hours</string>
     <string name="window_delete">Remove</string>
+    <!-- Per-rule special-days state, which replaced the special-days section. -->
+    <string name="window_special_days_label">On holidays and vacation days</string>
+    <string name="window_special_always">Always</string>
+    <string name="window_special_never">Never</string>
+    <string name="window_special_only">Only</string>
+    <string name="window_special_days_calendar">Which days count as special…</string>
     <string name="window_skip_special">Skip special days</string>
     <string name="app_web_filter">Web filter</string>
     <string name="app_web_filter_link">Open web filter rules</string>

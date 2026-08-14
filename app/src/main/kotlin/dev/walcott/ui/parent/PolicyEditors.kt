@@ -37,7 +37,9 @@ import androidx.compose.ui.unit.dp
 import dev.walcott.R
 import dev.walcott.data.WindowDto
 import dev.walcott.data.toTimeOfDayOrNull
+import androidx.compose.material3.TextButton
 import dev.walcott.rules.DayType
+import dev.walcott.rules.SpecialDays
 import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.RULE_DAY_TYPES
 import dev.walcott.ui.editableUnder
@@ -289,44 +291,31 @@ internal fun BlockedWindowsCard(
         Column(Modifier.padding(spacing.lg).animateContentSize()) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            @Composable
-            fun dayGroup(dayType: DayType) {
-                Text(
-                    stringResource(dayType.labelRes()),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = spacing.md),
-                )
-                WindowsForDay(
-                    windows = windowsByDay[dayType.name].orEmpty(),
-                    editable = enabled,
-                    // Per-window "stand down on special days" only means anything while special
-                    // days mirror the weekend. Once they have a list of their own, leaving the
-                    // window out of it says the same thing, and two controls for one idea is
-                    // exactly the confusion this screen is being cured of.
-                    showSkipSpecial = !specialDaysOwnRules,
-                    onChange = { onChange(dayType, it) },
-                )
-            }
-            DAY_TYPES.forEach { dayGroup(it) }
-            if (onSetSpecialDaysOwnRules != null && onOpenSpecialDays != null) {
-                SpecialDaysSection(
-                    on = specialDaysOwnRules,
-                    onOpenCalendar = onOpenSpecialDays,
-                    enabled = enabled,
-                    onChange = onSetSpecialDaysOwnRules,
-                ) { dayGroup(DayType.HOLIDAY) }
+            // One list. Every rule already named its own days, so filing it into a weekday or
+            // weekend section asked the same question a second time, in a coarser way — and the
+            // special-days section asked a third. The rule now says all of it on the rule.
+            WindowsForDay(
+                windows = windowsByDay[DayType.SCHOOL.name].orEmpty(),
+                editable = enabled,
+                onChange = { windows ->
+                    // Written to every day type: the wire is still keyed by it, so a child that
+                    // has not updated finds the rules where it looks for them, and each rule's
+                    // own days do the filtering the sections used to do.
+                    DayType.entries.forEach { onChange(it, windows) }
+                },
+            )
+            if (onOpenSpecialDays != null) {
+                SpecialDaysLink(onOpen = onOpenSpecialDays, enabled = enabled)
             }
         }
     }
 }
 
-/** One day type's windows. Read-only when [editable] is false — it is then a mirror, not a rule. */
+/** The schedule's rules. Read-only when [editable] is false — it is then inherited, not owned. */
 @Composable
 private fun WindowsForDay(
     windows: List<WindowDto>,
     editable: Boolean,
-    showSkipSpecial: Boolean,
     onChange: (List<WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -375,24 +364,16 @@ private fun WindowsForDay(
                 onChange(windows.mapIndexed { i, w -> if (i == index) w.copy(days = w.days.toggledDay(day)) else w })
             },
         )
-        if (showSkipSpecial) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.window_skip_special),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = window.skipSpecialDays,
-                    onCheckedChange = { on ->
-                        onChange(windows.mapIndexed { i, w -> if (i == index) w.copy(skipSpecialDays = on) else w })
+        SpecialDaysChoice(
+            selected = window.specialDays,
+            onSelect = { rule ->
+                onChange(
+                    windows.mapIndexed { i, w ->
+                        if (i == index) WindowDto.withSpecialDays(w, rule) else w
                     },
                 )
-            }
-        }
+            },
+        )
     }
     if (editable) {
         Spacer(Modifier.size(spacing.sm))
@@ -421,6 +402,57 @@ private fun WindowsForDay(
             if (picked != null) onChange(windows + WindowDto(edit.start.toMinute(), picked.toMinute()))
             editing = null
         }
+    }
+}
+
+/**
+ * What one rule does on the calendar's special days, on the same card as its weekdays.
+ *
+ * The third state is why the special-days SECTION could go: "only on holidays" used to be
+ * expressed by putting a whole separate list of rules behind a switch, which is a lot of screen
+ * to say something a rule can say about itself.
+ */
+@Composable
+private fun SpecialDaysChoice(selected: SpecialDays, onSelect: (SpecialDays) -> Unit) {
+    val spacing = Tokens.spacing
+    Column(Modifier.padding(top = spacing.sm)) {
+        Text(
+            stringResource(R.string.window_special_days_label),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Equal thirds rather than each chip sizing to its own word: the three are one choice,
+        // and a row that reflows differently per language (or when a label is one word longer)
+        // reads as three unrelated buttons. Weighting also keeps the longest label on one line
+        // instead of wrapping inside a chip half the width of its neighbours.
+        Row(
+            Modifier.fillMaxWidth().padding(top = spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            SpecialDays.entries.forEach { rule ->
+                dev.walcott.ui.components.ChoiceChip(
+                    modifier = Modifier.weight(1f),
+                    selected = selected == rule,
+                    onClick = { onSelect(rule) },
+                    label = stringResource(
+                        when (rule) {
+                            SpecialDays.ALWAYS -> R.string.window_special_always
+                            SpecialDays.NEVER -> R.string.window_special_never
+                            SpecialDays.ONLY -> R.string.window_special_only
+                        },
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/** Way through to the calendar that decides which days are special, without owning any rules. */
+@Composable
+private fun SpecialDaysLink(onOpen: () -> Unit, enabled: Boolean) {
+    val spacing = Tokens.spacing
+    TextButton(onClick = onOpen, enabled = enabled, modifier = Modifier.padding(top = spacing.sm)) {
+        Text(stringResource(R.string.window_special_days_calendar))
     }
 }
 

@@ -47,7 +47,7 @@ class PolicyCorpusTest {
             val allWindows = config.blockedWindows.values.flatten() +
                 config.perAppPolicies.values.flatMap { it.blockedWindows.values.flatten() }
             note("day-of-week mask", allWindows.any { it.days.isNotEmpty() })
-            note("skips special days", allWindows.any { it.skipSpecialDays })
+            note("skips special days", allWindows.any { it.specialDays == dev.walcott.rules.SpecialDays.NEVER })
             note("midnight-crossing window", allWindows.any { it.start > it.end })
         }
 

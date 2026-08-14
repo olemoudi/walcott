@@ -180,7 +180,7 @@ class TimeWindowTest {
 
     @Test
     fun `skipping special days stands the window down, and only when asked`() {
-        val skipping = homework.copy(skipSpecialDays = true)
+        val skipping = homework.copy(specialDays = SpecialDays.NEVER)
         val tuesday = monday.plusDays(1).atTime(18, 0)
         assertTrue(skipping.appliesAt(tuesday, specialDay = false))
         assertFalse(skipping.appliesAt(tuesday, specialDay = true))
@@ -519,7 +519,7 @@ class RuleEngineTest {
         )
         assertEquals(
             Verdict.Allowed,
-            RuleEngine.evaluate(configWith(window.copy(skipSpecialDays = true)), "com.game.fortnite", tuesday),
+            RuleEngine.evaluate(configWith(window.copy(specialDays = SpecialDays.NEVER)), "com.game.fortnite", tuesday),
         )
     }
 
