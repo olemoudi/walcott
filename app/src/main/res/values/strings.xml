@@ -540,6 +540,16 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_46_0">
+        <item>Your child\'s requests reach you far sooner while the app is closed — around five minutes now, instead of up to half an hour.</item>
+        <item>Fixed: approving extra time for one app told your child it was for every app.</item>
+        <item>Your child\'s home is rebuilt around what is about to run out, with asking for time and asking for an app as the two main things they can do.</item>
+        <item>Fixed: apps limited by the family default never appeared on your child\'s home, and the time left there could disagree with what their phone was actually enforcing.</item>
+        <item>Your child is warned again one minute before an app closes, not only at five.</item>
+        <item>Asking twice about the same app no longer reaches you as two separate requests to answer.</item>
+        <item>Requests now carry the app\'s icon, and app names arrive as the name instead of the sentence the Play Store shares.</item>
+        <item>Tapping a request you have already answered now says so instead of opening an empty screen.</item>
+    </string-array>
     <string-array name="whats_new_0_45_0">
         <item>Fixed a rare case where a child\'s phone could end up following the previous rules instead of the ones you had just sent — most likely right after their phone reconnected, and it stayed that way until you next changed something.</item>
     </string-array>
