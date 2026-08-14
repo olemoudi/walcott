@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -109,6 +110,7 @@ fun ChildStatusScreen(
     deviceOwner: Boolean,
     onOpenParent: () -> Unit,
     onOpenPanic: () -> Unit,
+    onOpenRules: () -> Unit,
 ) {
     val state by viewModel.childState.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
@@ -274,9 +276,10 @@ fun ChildStatusScreen(
             if (identity.role == Role.CHILD) {
                 item { RequestTimeCard(onClick = { showRequestSheet = true }) }
                 item { AskAppCard(onClick = { showAskApp = true }) }
-                // Deliberately not a card: free-form messages are the rarest thing here, and
-                // giving them a third identical block taught the eye that all three are the
-                // same kind of thing.
+                // Both quiet rows, and in this order: looking up your own rules is a real
+                // question a child has, and a commoner one than writing a message. Neither is
+                // a card, because neither is what this screen is FOR.
+                item { QuietRow(Icons.Outlined.Rule, stringResource(R.string.child_rules_entry), onOpenRules) }
                 item { AskOtherRow(onClick = { showAskOther = true }) }
             }
             // Everything sent and still unanswered, so "did it go through?" has an answer.
@@ -791,7 +794,18 @@ private fun AskAppCard(onClick: () -> Unit) {
  * the eye that the three were equals; this one is reachable, legible, and quiet.
  */
 @Composable
-private fun AskOtherRow(onClick: () -> Unit) {
+private fun AskOtherRow(onClick: () -> Unit) =
+    QuietRow(Icons.Filled.WavingHand, stringResource(R.string.ask_other_row), onClick)
+
+/**
+ * A secondary destination: reachable, legible, and quiet.
+ *
+ * The two things below the action cards are neither urgent nor frequent, and giving either a
+ * card of its own would say they rank with asking for time — which is the mistake this screen
+ * was rebuilt to undo.
+ */
+@Composable
+private fun QuietRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     val spacing = Tokens.spacing
     Row(
         Modifier.fillMaxWidth()
@@ -801,17 +815,13 @@ private fun AskOtherRow(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Filled.WavingHand,
+            icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(spacing.sm))
-        Text(
-            stringResource(R.string.ask_other_row),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

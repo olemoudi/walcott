@@ -52,6 +52,12 @@ data class ChildUiState(
     val defaultBudget: Duration? = null,
     /** Minutes earned by staying off the phone today; they widen every app's allowance. */
     val earnedMinutes: Int = 0,
+    /**
+     * Today's family-wide screen-free windows. The child could not see these anywhere: they are
+     * the rule most likely to be the answer to "why did everything just stop", and the home only
+     * ever showed the app that ran out.
+     */
+    val screenFreeToday: List<dev.walcott.rules.TimeWindow> = emptyList(),
 )
 
 /** One app in the parent's list, with whatever was set for it (null = the family default). */
@@ -738,6 +744,7 @@ class WalcottViewModel(
             apps = appCards,
             defaultBudget = config.defaultAppBudget[dayType],
             earnedMinutes = earnedMinutes,
+            screenFreeToday = config.blockedWindows[dayType].orEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 

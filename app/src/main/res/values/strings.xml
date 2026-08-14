@@ -540,6 +540,10 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_51_0">
+        <item>Your child can look up their own rules again: bedtime, screen-free times and every app\'s limit, in one place, from their home screen.</item>
+        <item>Opening an app that is down to its last half hour shows them what is left in it, for a couple of seconds — early enough to plan around, brief enough to ignore.</item>
+    </string-array>
     <string-array name="whats_new_0_50_0">
         <item>Screen-free times now read your rules back to you: it points out a rule that can never block anything, one another rule already covers, and rules that say together what one rule could say — each with a single tap to fix it. It only ever suggests changes that leave your children\'s phones behaving exactly the same.</item>
     </string-array>
@@ -629,6 +633,15 @@
     <string name="request_no_longer_waiting">This request is no longer waiting for an answer.</string>
     <string name="ask_app_card_title">Ask for an app</string>
     <string name="ask_app_card_desc">So your parents can install it for you</string>
+    <!-- The child's read-only view of the rules they live under. -->
+    <string name="child_rules_entry">My rules and limits</string>
+    <string name="child_rules_title">My rules</string>
+    <string name="child_rules_general">For the whole phone</string>
+    <string name="child_rules_apps">App by app</string>
+    <string name="child_rules_none">Nothing is limited today.</string>
+    <string name="child_rules_no_apps">No app has a time limit today.</string>
+    <string name="child_rules_used">%1$s used</string>
+    <string name="child_rules_used_of">%1$s of %2$s used</string>
     <string name="ask_other_row">Ask for something else</string>
     <string name="ask_dialog_title_app">Ask for an app</string>
     <string name="ask_dialog_title_other">Ask for something else</string>
@@ -1183,6 +1196,8 @@
     <string name="event_bedtime">Bedtime started for %1$s</string>
     <string name="event_screen_free">A screen-free time started for %1$s</string>
     <!-- Heads-up on the child device before something closes (30 and 5 minutes ahead). -->
+    <!-- The fleeting banner shown as a child opens an app after a while away. -->
+    <string name="open_banner_title">%1$s · %2$s left</string>
     <string name="warn_channel_name">Time warnings</string>
     <plurals name="warn_budget_title">
         <item quantity="one">%1$d minute left in %2$s</item>

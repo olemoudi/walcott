@@ -9,6 +9,7 @@ import androidx.core.app.NotificationManagerCompat
 import dev.walcott.R
 import dev.walcott.rules.BlockReason
 import dev.walcott.rules.ClosingSoon
+import dev.walcott.ui.format.humanize
 
 /**
  * The heads-up on the child's own phone that something is about to close: their time in an app,
@@ -70,4 +71,48 @@ object TimeWarningNotifications {
     }
 
     private const val TIMEOUT_MS = 10 * 60 * 1000L
+
+    /**
+     * "Roblox · 12m left", shown as the child opens an app they have been away from.
+     *
+     * Deliberately the most fleeting thing this app does. It is not a warning — nothing is about
+     * to happen — it is the number that makes the next ten minutes a decision instead of a
+     * surprise, and it is only worth anything if it costs nothing to receive. So: the same
+     * silent heads-up as the closing warnings, and then gone, from the shade as well as the
+     * screen, in [OPENING_TIMEOUT_MS]. A child who looks away misses it, which is the correct
+     * trade for something they will be told again the next time it matters.
+     *
+     * One id per package, so opening a second app replaces nothing and clobbers nothing.
+     */
+    fun notifyOnOpen(context: Context, packageName: String, appLabel: String, remaining: java.time.Duration) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL,
+                context.getString(R.string.warn_channel_name),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                setSound(null, null)
+                enableVibration(false)
+            }
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(context.getString(R.string.open_banner_title, appLabel, remaining.humanize()))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setSilent(true)
+            .setTimeoutAfter(OPENING_TIMEOUT_MS)
+            .build()
+        runCatching {
+            NotificationManagerCompat.from(context).notify(("open$packageName").hashCode(), notification)
+        }
+    }
+
+    /**
+     * How long the opening banner survives. Two and a half seconds: long enough to read four
+     * words, short enough that a child who was looking at the app rather than the top of the
+     * screen never knows it happened. Anything that lingers turns into something to dismiss.
+     */
+    private const val OPENING_TIMEOUT_MS = 2_500L
 }

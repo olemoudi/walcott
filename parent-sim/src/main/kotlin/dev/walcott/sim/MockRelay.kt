@@ -31,7 +31,15 @@ import java.util.concurrent.CopyOnWriteArrayList
  * [localUrl] — is what belongs in a pairing payload. Debug builds already permit cleartext to
  * exactly that address (see app/src/debug/res/xml/network_security_config.xml).
  */
-class MockRelay {
+class MockRelay(
+    /**
+     * The relay's clock, in unix seconds. Injectable because ntfy's cursor has one-second
+     * resolution, so any test about `since=` is really a test about which second a message
+     * landed in — and asking the wall clock that means sleeping past a boundary and hoping.
+     * A test that needs two distinct seconds should be able to say so.
+     */
+    private val nowSec: () -> Long = { System.currentTimeMillis() / 1000 },
+) {
 
     /** One published message, as the relay would hand it back. */
     data class Message(val body: String, val timeSec: Long)
@@ -140,7 +148,7 @@ class MockRelay {
     /** Publishes [body] to [topic] as any client would. Used by the parent sim. */
     fun publish(topic: String, body: String) {
         val state = topics.computeIfAbsent(topic) { Topic() }
-        val message = Message(body, System.currentTimeMillis() / 1000)
+        val message = Message(body, nowSec())
         val toDrop = dropCounts[topic] ?: 0
         if (toDrop > 0) {
             dropCounts[topic] = toDrop - 1
@@ -219,7 +227,6 @@ class MockRelay {
         return raw.toLongOrNull() ?: 0
     }
 
-    private fun nowSec() = System.currentTimeMillis() / 1000
 
     /** The event shape NtfyTransport parses: kind, server-side time, and the body. */
     private fun eventJson(message: Message): String {

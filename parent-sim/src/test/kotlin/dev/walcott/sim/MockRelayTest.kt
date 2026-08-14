@@ -25,7 +25,14 @@ class MockRelayTest {
     private lateinit var relay: MockRelay
     private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
 
-    @BeforeEach fun setUp() { relay = MockRelay().start() }
+    /**
+     * The relay's clock, under the test's control. Every `since=` question is a question about
+     * which second a message landed in; driving that from here is the difference between an
+     * assertion about the relay and an assertion about how a sleep lined up with a boundary.
+     */
+    private var nowSec = 1_700_000_000L
+
+    @BeforeEach fun setUp() { relay = MockRelay(nowSec = { nowSec }).start() }
 
     @AfterEach fun tearDown() { relay.stop() }
 
@@ -95,15 +102,9 @@ line2"}"""
         // This is the mechanism the child's reconnect leans on: a socket that dropped comes back
         // with a cursor and expects the gap filled, not skipped.
         post("t3", "first")
-        Thread.sleep(1_100) // the cursor's resolution is one second
+        nowSec += 1 // the cursor's resolution is one second; move past it deliberately
         post("t3", "second")
-        // Read the cutoff off the relay's own record rather than the wall clock. What this test
-        // means is "a cursor sitting between these two messages", and asking the clock for that
-        // makes the assertion depend on where a second boundary happened to fall relative to two
-        // sleeps — which is a property of the machine, not of the relay.
-        val (first, second) = relay.published("t3")
-        assertTrue(second.timeSec > first.timeSec, "the two messages need distinct seconds")
-        val cutoff = second.timeSec
+        val cutoff = nowSec
         val collector = subscribe("t3", since = cutoff)
         waitFor(collector, 1)
         assertEquals(listOf("second"), collector.bodies())

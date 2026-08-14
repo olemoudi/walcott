@@ -180,6 +180,28 @@ class CloseWatchTest {
     }
 
     @Test
+    fun `opening an app only announces once it is inside the warning horizon`() {
+        // "9h 54m left" is not news. A banner that fires on every opening is one a child learns
+        // to look past — including on the openings where it mattered.
+        assertTrue(CloseWatch.worthAnnouncingOnOpen(Duration.ofMinutes(30)))
+        assertTrue(CloseWatch.worthAnnouncingOnOpen(Duration.ofMinutes(12)))
+        assertTrue(CloseWatch.worthAnnouncingOnOpen(Duration.ofSeconds(30)))
+        assertFalse(CloseWatch.worthAnnouncingOnOpen(Duration.ofMinutes(31)))
+        assertFalse(CloseWatch.worthAnnouncingOnOpen(Duration.ofHours(9)))
+        // No limit at all: nothing to report.
+        assertFalse(CloseWatch.worthAnnouncingOnOpen(null))
+    }
+
+    @Test
+    fun `everything Walcott says about time engages at the same threshold`() {
+        // One rule for the child to meet, not several: the horizon the timed warnings watch and
+        // the one the opening banner uses are the same number by construction.
+        assertEquals(CloseWatch.WARN_MINUTES.max().toLong(), CloseWatch.WARN_FROM.toMinutes())
+        assertEquals(30, CloseWatch.thresholdFor(CloseWatch.WARN_FROM))
+        assertTrue(CloseWatch.worthAnnouncingOnOpen(CloseWatch.WARN_FROM))
+    }
+
+    @Test
     fun `the horizon still reaches the largest threshold`() {
         // Adding a smaller rung must not shrink how far ahead nextClose looks: the 30-minute
         // warning is only reachable while the horizon covers it.

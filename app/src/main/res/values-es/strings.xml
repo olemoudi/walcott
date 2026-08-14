@@ -539,6 +539,10 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_51_0">
+        <item>Tu hijo puede volver a consultar sus reglas: hora de dormir, horarios sin pantalla y el límite de cada app, todo junto y desde su pantalla de inicio.</item>
+        <item>Al abrir una app a la que le queda menos de media hora, ve cuánto tiempo tiene durante un par de segundos — a tiempo para organizarse, y breve para poder ignorarlo.</item>
+    </string-array>
     <string-array name="whats_new_0_50_0">
         <item>Los horarios sin pantalla ahora te leen tus propias reglas: te señalan una regla que no puede bloquear nada, otra que ya está cubierta por una anterior, y reglas que juntas dicen lo que diría una sola — cada una con un toque para arreglarla. Solo propone cambios que dejan el móvil de tus hijos comportándose exactamente igual.</item>
     </string-array>
@@ -628,6 +632,15 @@
     <string name="request_no_longer_waiting">Esta petición ya no está esperando respuesta.</string>
     <string name="ask_app_card_title">Pedir una app</string>
     <string name="ask_app_card_desc">Para que tus padres te la instalen</string>
+    <!-- The child's read-only view of the rules they live under. -->
+    <string name="child_rules_entry">Mis reglas y límites</string>
+    <string name="child_rules_title">Mis reglas</string>
+    <string name="child_rules_general">Para todo el móvil</string>
+    <string name="child_rules_apps">App por app</string>
+    <string name="child_rules_none">Hoy no hay nada limitado.</string>
+    <string name="child_rules_no_apps">Hoy ninguna app tiene límite de tiempo.</string>
+    <string name="child_rules_used">%1$s usados</string>
+    <string name="child_rules_used_of">%1$s de %2$s usados</string>
     <string name="ask_other_row">Pedir otra cosa</string>
     <string name="ask_dialog_title_app">Pedir una app</string>
     <string name="ask_dialog_title_other">Pedir otra cosa</string>
@@ -1182,6 +1195,8 @@
     <string name="event_bedtime">Empezó la hora de dormir de %1$s</string>
     <string name="event_screen_free">Empezó un horario sin pantalla para %1$s</string>
     <!-- Heads-up on the child device before something closes (30 and 5 minutes ahead). -->
+    <!-- The fleeting banner shown as a child opens an app after a while away. -->
+    <string name="open_banner_title">%1$s · te quedan %2$s</string>
     <string name="warn_channel_name">Avisos de tiempo</string>
     <plurals name="warn_budget_title">
         <item quantity="one">Te queda %1$d minuto en %2$s</item>

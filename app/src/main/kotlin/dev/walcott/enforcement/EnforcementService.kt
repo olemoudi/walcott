@@ -335,6 +335,9 @@ class EnforcementService : LifecycleService() {
         DebugLog.i(TAG, "phone and contacts (never limited): ${repo.inventory.alwaysReachablePackages()}")
         var lastTick = SystemClock.elapsedRealtime()
         var lastForeground: String? = null
+        // Tracks how long the child has been away from each app, so opening one after a real
+        // gap can be told apart from switching between two (see AppOpeningBanner).
+        val openingBanner = AppOpeningBanner()
         var lastUsageAccess: Boolean? = null
         var lastClockTrusted: Boolean? = null
         // Usage access, re-read at most every USAGE_ACCESS_TTL_MILLIS (an AppOps binder call).
@@ -452,6 +455,14 @@ class EnforcementService : LifecycleService() {
             if (idleCfg != null && earningNow && !creditedUsage && deltaSeconds in 1..MAX_IDLE_STEP_SECONDS) {
                 idleAccumSeconds += deltaSeconds
             }
+            // Which app, if any, the child has just come back to after a real gap. Decided
+            // here because this is where the foreground transition is known; acted on further
+            // down, where the verdict and the fail-closed state are.
+            val justOpened: String? = when {
+                foreground == null -> null
+                foreground != lastForeground -> foreground.takeIf { openingBanner.opened(it, nowClock) }
+                else -> null.also { openingBanner.stillOpen(foreground, nowClock) }
+            }
             lastForeground = foreground
 
             // Fail CLOSED when the config needs the usage counter but usage access is revoked:
@@ -530,6 +541,25 @@ class EnforcementService : LifecycleService() {
                             )
                         },
                     )
+                }
+            }
+
+            // "12m left", as the app opens rather than as it runs out. The closing warnings
+            // below arrive when it is too late to plan around them; this is the moment the
+            // number is worth something. Only for an app that has a limit AND time left on it:
+            // a blocked one cannot be opened, and an unlimited one has nothing to say.
+            if (justOpened != null && !failingClosed) {
+                val left = (RuleEngine.evaluate(config, justOpened, now, usage, extra)
+                    as? dev.walcott.rules.Verdict.AllowedWithBudget)?.remaining
+                // Only once the app is inside the warning horizon. "9h 54m left" is not news,
+                // and a banner that fires on every opening regardless is one a child learns to
+                // look past — including on the openings where it mattered.
+                if (dev.walcott.rules.CloseWatch.worthAnnouncingOnOpen(left)) {
+                    runCatching {
+                        TimeWarningNotifications.notifyOnOpen(
+                            this, justOpened, repo.inventory.label(justOpened) ?: justOpened, left!!,
+                        )
+                    }.onFailure { DebugLog.w(TAG, "opening banner failed", it) }
                 }
             }
 

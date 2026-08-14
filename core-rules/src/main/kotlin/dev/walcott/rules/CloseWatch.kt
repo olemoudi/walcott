@@ -40,7 +40,17 @@ object CloseWatch {
      */
     val WARN_MINUTES = listOf(30, 5, 1)
 
-    private val HORIZON: Duration = Duration.ofMinutes(WARN_MINUTES.max().toLong())
+    /**
+     * How little has to be left before Walcott starts saying anything about it at all.
+     *
+     * The top rung, named: under half an hour the warnings engage — the timed ones as the app is
+     * used ([WARN_MINUTES]), and the one shown on opening it ([worthAnnouncingOnOpen]). Above
+     * this the app says nothing, because "nine hours left" is not news and a phone that reports
+     * numbers nobody needed teaches its owner to stop reading them.
+     */
+    val WARN_FROM: Duration = Duration.ofMinutes(WARN_MINUTES.max().toLong())
+
+    private val HORIZON: Duration = WARN_FROM
 
     /**
      * What will close [packageName] first — its own time running out, or a rule about the
@@ -85,6 +95,16 @@ object CloseWatch {
     /** The warning [left] has earned — the smallest threshold it has reached — or null. */
     fun thresholdFor(left: Duration): Int? =
         WARN_MINUTES.filter { left <= Duration.ofMinutes(it.toLong()) }.minOrNull()
+
+    /**
+     * Whether opening an app is worth telling the child what is left in it.
+     *
+     * The same threshold as every other warning, so a child meets one rule rather than several:
+     * under half an hour Walcott speaks, above it stays quiet. Null means the app has no limit —
+     * nothing to report — and a blocked app cannot be opened to be told anything.
+     */
+    fun worthAnnouncingOnOpen(remaining: Duration?): Boolean =
+        remaining != null && remaining <= WARN_FROM
 
     /**
      * How little has to be left of an app's time before it is worth the child's attention.
