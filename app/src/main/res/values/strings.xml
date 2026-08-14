@@ -540,6 +540,9 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_48_0">
+        <item>Your children\'s usage lists now show each app\'s icon, so you can recognise where the day went at a glance instead of reading package names.</item>
+    </string-array>
     <string-array name="whats_new_0_47_0">
         <item>Screen-free times are now one list: each rule picks its own days, and says for itself whether it applies on holidays — the separate weekday, weekend and special-day sections are gone. Your existing rules were converted for you.</item>
         <item>Fixed, on children protected without full device ownership: a daily app limit never actually ran down or blocked anything. Bedtime and screen-free times were unaffected.</item>
