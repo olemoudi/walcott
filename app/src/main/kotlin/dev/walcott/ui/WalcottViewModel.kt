@@ -697,7 +697,14 @@ class WalcottViewModel(
 
     val childState: StateFlow<ChildUiState> = combine(
         repository.familyConfigFlow,
-        repository.usageTodayFlow,
+        // ALL the counters, packages included. usageTodayFlow strips every key with a dot in it
+        // — which is every package name — so this screen was computing "time left" from a map
+        // that always said the child had used nothing. Two consequences, both reported from a
+        // real phone: an app running on the family default never appeared here at all (its card
+        // only exists because the child has USED it), and the ones that did appear showed a
+        // number that disagreed with what the enforcement loop was counting, because that loop
+        // reads usageTodayAllFlow and always has.
+        repository.usageTodayAllFlow,
         repository.effectiveExtraTodayFlow,
         sync.earnedTodayMinutes,
         combine(clock, clockTampered) { now, tampered -> Pair(now, tampered) },

@@ -998,10 +998,14 @@ private fun HeroCard(state: ChildUiState, runningLow: Int) {
                         color = MaterialTheme.colorScheme.onPrimary,
                     )
                     Spacer(Modifier.height(spacing.xs))
-                    // No limited apps at all is the honest "nothing is capped today", not a
-                    // setup that is missing something: limits are opt-in now.
+                    // "No limits today" has to mean it. A family default or a bedtime IS a limit,
+                    // even before the child has opened anything for a card to exist about — and
+                    // the standing rules are printed directly underneath, so getting this wrong
+                    // put "No time limits set today" one line above "1h a day for each app".
+                    val anyLimit = state.apps.isNotEmpty() ||
+                        state.defaultBudget != null || state.bedtimeTonight != null
                     val summary = when {
-                        state.apps.isEmpty() -> stringResource(R.string.hero_pending_setup)
+                        !anyLimit -> stringResource(R.string.hero_pending_setup)
                         runningLow > 0 ->
                             pluralStringResource(R.plurals.hero_running_low, runningLow, runningLow)
                         else -> stringResource(R.string.hero_nothing_urgent)

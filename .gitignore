@@ -6,3 +6,7 @@ local.properties
 .kotlin/
 captures/
 .DS_Store
+
+# Locally signed debug build for the parent-sim device suite (see parent-sim/README).
+walcott-debug.apk
+walcott-debug.apk.idsig
