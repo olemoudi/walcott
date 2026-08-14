@@ -800,12 +800,10 @@
     <string name="window_add">Añadir horario</string>
     <string name="window_delete">Quitar</string>
     <!-- Per-rule special-days state, which replaced the special-days section. -->
-    <string name="window_special_days_label">En festivos y vacaciones</string>
+    <string name="window_special_days_label">En días especiales</string>
     <string name="window_special_always">Siempre</string>
     <string name="window_special_never">Nunca</string>
     <string name="window_special_only">Solo</string>
-    <string name="window_special_days_calendar">Qué días cuentan como especiales…</string>
-    <string name="window_skip_special">Saltar días especiales</string>
     <string name="app_web_filter">Filtro web</string>
     <string name="app_web_filter_link">Abrir reglas de filtro web</string>
     <!-- Tiempo ganado por idle (modelo de ventanas de tokens) -->

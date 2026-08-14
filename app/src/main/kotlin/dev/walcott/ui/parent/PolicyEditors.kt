@@ -452,7 +452,7 @@ private fun SpecialDaysChoice(selected: SpecialDays, onSelect: (SpecialDays) -> 
 private fun SpecialDaysLink(onOpen: () -> Unit, enabled: Boolean) {
     val spacing = Tokens.spacing
     TextButton(onClick = onOpen, enabled = enabled, modifier = Modifier.padding(top = spacing.sm)) {
-        Text(stringResource(R.string.window_special_days_calendar))
+        Text(stringResource(R.string.special_days_note_open))
     }
 }
 
