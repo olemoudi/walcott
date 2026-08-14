@@ -419,15 +419,17 @@ fun ChildDetailScreen(
                             specialDaysOwnRules = settings.specialDaysOwnRules,
                             onOpenSpecialDays = onOpenSpecialDays,
                             onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                            onChange = { dayType, windows ->
-                                val base = entry.overrides.allAppsBlockedWindows.orEmpty()
+                            onChange = { windows ->
+                                // The whole schedule in one write, same list under every day
+                                // type (see WalcottViewModel.setAllAppsWindows). An empty list
+                                // clears the override's map rather than storing empty ones.
                                 viewModel.setChildOverrides(
                                     childId,
                                     entry.overrides.copy(
                                         allAppsBlockedWindows = if (windows.isEmpty()) {
-                                            base - dayType.name
+                                            emptyMap()
                                         } else {
-                                            base + (dayType.name to windows)
+                                            dev.walcott.rules.DayType.entries.associate { it.name to windows }
                                         },
                                     ),
                                 )

@@ -860,15 +860,13 @@ class WalcottViewModel(
         mutateAppPolicy(pkg, childId) { it.copy(unlimited = unlimited) }
 
     /** Set this app's own blocked windows (any number), applied to every day type. */
+    /** One app's own screen-free schedule, written whole (see [setAllAppsWindows]). */
     fun setAppWindows(
         pkg: String,
-        dayType: DayType,
         windows: List<dev.walcott.data.WindowDto>,
         childId: String? = null,
     ) = mutateAppPolicy(pkg, childId) { dto ->
-        val next = dto.blockedWindows.toMutableMap()
-        if (windows.isEmpty()) next.remove(dayType.name) else next[dayType.name] = windows
-        dto.copy(blockedWindows = next)
+        dto.copy(blockedWindows = windowsForEveryDayType(windows))
     }
 
     fun setBedtime(bedtime: Map<String, dev.walcott.data.WindowDto>) = viewModelScope.launch {
@@ -876,12 +874,28 @@ class WalcottViewModel(
     }
 
     /** Family-wide screen-free windows (they block ALL apps), for one day type. */
-    fun setAllAppsWindows(dayType: DayType, windows: List<dev.walcott.data.WindowDto>) = viewModelScope.launch {
-        repository.updateSettings {
-            val next = it.allAppsBlockedWindows.toMutableMap()
-            if (windows.isEmpty()) next.remove(dayType.name) else next[dayType.name] = windows
-            it.copy(allAppsBlockedWindows = next)
-        }
+    /**
+     * A schedule as the wire wants it: the same list under every day type.
+     *
+     * The map is keyed by day type because that is the shape children parse, but the rules
+     * themselves carry the days they apply on, so every key holds the same list and each rule
+     * filters itself. An empty schedule clears the map rather than storing three empty lists.
+     */
+    private fun windowsForEveryDayType(
+        windows: List<dev.walcott.data.WindowDto>,
+    ): Map<String, List<dev.walcott.data.WindowDto>> =
+        if (windows.isEmpty()) emptyMap() else DayType.entries.associate { it.name to windows }
+
+    /**
+     * The family's screen-free schedule, written whole.
+     *
+     * Every day type gets the same list because the rules carry their own days now; the map
+     * shape stays because that is what the wire is keyed by. ONE update, not one per day type:
+     * three separate writes for a single edit raced each other, and each intermediate state was
+     * a schedule that disagreed with itself about which rules existed.
+     */
+    fun setAllAppsWindows(windows: List<dev.walcott.data.WindowDto>) = viewModelScope.launch {
+        repository.updateSettings { it.copy(allAppsBlockedWindows = windowsForEveryDayType(windows)) }
     }
 
     fun grantExtra(categoryId: String, minutes: Long) =

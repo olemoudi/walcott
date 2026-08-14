@@ -70,11 +70,6 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
             // means it also covers a policy that arrives over the wire from a parent who hasn't
             // updated yet, and it is idempotent (see [PolicySettings.migratedFromCategories]).
             .map { it.migratedFromCategories() }
-            // Screen-free rules filed under weekday/weekend/special-day sections become one list
-            // where each rule names its own days. Converted on READ for the same reasons as the
-            // line above: it covers a policy arriving from a parent who hasn't updated, and it
-            // is idempotent (see [PolicySettings.migratedToDayPickedWindows]).
-            .map { it.migratedToDayPickedWindows() }
             .getOrElse {
                 corruptionSeen = true
                 dev.walcott.debug.DebugLog.e(TAG, "stored policy is unreadable; falling back to empty", it)

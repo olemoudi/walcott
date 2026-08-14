@@ -153,7 +153,7 @@ fun AppDetailScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                    onChange = { dayType, windows -> viewModel.setAppWindows(packageName, dayType, windows, childId) },
+                    onChange = { windows -> viewModel.setAppWindows(packageName, windows, childId) },
                 )
             }
 

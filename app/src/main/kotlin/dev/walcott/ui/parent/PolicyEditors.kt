@@ -284,7 +284,13 @@ internal fun BlockedWindowsCard(
     specialDaysOwnRules: Boolean = false,
     onOpenSpecialDays: (() -> Unit)? = null,
     onSetSpecialDaysOwnRules: ((Boolean) -> Unit)? = null,
-    onChange: (DayType, List<WindowDto>) -> Unit,
+    /**
+     * Receives the WHOLE schedule, once per edit. It used to be called per day type, which meant
+     * one edit became three separate writes racing each other through the store — and between
+     * them the stored schedule genuinely disagreed with itself about which rules existed, which
+     * is what made rules flicker in and out while a parent was changing one.
+     */
+    onChange: (List<WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
     WalcottCard(position = position) {
@@ -297,12 +303,7 @@ internal fun BlockedWindowsCard(
             WindowsForDay(
                 windows = windowsByDay[DayType.SCHOOL.name].orEmpty(),
                 editable = enabled,
-                onChange = { windows ->
-                    // Written to every day type: the wire is still keyed by it, so a child that
-                    // has not updated finds the rules where it looks for them, and each rule's
-                    // own days do the filtering the sections used to do.
-                    DayType.entries.forEach { onChange(it, windows) }
-                },
+                onChange = onChange,
             )
             if (onOpenSpecialDays != null) {
                 SpecialDaysLink(onOpen = onOpenSpecialDays, enabled = enabled)
