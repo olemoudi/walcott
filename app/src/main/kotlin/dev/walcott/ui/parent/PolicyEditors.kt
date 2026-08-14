@@ -39,6 +39,7 @@ import dev.walcott.data.WindowDto
 import dev.walcott.data.toTimeOfDayOrNull
 import androidx.compose.material3.TextButton
 import dev.walcott.rules.DayType
+import dev.walcott.rules.RuleReview
 import dev.walcott.rules.SpecialDays
 import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.RULE_DAY_TYPES
@@ -300,13 +301,109 @@ internal fun BlockedWindowsCard(
             // One list. Every rule already named its own days, so filing it into a weekday or
             // weekend section asked the same question a second time, in a coarser way — and the
             // special-days section asked a third. The rule now says all of it on the rule.
+            val windows = windowsByDay[DayType.SCHOOL.name].orEmpty()
             WindowsForDay(
-                windows = windowsByDay[DayType.SCHOOL.name].orEmpty(),
+                windows = windows,
                 editable = enabled,
                 onChange = onChange,
             )
+            if (enabled) ScheduleReview(windows, onChange)
             if (onOpenSpecialDays != null) {
                 SpecialDaysLink(onOpen = onOpenSpecialDays, enabled = enabled)
+            }
+        }
+    }
+}
+
+/**
+ * What [RuleReview] found in this schedule, each with the one tap that acts on it.
+ *
+ * Quiet by construction: a healthy schedule renders nothing at all, so this can only ever appear
+ * because there is something to say. Every suggestion is a rewrite of the parent's own rules, so
+ * each says what it will do in the parent's terms and none of them applies itself.
+ */
+@Composable
+private fun ScheduleReview(windows: List<WindowDto>, onChange: (List<WindowDto>) -> Unit) {
+    val spacing = Tokens.spacing
+    // The engine works in the rules' own language, not the wire's; anything that doesn't survive
+    // the conversion is a malformed window nobody can act on anyway.
+    val parsed = remember(windows) { windows.map { it.toTimeWindowOrNull() } }
+    val findings = remember(parsed) {
+        if (parsed.any { it == null }) emptyList() else RuleReview.review(parsed.filterNotNull())
+    }
+    if (findings.isEmpty()) return
+
+    Column(Modifier.padding(top = spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        HorizontalDivider()
+        Text(
+            stringResource(R.string.review_title),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = spacing.xs),
+        )
+        findings.forEach { finding ->
+            val text = when (finding) {
+                is RuleReview.Finding.NeverFires ->
+                    stringResource(R.string.review_never_fires, ruleName(windows, finding.index))
+                is RuleReview.Finding.Redundant -> stringResource(
+                    R.string.review_redundant,
+                    ruleName(windows, finding.index),
+                    ruleName(windows, finding.coveredBy),
+                )
+                is RuleReview.Finding.Mergeable ->
+                    pluralStringResource(R.plurals.review_mergeable, finding.indices.size, finding.indices.size)
+            }
+            val action = when (finding) {
+                is RuleReview.Finding.Mergeable -> R.string.review_merge
+                else -> R.string.review_delete
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(spacing.sm))
+                TextButton(onClick = { onChange(applied(windows, finding)) }) {
+                    Text(stringResource(action))
+                }
+            }
+        }
+    }
+}
+
+/** How a rule is referred to in a finding: its hours, which is how the row above shows it. */
+@Composable
+private fun ruleName(windows: List<WindowDto>, index: Int): String {
+    val window = windows.getOrNull(index) ?: return ""
+    val start = window.startMinute.toTimeOfDayOrNull() ?: return ""
+    val end = window.endMinute.toTimeOfDayOrNull() ?: return ""
+    return stringResource(R.string.window_range, start.hhmm(), end.hhmm())
+}
+
+/**
+ * The schedule with [finding] acted on: the offending rule gone, or the merged rules replaced by
+ * the one that says what they said. The merged rule takes the position of the first it replaces,
+ * so the list does not reshuffle under the parent who just tapped it.
+ */
+private fun applied(windows: List<WindowDto>, finding: RuleReview.Finding): List<WindowDto> = when (finding) {
+    is RuleReview.Finding.NeverFires -> windows.filterIndexed { i, _ -> i != finding.index }
+    is RuleReview.Finding.Redundant -> windows.filterIndexed { i, _ -> i != finding.index }
+    is RuleReview.Finding.Mergeable -> {
+        val keep = finding.indices.first()
+        val merged = WindowDto(
+            startMinute = finding.merged.start.hour * 60 + finding.merged.start.minute,
+            endMinute = finding.merged.end.hour * 60 + finding.merged.end.minute,
+            days = finding.merged.days.map { it.value }.sorted(),
+            skipSpecialDays = finding.merged.specialDays == SpecialDays.NEVER,
+            onlySpecialDays = finding.merged.specialDays == SpecialDays.ONLY,
+        )
+        windows.mapIndexedNotNull { i, w ->
+            when (i) {
+                keep -> merged
+                in finding.indices -> null
+                else -> w
             }
         }
     }

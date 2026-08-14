@@ -539,6 +539,9 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_50_0">
+        <item>Los horarios sin pantalla ahora te leen tus propias reglas: te señalan una regla que no puede bloquear nada, otra que ya está cubierta por una anterior, y reglas que juntas dicen lo que diría una sola — cada una con un toque para arreglarla. Solo propone cambios que dejan el móvil de tus hijos comportándose exactamente igual.</item>
+    </string-array>
     <string-array name="whats_new_0_49_0">
         <item>Corregido: editar una regla de horarios sin pantalla — sobre todo ponerla en "solo en días especiales" — hacía que aparecieran y desaparecieran reglas de la lista. Borrarlas ahora las elimina de verdad.</item>
     </string-array>
@@ -806,6 +809,16 @@
     <string name="window_add">Añadir horario</string>
     <string name="window_delete">Quitar</string>
     <!-- Per-rule special-days state, which replaced the special-days section. -->
+    <!-- RuleReview: what the schedule editor says back about the rules in it. -->
+    <string name="review_title">Simplificar</string>
+    <string name="review_never_fires">%1$s no bloquea nada — empieza a la misma hora que acaba.</string>
+    <string name="review_redundant">%1$s ya está cubierta por %2$s.</string>
+    <plurals name="review_mergeable">
+        <item quantity="one">%d regla se puede escribir como una.</item>
+        <item quantity="other">%d reglas se pueden escribir como una.</item>
+    </plurals>
+    <string name="review_merge">Fusionar</string>
+    <string name="review_delete">Borrar</string>
     <string name="window_special_days_label">En días especiales</string>
     <string name="window_special_always">Siempre</string>
     <string name="window_special_never">Nunca</string>

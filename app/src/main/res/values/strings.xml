@@ -540,6 +540,9 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_50_0">
+        <item>Screen-free times now read your rules back to you: it points out a rule that can never block anything, one another rule already covers, and rules that say together what one rule could say — each with a single tap to fix it. It only ever suggests changes that leave your children\'s phones behaving exactly the same.</item>
+    </string-array>
     <string-array name="whats_new_0_49_0">
         <item>Fixed: editing a screen-free rule — especially setting one to apply only on special days — made rules appear and disappear from the list. Deleting them now clears them for good.</item>
     </string-array>
@@ -807,6 +810,16 @@
     <string name="window_add">Add hours</string>
     <string name="window_delete">Remove</string>
     <!-- Per-rule special-days state, which replaced the special-days section. -->
+    <!-- RuleReview: what the schedule editor says back about the rules in it. -->
+    <string name="review_title">Tidy up</string>
+    <string name="review_never_fires">%1$s never blocks anything — it starts when it ends.</string>
+    <string name="review_redundant">%1$s is already covered by %2$s.</string>
+    <plurals name="review_mergeable">
+        <item quantity="one">%d rule can be written as one.</item>
+        <item quantity="other">%d rules can be written as one.</item>
+    </plurals>
+    <string name="review_merge">Merge</string>
+    <string name="review_delete">Delete</string>
     <string name="window_special_days_label">On special days</string>
     <string name="window_special_always">Always</string>
     <string name="window_special_never">Never</string>
