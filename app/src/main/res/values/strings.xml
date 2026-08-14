@@ -157,6 +157,8 @@
     <string name="pairing_success">Linked to your family ✓</string>
     <!-- Child-side request lifecycle -->
     <string name="child_waiting_title">Waiting for an answer</string>
+    <!-- Trailing label in the request picker: short, because the row is narrow. -->
+    <string name="request_asked_short">Already asked</string>
     <string name="request_waiting_button">Sent — waiting for an answer</string>
     <string name="notice_approved_time">Approved! +%1$d min of %2$s</string>
     <string name="notice_approved_app">You can install %1$s now</string>

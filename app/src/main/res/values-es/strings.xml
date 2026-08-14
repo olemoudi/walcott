@@ -156,6 +156,8 @@
     <string name="pairing_success">Vinculado a tu familia ✓</string>
     <!-- Ciclo de vida de peticiones (lado hijo) -->
     <string name="child_waiting_title">Esperando respuesta</string>
+    <!-- Trailing label in the request picker: short, because the row is narrow. -->
+    <string name="request_asked_short">Ya pedido</string>
     <string name="request_waiting_button">Enviada — esperando respuesta</string>
     <string name="notice_approved_time">¡Aprobado! +%1$d min de %2$s</string>
     <string name="notice_approved_app">Ya puedes instalar %1$s</string>

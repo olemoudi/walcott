@@ -345,6 +345,13 @@ fun ChildStatusScreen(
     if (showRequestSheet) {
         RequestTimeSheet(
             apps = myApps,
+            // The sheet is the only place left that shows every limited app, now that the home
+            // keeps to the ones running out — so it has to say how much is left of each.
+            limits = state.apps,
+            // The per-app cards have always refused to send a second request for something
+            // already waiting; this list never did, which is how a parent ended up looking at
+            // three cards for one question.
+            alreadyAsked = remember(myRequests) { myRequests.mapTo(mutableSetOf()) { it.categoryId } },
             inventory = viewModel.repository.inventory,
             onDismiss = { showRequestSheet = false },
             onPick = { target ->
@@ -611,17 +618,30 @@ private fun RequestTimeCard(onClick: () -> Unit) {
     }
 }
 
-/** Bottom sheet: pick "all apps" or a single app to request extra time for. */
+/**
+ * Bottom sheet: pick "all apps" or a single app to request extra time for.
+ *
+ * Also the full view of what this child has left. The home deliberately keeps to the apps that
+ * are running out, so this list is where "how much do I have in the others?" is answered — and
+ * a picker that named apps without saying anything about them made the child choose blind.
+ *
+ * A target already waiting on an answer is shown and disabled rather than hidden: it is the
+ * answer to "did I already ask for this?", and hiding it would read as the app having lost the
+ * request. Its absence here is what let a child send the same question three times.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RequestTimeSheet(
     apps: List<dev.walcott.data.InstalledApp>,
+    limits: List<AppStatusUi>,
+    alreadyAsked: Set<String>,
     inventory: dev.walcott.data.AppInventory,
     onDismiss: () -> Unit,
     onPick: (RequestTarget) -> Unit,
 ) {
     val spacing = Tokens.spacing
     val allApps = stringResource(R.string.request_all_apps)
+    val limitByPackage = remember(limits) { limits.associateBy { it.packageName } }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding()) {
             item {
@@ -635,6 +655,7 @@ private fun RequestTimeSheet(
                 RequestTargetRow(
                     label = allApps,
                     icon = { Icon(Icons.Filled.Apps, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp)) },
+                    asked = dev.walcott.rules.ExtraTime.ALL_APPS in alreadyAsked,
                     onClick = { onPick(RequestTarget(dev.walcott.rules.ExtraTime.ALL_APPS, allApps)) },
                 )
             }
@@ -642,6 +663,10 @@ private fun RequestTimeSheet(
                 RequestTargetRow(
                     label = app.label,
                     icon = { AppIcon(app.packageName, inventory, size = 40.dp) },
+                    // Absent from the limits map means no limit today: there is nothing to run
+                    // out of, so the row says nothing rather than inventing a zero.
+                    status = limitByPackage[app.packageName],
+                    asked = app.packageName in alreadyAsked,
                     onClick = { onPick(RequestTarget(app.packageName, app.label)) },
                 )
             }
@@ -650,16 +675,55 @@ private fun RequestTimeSheet(
     }
 }
 
+/**
+ * One target in the picker: what it is, what is left of it, and whether it can still be asked
+ * about. [asked] wins over [status] on the right-hand side — "you already asked" is the more
+ * useful answer to someone about to ask again.
+ */
 @Composable
-private fun RequestTargetRow(label: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
+private fun RequestTargetRow(
+    label: String,
+    icon: @Composable () -> Unit,
+    status: AppStatusUi? = null,
+    asked: Boolean = false,
+    onClick: () -> Unit,
+) {
     val spacing = Tokens.spacing
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = spacing.lg, vertical = spacing.sm),
+        Modifier.fillMaxWidth()
+            .clickable(enabled = !asked, onClick = onClick)
+            .padding(horizontal = spacing.lg, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon()
         Spacer(Modifier.width(spacing.md))
-        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (asked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(spacing.sm))
+        when {
+            asked -> Text(
+                stringResource(R.string.request_asked_short),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            status == null -> Unit
+            status.blocked -> Text(
+                stringResource(R.string.status_blocked),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            else -> Text(
+                (status.remaining ?: Duration.ZERO).humanize(),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
