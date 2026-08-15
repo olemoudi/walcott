@@ -30,3 +30,11 @@ data class Motion(
 
 val LocalSpacing = staticCompositionLocalOf { Spacing() }
 val LocalMotion = staticCompositionLocalOf { Motion() }
+
+/**
+ * Whether the app is rendering dark right now.
+ *
+ * The scheme cannot answer this: a section accent is not one of Material's roles, and asking
+ * `isSystemInDarkTheme()` at the point of use would ignore the family's own Light/Dark choice.
+ */
+val LocalDarkTheme = staticCompositionLocalOf { false }

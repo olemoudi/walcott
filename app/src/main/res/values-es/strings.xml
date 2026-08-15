@@ -135,7 +135,7 @@
     <string name="apps_filter_all">Todos</string>
     <string name="nav_apps_subtitle">Todas las apps de tus hijos y el límite diario de cada una</string>
     <string name="nav_limits_title">Límites y horarios</string>
-    <string name="nav_limits_subtitle">Hora de dormir, horarios sin pantalla y límites diarios</string>
+    <string name="nav_limits_subtitle">Hora de dormir, horarios sin pantalla y el límite por defecto</string>
     <!-- Asignación de apps -->
     <string name="apps_no_remote">Aún no hay apps reportadas. Aparecerán aquí cuando los dispositivos de los hijos se sincronicen.</string>
     <string name="search_app">Buscar app</string>
@@ -580,6 +580,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_54_0">
+        <item>Los ajustes están ahora organizados por capítulos. Cada uno lleva su color, y las filas lo conservan — así una fila sigue diciendo a qué capítulo pertenece mucho después de que su cabecera se haya ido de la pantalla.</item>
+        <item>Lo que despliegas contiene de verdad lo que abre: sangrado y unido a su cabecera por una línea lateral, para que dónde acaba una sección se vea en vez de deducirse.</item>
+        <item>El límite diario que reciben las apps a las que no les has puesto uno se llama "Límite por defecto"; antes se llamaba "Cada app", que se leía como si todas compartieran un bote. Cada app lo sigue teniendo en su propio contador.</item>
+    </string-array>
     <string-array name="whats_new_0_53_0">
         <item>La ficha de un hijo ahora empieza por lo que de verdad le está parando en ese momento — la hora de dormir, un horario sin pantalla, una app que se ha quedado sin tiempo — cada cosa con el único botón que la termina: la regla, o los minutos.</item>
         <item>Cada regla que pones a un hijo dice qué está sustituyendo: su hora de dormir junto a la de la familia, su límite junto al de la familia. "Personalizado" era verdad y no decía nunca qué había cambiado.</item>
@@ -1234,7 +1239,7 @@
     <string name="remove_family_title">¿Dejar de gestionar %1$s?</string>
     <string name="remove_family_text">Este móvil olvida la familia: sus reglas, sus hijos y su historial. NO libera a los hijos — sus móviles siguen aplicando las últimas reglas que recibieron y nadie podrá cambiarlas desde aquí. Guarda antes una copia de seguridad por si algún día la quieres de vuelta.</string>
     <string name="remove_family_action">Dejar de gestionar</string>
-    <string name="default_budget_title">Cada app</string>
+    <string name="default_budget_title">Límite por defecto</string>
     <string name="default_budget_hint">Opcional y apagado por defecto. Cada app tiene ese tiempo al día con su propio contador — una hora de una no le quita tiempo a otra. Las apps con límite propio lo ignoran.</string>
     <string name="app_limit_own">Límite propio: %1$s al día</string>
     <string name="app_limit_default">Por defecto de la familia: %1$s al día</string>

@@ -67,7 +67,7 @@ class ScheduleScenarioTest : DeviceScenario() {
         val (start, end) = windowAround(-60, 60)
         parent.pushPolicy(PolicyJson.build(version = 3, bedtime = start to end))
 
-        awaitDevice("the app suspended by bedtime") { device.isSuspended(app) }
+        awaitDevice("the app suspended by bedtime", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
         val reported = childEventuallyReports { snapshot ->
             snapshot.ruleEvents.any { it.kind == ChildEvent.KIND_BEDTIME }
         }
@@ -96,7 +96,7 @@ class ScheduleScenarioTest : DeviceScenario() {
         val (start, end) = windowAround(-30, 30)
         parent.pushPolicy(PolicyJson.build(version = 3, screenFree = listOf(start to end)))
 
-        awaitDevice("the app suspended by a screen-free window") { device.isSuspended(app) }
+        awaitDevice("the app suspended by a screen-free window", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
         childEventuallyReports { snapshot ->
             snapshot.ruleEvents.any { it.kind == ChildEvent.KIND_SCREEN_FREE }
         }
@@ -107,13 +107,13 @@ class ScheduleScenarioTest : DeviceScenario() {
         settleAllowed()
         val (start, end) = windowAround(-30, 30)
         parent.pushPolicy(PolicyJson.build(version = 3, screenFree = listOf(start to end)))
-        awaitDevice("the app suspended by a screen-free window") { device.isSuspended(app) }
+        awaitDevice("the app suspended by a screen-free window", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
 
         // The parent changes their mind. Nothing else about the day has changed, so this is the
         // schedule alone deciding the phone is usable again.
         val (laterStart, laterEnd) = windowAround(120, 180)
         parent.pushPolicy(PolicyJson.build(version = 4, screenFree = listOf(laterStart to laterEnd)))
-        awaitDevice("the app released when the window moved") { !device.isSuspended(app) }
+        awaitDevice("the app released when the window moved", timeoutMs = APPLY_TIMEOUT_MS) { !device.isSuspended(app) }
     }
 
     @Test
@@ -125,7 +125,7 @@ class ScheduleScenarioTest : DeviceScenario() {
         settleAllowed()
         val (start, end) = windowAround(-60, 60)
         parent.pushPolicy(PolicyJson.build(version = 3, bedtime = start to end))
-        awaitDevice("the app suspended by bedtime") { device.isSuspended(app) }
+        awaitDevice("the app suspended by bedtime", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
 
         // A DELTA, not a total: extra time lives in Room and survives re-pairing, so this
         // fixture is still carrying whatever earlier runs granted it. The question here is
@@ -152,5 +152,13 @@ class ScheduleScenarioTest : DeviceScenario() {
     private companion object {
         /** Comfortably past the enforcement loop's idle tick (15s), so it has run at least once. */
         const val LOOP_SETTLE_MS = 20_000L
+
+        /**
+         * How long a pushed schedule gets to travel and be acted on. Generous on purpose: it is
+         * seconds when the machine is quiet, and the only thing a tight bound buys is a suite
+         * that fails when something else is compiling — which is a fact about the laptop, not
+         * about the product.
+         */
+        const val APPLY_TIMEOUT_MS = 60_000L
     }
 }

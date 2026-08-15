@@ -14,6 +14,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.InsertChart
+import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -31,6 +34,7 @@ import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 import java.time.Duration
 
@@ -50,7 +54,13 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            item { SectionHeader(stringResource(R.string.pending_requests)) }
+            item {
+                SectionHeader(
+                    stringResource(R.string.pending_requests),
+                    icon = Icons.Outlined.MoreTime,
+                    accent = SectionAccent.RULES,
+                )
+            }
             if (requests.isEmpty() && asks.isEmpty()) {
                 item { Text(stringResource(R.string.no_requests), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
@@ -69,7 +79,13 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
 
-            item { SectionHeader(stringResource(R.string.usage_today)) }
+            item {
+                SectionHeader(
+                    stringResource(R.string.usage_today),
+                    icon = Icons.Outlined.InsertChart,
+                    accent = SectionAccent.ACTIVITY,
+                )
+            }
             if (children.isEmpty()) {
                 item { Text(stringResource(R.string.no_children), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {

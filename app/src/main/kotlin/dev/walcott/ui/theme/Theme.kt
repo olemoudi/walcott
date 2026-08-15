@@ -43,6 +43,7 @@ fun WalcottTheme(
     CompositionLocalProvider(
         LocalSpacing provides Spacing(),
         LocalMotion provides Motion(),
+        LocalDarkTheme provides darkTheme,
     ) {
         MaterialTheme(
             colorScheme = colors,
@@ -58,6 +59,28 @@ object Tokens {
         @Composable get() = LocalSpacing.current
     val motion: Motion
         @Composable get() = LocalMotion.current
+
+    /** The colour a family of settings is recognised by, resolved for the current theme. */
+    @Composable
+    fun accent(accent: SectionAccent): Color = accent.color(LocalDarkTheme.current)
+
+    /**
+     * The same colour as a wash, for the keycap behind a section's icon and the rail down the
+     * side of what a fold opened.
+     *
+     * Stronger on the dark scheme, and not as a matter of taste: the same alpha over a near-black
+     * surface lands a fraction of the contrast it lands over white, so a tint chosen in the light
+     * disappears in the dark — which is where this family reads their phone.
+     */
+    @Composable
+    fun accentTint(accent: SectionAccent, strong: Boolean = false): Color {
+        val dark = LocalDarkTheme.current
+        val alpha = when {
+            strong -> if (dark) 0.5f else 0.35f
+            else -> if (dark) 0.22f else 0.14f
+        }
+        return accent.color(dark).copy(alpha = alpha)
+    }
 
     /**
      * The signature hero gradient: primary sliding into a deepened indigo. Reserved for the

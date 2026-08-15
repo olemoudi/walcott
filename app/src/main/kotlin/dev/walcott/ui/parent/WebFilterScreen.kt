@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +42,7 @@ import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.components.cardPosition
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 
 /** Web filter editor; with a [childId] it edits that child's blocked-domain override. */
@@ -90,7 +93,13 @@ fun WebFilterScreen(
                 )
             }
 
-            item { SectionHeader(stringResource(R.string.webfilter_blocked_domains)) }
+            item {
+                SectionHeader(
+                    stringResource(R.string.webfilter_blocked_domains),
+                    icon = Icons.Outlined.Language,
+                    accent = SectionAccent.RULES,
+                )
+            }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     OutlinedTextField(
@@ -136,7 +145,11 @@ fun WebFilterScreen(
                 }
             }
             if (childId == null) item {
-                SectionHeader(stringResource(R.string.webfilter_advanced))
+                SectionHeader(
+                    stringResource(R.string.webfilter_advanced),
+                    icon = Icons.Outlined.Tune,
+                    accent = SectionAccent.DEVICE,
+                )
             }
             if (childId == null) {
                 item {

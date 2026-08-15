@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.components.cardPosition
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 
 @Composable
@@ -48,28 +50,36 @@ fun BudgetsScreen(
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            item { SectionHeader(stringResource(R.string.budgets_section_schedules)) }
             item {
-                CardGroup {
-                    BedtimeCard(
-                        bedtime = settings.bedtime,
-                        position = CardPosition.First,
-                        specialDaysOwnRules = settings.specialDaysOwnRules,
-                        onOpenSpecialDays = onOpenSpecialDays,
-                        onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                        onChange = viewModel::setBedtime,
-                    )
-                    BlockedWindowsCard(
-                        title = stringResource(R.string.all_apps_windows_title),
-                        hint = stringResource(R.string.all_apps_windows_hint),
-                        windowsByDay = settings.allAppsBlockedWindows,
-                        position = CardPosition.Last,
-                        specialDaysOwnRules = settings.specialDaysOwnRules,
-                        onOpenSpecialDays = onOpenSpecialDays,
-                        onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                        onChange = viewModel::setAllAppsWindows,
-                    )
-                }
+                SectionHeader(
+                    stringResource(R.string.budgets_section_schedules),
+                    icon = Icons.Outlined.Schedule,
+                    accent = SectionAccent.RULES,
+                )
+            }
+            // Two tall cards, deliberately NOT connected. The card language joins rows that
+            // belong to one thing (2dp apart, corners flattened towards each other); at the
+            // height of a whole editor that hairline gap disappears and two separate rules —
+            // when the phone sleeps, and when it is put down — read as one wall of controls.
+            item {
+                BedtimeCard(
+                    bedtime = settings.bedtime,
+                    specialDaysOwnRules = settings.specialDaysOwnRules,
+                    onOpenSpecialDays = onOpenSpecialDays,
+                    onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                    onChange = viewModel::setBedtime,
+                )
+            }
+            item {
+                BlockedWindowsCard(
+                    title = stringResource(R.string.all_apps_windows_title),
+                    hint = stringResource(R.string.all_apps_windows_hint),
+                    windowsByDay = settings.allAppsBlockedWindows,
+                    specialDaysOwnRules = settings.specialDaysOwnRules,
+                    onOpenSpecialDays = onOpenSpecialDays,
+                    onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                    onChange = viewModel::setAllAppsWindows,
+                )
             }
             // The optional default: one number, applied to each app on its own counter. Off
             // unless the family asks for it, which is what keeps a newly installed app free of
@@ -77,6 +87,8 @@ fun BudgetsScreen(
             item {
                 SectionHeader(
                     stringResource(R.string.daily_budget_header),
+                    icon = Icons.Outlined.Apps,
+                    accent = SectionAccent.RULES,
                     supporting = stringResource(R.string.default_budget_hint),
                 )
             }

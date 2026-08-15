@@ -133,9 +133,9 @@
     <string name="protection_inactive">No Device Owner: blocking isn\'t guaranteed</string>
     <string name="nav_apps_title">Apps and limits</string>
     <string name="apps_filter_all">All</string>
-    <string name="nav_apps_subtitle">Every app your children have, and the daily limit each one has</string>
+    <string name="nav_apps_subtitle">All the apps your children have, with the limit set for each</string>
     <string name="nav_limits_title">Limits and schedules</string>
-    <string name="nav_limits_subtitle">Bedtime, screen-free times and daily limits</string>
+    <string name="nav_limits_subtitle">Bedtime, screen-free times and the default limit</string>
     <!-- App assignment -->
     <string name="apps_no_remote">No apps reported yet. They\'ll appear here once your children\'s devices sync.</string>
     <string name="search_app">Search app</string>
@@ -442,9 +442,9 @@
     <string name="preset_full_desc">Every important setting, explained and configured one step at a time.</string>
     <string name="wizard_progress">Step %1$d of %2$d</string>
     <string name="wizard_finish">Finish</string>
-    <string name="step_bedtime_teach">From bedtime until morning every app is blocked. Calls still work, and it applies every night.</string>
+    <string name="step_bedtime_teach">From bedtime until morning all apps are blocked. Calls still work, and it applies every night.</string>
     <string name="step_screen_time_title">Daily screen time</string>
-    <string name="step_screen_time_teach">A daily limit every app gets unless you give it its own — each on its own clock, so an hour of one doesn\'t eat another\'s. The phone itself always works. Leave it off if you would rather limit apps one by one.</string>
+    <string name="step_screen_time_teach">A daily limit each app gets unless you give it its own — each on its own clock, so an hour of one doesn\'t eat another\'s. The phone itself always works. Leave it off if you would rather limit apps one by one.</string>
     <string name="step_protection_teach">We also switch on the recommended anti-tamper protections: clock changes, VPNs, force-closing Walcott and sideloading.</string>
     <string name="step_protection_installs">Ask permission for new apps</string>
     <string name="step_protection_installs_desc">Installing from Play needs your approval; you can also send apps from your phone.</string>
@@ -581,6 +581,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_54_0">
+        <item>Settings are laid out as chapters now. Each one is headed by its own colour, and the rows keep it — so a row still says which chapter it belongs to long after the heading has scrolled off the top.</item>
+        <item>Anything you open now holds what it opened: indented, and joined to its heading by a line down the side, so where a section ends is something you can see rather than work out.</item>
+        <item>The daily limit that applies to apps you have not set one for is called "Default limit" — it used to be called "Every app", which read as all of them sharing one pot. Each app still gets it on its own clock.</item>
+    </string-array>
     <string-array name="whats_new_0_53_0">
         <item>A child\'s page now opens with what is actually stopping them at that moment — bedtime, a screen-free window, an app that has run out — each with the one button that ends it: the rule, or the minutes.</item>
         <item>Every rule you set for one child says what it is overriding: their bedtime next to the family\'s, their limit next to the family\'s. "Customized" was true and never said what had changed.</item>
@@ -871,7 +876,7 @@
     <string name="app_own_window">Block this app during set hours</string>
     <string name="app_windows_hint">The app is blocked during these hours, on the days you pick. Add as many as you need.</string>
     <string name="all_apps_windows_title">Screen-free times</string>
-    <string name="all_apps_windows_hint">Every app is blocked during these hours, on the days you pick — meals, homework, family time.</string>
+    <string name="all_apps_windows_hint">All apps are blocked during these hours, on the days you pick — meals, homework, family time.</string>
     <string name="window_add">Add hours</string>
     <string name="window_delete">Remove</string>
     <!-- Per-rule special-days state, which replaced the special-days section. -->
@@ -1063,7 +1068,7 @@
     <!-- Emergency release: the parent-PIN one (device settings, child device) -->
     <string name="action_close">Close</string>
     <string name="release_device_title">Remove Walcott from this device</string>
-    <string name="release_device_subtitle">Unblocks every app, gives back all device settings and erases the rules. For when the parent phone is gone for good.</string>
+    <string name="release_device_subtitle">Unblocks all apps, gives back all device settings and erases the rules. For when the parent phone is gone for good.</string>
     <string name="release_device_confirm">This device stops being managed: apps are unblocked, settings are given back, and the rules and history are erased. It can\'t be undone from here — you\'d have to enroll the device again.</string>
     <string name="release_device_confirm_button">Remove Walcott</string>
     <string name="release_done_title">Device released</string>
@@ -1235,7 +1240,7 @@
     <string name="remove_family_title">Stop managing %1$s?</string>
     <string name="remove_family_text">This phone forgets the family: its rules, its children and its history. It does NOT free the children — their phones keep enforcing the rules they last received, and nobody will be able to change them from here. Save a backup first if you might want the family back.</string>
     <string name="remove_family_action">Stop managing</string>
-    <string name="default_budget_title">Every app</string>
+    <string name="default_budget_title">Default limit</string>
     <string name="default_budget_hint">Optional, and off by default. Each app gets this much a day on its own clock — an hour of one does not eat another’s. Apps you give their own limit ignore it.</string>
     <string name="app_limit_own">Own limit: %1$s a day</string>
     <string name="app_limit_default">Family default: %1$s a day</string>

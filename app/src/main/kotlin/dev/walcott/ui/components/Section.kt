@@ -6,6 +6,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.ImageVector
+import dev.walcott.ui.theme.SectionAccent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -92,22 +100,74 @@ fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
 }
 
 /**
- * The one way a screen introduces a section: an eyebrow label in the accent colour, slightly
- * inset to align with card content, with air above so the between-section gap always beats
- * the within-section gap.
+ * The one way a screen introduces a section.
+ *
+ * Given an [icon] and an [accent] it draws a chapter heading: a tinted keycap carrying the
+ * section's icon, sitting in the same column as the icons of the rows below it, so the section
+ * reads as a labelled block rather than a gap in a list. The rows take the same accent
+ * ([NavCard]), which is the point — on a screen with forty settings the colour of a row's icon
+ * still says which chapter it belongs to long after its heading has scrolled away.
+ *
+ * Without them it stays the quiet eyebrow it has always been, so screens that are one list
+ * rather than several chapters are untouched.
  */
 @Composable
-fun SectionHeader(title: String, modifier: Modifier = Modifier, supporting: String? = null) {
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    supporting: String? = null,
+    icon: ImageVector? = null,
+    accent: SectionAccent? = null,
+) {
     val spacing = Tokens.spacing
-    Column(modifier.fillMaxWidth().padding(top = spacing.lg, start = spacing.xs, end = spacing.xs)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    val tint = accent?.let { Tokens.accent(it) }
+    if (icon == null || tint == null) {
+        Column(modifier.fillMaxWidth().padding(top = spacing.lg, start = spacing.xs, end = spacing.xs)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            if (supporting != null) {
+                Text(
+                    supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        return
+    }
+    Column(
+        modifier.fillMaxWidth()
+            // Air above, and the keycap aligned with the row icons underneath: the same
+            // start inset the cards give their own icons (see NavCard), so the section and
+            // its rows share one vertical line.
+            .padding(top = spacing.xl, start = spacing.lg, end = spacing.xs),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = RoundedCornerShape(KeycapRadius), color = Tokens.accentTint(accent)) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.padding(KeycapPadding).size(KeycapIcon),
+                )
+            }
+            Spacer(Modifier.width(spacing.md))
+            Text(title, style = MaterialTheme.typography.titleSmall)
+        }
         if (supporting != null) {
             Text(
                 supporting,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
+                // Hung under the title rather than under the keycap: the supporting line is
+                // about the section, not about its icon.
+                modifier = Modifier.padding(top = spacing.xs, start = KeycapBox + spacing.md),
             )
         }
     }
 }
+
+private val KeycapRadius = 9.dp
+private val KeycapPadding = 5.dp
+private val KeycapIcon = 18.dp
+private val KeycapBox = KeycapIcon + KeycapPadding * 2

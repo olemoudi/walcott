@@ -15,8 +15,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.InstallMobile
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +53,7 @@ import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -87,10 +93,18 @@ fun AppSettingsScreen(
                 .padding(bottom = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            SectionHeader(stringResource(R.string.app_settings_section_appearance))
+            SectionHeader(
+                stringResource(R.string.app_settings_section_appearance),
+                icon = Icons.Outlined.Palette,
+                accent = SectionAccent.DEVICE,
+            )
             ThemeCard()
             if (!childDevice) {
-                SectionHeader(stringResource(R.string.app_settings_section_security))
+                SectionHeader(
+                    stringResource(R.string.app_settings_section_security),
+                    icon = Icons.Outlined.Lock,
+                    accent = SectionAccent.DEVICE,
+                )
                 AppLockCard(viewModel)
             }
             // The family's disaster recovery lives on the parent, whose keys are the family.
@@ -102,10 +116,18 @@ fun AppSettingsScreen(
                 FamilyBackupCard(viewModel)
                 // Where the family's phones meet. Only worth a parent's attention when it stops
                 // working — which, until now, was invisible.
-                SectionHeader(stringResource(R.string.app_settings_section_connection))
+                SectionHeader(
+                    stringResource(R.string.app_settings_section_connection),
+                    icon = Icons.Outlined.CloudSync,
+                    accent = SectionAccent.DEVICE,
+                )
                 RelayServerCard(viewModel)
             }
-            SectionHeader(stringResource(R.string.app_settings_section_updates))
+            SectionHeader(
+                stringResource(R.string.app_settings_section_updates),
+                icon = Icons.Outlined.SystemUpdate,
+                accent = SectionAccent.DEVICE,
+            )
             AppUpdateCard(deviceOwner)
             // Wi-Fi-only updates: a family policy, so it's only editable on the parent.
             if (!childDevice) {
@@ -115,7 +137,11 @@ fun AppSettingsScreen(
                     onToggle = { viewModel.setUpdateWifiOnly(it) },
                 )
             }
-            SectionHeader(stringResource(R.string.app_settings_section_device))
+            SectionHeader(
+                stringResource(R.string.app_settings_section_device),
+                icon = Icons.Outlined.PhoneAndroid,
+                accent = SectionAccent.DEVICE,
+            )
             // The permanent record behind the home-screen nudges — including any that were
             // hidden, which is what makes offering "Not now" safe at all.
             val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()

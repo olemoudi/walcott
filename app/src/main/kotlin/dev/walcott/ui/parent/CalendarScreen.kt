@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.BeachAccess
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottDatePickerDialog
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.components.cardPosition
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -77,7 +80,13 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
 
-            item { SectionHeader(stringResource(R.string.calendar_holidays)) }
+            item {
+                SectionHeader(
+                    stringResource(R.string.calendar_holidays),
+                    icon = Icons.Outlined.CalendarMonth,
+                    accent = SectionAccent.FAMILY,
+                )
+            }
             item {
                 val holidays = settings.allHolidays().sorted()
                 CardGroup {
@@ -99,7 +108,13 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 }
             }
 
-            item { SectionHeader(stringResource(R.string.calendar_vacations)) }
+            item {
+                SectionHeader(
+                    stringResource(R.string.calendar_vacations),
+                    icon = Icons.Outlined.BeachAccess,
+                    accent = SectionAccent.FAMILY,
+                )
+            }
             item {
                 val vacations = settings.allVacations().sortedBy { it.startEpochDay }
                 CardGroup {

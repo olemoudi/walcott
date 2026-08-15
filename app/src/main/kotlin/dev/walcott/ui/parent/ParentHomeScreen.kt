@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Rule
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InsertChart
@@ -25,9 +27,8 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +58,7 @@ import dev.walcott.ui.components.NavCard
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 
 /**
@@ -113,19 +115,25 @@ fun ParentHomeScreen(
                     stringResource(R.string.guided_setup_card_title),
                     stringResource(R.string.guided_setup_card_desc),
                     onOpenGuidedSetup,
+                    accent = SectionAccent.RULES,
                 )
             }
-            SectionHeader(stringResource(R.string.home_section_rules))
+            SectionHeader(
+                stringResource(R.string.home_section_rules),
+                icon = Icons.AutoMirrored.Outlined.Rule,
+                accent = SectionAccent.RULES,
+            )
             CardGroup {
-                NavCard(Icons.Outlined.Apps, stringResource(R.string.nav_apps_title), stringResource(R.string.nav_apps_subtitle), onOpenApps, position = CardPosition.First)
-                NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets, position = CardPosition.Middle)
-                NavCard(Icons.Outlined.Language, stringResource(R.string.nav_webfilter_title), stringResource(R.string.nav_webfilter_subtitle), onOpenWebFilter, position = CardPosition.Middle)
+                NavCard(Icons.Outlined.Apps, stringResource(R.string.nav_apps_title), stringResource(R.string.nav_apps_subtitle), onOpenApps, position = CardPosition.First, accent = SectionAccent.RULES)
+                NavCard(Icons.Outlined.Schedule, stringResource(R.string.nav_limits_title), stringResource(R.string.nav_limits_subtitle), onOpenBudgets, position = CardPosition.Middle, accent = SectionAccent.RULES)
+                NavCard(Icons.Outlined.Language, stringResource(R.string.nav_webfilter_title), stringResource(R.string.nav_webfilter_subtitle), onOpenWebFilter, position = CardPosition.Middle, accent = SectionAccent.RULES)
                 NavCard(
                     Icons.Outlined.Security,
                     stringResource(R.string.nav_protection_title),
                     stringResource(R.string.nav_protection_subtitle),
                     onOpenProtection,
                     position = if (childDevice) CardPosition.Middle else CardPosition.Last,
+                    accent = SectionAccent.RULES,
                 )
                 // Only on the child: it watches what THIS device resolves, and there is nothing
                 // to watch on the parent's own phone.
@@ -136,25 +144,35 @@ fun ParentHomeScreen(
                         stringResource(R.string.domain_monitor_nav_subtitle),
                         onOpenDomainMonitor,
                         position = CardPosition.Last,
+                        accent = SectionAccent.RULES,
                     )
                 }
             }
-            SectionHeader(stringResource(R.string.home_section_family))
+            SectionHeader(
+                stringResource(R.string.home_section_family),
+                icon = Icons.Outlined.Groups,
+                accent = SectionAccent.FAMILY,
+            )
             CardGroup {
-                NavCard(Icons.Outlined.LocationOn, stringResource(R.string.nav_location_title), stringResource(R.string.nav_location_subtitle), onOpenLocation, position = CardPosition.First)
-                NavCard(Icons.Outlined.EmojiEvents, stringResource(R.string.nav_earn_title), stringResource(R.string.nav_earn_subtitle), onOpenEarn, position = CardPosition.Middle)
+                NavCard(Icons.Outlined.LocationOn, stringResource(R.string.nav_location_title), stringResource(R.string.nav_location_subtitle), onOpenLocation, position = CardPosition.First, accent = SectionAccent.FAMILY)
+                NavCard(Icons.Outlined.EmojiEvents, stringResource(R.string.nav_earn_title), stringResource(R.string.nav_earn_subtitle), onOpenEarn, position = CardPosition.Middle, accent = SectionAccent.FAMILY)
                 NavCard(
                     Icons.Outlined.CalendarMonth,
                     stringResource(R.string.nav_calendar_title),
                     stringResource(R.string.nav_calendar_subtitle),
                     onOpenCalendar,
                     position = if (childDevice) CardPosition.Last else CardPosition.Middle,
+                    accent = SectionAccent.FAMILY,
                 )
                 if (!childDevice) {
-                    NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren, position = CardPosition.Last)
+                    NavCard(Icons.Outlined.Groups, stringResource(R.string.nav_children_title), stringResource(R.string.nav_children_subtitle), onOpenChildren, position = CardPosition.Last, accent = SectionAccent.FAMILY)
                 }
             }
-            SectionHeader(stringResource(R.string.home_section_insights))
+            SectionHeader(
+                stringResource(R.string.home_section_insights),
+                icon = Icons.Outlined.InsertChart,
+                accent = SectionAccent.ACTIVITY,
+            )
             CardGroup {
                 NavCard(
                     Icons.Outlined.InsertChart,
@@ -162,6 +180,7 @@ fun ParentHomeScreen(
                     stringResource(R.string.nav_report_subtitle),
                     onOpenReport,
                     position = if (childDevice) CardPosition.First else CardPosition.Single,
+                    accent = SectionAccent.ACTIVITY,
                 )
                 // On the parent the gear on the home screen opens App settings; only the
                 // child's PIN-gated device-settings hub keeps an inline entry.
@@ -172,6 +191,7 @@ fun ParentHomeScreen(
                         stringResource(R.string.app_settings_subtitle),
                         onClick = onOpenAppSettings,
                         position = CardPosition.Last,
+                        accent = SectionAccent.ACTIVITY,
                     )
                 }
             }

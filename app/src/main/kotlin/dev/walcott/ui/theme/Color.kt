@@ -7,6 +7,41 @@ import androidx.compose.ui.graphics.Color
 private val Violet = Color(0xFF5B49E0)
 private val VioletLight = Color(0xFF9E90FF)
 
+/**
+ * The colour each family of settings is recognised by.
+ *
+ * Parent mode is a long stack of settings, and every one of them used to be the same violet on
+ * the same white card: nothing on screen said which chapter a row belonged to once its heading
+ * had scrolled away. Four hues, assigned by MEANING and reused on every screen, so the colour is
+ * something to learn rather than decoration — the rules are violet wherever they appear.
+ *
+ * Four, and not one per section: past four, a palette stops helping recognition and starts
+ * being a circus. And deliberately clear of the two colours that already mean something in this
+ * app — the error red and the green that means "fine, approved" — so a section can never be
+ * mistaken for a state.
+ */
+enum class SectionAccent {
+    /** What a child may do: limits, schedules, the web filter, the locks. */
+    RULES,
+
+    /** People and places: the children themselves, enrollment, location. */
+    FAMILY,
+
+    /** What happened: screen time, reports, the activity wall. */
+    ACTIVITY,
+
+    /** The phone rather than the family: updates, logs, diagnostics. */
+    DEVICE,
+    ;
+
+    internal fun color(dark: Boolean): Color = when (this) {
+        RULES -> if (dark) VioletLight else Violet
+        FAMILY -> if (dark) Color(0xFF5CC8DF) else Color(0xFF0F7B94)
+        ACTIVITY -> if (dark) Color(0xFFF0A0CE) else Color(0xFFA0417E)
+        DEVICE -> if (dark) Color(0xFF9BA5BC) else Color(0xFF5A6275)
+    }
+}
+
 // The background sits a clear step below the white cards, and outlineVariant draws the
 // hairline card borders — together they are what makes surfaces read as raised, since
 // cards carry no shadow or tonal elevation.
@@ -50,7 +85,10 @@ val WalcottDarkColors = darkColorScheme(
     surfaceVariant = Color(0xFF232937),
     onSurfaceVariant = Color(0xFFAAB1C4),
     outline = Color(0xFF3A4152),
-    outlineVariant = Color(0xFF2A303F),
+    // Lighter than the surface it edges by a clear step: on the dark scheme the cards
+    // carry no shadow and only a hairline, and at the height of a whole editor a border
+    // you cannot quite see is a card that has no end.
+    outlineVariant = Color(0xFF39425A),
     surfaceDim = Color(0xFF0F1218),
     surfaceBright = Color(0xFF353D4E),
     surfaceContainerLowest = Color(0xFF0A0D13),

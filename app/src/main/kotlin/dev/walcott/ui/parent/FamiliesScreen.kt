@@ -22,10 +22,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.Rule
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Close
@@ -36,8 +38,9 @@ import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.MyLocation
-import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.Outbox
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
@@ -99,6 +102,7 @@ import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -239,7 +243,13 @@ fun FamiliesScreen(
         // Everything a child is waiting on an answer for, always at the very top: a pending
         // request is the one thing on this screen with a person on the other end of it.
         if (requests.isNotEmpty() || asks.isNotEmpty() || domainRequests.isNotEmpty()) {
-            item { SectionHeader(stringResource(R.string.pending_requests)) }
+            item {
+                SectionHeader(
+                    stringResource(R.string.pending_requests),
+                    icon = Icons.Outlined.MoreTime,
+                    accent = SectionAccent.RULES,
+                )
+            }
             items(requests, key = { "req-" + it.request.requestId }) { pending ->
                 // animateItem: resolved requests slide out instead of popping (and new ones in).
                 Box(Modifier.animateItem()) {
@@ -339,7 +349,13 @@ fun FamiliesScreen(
 
         // This family's general settings, one row, before the children: the home reads
         // top-down as "the family → its rules → its kids".
-        item { SectionHeader(stringResource(R.string.home_section_manage)) }
+        item {
+            SectionHeader(
+                stringResource(R.string.home_section_manage),
+                icon = Icons.AutoMirrored.Outlined.Rule,
+                accent = SectionAccent.RULES,
+            )
+        }
         item {
             CardGroup {
                 // Each row says whether what it leads to is waiting to be sent, so a parent can
@@ -381,7 +397,13 @@ fun FamiliesScreen(
         }
 
         // The children of THIS family, with the day's numbers at a glance.
-        item { SectionHeader(stringResource(R.string.children_section)) }
+        item {
+            SectionHeader(
+                stringResource(R.string.children_section),
+                icon = Icons.Outlined.Groups,
+                accent = SectionAccent.FAMILY,
+            )
+        }
         if (settings.children.isEmpty()) {
             item {
                 Text(
@@ -494,7 +516,13 @@ fun FamiliesScreen(
 
 
         if (legacyDevices.isNotEmpty()) {
-            item { SectionHeader(stringResource(R.string.legacy_devices_header)) }
+            item {
+                SectionHeader(
+                    stringResource(R.string.legacy_devices_header),
+                    icon = Icons.Outlined.PhoneAndroid,
+                    accent = SectionAccent.DEVICE,
+                )
+            }
             item {
                 CardGroup {
                     legacyDevices.forEachIndexed { index, device ->
@@ -583,10 +611,12 @@ private fun ChildRow(
             Icon(
                 Icons.Outlined.Face,
                 contentDescription = null,
+                // The colour of its own section, like every other row (see SectionHeader) —
+                // unless the child has gone quiet, which outranks knowing where you are.
                 tint = if (tier == Staleness.Tier.SILENT) {
                     MaterialTheme.colorScheme.error
                 } else {
-                    MaterialTheme.colorScheme.primary
+                    Tokens.accent(SectionAccent.FAMILY)
                 },
                 modifier = Modifier.size(28.dp),
             )

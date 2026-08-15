@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 
 /** Standard navigation row: icon, title, subtitle, chevron. */
@@ -28,11 +29,17 @@ fun NavCard(
     position: CardPosition = CardPosition.Single,
     /** True while this section holds a rule edit that hasn't been sent yet (see PendingChip). */
     pending: Boolean = false,
+    /**
+     * The section this row belongs to. Its icon takes that colour, so a row still says which
+     * chapter it came from once the heading has scrolled off the top (see [SectionHeader]).
+     */
+    accent: SectionAccent? = null,
 ) {
     val spacing = Tokens.spacing
+    val tint = accent?.let { Tokens.accent(it) } ?: MaterialTheme.colorScheme.primary
     WalcottCard(onClick = onClick, position = position) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(spacing.md))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)

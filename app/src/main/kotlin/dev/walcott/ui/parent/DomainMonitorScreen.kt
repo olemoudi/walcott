@@ -164,8 +164,8 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                 item(key = "header-${packageName ?: "unknown"}") {
                     SectionHeader(
                         labels[packageName]
-                            ?: packageName
-                            ?: stringResource(R.string.domain_monitor_unattributed),
+                        ?: packageName
+                        ?: stringResource(R.string.domain_monitor_unattributed),
                     )
                 }
                 item(key = "card-${packageName ?: "unknown"}") {
