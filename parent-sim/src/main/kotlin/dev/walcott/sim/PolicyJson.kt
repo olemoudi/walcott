@@ -40,6 +40,8 @@ object PolicyJson {
      *   "apps_control", "unknown_sources", "datetime", "vpn", …)
      * @param dailyMinutes package -> minutes allowed on EVERY day type; 0 blocks it outright
      * @param unlimited packages explicitly never limited
+     * @param bedtime start/end minute-of-day of the family's bedtime, on every day type
+     * @param screenFree family-wide screen-free windows (start/end minute-of-day), every day type
      * @param extra further raw keys, for exercising fields this helper doesn't model
      *
      * `appPolicies` entries are shaped as the child's `AppPolicyDto` — budgets keyed by day
@@ -52,6 +54,8 @@ object PolicyJson {
         restrictions: Set<String> = emptySet(),
         dailyMinutes: Map<String, Int> = emptyMap(),
         unlimited: Set<String> = emptySet(),
+        bedtime: Pair<Int, Int>? = null,
+        screenFree: List<Pair<Int, Int>> = emptyList(),
         newAppAlerts: Boolean = true,
         extra: Map<String, JsonObject> = emptyMap(),
     ): String {
@@ -80,8 +84,27 @@ object PolicyJson {
                     ),
                 )
             }
+            bedtime?.let { (start, end) ->
+                put("bedtime", JsonObject(dayTypes.associateWith { window(start, end) }))
+            }
+            if (screenFree.isNotEmpty()) {
+                val windows = JsonArray(screenFree.map { (start, end) -> window(start, end) })
+                put("allAppsBlockedWindows", JsonObject(dayTypes.associateWith { windows }))
+            }
             extra.forEach { (key, value) -> put(key, value) }
         }
         return json.encodeToString(JsonObject.serializer(), root)
+    }
+
+    private val dayTypes = listOf(SCHOOL, WEEKEND, HOLIDAY)
+
+    /**
+     * One window as the child decodes it (`WindowDto`), in minutes since midnight. An empty
+     * `days` — the default — is every day, and a window whose end is before its start crosses
+     * midnight, which is what a bedtime normally does.
+     */
+    private fun window(startMinute: Int, endMinute: Int): JsonObject = buildJsonObject {
+        put("startMinute", startMinute)
+        put("endMinute", endMinute)
     }
 }

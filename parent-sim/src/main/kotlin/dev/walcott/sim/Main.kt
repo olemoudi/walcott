@@ -17,11 +17,21 @@ import dev.walcott.sync.RemoteAction
  *     policy installs                 arm the install block
  *     policy none                     clear every restriction
  *     limit com.some.app 30           30 minutes a day for one app
+ *     bedtime 21:30 07:00             the family's bedtime, every day type
+ *     screenfree 14:00 15:00          a screen-free window, every day type
+ *     schedule none                   drop bedtime and every screen-free window
+ *     bonus 15 [pkg]                  minutes granted out of the blue (default: all apps)
+ *     usage com.some.app=600          put screen time on the device's own counters
+ *     window com.some.app             open the timed install window on the device
  *     cmd diagnose                    remote command, optionally `cmd uninstall_app com.x`
+ *     requests                        what the child is waiting on an answer for, with ids
  *     resolve <requestId> yes 15      answer a child's request, granting 15 minutes
  *     watch                           print child snapshots as they land
  *     dump                            what the child last reported
  *     quit
+ *
+ * The rules are cumulative: each command edits the family's policy and republishes the whole
+ * of it, so setting a limit does not silently drop the bedtime set a moment earlier.
  */
 fun main(args: Array<String>) {
     val relay = MockRelay().start()
@@ -56,7 +66,28 @@ fun main(args: Array<String>) {
     val first = runCatching { parent.awaitChild { true } }.getOrNull()
     println(if (first != null) "paired: ${first.deviceId} (${first.displayName})" else "no check-in yet")
 
+    // The family's rules, held here so every command edits them rather than replacing them:
+    // a `limit` that silently dropped the bedtime set a moment earlier would make every
+    // multi-rule case by hand a trap.
     var policyVersion = 1L
+    val restrictions = mutableSetOf<String>()
+    val limits = mutableMapOf<String, Int>()
+    var bedtime: Pair<Int, Int>? = null
+    val screenFree = mutableListOf<Pair<Int, Int>>()
+    fun push(): String {
+        policyVersion++
+        parent.pushPolicy(
+            PolicyJson.build(
+                version = policyVersion,
+                restrictions = restrictions,
+                dailyMinutes = limits,
+                bedtime = bedtime,
+                screenFree = screenFree,
+            ),
+        )
+        return "pushed policy v$policyVersion"
+    }
+
     while (true) {
         val line = readlnOrNull()?.trim() ?: break
         val parts = line.split(" ").filter { it.isNotBlank() }
@@ -64,19 +95,68 @@ fun main(args: Array<String>) {
             null -> Unit
             "quit", "exit" -> break
             "policy" -> {
-                policyVersion++
-                val restrictions = parts.drop(1).filterNot { it == "none" }.toSet()
-                parent.pushPolicy(PolicyJson.build(version = policyVersion, restrictions = restrictions))
-                println("pushed policy v$policyVersion restrictions=$restrictions")
+                restrictions.clear()
+                restrictions += parts.drop(1).filterNot { it == "none" }
+                println(push() + " restrictions=$restrictions")
             }
             "limit" -> {
                 val pkg = parts.getOrNull(1) ?: continue
                 val minutes = parts.getOrNull(2)?.toIntOrNull() ?: 30
-                policyVersion++
-                parent.pushPolicy(
-                    PolicyJson.build(version = policyVersion, dailyMinutes = mapOf(pkg to minutes)),
-                )
-                println("pushed policy v$policyVersion: $pkg = $minutes min/day")
+                limits[pkg] = minutes
+                println(push() + ": $pkg = $minutes min/day")
+            }
+            "bedtime" -> {
+                val start = minuteOfDay(parts.getOrNull(1))
+                val end = minuteOfDay(parts.getOrNull(2))
+                if (start == null || end == null) { println("bedtime HH:MM HH:MM"); continue }
+                bedtime = start to end
+                println(push() + ": bedtime ${parts[1]}–${parts[2]}")
+            }
+            "screenfree" -> {
+                val start = minuteOfDay(parts.getOrNull(1))
+                val end = minuteOfDay(parts.getOrNull(2))
+                if (start == null || end == null) { println("screenfree HH:MM HH:MM"); continue }
+                screenFree += start to end
+                println(push() + ": screen-free ${parts[1]}–${parts[2]}")
+            }
+            "schedule" -> {
+                bedtime = null
+                screenFree.clear()
+                println(push() + ": no bedtime, no screen-free windows")
+            }
+            "bonus" -> {
+                val deviceId = parent.children.keys.firstOrNull()
+                if (deviceId == null) { println("no child yet"); continue }
+                val minutes = parts.getOrNull(1)?.toIntOrNull() ?: 15
+                // The all-apps sentinel spelt out: `:core-rules` is not on this module's
+                // path, and the wire carries the string either way (see ChildDevice).
+                val target = parts.getOrNull(2) ?: "__all_apps__"
+                val epochDay = java.time.LocalDate.now().toEpochDay()
+                parent.grantBonus(deviceId, target, minutes, epochDay)
+                println("granted $minutes min on $target (day $epochDay)")
+            }
+            "usage" -> {
+                val entries = parts.drop(1).mapNotNull { entry ->
+                    val pkg = entry.substringBefore('=', "")
+                    val seconds = entry.substringAfter('=', "").toLongOrNull()
+                    if (pkg.isBlank() || seconds == null) null else pkg to seconds
+                }
+                if (entries.isEmpty()) { println("usage com.some.app=600 …"); continue }
+                device.addUsage(*entries.toTypedArray())
+                println("added " + entries.joinToString { "${it.first}=${it.second}s" })
+            }
+            "window" -> {
+                val pkg = parts.getOrNull(1) ?: continue
+                device.openInstallWindow(pkg)
+                println("install window open for $pkg")
+            }
+            "requests" -> {
+                parent.children.values.forEach { child ->
+                    child.requests.forEach {
+                        println("${it.requestId} time ${it.categoryId} ${it.minutes}min “${it.reason}”")
+                    }
+                    child.asks.forEach { println("${it.requestId} ${it.kind} “${it.text}”") }
+                }
             }
             "cmd" -> {
                 val deviceId = parent.children.keys.firstOrNull()
@@ -105,6 +185,13 @@ fun main(args: Array<String>) {
     }
     parent.stop()
     relay.stop()
+}
+
+/** "21:30" as minutes since midnight; null when it isn't a time at all. */
+private fun minuteOfDay(text: String?): Int? {
+    val hours = text?.substringBefore(':')?.toIntOrNull() ?: return null
+    val minutes = text.substringAfter(':', "").toIntOrNull() ?: return null
+    return (hours * 60 + minutes).takeIf { hours in 0..23 && minutes in 0..59 }
 }
 
 private fun describe(snapshot: dev.walcott.sync.ChildSnapshot): String = buildString {
