@@ -68,7 +68,8 @@ private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY_CHOOSER, SETUP_PRESETS, SETUP_WIZARD, FAMILY,
     CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
-    APP_SETTINGS, DEBUG_LOGS, DEVICE_SETUP, PANIC, CHILD_RULES, ACTIVITY, CHILD_HEALTH, DOMAIN_MONITOR, DOMAIN_REVIEW,
+    APP_SETTINGS, DEBUG_LOGS, DEVICE_SETUP, CHILD_SETUP, PANIC, CHILD_RULES, ACTIVITY, CHILD_HEALTH,
+    DOMAIN_MONITOR, DOMAIN_REVIEW,
 }
 
 @Composable
@@ -112,6 +113,9 @@ fun WalcottApp(
     var budgetsReturnTo by remember { mutableStateOf<Screen?>(null) }
     var appsReturnTo by remember { mutableStateOf<Screen?>(null) }
     var mapReturnTo by remember { mutableStateOf<Screen?>(null) }
+    // Where the guided setup was opened from: the child home after enrolling, or the device
+    // setup list. Null = the child home (the case that matters, and the only one on a child).
+    var setupReturnTo by remember { mutableStateOf<Screen?>(null) }
     // Which guided-setup preset is running (SETUP_WIZARD screen).
     var wizardPreset by remember { mutableStateOf<SetupPreset?>(null) }
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
@@ -197,10 +201,13 @@ fun WalcottApp(
     DisposableEffect(lifecycleOwner, childDevice) {
         val observer = LifecycleEventObserver { _, event ->
             // PANIC is exempt: it is the one child screen that is NOT behind the PIN, so
-            // there is nothing to protect by kicking the child out of it.
+            // there is nothing to protect by kicking the child out of it. CHILD_SETUP is
+            // exempt for a different reason: every step of it sends the parent OUT to a system
+            // settings screen, which is an ON_STOP — snapping back would drop them on the home
+            // after each permission and make finishing the setup impossible.
             if (event == Lifecycle.Event.ON_STOP && childDevice &&
                 screen != Screen.CHILD && screen != Screen.MODE_SELECT && screen != Screen.PANIC &&
-                    screen != Screen.CHILD_RULES
+                    screen != Screen.CHILD_RULES && screen != Screen.CHILD_SETUP
             ) {
                 screen = Screen.CHILD
             }
@@ -253,6 +260,9 @@ fun WalcottApp(
             Screen.CHILD_HEALTH -> Screen.CHILD_DETAIL
             Screen.DOMAIN_MONITOR -> Screen.FAMILY
             Screen.DOMAIN_REVIEW -> Screen.FAMILIES
+            // The guided setup is reachable from both ends: the child home right after
+            // enrolling, and the device-setup list on a phone that has drifted since.
+            Screen.CHILD_SETUP -> setupReturnTo?.also { setupReturnTo = null } ?: Screen.CHILD
             Screen.PANIC, Screen.CHILD_RULES -> Screen.CHILD
             Screen.ACTIVITY -> Screen.FAMILIES
             Screen.FAMILY, Screen.GATE -> if (parentMode) Screen.FAMILIES else Screen.CHILD
@@ -287,6 +297,16 @@ fun WalcottApp(
                         onOpenParent = { gateAllowCreate = false; screen = Screen.GATE },
                         onOpenPanic = { screen = Screen.PANIC },
                         onOpenRules = { screen = Screen.CHILD_RULES },
+                        onOpenSetupJourney = { setupReturnTo = null; screen = Screen.CHILD_SETUP },
+                    )
+                    // Not behind the PIN gate, like PANIC: it grants permissions and shows
+                    // nothing private, and it opens by itself the moment a device is enrolled —
+                    // which is before anybody has typed a PIN into this phone.
+                    Screen.CHILD_SETUP -> dev.walcott.ui.setup.ChildSetupJourneyScreen(
+                        handle = dev.walcott.ui.setup.rememberDeviceSetup(),
+                        childName = identity.displayName,
+                        onFinish = ::back,
+                        onExit = ::back,
                     )
                     // Reachable without the PIN on purpose: it exists for the family that lost
                     // both the parent phone and the PIN (see PanicProtocol).
@@ -483,6 +503,7 @@ fun WalcottApp(
                     Screen.DEBUG_LOGS -> DebugLogScreen(onBack = ::back)
                     Screen.DEVICE_SETUP -> dev.walcott.ui.setup.DeviceSetupScreen(
                         handle = dev.walcott.ui.setup.rememberDeviceSetup(),
+                        onOpenJourney = { setupReturnTo = Screen.DEVICE_SETUP; screen = Screen.CHILD_SETUP },
                         onBack = ::back,
                     )
                 }

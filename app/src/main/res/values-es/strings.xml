@@ -631,9 +631,76 @@
         <item quantity="one">Falta %d cosa por activar</item>
         <item quantity="other">Faltan %d cosas por activar</item>
     </plurals>
+    <string name="device_setup_run_journey">Volver a hacer la configuración guiada</string>
+    <!-- Configuración guiada en el móvil del hijo: la mitad del alta que hace el padre allí -->
+    <string name="journey_title">Preparar este móvil</string>
+    <string name="journey_intro_title">Vamos a dejar este móvil listo</string>
+    <string name="journey_intro_title_named">Vamos a dejar listo el móvil de %1$s</string>
+    <string name="journey_intro_body">El código ha vinculado este móvil a tu familia, pero las reglas necesitan unos permisos que solo puede dar quien lo tenga en la mano. Quédate un minuto — a nadie más se le van a pedir.</string>
+    <plurals name="journey_intro_count">
+        <item quantity="one">Falta %d cosa por activar</item>
+        <item quantity="other">Faltan %d cosas por activar</item>
+    </plurals>
+    <string name="journey_intro_nothing">No falta nada — vamos a repasarlo</string>
+    <string name="journey_start">Empezar</string>
+    <string name="journey_intro_check">Repasar este móvil</string>
+    <string name="journey_step_of">Paso %1$d de %2$d</string>
+    <string name="journey_step_how">Qué va a pasar</string>
+    <string name="journey_step_how_body">Walcott abre la pantalla exacta del sistema para esto. Actívalo ahí y vuelve — este paso se marca solo.</string>
+    <string name="journey_step_done">Hecho — seguimos</string>
+    <string name="journey_skip">Saltar</string>
+    <string name="journey_retry">Ir a lo que falta</string>
+    <string name="journey_finish">Terminar</string>
+    <string name="journey_finish_anyway">Terminar igualmente</string>
+    <string name="journey_done_title">Este móvil está listo</string>
+    <string name="journey_done_body">Todo lo que las reglas necesitan está activado. Walcott también lo dirá en el móvil del padre.</string>
+    <string name="journey_partial_title">Casi</string>
+    <string name="journey_partial_body">Lo que falta se queda en esta pantalla y en la del padre, y Walcott lo recordará. Hasta entonces, esa parte de las reglas no funciona.</string>
+    <string name="journey_state_on">Activado</string>
+    <string name="journey_state_pending">Pendiente</string>
+    <string name="journey_card_title">Termina de preparar este móvil</string>
+    <plurals name="journey_card_desc">
+        <item quantity="one">Falta %d permiso por conceder, así que parte de las reglas no funciona. Es un minuto.</item>
+        <item quantity="other">Faltan %d permisos por conceder, así que parte de las reglas no funciona. Es un minuto.</item>
+    </plurals>
+    <!-- Lado del padre: lo mismo, visto desde el otro móvil -->
+    <string name="setup_step_prepare">Prepara el móvil del hijo</string>
+    <string name="enroll_step_prepare">3 · Prepara el móvil</string>
+    <string name="enroll_step_prepare_body">Escanear vincula el móvil; no concede nada. Walcott abre en ese dispositivo una configuración guiada corta justo después del escaneo — hazla ahí, antes de devolver el teléfono. Es donde se activan el acceso de uso, el bloqueo y lo demás.</string>
+    <string name="enroll_prepare_waiting">Esperando a que ese móvil dé señales…</string>
+    <string name="enroll_prepare_done">Ese móvil tiene todo lo que necesita</string>
+    <plurals name="enroll_prepare_missing">
+        <item quantity="one">Falta %d permiso por conceder en ese móvil</item>
+        <item quantity="other">Faltan %d permisos por conceder en ese móvil</item>
+    </plurals>
+    <string name="child_setup_pending_title">El móvil de %1$s no está listo</string>
+    <plurals name="child_setup_pending_desc">
+        <item quantity="one">Allí quedó un ajuste sin conceder, y solo puede hacerlo quien tenga ese móvil:</item>
+        <item quantity="other">Allí quedaron %d ajustes sin conceder, y solo puede hacerlo quien tenga ese móvil:</item>
+    </plurals>
+    <string name="child_setup_pending_item">• %1$s</string>
+    <plurals name="chip_setup_pending">
+        <item quantity="one">Falta %d</item>
+        <item quantity="other">Faltan %d</item>
+    </plurals>
+    <string name="setup_pending_title">El móvil de %1$s se quedó a medias</string>
+    <plurals name="setup_pending_text">
+        <item quantity="one">Sigue faltando %d permiso allí, así que parte de las reglas no funciona</item>
+        <item quantity="other">Siguen faltando %d permisos allí, así que parte de las reglas no funciona</item>
+    </plurals>
+    <plurals name="event_setup_pending">
+        <item quantity="one">Al móvil de %1$s le falta %2$d permiso por conceder</item>
+        <item quantity="other">Al móvil de %1$s le faltan %2$d permisos por conceder</item>
+    </plurals>
+    <string name="event_setup_done">El móvil de %1$s está del todo configurado</string>
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_57_0">
+        <item>Dar de alta el móvil de un hijo ya no se acaba en el código. En cuanto queda vinculado, ese móvil guía a quien lo tenga en la mano por los permisos que las reglas necesitan de verdad — acceso al tiempo de uso, bloqueo, notificaciones — uno a uno. Cada paso abre la pantalla exacta del sistema y se marca solo al volver. Es un minuto, y es el minuto del que depende todo lo demás el resto del año.</item>
+        <item>Si devuelves el móvil antes de terminar, nadie tiene que acordarse. La pantalla del hijo dice lo que falta, tu móvil lo nombra en la ficha de ese hijo con un botón para avisar al dispositivo, la lista de configuración mantiene el paso abierto, y te lo recuerda hasta que esté hecho.</item>
+        <item>Los móviles de los hijos ahora reportan todo lo que les falta, no solo el acceso al tiempo de uso. Un móvil que se vincula, da señales y no está aplicando nada ya no puede parecer sano desde tu lado.</item>
+    </string-array>
     <string-array name="whats_new_0_56_0">
         <item>El informe cubre ahora hoy, los últimos 7 días y los últimos 30 — los tres app por app y con el icono de cada una, para que "en qué se ha ido el mes" sea una pregunta con respuesta.</item>
         <item>Una app cuyo icono no llegaba nunca ya no se queda tras un cuadro gris: el hijo que no puede generarlo lo dice, el padre deja de pedirlo en cada sincronización, y cualquier app sin icono muestra su inicial.</item>

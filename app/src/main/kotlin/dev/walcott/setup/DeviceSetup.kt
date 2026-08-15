@@ -71,6 +71,15 @@ enum class DeviceRequirement(
 
     /** Stable key for persistence, so reordering or renaming the enum can't lose a dismissal. */
     val key: String get() = name.lowercase()
+
+    companion object {
+        /**
+         * The requirement a stored or reported [key] names, or null when this build has never
+         * heard of it — a parent reading a newer child's list (ChildSnapshot.setupUnmet) skips
+         * what it cannot name rather than showing a blank row.
+         */
+        fun byKey(key: String): DeviceRequirement? = entries.firstOrNull { it.key == key }
+    }
 }
 
 /**
@@ -108,7 +117,7 @@ data class DeviceFacts(
 object DeviceSetup {
 
     /**
-     * Everything currently not satisfied that APPLIES to this device, most serious first.
+     * Everything this device is supposed to have, satisfied or not, most serious first.
      *
      * Applicability is as important as the check itself:
      * - usage access and the accessibility blocker mean nothing on a parent phone, which
@@ -118,21 +127,22 @@ object DeviceSetup {
      * - location is only asked for by a family that turned tracking on;
      * - the web filter only exists where the rules define one;
      * - battery optimisation cannot be changed on a Device Owner, so it is not asked for there.
+     *
+     * Separate from [unmet] because the guided setup has to show what is ALREADY fine as well as
+     * what is missing: a summary that lists only the failures cannot tell "this phone is ready"
+     * from "this phone was never checked".
      */
-    fun unmet(facts: DeviceFacts): List<DeviceRequirement> {
-        val unmet = mutableListOf<DeviceRequirement>()
-        if (!facts.notificationsEnabled) unmet += DeviceRequirement.NOTIFICATIONS
+    fun applicable(facts: DeviceFacts): List<DeviceRequirement> {
+        val applicable = mutableListOf(DeviceRequirement.NOTIFICATIONS)
         if (facts.enforcingChild) {
-            if (!facts.usageAccessGranted) unmet += DeviceRequirement.USAGE_ACCESS
-            if (!facts.deviceOwner && !facts.accessibilityEnabled) unmet += DeviceRequirement.ACCESSIBILITY
-            if (facts.webFilterWanted && !facts.webFilterRunning) unmet += DeviceRequirement.WEB_FILTER
+            applicable += DeviceRequirement.USAGE_ACCESS
+            if (!facts.deviceOwner) applicable += DeviceRequirement.ACCESSIBILITY
+            if (facts.webFilterWanted) applicable += DeviceRequirement.WEB_FILTER
             if (facts.locationWanted) {
                 // A Device Owner force-grants the permission (see LocationPolicy), so asking the
                 // child for it there would be a card nobody can act on and nobody needs to.
-                if (!facts.deviceOwner && !facts.locationPermissionGranted) {
-                    unmet += DeviceRequirement.LOCATION_PERMISSION
-                }
-                if (!facts.locationServiceEnabled) unmet += DeviceRequirement.LOCATION_SERVICE
+                if (!facts.deviceOwner) applicable += DeviceRequirement.LOCATION_PERMISSION
+                applicable += DeviceRequirement.LOCATION_SERVICE
             }
         }
         // Battery optimisation is the system's to decide on a fully managed device: Settings
@@ -141,11 +151,24 @@ object DeviceSetup {
         // child to a screen where the one thing they had been told to do could not be done —
         // the exact failure this list exists to avoid, and worse than saying nothing, because
         // an instruction that visibly cannot be followed teaches that the others are noise too.
-        if (!facts.ignoringBatteryOptimizations && !facts.deviceOwner) {
-            unmet += DeviceRequirement.BATTERY_OPTIMIZATION
-        }
-        return unmet.sortedByDescending { it.critical }
+        if (!facts.deviceOwner) applicable += DeviceRequirement.BATTERY_OPTIMIZATION
+        return applicable.sortedByDescending { it.critical }
     }
+
+    /** Whether this device currently meets [requirement], with no view on whether it applies. */
+    fun satisfied(facts: DeviceFacts, requirement: DeviceRequirement): Boolean = when (requirement) {
+        DeviceRequirement.NOTIFICATIONS -> facts.notificationsEnabled
+        DeviceRequirement.USAGE_ACCESS -> facts.usageAccessGranted
+        DeviceRequirement.ACCESSIBILITY -> facts.accessibilityEnabled
+        DeviceRequirement.WEB_FILTER -> facts.webFilterRunning
+        DeviceRequirement.LOCATION_PERMISSION -> facts.locationPermissionGranted
+        DeviceRequirement.LOCATION_SERVICE -> facts.locationServiceEnabled
+        DeviceRequirement.BATTERY_OPTIMIZATION -> facts.ignoringBatteryOptimizations
+    }
+
+    /** Everything currently not satisfied that applies to this device, most serious first. */
+    fun unmet(facts: DeviceFacts): List<DeviceRequirement> =
+        applicable(facts).filterNot { satisfied(facts, it) }
 
     /**
      * What the home screen should nag about: the unmet requirements minus the ones dismissed.

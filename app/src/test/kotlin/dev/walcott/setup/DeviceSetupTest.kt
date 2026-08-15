@@ -174,4 +174,64 @@ class DeviceSetupTest {
         assertEquals("usage_access", DeviceRequirement.USAGE_ACCESS.key)
         assertEquals("battery_optimization", DeviceRequirement.BATTERY_OPTIMIZATION.key)
     }
+
+    @Test
+    fun `a key round-trips, and one from a newer build is simply unknown`() {
+        DeviceRequirement.entries.forEach { assertEquals(it, DeviceRequirement.byKey(it.key)) }
+        assertEquals(null, DeviceRequirement.byKey("something_a_later_version_added"))
+    }
+
+    // --- What the guided setup walks through ---
+
+    @Test
+    fun `everything that applies is listed whether or not it is satisfied`() {
+        // A healthy Device Owner child still HAS requirements — it just meets them. The guided
+        // setup needs that list to tell "this phone is ready" from "nobody has looked".
+        val healthy = healthy(deviceOwner = true)
+        assertEquals(
+            listOf(DeviceRequirement.NOTIFICATIONS, DeviceRequirement.USAGE_ACCESS),
+            DeviceSetup.applicable(healthy),
+        )
+        assertTrue(DeviceSetup.unmet(healthy).isEmpty())
+    }
+
+    @Test
+    fun `applicability follows the same rules on a broken device as on a healthy one`() {
+        // The property that matters: whether something is ASKED for cannot depend on whether it
+        // happens to be granted, or the summary would list a different set each time.
+        val states = listOf(
+            healthy(),
+            healthy(deviceOwner = false),
+            healthy(enforcingChild = false, deviceOwner = false),
+            healthy().copy(locationWanted = true, webFilterWanted = true),
+            healthy(deviceOwner = false).copy(locationWanted = true, webFilterWanted = true),
+        )
+        states.forEach { facts ->
+            val broken = facts.copy(
+                notificationsEnabled = false,
+                usageAccessGranted = false,
+                accessibilityEnabled = false,
+                locationPermissionGranted = false,
+                locationServiceEnabled = false,
+                ignoringBatteryOptimizations = false,
+                webFilterRunning = false,
+            )
+            assertEquals(DeviceSetup.applicable(facts), DeviceSetup.applicable(broken))
+            // And with everything broken, "unmet" is exactly "applicable".
+            assertEquals(DeviceSetup.applicable(broken), DeviceSetup.unmet(broken))
+        }
+    }
+
+    @Test
+    fun `unmet is applicable minus what is satisfied`() {
+        val facts = healthy(deviceOwner = false).copy(
+            locationWanted = true,
+            usageAccessGranted = false,
+            ignoringBatteryOptimizations = false,
+        )
+        val applicable = DeviceSetup.applicable(facts)
+        assertEquals(applicable.filterNot { DeviceSetup.satisfied(facts, it) }, DeviceSetup.unmet(facts))
+        assertTrue(DeviceSetup.satisfied(facts, DeviceRequirement.NOTIFICATIONS))
+        assertFalse(DeviceSetup.satisfied(facts, DeviceRequirement.USAGE_ACCESS))
+    }
 }

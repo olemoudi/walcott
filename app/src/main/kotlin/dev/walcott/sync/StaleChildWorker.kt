@@ -44,10 +44,10 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val label = settings.familyName.takeIf { multi && it.isNotBlank() }
 
         val events = mutableListOf<ParentEvent>()
-        fun feedEvent(type: String, childId: String, name: String, detail: String = "") {
+        fun feedEvent(type: String, childId: String, name: String, detail: String = "", count: Int = 0) {
             events += ParentEvent(
                 id = java.util.UUID.randomUUID().toString(),
-                atMs = now, type = type, childId = childId, childName = name, detail = detail,
+                atMs = now, type = type, childId = childId, childName = name, detail = detail, count = count,
             )
         }
 
@@ -101,13 +101,39 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
             reminded[snapshot.deviceId] = now
         }
 
-        if (toAlert.isEmpty() && neverReported.isEmpty() && reminded.isEmpty()) return
+        // A child's phone whose enrollment never got past the QR: paired, publishing, and
+        // missing settings only the person holding it can grant. The parent is the one who has
+        // to go and finish it, and nothing else on their phone would ever say so — the device
+        // looks alive from every other angle. Repeated while it lasts (see SetupReminder),
+        // because this is precisely the kind of half-done job that is meant to be dealt with
+        // "later" and never is.
+        val setupReminded = mutableMapOf<String, Long>()
+        for (snapshot in state.children) {
+            if (snapshot.setupUnmet.isEmpty()) continue
+            val due = SetupReminder.shouldRemind(
+                pendingSinceMs = state.setupPendingSince[snapshot.deviceId] ?: 0L,
+                lastReminderMs = state.setupRemindedAt[snapshot.deviceId] ?: 0L,
+                nowMs = now,
+            )
+            if (!due) continue
+            val name = registry.firstOrNull { it.childId == snapshot.childId && it.childId.isNotBlank() }?.name
+                ?: snapshot.displayName
+            SyncNotifications.notifySetupPending(
+                context, SyncNotifications.who(name, label), snapshot.setupUnmet.size,
+                snapshot.deviceId, snapshot.childId,
+            )
+            feedEvent(ParentEvent.TYPE_SETUP_PENDING, snapshot.childId, name, count = snapshot.setupUnmet.size)
+            setupReminded[snapshot.deviceId] = now
+        }
+
+        if (toAlert.isEmpty() && neverReported.isEmpty() && reminded.isEmpty() && setupReminded.isEmpty()) return
         syncStore.update {
             events.fold(
                 it.copy(
                     staleNotifiedLastSeen = it.staleNotifiedLastSeen + toAlert +
                         neverReported.associateWith { Staleness.NEVER },
                     installWindowRemindedAt = it.installWindowRemindedAt + reminded,
+                    setupRemindedAt = it.setupRemindedAt + setupReminded,
                 ),
             ) { state, event -> state.plusEvent(event) }
         }

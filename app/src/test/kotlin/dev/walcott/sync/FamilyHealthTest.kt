@@ -16,6 +16,7 @@ class FamilyHealthTest {
         panic: PanicRequest? = null,
         webFilterExpected: Boolean = false,
         webFilterOn: Boolean = true,
+        setupUnmet: List<String> = emptyList(),
     ) = ChildSnapshot(
         deviceId = deviceId,
         displayName = deviceId,
@@ -28,6 +29,7 @@ class FamilyHealthTest {
         panic = panic,
         webFilterExpected = webFilterExpected,
         webFilterOn = webFilterOn,
+        setupUnmet = setupUnmet,
     )
 
     @Test
@@ -51,6 +53,14 @@ class FamilyHealthTest {
                 listOf(child("a", webFilterExpected = true, webFilterOn = false)), seen, now,
             ),
         )
+        // An enrollment nobody finished: the device is alive and publishing, and part of the
+        // rules is not running on it.
+        assertEquals(1, FamilyHealth.alerts(listOf(child("a", setupUnmet = listOf("notifications"))), seen, now))
+    }
+
+    @Test
+    fun `a legacy child that reports no setup list never looks unfinished`() {
+        assertEquals(0, FamilyHealth.alerts(listOf(child("a")), mapOf("a" to now), now))
     }
 
     @Test

@@ -328,17 +328,31 @@ fun FamiliesScreen(
         // exactly the ones that need telling, which is why an otherwise-finished setup shows
         // the list again for this one step.
         val pinDone = settings.pinHash != null
+        // Enrolling a device is two halves, and the second one — granting what the rules need on
+        // the child's phone — is the one that can be walked away from with nothing looking
+        // wrong. Done means every enrolled child says it has everything; a registered child that
+        // has never checked in counts as not done, because that is what it is.
+        val enrolledChildren = snapshots.filter { it.childId in registryIds }
+        val childNeedingSetup = enrolledChildren.firstOrNull { it.setupUnmet.isNotEmpty() }
+        val deviceSetupDone = childDone && enrolledChildren.isNotEmpty() && childNeedingSetup == null
         val rulesIncomplete = !(childDone && limitsDone && bedtimeDone)
         if (rulesIncomplete) {
             // The guided wizards, front and center until the family is fully set up (they
             // stay reachable afterwards from the family rules hub).
             item { GuidedSetupCard(onOpenGuidedSetup) }
         }
-        if (rulesIncomplete || !pinDone) {
+        if (rulesIncomplete || !pinDone || !deviceSetupDone) {
             item {
                 SetupChecklistCard(
                     steps = listOf(
                         SetupStep(stringResource(R.string.setup_step_child), childDone) { showAddChild = true },
+                        // Lands on the child that still needs it — the screen with the QR, the
+                        // list of what is missing, and the remote nudge all on it.
+                        SetupStep(stringResource(R.string.setup_step_prepare), deviceSetupDone) {
+                            val target = childNeedingSetup?.childId
+                                ?: settings.children.firstOrNull()?.childId
+                            target?.let(onOpenChild)
+                        },
                         SetupStep(stringResource(R.string.setup_step_limits), limitsDone, onOpenBudgets),
                         SetupStep(stringResource(R.string.setup_step_bedtime), bedtimeDone, onOpenBudgets),
                         SetupStep(stringResource(R.string.setup_step_pin), pinDone) { showSetPin = true },
@@ -905,7 +919,19 @@ private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
             EnforcementStatus.NONE ->
                 add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_unprotected), error))
         }
-        if (!snapshot.usageAccessOn) add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_usage_off), error))
+        // Settings nobody granted at enrollment. Shown instead of the usage-access chip when it
+        // is one of them: the fuller answer, and two chips for one cause is just noise.
+        if (snapshot.setupUnmet.isNotEmpty()) {
+            add(
+                Triple(
+                    Icons.Filled.Warning,
+                    pluralStringResource(R.plurals.chip_setup_pending, snapshot.setupUnmet.size, snapshot.setupUnmet.size),
+                    error,
+                ),
+            )
+        } else if (!snapshot.usageAccessOn) {
+            add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_usage_off), error))
+        }
         if (!snapshot.networkLocationOn) add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_indoor_off), warn))
         if (snapshot.appVersionCode in 1 until dev.walcott.BuildConfig.VERSION_CODE) {
             add(Triple(Icons.Filled.Warning, stringResource(R.string.chip_outdated), warn))

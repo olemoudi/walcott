@@ -601,6 +601,22 @@ data class ChildSnapshot(
      * nothing on the wire until it matters. Capped by [InstallGuard.MAX_QUARANTINE].
      */
     val unauthorized: List<UnauthorizedApp> = emptyList(),
+    /**
+     * Everything this phone still needs switched on, as stable requirement keys (the app's
+     * `DeviceRequirement.key`: "usage_access", "notifications", "battery_optimization"…).
+     *
+     * The parent already learns about two of these from fields of their own ([usageAccessOn],
+     * [webFilterOn]), but not about the rest — notifications, the location permission, the
+     * battery exemption — and those are exactly what a half-finished enrollment leaves behind:
+     * a device that publishes happily and is silently missing the permission its rules need.
+     * The whole list travels so the parent can say "three settings left" and name them.
+     *
+     * Keys rather than an enum on purpose: the sync layer stays agnostic of the app's
+     * requirement list, and a parent on an older build simply skips a key it doesn't know.
+     * Empty means "nothing missing" — which is also what every legacy child reports, so an old
+     * device never looks unfinished.
+     */
+    val setupUnmet: List<String> = emptyList(),
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */

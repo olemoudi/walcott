@@ -455,6 +455,11 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     ),
                 )
             } ?: emptyList(),
+            // `--es child_setup_unmet "usage_access,notifications"`: what this fake child says
+            // its enrollment never granted, so the parent's "that phone isn't ready" card, chip
+            // and checklist step can be driven without a second device to leave half-configured.
+            setupUnmet = intent.getStringExtra("child_setup_unmet")?.split(",")?.filter { it.isNotBlank() }
+                ?: emptyList(),
             // `--ei child_panic N`: this fake child is N checkpoints into an emergency release,
             // so the parent's alert card, home banner and refusal can be driven on one emulator.
             panic = intent.getIntExtra("child_panic", -1).takeIf { it >= 0 }?.let { checkpoints ->

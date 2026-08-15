@@ -631,9 +631,76 @@
         <item quantity="one">%d thing needs switching on</item>
         <item quantity="other">%d things need switching on</item>
     </plurals>
+    <string name="device_setup_run_journey">Go through the guided setup again</string>
+    <!-- Guided setup on the child device: the half of enrollment the parent does on that phone -->
+    <string name="journey_title">Prepare this phone</string>
+    <string name="journey_intro_title">Let\'s get this phone ready</string>
+    <string name="journey_intro_title_named">Let\'s get %1$s\'s phone ready</string>
+    <string name="journey_intro_body">The code linked this phone to your family, but the rules still need a few permissions that only someone holding it can grant. Stay with it for a minute — nobody else will be asked for these.</string>
+    <plurals name="journey_intro_count">
+        <item quantity="one">%d thing to switch on</item>
+        <item quantity="other">%d things to switch on</item>
+    </plurals>
+    <string name="journey_intro_nothing">Nothing is missing — let\'s check it over</string>
+    <string name="journey_start">Start</string>
+    <string name="journey_intro_check">Check this phone</string>
+    <string name="journey_step_of">Step %1$d of %2$d</string>
+    <string name="journey_step_how">What happens next</string>
+    <string name="journey_step_how_body">Walcott opens the exact system screen for this. Switch it on there and come straight back — this step ticks itself off.</string>
+    <string name="journey_step_done">Done — moving on</string>
+    <string name="journey_skip">Skip</string>
+    <string name="journey_retry">Go to what\'s left</string>
+    <string name="journey_finish">Finish</string>
+    <string name="journey_finish_anyway">Finish anyway</string>
+    <string name="journey_done_title">This phone is ready</string>
+    <string name="journey_done_body">Everything the rules need is switched on. Walcott will say so on the parent\'s phone too.</string>
+    <string name="journey_partial_title">Almost there</string>
+    <string name="journey_partial_body">What\'s left stays on this screen and on the parent\'s, and Walcott will remind you. Until then, those parts of the rules aren\'t working.</string>
+    <string name="journey_state_on">On</string>
+    <string name="journey_state_pending">Pending</string>
+    <string name="journey_card_title">Finish setting up this phone</string>
+    <plurals name="journey_card_desc">
+        <item quantity="one">%d permission was never granted, so part of the rules isn\'t working. Takes a minute.</item>
+        <item quantity="other">%d permissions were never granted, so part of the rules isn\'t working. Takes a minute.</item>
+    </plurals>
+    <!-- Parent side: the same, seen from the other phone -->
+    <string name="setup_step_prepare">Prepare the child\'s phone</string>
+    <string name="enroll_step_prepare">3 · Prepare the phone</string>
+    <string name="enroll_step_prepare_body">Scanning links the phone; it grants nothing. Walcott opens a short guided setup on that device right after the scan — go through it there, before you hand the phone back. It is where usage access, blocking and the rest are switched on.</string>
+    <string name="enroll_prepare_waiting">Waiting for that phone to check in…</string>
+    <string name="enroll_prepare_done">That phone has everything it needs</string>
+    <plurals name="enroll_prepare_missing">
+        <item quantity="one">%d permission still to grant on that phone</item>
+        <item quantity="other">%d permissions still to grant on that phone</item>
+    </plurals>
+    <string name="child_setup_pending_title">%1$s\'s phone isn\'t ready</string>
+    <plurals name="child_setup_pending_desc">
+        <item quantity="one">One setting was never granted there, and only someone holding that phone can:</item>
+        <item quantity="other">%d settings were never granted there, and only someone holding that phone can:</item>
+    </plurals>
+    <string name="child_setup_pending_item">• %1$s</string>
+    <plurals name="chip_setup_pending">
+        <item quantity="one">%d to grant</item>
+        <item quantity="other">%d to grant</item>
+    </plurals>
+    <string name="setup_pending_title">%1$s\'s phone was never finished</string>
+    <plurals name="setup_pending_text">
+        <item quantity="one">%d permission is still ungranted there, so part of the rules isn\'t working</item>
+        <item quantity="other">%d permissions are still ungranted there, so part of the rules isn\'t working</item>
+    </plurals>
+    <plurals name="event_setup_pending">
+        <item quantity="one">%1$s\'s phone still needs %2$d permission granted</item>
+        <item quantity="other">%1$s\'s phone still needs %2$d permissions granted</item>
+    </plurals>
+    <string name="event_setup_done">%1$s\'s phone is fully set up</string>
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_57_0">
+        <item>Setting up a child\'s phone no longer stops at the code. The moment it is linked, that phone walks whoever is holding it through the permissions the rules actually need — screen-time access, blocking, notifications — one at a time. Each one opens the exact system screen, and the step ticks itself off when you come back. It takes about a minute, and it is the minute everything else depends on for the rest of the year.</item>
+        <item>If you hand the phone back before finishing, nobody has to remember. The child\'s own screen says what is left, your phone names it on that child\'s page with a button to nudge the device, the setup checklist keeps the step open, and you are reminded until it is done.</item>
+        <item>Children\'s phones now report everything they are missing, not just screen-time access. A phone that pairs, checks in and quietly enforces nothing can no longer look healthy from your side.</item>
+    </string-array>
     <string-array name="whats_new_0_56_0">
         <item>The report now covers today, the last 7 days and the last 30 — all of them app by app, with each app\'s icon, so "where did the month go" is a question you can answer.</item>
         <item>An app whose icon never arrived no longer sits behind a blank square: a child that cannot render one now says so, the parent stops asking for it on every sync, and any app without an icon shows its initial instead.</item>

@@ -58,9 +58,20 @@ import kotlinx.coroutines.launch
 class DeviceSetupHandle internal constructor(
     val unmet: List<DeviceRequirement>,
     val dismissed: Set<String>,
+    /** Everything that applies here, satisfied or not — what the guided setup walks through. */
+    val applicable: List<DeviceRequirement>,
+    /**
+     * False until the first probe has answered. Without it an empty [unmet] is ambiguous — it
+     * reads identically as "this phone is fine" and "we haven't looked yet", and the guided
+     * setup would decide it had nothing to do before anything had been read.
+     */
+    val loaded: Boolean,
+    /** Whether anyone has been walked through the guided setup on this phone (see the store). */
+    val journeyDone: Boolean,
     private val onRefresh: () -> Unit,
     private val onDismiss: (DeviceRequirement) -> Unit,
     private val onRestore: (DeviceRequirement) -> Unit,
+    private val onJourneyDone: () -> Unit,
 ) {
     /** What the home screen shows: unmet minus dismissed. */
     val toNag: List<DeviceRequirement> get() = DeviceSetup.toNag(unmet, dismissed)
@@ -71,6 +82,9 @@ class DeviceSetupHandle internal constructor(
     fun dismiss(requirement: DeviceRequirement) = onDismiss(requirement)
 
     fun restore(requirement: DeviceRequirement) = onRestore(requirement)
+
+    /** Records that the guided setup was seen through to its last screen. */
+    fun markJourneyDone() = onJourneyDone()
 }
 
 /**
@@ -87,7 +101,10 @@ fun rememberDeviceSetup(): DeviceSetupHandle {
     val store = remember { DeviceSetupStore(context.applicationContext) }
     val lifecycleOwner = LocalLifecycleOwner.current
     var unmet by remember { mutableStateOf<List<DeviceRequirement>>(emptyList()) }
+    var applicable by remember { mutableStateOf<List<DeviceRequirement>>(emptyList()) }
     var dismissed by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var loaded by remember { mutableStateOf(false) }
+    var journeyDone by remember { mutableStateOf(true) }
     var tick by remember { mutableStateOf(0) }
 
     LaunchedEffect(tick) {
@@ -97,7 +114,10 @@ fun rememberDeviceSetup(): DeviceSetupHandle {
         // forgotten, so the next time it breaks the person is asked again.
         store.pruneSatisfied(currentlyUnmet)
         unmet = currentlyUnmet
+        applicable = DeviceSetup.applicable(facts)
         dismissed = store.dismissed.first()
+        journeyDone = store.journeyDoneAt.first() > 0L
+        loaded = true
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -111,9 +131,13 @@ fun rememberDeviceSetup(): DeviceSetupHandle {
     return DeviceSetupHandle(
         unmet = unmet,
         dismissed = dismissed,
+        applicable = applicable,
+        loaded = loaded,
+        journeyDone = journeyDone,
         onRefresh = { tick++ },
         onDismiss = { req -> scope.launch { store.dismiss(req); dismissed = store.dismissed.first() } },
         onRestore = { req -> scope.launch { store.restore(req); dismissed = store.dismissed.first() } },
+        onJourneyDone = { scope.launch { store.markJourneyDone(); journeyDone = true } },
     )
 }
 
@@ -288,7 +312,7 @@ private fun DismissConfirmation(
  * When the system has stopped prompting (denied for good), the deep link is the only way left.
  */
 @Composable
-private fun rememberFixAction(requirement: DeviceRequirement, onFixed: () -> Unit): () -> Unit {
+internal fun rememberFixAction(requirement: DeviceRequirement, onFixed: () -> Unit): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 

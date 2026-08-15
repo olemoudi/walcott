@@ -11,10 +11,10 @@ object FamilyHealth {
 
     /**
      * Children currently in a state the parent should see: protection off or degraded, screen
-     * time not being counted, the OS not actually suspending what the rules block, a web filter
-     * the rules ask for that isn't running, a clock that disagrees with the server, an app that
-     * arrived without approval, an emergency release running, or a device that has gone silent
-     * for longer than any benign Doze gap.
+     * time not being counted, settings the enrollment never granted, the OS not actually
+     * suspending what the rules block, a web filter the rules ask for that isn't running, a
+     * clock that disagrees with the server, an app that arrived without approval, an emergency
+     * release running, or a device that has gone silent for longer than any benign Doze gap.
      *
      * Counted per CHILD, not per symptom: three problems on one phone are one child to go and
      * look at, and a card that said "3 avisos" for it would read as three children in trouble.
@@ -23,6 +23,9 @@ object FamilyHealth {
         children.count { child ->
             child.enforcement == EnforcementStatus.NONE ||
                 !child.usageAccessOn ||
+                // A phone whose enrollment was never finished. Legacy children report an empty
+                // list, so this can only fire on a device that really did say so.
+                child.setupUnmet.isNotEmpty() ||
                 child.enforcementGaps.isNotEmpty() ||
                 webFilterDown(child) ||
                 ClockGuard.isTampered(child.clockSkewMs) ||

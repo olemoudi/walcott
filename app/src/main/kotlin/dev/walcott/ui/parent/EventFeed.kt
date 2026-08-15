@@ -67,6 +67,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_WRONG_APP, ParentEvent.TYPE_APP_TIME_OUT, ParentEvent.TYPE_BEDTIME,
     ParentEvent.TYPE_SCREEN_FREE, ParentEvent.TYPE_WEB_FILTER_DOWN, ParentEvent.TYPE_WEB_FILTER_BACK,
     ParentEvent.TYPE_CHILD_CRASHED, ParentEvent.TYPE_RULES_APPLIED,
+    ParentEvent.TYPE_SETUP_PENDING, ParentEvent.TYPE_SETUP_DONE,
 )
 
 @Composable
@@ -175,6 +176,8 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_WEB_FILTER_BACK -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_CHILD_CRASHED -> Icons.Filled.Warning to warn
         ParentEvent.TYPE_RULES_APPLIED -> Icons.Filled.CheckCircle to good
+        ParentEvent.TYPE_SETUP_PENDING -> Icons.Filled.Warning to error
+        ParentEvent.TYPE_SETUP_DONE -> Icons.Filled.CheckCircle to good
         else -> Icons.Outlined.Build to neutral
     }
 }
@@ -232,6 +235,9 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_DOMAINS ->
         pluralStringResource(R.plurals.event_domains, event.count, name, event.count, event.detail)
     ParentEvent.TYPE_INSTALL_WINDOW -> stringResource(R.string.event_install_window, name)
+    ParentEvent.TYPE_SETUP_PENDING ->
+        pluralStringResource(R.plurals.event_setup_pending, event.count, name, event.count)
+    ParentEvent.TYPE_SETUP_DONE -> stringResource(R.string.event_setup_done, name)
     ParentEvent.TYPE_WRONG_APP -> stringResource(R.string.event_wrong_app, name, event.detail)
     ParentEvent.TYPE_APP_TIME_OUT -> stringResource(R.string.event_app_time_out, name, event.detail)
     ParentEvent.TYPE_BEDTIME -> stringResource(R.string.event_bedtime, name)

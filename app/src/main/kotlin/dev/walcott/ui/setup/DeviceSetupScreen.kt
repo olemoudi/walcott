@@ -37,7 +37,7 @@ import dev.walcott.ui.theme.Tokens
  * becomes one that stopped enforcing rules and never mentioned it again.
  */
 @Composable
-fun DeviceSetupScreen(handle: DeviceSetupHandle, onBack: () -> Unit) {
+fun DeviceSetupScreen(handle: DeviceSetupHandle, onOpenJourney: () -> Unit, onBack: () -> Unit) {
     val spacing = Tokens.spacing
     val unmet = handle.unmet
     val hidden = unmet.filter { it.key in handle.dismissed }
@@ -63,6 +63,12 @@ fun DeviceSetupScreen(handle: DeviceSetupHandle, onBack: () -> Unit) {
                 hidden.forEach { requirement ->
                     HiddenRequirementCard(requirement, onRestore = { handle.restore(requirement) })
                 }
+            }
+            // The guided run, offered again from the one screen that already holds the whole
+            // list: a phone that was set up months ago and has drifted is exactly the case
+            // where walking it end to end beats hunting for the card that matters.
+            TextButton(onClick = onOpenJourney) {
+                Text(stringResource(R.string.device_setup_run_journey))
             }
         }
     }

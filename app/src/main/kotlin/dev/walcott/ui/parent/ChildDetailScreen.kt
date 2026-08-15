@@ -286,6 +286,7 @@ fun ChildDetailScreen(
                     EnrollmentSection(
                         entry = entry,
                         viewModel = viewModel,
+                        snapshot = snapshot,
                         pairingText = if (identity.role == Role.PARENT) {
                             PairingPayload(
                                 topic = identity.topic,
@@ -350,8 +351,29 @@ fun ChildDetailScreen(
                 item { EnforcementWarningCard(snapshot.enforcement) }
             }
 
+            // --- The other half of enrollment: settings nobody granted on the child's phone ---
+            // Above the individual symptoms because it is one job, not four faults: someone has
+            // to pick that phone up, and the card says exactly what to do there.
+            if (snapshot != null && snapshot.setupUnmet.isNotEmpty()) {
+                item {
+                    ChildSetupPendingCard(
+                        childName = entry.name,
+                        missing = snapshot.setupUnmet,
+                        onNudge = {
+                            viewModel.sendRemoteCommand(
+                                snapshot.deviceId, dev.walcott.sync.RemoteAction.REQUEST_PERMISSIONS,
+                            )
+                        },
+                    )
+                }
+            }
+
             // --- Usage access (screen-time counting silently stops without it) ---
-            if (snapshot != null && !snapshot.usageAccessOn) {
+            // Skipped when the card above already names it: one missing permission, said twice,
+            // reads as two separate things wrong with the phone.
+            if (snapshot != null && !snapshot.usageAccessOn &&
+                dev.walcott.setup.DeviceRequirement.USAGE_ACCESS.key !in snapshot.setupUnmet
+            ) {
                 item { UsageAccessWarningCard() }
             }
 
@@ -858,8 +880,16 @@ private fun DetailTopBar(title: String, onBack: () -> Unit, onRename: () -> Unit
 private enum class EnrollMode { DEVICE_OWNER, FALLBACK }
 
 @Composable
-private fun EnrollmentSection(entry: ChildEntry, pairingText: String?, viewModel: WalcottViewModel) {
+private fun EnrollmentSection(
+    entry: ChildEntry,
+    pairingText: String?,
+    viewModel: WalcottViewModel,
+    /** The device's own report, once it has checked in: null = nothing has arrived yet. */
+    snapshot: ChildSnapshot?,
+) {
     val spacing = Tokens.spacing
+    val linked = snapshot != null
+    val setupUnmet = snapshot?.setupUnmet.orEmpty()
     // Device Owner is the strong path (full blocking); the fallback works without a factory reset.
     var mode by remember { mutableStateOf(EnrollMode.DEVICE_OWNER) }
     // Two-step wizard: only one QR is ever on screen at a time, so the child's camera can't
@@ -916,19 +946,79 @@ private fun EnrollmentSection(entry: ChildEntry, pairingText: String?, viewModel
                     Spacer(Modifier.width(spacing.xs))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                 }
-            } else {
+            } else if (currentStep == 1) {
                 Text(stringResource(R.string.pairing_step_link), style = MaterialTheme.typography.titleMedium)
                 Text(
                     stringResource(R.string.child_enroll_qr_instructions, entry.name),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 QrCard(rememberQrBitmap(pairingText, size = 200.dp))
+                Button(onClick = { step = 2 }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.enroll_next))
+                    Spacer(Modifier.width(spacing.xs))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                }
                 TextButton(onClick = { step = 0 }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     Spacer(Modifier.width(spacing.xs))
                     Text(stringResource(R.string.back))
                 }
+            } else {
+                // The half of the enrollment that used to be nobody's job. Scanning the code
+                // links the phone and grants nothing: usage access, the blocker and the rest
+                // are switched on ON THAT DEVICE, by whoever is holding it — which at this exact
+                // moment is the parent, and an hour from now is a child with no reason to.
+                Text(stringResource(R.string.enroll_step_prepare), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.enroll_step_prepare_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                EnrollPrepareStatus(setupUnmet = setupUnmet, linked = linked)
+                TextButton(onClick = { step = 1 }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                    Spacer(Modifier.width(spacing.xs))
+                    Text(stringResource(R.string.back))
+                }
             }
+        }
+    }
+}
+
+/**
+ * Whether the last enrollment step actually happened, read from the child's own report rather
+ * than from a box the parent ticked. Three states, and the third is the one that matters: a
+ * device that is linked and still missing things looks exactly like a finished enrollment from
+ * every other screen — it publishes, it appears on the home, it just doesn't enforce.
+ */
+@Composable
+private fun EnrollPrepareStatus(setupUnmet: List<String>, linked: Boolean) {
+    val spacing = Tokens.spacing
+    val done = linked && setupUnmet.isEmpty()
+    val color = when {
+        done -> MaterialTheme.colorScheme.secondary
+        linked -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (done) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                when {
+                    done -> stringResource(R.string.enroll_prepare_done)
+                    linked -> pluralStringResource(
+                        R.plurals.enroll_prepare_missing, setupUnmet.size, setupUnmet.size,
+                    )
+                    else -> stringResource(R.string.enroll_prepare_waiting)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = color,
+            )
         }
     }
 }
@@ -1190,6 +1280,55 @@ private fun EnforcementWarningCard(status: String) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
             Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+        }
+    }
+}
+
+/**
+ * A child device that paired and then stopped: the permissions its rules need were never
+ * granted on it (see the child's guided setup). Named one by one, because "finish setting it
+ * up" is not something a parent can act on and "turn on usage access and let it run in the
+ * background" is — they may well be handing that list to whoever lives with the phone.
+ *
+ * The button is the one thing the parent CAN do from here: raise the deep-linked nudges on the
+ * device itself ([RemoteAction.REQUEST_PERMISSIONS]). Everything else needs the phone in hand.
+ */
+@Composable
+private fun ChildSetupPendingCard(childName: String, missing: List<String>, onNudge: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    // Keys this build doesn't know (a child on a newer version) are dropped rather than shown
+    // as blanks; the count follows the names so the card can never say four and list three.
+    val named = missing.mapNotNull { dev.walcott.setup.DeviceRequirement.byKey(it) }
+    if (named.isEmpty()) return
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
+        Column(Modifier.padding(spacing.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(spacing.md))
+                Text(
+                    stringResource(R.string.child_setup_pending_title, childName),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = color,
+                )
+            }
+            Text(
+                pluralStringResource(R.plurals.child_setup_pending_desc, named.size, named.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
+            named.forEach { requirement ->
+                Text(
+                    stringResource(R.string.child_setup_pending_item, stringResource(requirement.titleRes)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Button(onClick = onNudge, modifier = Modifier.padding(top = spacing.sm)) {
+                Text(stringResource(R.string.remote_ask_permissions))
+            }
         }
     }
 }

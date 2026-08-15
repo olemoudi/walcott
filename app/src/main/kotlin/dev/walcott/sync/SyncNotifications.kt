@@ -107,6 +107,28 @@ object SyncNotifications {
         dest = childDest(childId),
     )
 
+    /**
+     * Reminder that a child's phone is still missing settings nobody granted at enrollment.
+     *
+     * URGENT rather than STATUS: what is missing is not a nicety — usage access, the blocker,
+     * notifications — and a phone in this state enforces less than the parent believes it does.
+     * It also cannot be fixed from here, which is the whole message: someone has to pick that
+     * phone up. Tapping lands on the child, where the list and the remote nudge live.
+     */
+    fun notifySetupPending(
+        context: Context,
+        childName: String,
+        count: Int,
+        deviceId: String,
+        childId: String = "",
+    ) = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = context.getString(R.string.setup_pending_title, childName),
+        text = context.resources.getQuantityString(R.plurals.setup_pending_text, count, count),
+        notifId = "setup".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
     /** Alert when a child loses full (Device Owner) protection but a weaker backend remains. */
     fun notifyEnforcementDegraded(context: Context, childName: String, deviceId: String, childId: String = "") = post(
         context, URGENT_CHANNEL, R.string.urgent_channel_name,

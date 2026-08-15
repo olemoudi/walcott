@@ -551,6 +551,9 @@ class SyncManager(
         // A fresh pairing is a new trust bootstrap (the QR in hand IS the family): drop the
         // replay baseline so a new family's lower version counter isn't mistaken for replay.
         syncStore.update { it.copy(appliedParentVersion = 0) }
+        // Offer the guided setup again: a new family means new rules — possibly a web filter or
+        // tracking the last one never asked for — and a different adult holding this phone.
+        runCatching { dev.walcott.setup.DeviceSetupStore(context).resetJourney() }
         // Show the family name right away; the first parent snapshot confirms it.
         if (payload.familyName.isNotBlank()) {
             settingsStore.update { it.copy(familyName = payload.familyName) }
@@ -1445,6 +1448,8 @@ class SyncManager(
                 pinAlertedTotal = s.pinAlertedTotal - deviceId,
                 selfTestNotified = s.selfTestNotified - deviceId,
                 clockTamperNotified = s.clockTamperNotified - deviceId,
+                setupPendingSince = s.setupPendingSince - deviceId,
+                setupRemindedAt = s.setupRemindedAt - deviceId,
                 diagReports = s.diagReports - deviceId,
                 diagHistory = s.diagHistory - deviceId,
                 // Only legacy devices ledger under their deviceId; child-keyed history stays.
@@ -1974,6 +1979,15 @@ class SyncManager(
                         .map { InstalledAppInfo(it.packageName, it.label) }
                 }
                 val settings = settingsStore.current()
+                // Everything still ungranted on this phone, by the same list its own home screen
+                // and its periodic self-check read (see DeviceSetup). The parent cannot fix any
+                // of it remotely — that is the point of reporting it: an enrollment nobody
+                // finished is invisible from the other side otherwise, because a device missing
+                // every permission still pairs, still publishes and still looks alive.
+                val setupUnmet = runCatching {
+                    dev.walcott.setup.DeviceSetup.unmet(dev.walcott.setup.DeviceSetupProbe.read(context))
+                        .map { it.key }
+                }.getOrDefault(emptyList())
                 // History off (the default) reports only the current position; on, the 48h
                 // trail is decimated so it can't push the snapshot past ntfy's message cap.
                 val historyOn = settings.resolveForChild(id.childId).locationHistoryEnabled
@@ -2032,6 +2046,7 @@ class SyncManager(
                     crashTotal = crashes.total,
                     lastCrashMs = crashes.lastAtMs,
                     unauthorized = s.unauthorizedApps,
+                    setupUnmet = setupUnmet,
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -2655,6 +2670,30 @@ class SyncManager(
             }
         } else if (!usageOff && snapshot.deviceId in before.usageAccessNotified) {
             syncStore.update { it.copy(usageAccessNotified = it.usageAccessNotified - snapshot.deviceId) }
+        }
+
+        // An enrollment that stopped at the QR: the device is paired and publishing, and the
+        // permissions its rules need were never granted. Only the clock is started here — the
+        // reminder itself is the hourly worker's (see SetupReminder), because this runs on every
+        // check-in and the parent must not be told every half hour. Recovering clears both, so a
+        // phone set up properly is never mentioned again and a later lapse starts fresh.
+        val setupPending = snapshot.setupUnmet.isNotEmpty()
+        val pendingSince = before.setupPendingSince[snapshot.deviceId] ?: 0L
+        if (setupPending && pendingSince == 0L) {
+            syncStore.update {
+                it.copy(
+                    setupPendingSince = it.setupPendingSince + (snapshot.deviceId to System.currentTimeMillis()),
+                )
+            }
+        } else if (!setupPending && pendingSince != 0L) {
+            // Worth a line of its own: it is the answer to the reminder, and the only positive
+            // confirmation a parent ever gets that the phone in someone else's hands is ready.
+            syncStore.update {
+                it.copy(
+                    setupPendingSince = it.setupPendingSince - snapshot.deviceId,
+                    setupRemindedAt = it.setupRemindedAt - snapshot.deviceId,
+                ).plusEvent(event(ParentEvent.TYPE_SETUP_DONE, snapshot))
+            }
         }
 
         // The child has caught up with the parent's rules. Recorded so the detail screen can say

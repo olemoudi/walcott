@@ -81,6 +81,13 @@ data class ParentEvent(
         /** An install window has been open on a child device past its first hour. */
         const val TYPE_INSTALL_WINDOW = "install_window"
 
+        /**
+         * A child's phone is still missing settings only the person holding it can grant
+         * ([count] = how many), and the closing line when the last one is finally granted.
+         */
+        const val TYPE_SETUP_PENDING = "setup_pending"
+        const val TYPE_SETUP_DONE = "setup_done"
+
         /** A different app than the approved one was installed during a window; [detail] = its package. */
         const val TYPE_WRONG_APP = "wrong_app"
 
@@ -341,6 +348,14 @@ data class SyncState(
      */
     val installWindowSeen: Map<String, Long> = emptyMap(),
     val installWindowRemindedAt: Map<String, Long> = emptyMap(),
+    /**
+     * deviceId -> wall-clock ms when the parent first saw that child reporting settings nobody
+     * had granted ([ChildSnapshot.setupUnmet]), and when it last reminded about them. Cleared
+     * the moment the device reports clean, so a device set up properly is never mentioned again
+     * and a later relapse starts a fresh clock (see [SetupReminder]).
+     */
+    val setupPendingSince: Map<String, Long> = emptyMap(),
+    val setupRemindedAt: Map<String, Long> = emptyMap(),
     /** When the parent last saved a family backup file (0 = never), for the backup card. */
     val lastBackupAtMs: Long = 0,
     /** When this device first ran as a parent (0 = not yet); anchors the backup reminders. */

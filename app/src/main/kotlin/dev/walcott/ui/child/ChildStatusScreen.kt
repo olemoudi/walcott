@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.PhonelinkSetup
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
@@ -114,6 +115,8 @@ fun ChildStatusScreen(
     onOpenParent: () -> Unit,
     onOpenPanic: () -> Unit,
     onOpenRules: () -> Unit,
+    /** The guided run through everything this phone still needs (see ChildSetupJourneyScreen). */
+    onOpenSetupJourney: () -> Unit,
 ) {
     val state by viewModel.childState.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
@@ -187,6 +190,11 @@ fun ChildStatusScreen(
                     // Positive confirmation: scanning worked and this phone now belongs
                     // to the family — otherwise success just looks like "nothing happened".
                     Toast.makeText(context, R.string.pairing_success, Toast.LENGTH_SHORT).show()
+                    // Straight into the permissions, while the parent is still holding the
+                    // phone. This is the whole reason the journey exists: the same list left
+                    // as cards on this screen is read by the child, an hour later, and acted
+                    // on by nobody. Pairing has just reset the flag (see pairAsChild).
+                    onOpenSetupJourney()
                 } else {
                     Toast.makeText(context, R.string.pairing_failed, Toast.LENGTH_SHORT).show()
                 }
@@ -283,18 +291,28 @@ fun ChildStatusScreen(
                     })
                 }
             }
-            // Whatever this phone still needs, each with the button that opens the exact screen
-            // that grants it. Dismissed ones move to Settings → Device setup rather than vanishing.
-            items(deviceSetup.toNag, key = { it.key }) { requirement ->
-                dev.walcott.ui.setup.SetupNudgeCard(
-                    requirement = requirement,
-                    onFixed = deviceSetup::refreshNow,
-                    onDismiss = { deviceSetup.dismiss(requirement) },
-                )
+            // An enrollment that stopped at the QR: nobody has been walked through the
+            // permissions on this phone yet. One card that opens the guided run, INSTEAD of the
+            // per-requirement cards below — the same list twice, once as a job to do and once as
+            // four things to dismiss, is how a parent ends up doing neither.
+            val journeyPending =
+                !deviceSetup.journeyDone && deviceSetup.loaded && deviceSetup.unmet.isNotEmpty()
+            if (journeyPending) {
+                item { FinishSetupCard(count = deviceSetup.unmet.size, onOpen = onOpenSetupJourney) }
+            } else {
+                // Whatever this phone still needs, each with the button that opens the exact screen
+                // that grants it. Dismissed ones move to Settings → Device setup rather than vanishing.
+                items(deviceSetup.toNag, key = { it.key }) { requirement ->
+                    dev.walcott.ui.setup.SetupNudgeCard(
+                        requirement = requirement,
+                        onFixed = deviceSetup::refreshNow,
+                        onDismiss = { deviceSetup.dismiss(requirement) },
+                    )
+                }
+                // The undo: this device's settings screen is behind the parent PIN, so without this
+                // a child who hid a reminder could never bring it back.
+                item { dev.walcott.ui.setup.HiddenSetupReminderRow(deviceSetup) }
             }
-            // The undo: this device's settings screen is behind the parent PIN, so without this
-            // a child who hid a reminder could never bring it back.
-            item { dev.walcott.ui.setup.HiddenSetupReminderRow(deviceSetup) }
             // Only the apps about to run out (see CloseWatch.runningLow). Listing every limited
             // app put a wall of cards between the child and the two things they came here to do,
             // and a card reading "1h 40m left" is not news — it is the ones with minutes left
@@ -923,6 +941,40 @@ private fun AskDialog(kind: String, onDismiss: () -> Unit, onSend: (String) -> U
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
+}
+
+/**
+ * The other half of enrollment, unfinished: this phone is paired but nobody has granted what
+ * the rules need. Loud and singular on purpose — it stands in for every individual reminder
+ * while it is showing, and one job with one button is what a parent will actually finish.
+ */
+@Composable
+private fun FinishSetupCard(count: Int, onOpen: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    WalcottCard(onClick = onOpen, color = color.copy(alpha = 0.12f)) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.PhonelinkSetup,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(32.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.journey_card_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = color,
+                )
+                Text(
+                    pluralStringResource(R.plurals.journey_card_desc, count, count),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 /** Primary enrollment call-to-action for a child device not yet linked to a family. */
