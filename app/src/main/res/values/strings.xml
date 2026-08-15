@@ -16,6 +16,11 @@
         <item quantity="one">%d app is running out</item>
         <item quantity="other">%d apps are running out</item>
     </plurals>
+    <!-- Already out, which is not the same news as about to be out. -->
+    <plurals name="hero_out_of_time">
+        <item quantity="one">%d app has run out</item>
+        <item quantity="other">%d apps have run out</item>
+    </plurals>
     <string name="hero_nothing_urgent">Nothing is running out</string>
     <string name="home_section_running_low">Running out</string>
     <!-- Each app counts separately against this — it is not a shared screen-time pot, and
@@ -23,7 +28,9 @@
     <string name="home_limit_default">%1$s a day for each app</string>
     <string name="home_limit_bedtime">Sleep %1$s – %2$s</string>
     <string name="bedtime_title">Bedtime</string>
-    <string name="bedtime_subtitle">Apps rest until tomorrow</string>
+    <string name="screen_free_title">Screen-free time</string>
+    <!-- When the phone comes back, rather than a guess about the shape of the window. -->
+    <string name="window_until">Apps rest until %1$s</string>
     <string name="settings_content_desc">Parent mode</string>
 
     <!-- App status -->
@@ -540,6 +547,12 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_52_0">
+        <item>Bedtime and screen-free time now say when the phone comes back — the hour they end, instead of "until tomorrow" for a window that ends this afternoon.</item>
+        <item>While one of those windows is on, apps stop offering to ask for more minutes. No amount of extra time can end a window, and asking used to look like it might: the request was granted, the app stayed shut, and nobody could see why.</item>
+        <item>Your child\'s screen no longer counts down a limit their phone cannot enforce. Apps that came with the phone — the browser, the video app, the gallery — were showing a limit and reaching "Blocked" while going on opening perfectly well.</item>
+        <item>Cards that had outlived what they announced now go by themselves: your last answer once its day is over (the extra minutes it announced ended with it), and the install window when it closes.</item>
+    </string-array>
     <string-array name="whats_new_0_51_0">
         <item>Your child can look up their own rules again: bedtime, screen-free times and every app\'s limit, in one place, from their home screen.</item>
         <item>Opening an app that is down to its last half hour shows them what is left in it, for a couple of seconds — early enough to plan around, brief enough to ignore.</item>

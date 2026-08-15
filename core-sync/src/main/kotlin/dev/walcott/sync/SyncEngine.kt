@@ -138,6 +138,26 @@ object SyncEngine {
     fun requestExpired(createdAtEpochMs: Long, nowMs: Long): Boolean =
         createdAtEpochMs > 0 && nowMs - createdAtEpochMs > REQUEST_TTL_MS
 
+    /**
+     * Whether the parents' last answer has stopped being news.
+     *
+     * The child's home keeps that card until they tap OK, which is right for the minute it
+     * arrives and wrong by the next morning: what an approval announces is minutes of TODAY's
+     * extra time, and those die at the child's midnight with the rest of the day's allowance.
+     * A card still reading "Approved! +20 min of YouTube" over an allowance that no longer
+     * exists is the app lying about the one thing the child came to check. Denials and bonuses
+     * age out the same way and for the same reason: they are answers to today's question.
+     *
+     * The child's own calendar day, not a fixed number of hours: it is their allowance, and it
+     * turns over on their clock. A missing timestamp (0) never expires — the same rule as
+     * [requestExpired], for the same reason.
+     */
+    fun noticeExpired(atMs: Long, nowMs: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Boolean {
+        if (atMs <= 0) return false
+        fun dayOf(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        return dayOf(atMs) != dayOf(nowMs)
+    }
+
     /** What a notification's request turned out to be by the time somebody tapped it. */
     enum class RequestState {
         /** No family on this phone has ever heard of it. */

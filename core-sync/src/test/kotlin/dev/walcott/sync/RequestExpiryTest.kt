@@ -107,3 +107,52 @@ class RequestExpiryTest {
         assertFalse(SyncEngine.requestExpired(createdAtEpochMs = now + ttl, nowMs = now))
     }
 }
+
+/**
+ * The parents' last answer, and how long it stays news on the child's home.
+ *
+ * The card sits there until the child taps OK, which is right for the minute it arrives and a
+ * lie by the next morning: what an approval announces is minutes of TODAY's extra time, and
+ * those die at the child's midnight. `atMs` was recorded from the beginning and never read.
+ */
+class NoticeExpiryTest {
+
+    private val madrid = java.time.ZoneId.of("Europe/Madrid")
+
+    private fun at(day: String, time: String): Long =
+        java.time.LocalDateTime.parse("${day}T$time").atZone(madrid).toInstant().toEpochMilli()
+
+    @Test
+    fun `an answer from earlier today is still news`() {
+        assertFalse(
+            SyncEngine.noticeExpired(at("2026-08-15", "09:00"), at("2026-08-15", "23:58"), madrid),
+        )
+    }
+
+    @Test
+    fun `an answer stops being news when the day it belongs to turns over`() {
+        // The minutes it announced are gone at exactly this instant, and so is the card.
+        assertTrue(
+            SyncEngine.noticeExpired(at("2026-08-15", "20:30"), at("2026-08-16", "00:01"), madrid),
+        )
+    }
+
+    @Test
+    fun `the day is the child's, not a fixed number of hours`() {
+        // Twenty minutes apart, and expired: the allowance turned over between them. A TTL in
+        // hours would have kept a card advertising extra time that no longer exists.
+        assertTrue(
+            SyncEngine.noticeExpired(at("2026-08-15", "23:50"), at("2026-08-16", "00:10"), madrid),
+        )
+        // And the mirror: nearly a full day old, same date, still true.
+        assertFalse(
+            SyncEngine.noticeExpired(at("2026-08-15", "00:05"), at("2026-08-15", "23:55"), madrid),
+        )
+    }
+
+    @Test
+    fun `an answer with no timestamp is left alone`() {
+        // Same rule as requestExpired: "I can't tell how old this is" is not "this is ancient".
+        assertFalse(SyncEngine.noticeExpired(0, at("2026-08-16", "10:00"), madrid))
+    }
+}

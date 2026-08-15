@@ -126,7 +126,13 @@ internal fun EventLine(event: ParentEvent, childName: String, nowMs: Long, repea
 /** The relative age of [event], with a ×N mark when the line stands for [repeat] identical entries. */
 @Composable
 private fun eventAge(event: ParentEvent, nowMs: Long, repeat: Int): String {
-    val age = DateUtils.getRelativeTimeSpanString(event.atMs, nowMs, DateUtils.MINUTE_IN_MILLIS).toString()
+    val age = DateUtils.getRelativeTimeSpanString(
+        event.atMs,
+        // Never against a clock older than the event itself: the tick is a minute wide, so a
+        // line the parent just caused is in its future (see ageReference).
+        dev.walcott.ui.format.ageReference(event.atMs, nowMs),
+        DateUtils.MINUTE_IN_MILLIS,
+    ).toString()
     return if (repeat > 1) stringResource(R.string.event_repeat_times, age, repeat) else age
 }
 

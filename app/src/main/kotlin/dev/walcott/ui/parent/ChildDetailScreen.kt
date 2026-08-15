@@ -1387,7 +1387,13 @@ private fun LiveHealthCard(
                     stringResource(
                         R.string.health_as_of,
                         android.text.format.DateUtils
-                            .getRelativeTimeSpanString(lastSeenMs, nowMs, android.text.format.DateUtils.MINUTE_IN_MILLIS)
+                            .getRelativeTimeSpanString(
+                                lastSeenMs,
+                                // A snapshot that lands between ticks is newer than this
+                                // screen's clock, and would read as the future (see ageReference).
+                                dev.walcott.ui.format.ageReference(lastSeenMs, nowMs),
+                                android.text.format.DateUtils.MINUTE_IN_MILLIS,
+                            )
                             .toString(),
                     )
                 } else {

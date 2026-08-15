@@ -37,9 +37,24 @@ data class AppStatusUi(
     /** Time left right now; null when blocked. */
     val remaining: Duration?,
     val blocked: Boolean,
+    /**
+     * Why it is blocked, when it is. The card used to carry only the fact, so bedtime and a
+     * spent budget looked identical — and the "ask for more time" button was offered for both,
+     * although minutes cannot lift a window (bedtime outranks every budget in
+     * [dev.walcott.rules.appStatus]). The child asked, a parent granted, and nothing happened.
+     */
+    val blockReason: dev.walcott.rules.BlockReason? = null,
     /** True when this app is running on the family default rather than a limit of its own. */
     val fromDefault: Boolean,
-)
+) {
+    /**
+     * Whether more minutes could actually change anything. False during bedtime and screen-free
+     * windows, which no grant can shorten — and while the clock is untrusted, where nothing is
+     * being counted in the first place.
+     */
+    val moreTimeWouldHelp: Boolean
+        get() = blockReason == null || blockReason == dev.walcott.rules.BlockReason.BUDGET_EXHAUSTED
+}
 
 data class ChildUiState(
     val loading: Boolean = true,
@@ -58,6 +73,13 @@ data class ChildUiState(
      * ever showed the app that ran out.
      */
     val screenFreeToday: List<dev.walcott.rules.TimeWindow> = emptyList(),
+    /**
+     * The screen-free window in force right now, if any. Bedtime had this and screen-free time
+     * did not, so a window that closes the whole phone left the home reading "Nothing is running
+     * out" over a column of blocked apps — the one rule most likely to be the answer to "why did
+     * everything just stop", and the only one the screen never said out loud.
+     */
+    val screenFreeNow: dev.walcott.rules.TimeWindow? = null,
 )
 
 /** One app in the parent's list, with whatever was set for it (null = the family default). */
@@ -72,15 +94,24 @@ data class ChildUiState(
  * uninstall, or uninstalling and reinstalling would be the way to wipe it), and today's counter
  * keeps the minutes that were really spent. Neither is a reason to keep offering the child a
  * card for something they can no longer open.
+ *
+ * [managed] is what this device can actually block ([dev.walcott.data.AppInventory.managedPackages]),
+ * and it is the last word here. Screen time is counted for a wider set on purpose — the browser,
+ * the video app and the gallery ship as system apps on most phones, and a parent has to be able
+ * to SEE where the day went — but counting is not enforcing, and the enforcement loop has always
+ * refused to suspend a system app. Without this filter the family default gave every one of them
+ * a card that counted down to "Blocked" over an app that went on opening perfectly well: a
+ * screen that contradicted the phone, on exactly the apps a day disappears into.
  */
 internal fun childCardPackages(
     config: dev.walcott.rules.FamilyConfig,
     usedToday: Set<String>,
     dayType: DayType,
+    managed: Set<String>,
     label: (String) -> String?,
 ): List<Pair<String, String>> =
     (config.perAppPolicies.keys + usedToday)
-        .filter { config.budgetFor(it, dayType) != null }
+        .filter { it in managed && config.budgetFor(it, dayType) != null }
         .mapNotNull { pkg -> label(pkg)?.let { pkg to it } }
 
 data class AppRow(
@@ -722,7 +753,14 @@ class WalcottViewModel(
         val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
 
         val failClosed = clockTampered && RuleEngine.requiresTrustedClock(config)
-        val appCards = childCardPackages(config, usage.keys, dayType) { repository.inventory.label(it) }
+        // The same set the enforcement loop blocks from, so this screen can only ever promise
+        // what the device will actually do (see childCardPackages). Reads the memoized launcher
+        // list, which the package receivers keep exact — but a cache miss enumerates every
+        // launcher activity on the phone, so it is not something to do on the main thread.
+        val managed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            repository.managedPackagesNow()
+        }
+        val appCards = childCardPackages(config, usage.keys, dayType, managed) { repository.inventory.label(it) }
             .map { (pkg, label) ->
                 val status = RuleEngine.appStatus(config, pkg, now, usage, effectiveExtra, failClosed)
                 AppStatusUi(
@@ -732,6 +770,7 @@ class WalcottViewModel(
                     used = status.used,
                     remaining = status.remaining,
                     blocked = status.state == dev.walcott.rules.AppState.BLOCKED,
+                    blockReason = status.blockReason,
                     fromDefault = config.usesDefaultBudget(pkg),
                 )
             }
@@ -745,6 +784,8 @@ class WalcottViewModel(
             defaultBudget = config.defaultAppBudget[dayType],
             earnedMinutes = earnedMinutes,
             screenFreeToday = config.blockedWindows[dayType].orEmpty(),
+            screenFreeNow = config.blockedWindows[dayType].orEmpty()
+                .firstOrNull { it.appliesAt(now, dayType == DayType.HOLIDAY) },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 

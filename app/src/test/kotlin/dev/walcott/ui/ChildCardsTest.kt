@@ -20,6 +20,9 @@ class ChildCardsTest {
     )
     private val label: (String) -> String? = { installed[it] }
 
+    /** What this device can actually block. The system apps below are deliberately outside it. */
+    private val managed = setOf("com.game", "com.chat", "com.gone")
+
     private fun config(
         default: Map<DayType, Duration> = emptyMap(),
         perApp: Map<String, AppPolicy> = emptyMap(),
@@ -35,14 +38,14 @@ class ChildCardsTest {
                 "com.gone" to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30))),
             ),
         )
-        val cards = childCardPackages(cfg, emptySet(), DayType.SCHOOL, label)
+        val cards = childCardPackages(cfg, emptySet(), DayType.SCHOOL, managed, label)
         assertEquals(listOf("com.game" to "Roblox"), cards)
     }
 
     @Test
     fun `time spent today in an app since uninstalled gets no card either`() {
         val cfg = config(default = mapOf(DayType.SCHOOL to Duration.ofHours(1)))
-        val cards = childCardPackages(cfg, setOf("com.chat", "com.gone"), DayType.SCHOOL, label)
+        val cards = childCardPackages(cfg, setOf("com.chat", "com.gone"), DayType.SCHOOL, managed, label)
         assertEquals(listOf("com.chat" to "WhatsApp"), cards)
     }
 
@@ -51,7 +54,7 @@ class ChildCardsTest {
         val cfg = config(default = mapOf(DayType.SCHOOL to Duration.ofHours(1)))
         assertEquals(
             listOf("com.chat" to "WhatsApp"),
-            childCardPackages(cfg, setOf("com.chat"), DayType.SCHOOL, label),
+            childCardPackages(cfg, setOf("com.chat"), DayType.SCHOOL, managed, label),
         )
     }
 
@@ -59,7 +62,7 @@ class ChildCardsTest {
     fun `with no limit today there are no cards at all`() {
         // Limits are opt-in: a family that set none leaves the screen empty rather than
         // listing every app the child happens to have opened.
-        val cards = childCardPackages(config(), setOf("com.chat", "com.game"), DayType.SCHOOL, label)
+        val cards = childCardPackages(config(), setOf("com.chat", "com.game"), DayType.SCHOOL, managed, label)
         assertEquals(emptyList<Pair<String, String>>(), cards)
     }
 
@@ -71,8 +74,35 @@ class ChildCardsTest {
         )
         assertEquals(
             listOf("com.game" to "Roblox"),
-            childCardPackages(cfg, setOf("com.chat", "com.game"), DayType.SCHOOL, label),
+            childCardPackages(cfg, setOf("com.chat", "com.game"), DayType.SCHOOL, managed, label),
         )
+    }
+
+    @Test
+    fun `an app this device cannot block gets no card, however much it was used`() {
+        // The browser, the video app and the gallery ship as system apps on most phones: their
+        // screen time is counted (a parent must see where the day went) but the enforcement loop
+        // has never been able to suspend them. Under a family default they were getting a card
+        // that counted down to "Blocked" over an app that went on opening — the screen saying one
+        // thing and the phone doing another, on the apps that matter most.
+        val cfg = config(default = mapOf(DayType.SCHOOL to Duration.ofHours(1)))
+        val withBrowser: (String) -> String? = { (installed + ("com.android.browser" to "Browser"))[it] }
+        assertEquals(
+            listOf("com.chat" to "WhatsApp"),
+            childCardPackages(cfg, setOf("com.chat", "com.android.browser"), DayType.SCHOOL, managed, withBrowser),
+        )
+    }
+
+    @Test
+    fun `a limit somebody set on an unblockable app is not shown either`() {
+        // Same rule from the other source: a policy can name any package at all.
+        val cfg = config(
+            perApp = mapOf(
+                "com.android.browser" to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30))),
+            ),
+        )
+        val withBrowser: (String) -> String? = { (installed + ("com.android.browser" to "Browser"))[it] }
+        assertEquals(emptyList<Pair<String, String>>(), childCardPackages(cfg, emptySet(), DayType.SCHOOL, managed, withBrowser))
     }
 
     @Test
@@ -80,6 +110,6 @@ class ChildCardsTest {
         val cfg = config(
             perApp = mapOf("com.game" to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofMinutes(30)))),
         )
-        assertEquals(1, childCardPackages(cfg, setOf("com.game"), DayType.SCHOOL, label).size)
+        assertEquals(1, childCardPackages(cfg, setOf("com.game"), DayType.SCHOOL, managed, label).size)
     }
 }

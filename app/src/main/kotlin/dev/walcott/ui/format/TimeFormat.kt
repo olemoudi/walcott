@@ -21,3 +21,15 @@ fun Duration.humanize(): String {
 private val hhmm = DateTimeFormatter.ofPattern("HH:mm")
 
 fun LocalTime.hhmm(): String = format(hhmm)
+
+/**
+ * The reference instant to age [atMs] against, given a [nowMs] that may be a tick behind.
+ *
+ * The screens that print relative ages tick once a minute rather than continuously, so their
+ * clock is up to a minute old — and anything that has just happened is therefore in its FUTURE.
+ * `DateUtils.getRelativeTimeSpanString` says so out loud: an approval the parent had that second
+ * tapped came back on the wall reading "In 0 minutes", and stayed in the future until the next
+ * tick. Aging against this instead, the worst case is a fresh line reading "0 minutes ago",
+ * which is both true and what the parent expects to see.
+ */
+fun ageReference(atMs: Long, nowMs: Long): Long = maxOf(atMs, nowMs)

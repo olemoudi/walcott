@@ -16,6 +16,11 @@
         <item quantity="one">Se te acaba el tiempo en %d app</item>
         <item quantity="other">Se te acaba el tiempo en %d apps</item>
     </plurals>
+    <!-- Already out, which is not the same news as about to be out. -->
+    <plurals name="hero_out_of_time">
+        <item quantity="one">Se te ha acabado el tiempo en %d app</item>
+        <item quantity="other">Se te ha acabado el tiempo en %d apps</item>
+    </plurals>
     <string name="hero_nothing_urgent">No se te acaba nada</string>
     <string name="home_section_running_low">Se está acabando</string>
     <!-- Each app counts separately against this — it is not a shared screen-time pot, and
@@ -23,7 +28,9 @@
     <string name="home_limit_default">%1$s al día para cada app</string>
     <string name="home_limit_bedtime">Dormir %1$s – %2$s</string>
     <string name="bedtime_title">Hora de dormir</string>
-    <string name="bedtime_subtitle">Las apps descansan hasta mañana</string>
+    <string name="screen_free_title">Tiempo sin pantalla</string>
+    <!-- When the phone comes back, rather than a guess about the shape of the window. -->
+    <string name="window_until">Las apps descansan hasta las %1$s</string>
     <string name="settings_content_desc">Modo padre</string>
 
     <!-- Estado de la app -->
@@ -539,6 +546,12 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_52_0">
+        <item>La hora de dormir y los horarios sin pantalla ya dicen cuándo vuelve el móvil — la hora a la que terminan, en vez de "hasta mañana" para un horario que acaba esta tarde.</item>
+        <item>Mientras uno de esos horarios está activo, las apps dejan de ofrecer pedir más minutos. Ningún tiempo extra puede terminar un horario, y pedirlo parecía que sí: se concedía la petición, la app seguía cerrada, y nadie veía por qué.</item>
+        <item>La pantalla de tu hijo ya no cuenta atrás un límite que su móvil no puede imponer. Las apps que vienen con el teléfono — el navegador, el vídeo, la galería — mostraban un límite y llegaban a "Bloqueado" mientras seguían abriéndose con toda normalidad.</item>
+        <item>Las tarjetas que sobrevivían a lo que anunciaban ahora se van solas: tu última respuesta cuando termina su día (los minutos extra que anunciaba se acabaron con él), y la ventana de instalación cuando se cierra.</item>
+    </string-array>
     <string-array name="whats_new_0_51_0">
         <item>Tu hijo puede volver a consultar sus reglas: hora de dormir, horarios sin pantalla y el límite de cada app, todo junto y desde su pantalla de inicio.</item>
         <item>Al abrir una app a la que le queda menos de media hora, ve cuánto tiempo tiene durante un par de segundos — a tiempo para organizarse, y breve para poder ignorarlo.</item>

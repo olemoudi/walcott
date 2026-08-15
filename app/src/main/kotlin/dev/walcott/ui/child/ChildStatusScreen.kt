@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.LockOpen
@@ -58,6 +59,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -97,6 +99,7 @@ import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.NumberDisplay
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDate
@@ -137,9 +140,30 @@ fun ChildStatusScreen(
     var requestTarget by remember { mutableStateOf<RequestTarget?>(null) }
     val myApps by viewModel.myApps.collectAsStateWithLifecycle()
 
+    // This screen's own clock, for the two things on it that age without anything being written:
+    // the install window's countdown and how old the parents' last answer is. Everything else
+    // rides on childState — which is a StateFlow, and therefore conflated: its 15s clock
+    // re-derives the same value and emits nothing, so a screen with nothing else happening on it
+    // never recomposed. The window's countdown froze, and the card outlived the window it was
+    // counting down. Ten seconds is finer than anything either of them prints.
+    val nowMs by produceState(System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(10_000)
+        }
+    }
+
+    // Whatever is closing the whole phone right now. The hero says it once, up top.
+    val deviceWideWindow = state.bedtimeActive || state.screenFreeNow != null
+
     // The apps worth showing: the ones with minutes left, not every limited app on the phone.
-    val lowApps = remember(state.apps) {
+    val lowApps = remember(state.apps, deviceWideWindow) {
         state.apps.filter { dev.walcott.rules.CloseWatch.runningLow(it.remaining, it.blocked) }
+            // While bedtime or a screen-free window has the whole phone closed, every limited
+            // app reads as blocked. Listing them all under "Running out", each offering to ask
+            // for more time, said two false things at once: they have not run out, and no
+            // number of minutes can end a window (see AppStatusUi.moreTimeWouldHelp).
+            .filterNot { deviceWideWindow && !it.moreTimeWouldHelp }
     }
 
     val context = LocalContext.current
@@ -180,7 +204,17 @@ fun ChildStatusScreen(
             }
             // What is about to bite, and the rules that shape the day. Everything below is
             // either an exception (an alert, a pending answer) or something to DO.
-            item { HeroCard(state, lowApps.size) }
+            // Two counts, not one: an app that has already run out is not "running out", and
+            // saying so over a card that reads "Blocked" was the screen disagreeing with itself.
+            // "Run out" means the budget, only — an app shut by a window of its own has not run
+            // out of anything, and its card says which window.
+            item {
+                HeroCard(
+                    state,
+                    runningLow = lowApps.count { !it.blocked },
+                    outOfTime = lowApps.count { it.blocked && it.moreTimeWouldHelp },
+                )
+            }
             // Honest channel health: without this, a dead channel (server unreachable,
             // network filtered) looks exactly like a dead app — to the child AND to the
             // parent asking "did you get my extra time?".
@@ -196,12 +230,14 @@ fun ChildStatusScreen(
             }
             // The parents' latest answer: approvals celebrate, denials are said out loud
             // (a request that just vanishes teaches the child to spam it), bonuses explain
-            // where the surprise minutes came from. Stays until dismissed.
-            notice?.let { n ->
+            // where the surprise minutes came from. Stays until dismissed — but only while it
+            // is still true: the minutes an approval announces are today's, and die at the
+            // child's midnight with the rest of the day's extra time (see SyncEngine).
+            notice?.takeUnless { dev.walcott.sync.SyncEngine.noticeExpired(it.atMs, nowMs) }?.let { n ->
                 item { NoticeCard(n, onDismiss = { viewModel.dismissNotice() }) }
             }
             // An approved app ask opened the timed install window: say so, with the countdown.
-            val exemptionLeftMs = installExemption - System.currentTimeMillis()
+            val exemptionLeftMs = installExemption - nowMs
             if (identity.role == Role.CHILD && exemptionLeftMs > 0 && pendingInstall.isEmpty()) {
                 item { InstallWindowCard(exemptionLeftMs) }
             }
@@ -955,16 +991,25 @@ private fun Header(identity: FamilyIdentity, familyName: String, onOpenParent: (
  * has an answer in the same glance.
  */
 @Composable
-private fun HeroCard(state: ChildUiState, runningLow: Int) {
+private fun HeroCard(state: ChildUiState, runningLow: Int, outOfTime: Int) {
     val spacing = Tokens.spacing
-    // The signature gradient marks "your time today"; bedtime swaps to the calm container.
+    // Whatever has the whole phone closed right now, and when it lets go. Screen-free time
+    // belongs here for the same reason bedtime does: it is the answer to "why did everything
+    // just stop", and without it this card went on reporting the day's app limits — which are
+    // not what stopped anything — over a screen where nothing would open.
+    val closed: Pair<Int, java.time.LocalTime>? = when {
+        state.bedtimeActive -> state.bedtimeTonight?.let { R.string.bedtime_title to it.end }
+        state.screenFreeNow != null -> R.string.screen_free_title to state.screenFreeNow.end
+        else -> null
+    }
+    // The signature gradient marks "your time today"; a closed phone swaps to the calm container.
     val heroBrush = Tokens.heroBrush
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = if (state.bedtimeActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        color = if (closed != null) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         modifier = Modifier.fillMaxWidth()
             .then(
-                if (state.bedtimeActive) {
+                if (closed != null) {
                     Modifier
                 } else {
                     Modifier.background(heroBrush, RoundedCornerShape(28.dp))
@@ -972,29 +1017,34 @@ private fun HeroCard(state: ChildUiState, runningLow: Int) {
             ),
     ) {
         AnimatedContent(
-            targetState = state.bedtimeActive,
+            targetState = closed,
             transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) },
             label = "hero",
-        ) { bedtime ->
-            if (bedtime) {
+        ) { window ->
+            if (window != null) {
+                val (titleRes, endsAt) = window
                 Row(
                     Modifier.padding(spacing.xl),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Filled.Bedtime, contentDescription = null,
+                        if (titleRes == R.string.bedtime_title) Icons.Filled.Bedtime else Icons.Outlined.DoNotDisturbOn,
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(40.dp),
                     )
                     Spacer(Modifier.width(spacing.lg))
                     Column {
                         Text(
-                            stringResource(R.string.bedtime_title),
+                            stringResource(titleRes),
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         Text(
-                            stringResource(R.string.bedtime_subtitle),
+                            // When it ends, rather than "until tomorrow" — which was a guess
+                            // about the shape of the window, and wrong for every one that ends
+                            // the same day. The child's question is when they get the phone back.
+                            stringResource(R.string.window_until, endsAt.hhmm()),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -1014,8 +1064,12 @@ private fun HeroCard(state: ChildUiState, runningLow: Int) {
                     // put "No time limits set today" one line above "1h a day for each app".
                     val anyLimit = state.apps.isNotEmpty() ||
                         state.defaultBudget != null || state.bedtimeTonight != null
+                    // Already out ranks about to be out: it is the one the child came to do
+                    // something about, and calling it "running out" was simply not true.
                     val summary = when {
                         !anyLimit -> stringResource(R.string.hero_pending_setup)
+                        outOfTime > 0 ->
+                            pluralStringResource(R.plurals.hero_out_of_time, outOfTime, outOfTime)
                         runningLow > 0 ->
                             pluralStringResource(R.plurals.hero_running_low, runningLow, runningLow)
                         else -> stringResource(R.string.hero_nothing_urgent)
@@ -1137,7 +1191,18 @@ private fun AppCard(
                 BudgetBar(fraction = fractionUsed(app), color = accent)
                 Spacer(Modifier.height(spacing.sm))
             }
-            if (requestPending) {
+            if (!app.moreTimeWouldHelp) {
+                // Blocked by a window, not by a budget: bedtime and screen-free time outrank
+                // every allowance (see appStatus), so minutes cannot lift them. Offering to ask
+                // for more sent the child to their parents for something a yes could not deliver
+                // — the request was granted, the app stayed shut, and neither of them knew why.
+                // Say what is holding it instead.
+                Text(
+                    blockedReasonText(app.blockReason),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (requestPending) {
                 // Already asked: say so instead of inviting a duplicate request.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(

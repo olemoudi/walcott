@@ -1158,6 +1158,12 @@ class SyncManager(
     suspend fun expireStaleRequests() {
         val s = syncStore.current()
         val now = System.currentTimeMillis()
+        // Yesterday's answer, over minutes that expired with yesterday (see
+        // [SyncEngine.noticeExpired]). Dropped here rather than only hidden on the screen, so it
+        // stops travelling in the state at all — including to a child who never opens the app.
+        if (s.lastNotice?.let { SyncEngine.noticeExpired(it.atMs, now) } == true) {
+            syncStore.update { it.copy(lastNotice = null) }
+        }
         val deadRequests = s.pendingRequests.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
         val deadAsks = s.pendingAsks.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
         if (deadRequests.isEmpty() && deadAsks.isEmpty()) return

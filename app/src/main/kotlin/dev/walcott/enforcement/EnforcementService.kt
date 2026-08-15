@@ -548,7 +548,11 @@ class EnforcementService : LifecycleService() {
             // below arrive when it is too late to plan around them; this is the moment the
             // number is worth something. Only for an app that has a limit AND time left on it:
             // a blocked one cannot be opened, and an unlimited one has nothing to say.
-            if (justOpened != null && !failingClosed) {
+            // `in managed` for the same reason the closing warnings below check it: screen time
+            // is counted for a wider set than this device can block, so an app outside it has a
+            // budget that is only ever bookkeeping. Announcing "12m left" over one of them
+            // promised a wall that was never going to arrive.
+            if (justOpened != null && justOpened in managed && !failingClosed) {
                 val left = (RuleEngine.evaluate(config, justOpened, now, usage, extra)
                     as? dev.walcott.rules.Verdict.AllowedWithBudget)?.remaining
                 // Only once the app is inside the warning horizon. "9h 54m left" is not news,
