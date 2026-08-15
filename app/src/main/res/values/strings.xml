@@ -21,6 +21,8 @@
         <item quantity="one">%d app has run out</item>
         <item quantity="other">%d apps have run out</item>
     </plurals>
+    <!-- One app spent and another nearly: two facts, one line, because the cards below show two. -->
+    <string name="hero_out_and_low">%1$d out of time, %2$d nearly</string>
     <string name="hero_nothing_urgent">Nothing is running out</string>
     <string name="home_section_running_low">Running out</string>
     <!-- Each app counts separately against this — it is not a shared screen-time pot, and
@@ -65,6 +67,49 @@
     <plurals name="override_value_locks">
         <item quantity="one">%d lock on</item>
         <item quantity="other">%d locks on</item>
+    </plurals>
+
+    <!-- The child's own numbers, on their home. Several phrasings per fact, picked by the day,
+         so the same news never arrives in the same words twice. Nothing here gives advice: the
+         comparison is the point, and a line that lectures is a line they learn to skip. -->
+    <string name="child_today_screen_time">%1$s on screen today</string>
+    <string-array name="insight_top_app_week">
+        <item>%1$s took %2$s of your week.</item>
+        <item>Most of this week went to %1$s: %2$s.</item>
+        <item>Seven days, and %2$s of them in %1$s.</item>
+    </string-array>
+    <string-array name="insight_week_down">
+        <item>You\'re %1$s under last week.</item>
+        <item>%1$s less than the week before.</item>
+    </string-array>
+    <string-array name="insight_week_up">
+        <item>You\'re %1$s over last week.</item>
+        <item>%1$s more than the week before.</item>
+    </string-array>
+    <string-array name="insight_busiest_day">
+        <item>%1$s was your longest day: %2$s.</item>
+        <item>Your biggest day this week was %1$s, at %2$s.</item>
+    </string-array>
+    <string-array name="insight_one_app_share">
+        <item>%1$d%% of your week was one app: %2$s.</item>
+        <item>Nearly all of it — %1$d%% — went to %2$s.</item>
+    </string-array>
+    <!-- A month in one app, measured in something you can picture. -->
+    <plurals name="insight_month_sleep">
+        <item quantity="one">%1$s in %2$s this month — as long as you sleep in %3$d night.</item>
+        <item quantity="other">%1$s in %2$s this month — as long as you sleep in %3$d nights.</item>
+    </plurals>
+    <plurals name="insight_month_film">
+        <item quantity="one">%1$s in %2$s this month. That\'s %3$d film.</item>
+        <item quantity="other">%1$s in %2$s this month. That\'s %3$d films.</item>
+    </plurals>
+    <plurals name="insight_month_match">
+        <item quantity="one">%1$s in %2$s this month — %3$d football match.</item>
+        <item quantity="other">%1$s in %2$s this month — %3$d football matches.</item>
+    </plurals>
+    <plurals name="insight_month_album">
+        <item quantity="one">%1$s in %2$s this month — %3$d album, start to finish.</item>
+        <item quantity="other">%1$s in %2$s this month — %3$d albums, start to finish.</item>
     </plurals>
 
     <!-- App status -->
@@ -248,8 +293,8 @@
     <string name="nav_earn_subtitle">Turn learning time into extra playtime</string>
     <string name="nav_calendar_title">Special days</string>
     <string name="nav_calendar_subtitle">When the weekend runs, plus holidays and days off</string>
-    <string name="nav_report_title">Weekly report</string>
-    <string name="nav_report_subtitle">Usage over the last 7 days</string>
+    <string name="nav_report_title">Screen time report</string>
+    <string name="nav_report_subtitle">Where the day, the week and the month went, app by app</string>
     <string name="earn_add_rule">Add rule</string>
     <string name="earn_empty">No earn rules yet. Add one to reward learning with playtime.</string>
     <string name="earn_rule_summary">%1$d min of %2$s → %3$d min of %4$s</string>
@@ -278,7 +323,15 @@
     <string name="calendar_add_holiday">Add special day</string>
     <string name="calendar_add_vacation">Add a range</string>
     <string name="calendar_empty">Nothing set. A special day follows the weekend rules — add one for a holiday or a day off.</string>
-    <string name="report_no_data">No usage recorded yet this week.</string>
+    <string name="report_no_data">No screen time recorded yet.</string>
+    <string name="report_range_today">Today</string>
+    <string name="report_range_week">7 days</string>
+    <string name="report_range_month">30 days</string>
+    <string name="report_by_app">Where it went</string>
+    <plurals name="report_days_covered">
+        <item quantity="one">%d day on record</item>
+        <item quantity="other">%d days on record</item>
+    </plurals>
     <string name="give_bonus">Give bonus time</string>
     <string name="bonus_granted">Bonus added</string>
 
@@ -581,6 +634,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_56_0">
+        <item>The report now covers today, the last 7 days and the last 30 — all of them app by app, with each app\'s icon, so "where did the month go" is a question you can answer.</item>
+        <item>An app whose icon never arrived no longer sits behind a blank square: a child that cannot render one now says so, the parent stops asking for it on every sync, and any app without an icon shows its initial instead.</item>
+        <item>Your child\'s own screen tells them how long they have been on the phone today, and one thing about their week or month — the app that took the most of it, their longest day, a month in an app measured in nights of sleep. It changes daily and never says the same thing the same way twice.</item>
+    </string-array>
     <string-array name="whats_new_0_55_0">
         <item>Rule changes now reach your children on their own. They were only ever sent when you left the app or reopened it — the timer that was meant to send them cancelled itself first, so a change could sit on your phone for as long as you stayed on the screen.</item>
         <item>And they go sooner: ten seconds after you stop making changes, and never more than thirty seconds after a change was made, however long you keep adjusting things.</item>

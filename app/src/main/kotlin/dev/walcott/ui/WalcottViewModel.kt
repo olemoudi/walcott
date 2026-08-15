@@ -677,6 +677,14 @@ class WalcottViewModel(
         sync.state.map { state -> state.events.sortedByDescending { it.atMs } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Per-child, per-app daily ledger (see [dev.walcott.sync.UsageLedger.mergeByApp]): the only
+     * place a month of app-by-app history exists, since a child's snapshot carries seven days.
+     */
+    val usageByApp: StateFlow<Map<String, Map<Long, Map<String, Long>>>> =
+        sync.state.map { it.usageByApp }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** Per-child daily usage ledger (see [dev.walcott.sync.UsageLedger]), for the dashboard average. */
     val usageLedgers: StateFlow<Map<String, Map<Long, Long>>> =
         sync.state.map { it.usageHistory }
@@ -788,6 +796,30 @@ class WalcottViewModel(
                 .firstOrNull { it.appliesAt(now, dayType == DayType.HOLIDAY) },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
+
+    /**
+     * The one thing the child's own screen says about their numbers today, and the numbers
+     * themselves. Recomputed when today's counters move; the LINE only changes with the date
+     * (see [dev.walcott.data.Insights]), so it holds still while they read it.
+     */
+    val childInsight: StateFlow<dev.walcott.data.Insight?> =
+        repository.usageTodayAllFlow.map {
+            val today = java.time.LocalDate.now()
+            val day = today.toEpochDay()
+            dev.walcott.data.Insights.forToday(
+                today = it,
+                week = repository.usageBetween(day - 6, day),
+                month = repository.usageBetween(day - 29, day),
+                previousWeek = repository.usageBetween(day - 13, day - 7),
+                rotation = today.dayOfYear,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Everything this phone has been used for today, added up — the child's own headline. */
+    val childScreenTimeToday: StateFlow<Duration> =
+        repository.usageTodayAllFlow
+            .map { usage -> usage.values.fold(Duration.ZERO, Duration::plus) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Duration.ZERO)
 
     val settings: StateFlow<PolicySettings> =
         repository.settingsFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PolicySettings())

@@ -272,6 +272,13 @@ data class SyncState(
     /** deviceIds already alerted for clock tampering (cleared once the skew is back to normal). */
     val clockTamperNotified: Set<String> = emptySet(),
     /**
+     * Packages a child has told us it cannot turn into an icon (see [IconPayload.unavailable]).
+     * Subtracted from every icon request, so a drawable that will never render stops being
+     * asked for on every publish for ever — which is what left one app behind a blank square
+     * for days while every other icon arrived.
+     */
+    val iconsUnavailable: Set<String> = emptySet(),
+    /**
      * A rule edit is written locally but not yet published (see [dev.walcott.data.PolicyPush]).
      *
      * PERSISTED, and that is the point rather than a detail: a child refuses a policy whose
@@ -381,6 +388,12 @@ data class SyncState(
      * window, so this ledger is what makes longer averages possible on the parent.
      */
     val usageHistory: Map<String, Map<Long, Long>> = emptyMap(),
+    /**
+     * The same ledger keeping WHICH apps the days went to: child key -> day -> package ->
+     * seconds (see [UsageLedger.mergeByApp]). Beside the totals rather than replacing them,
+     * so the averages every parent already has on file keep working.
+     */
+    val usageByApp: Map<String, Map<Long, Map<String, Long>>> = emptyMap(),
     // Both sides
     /**
      * ntfy `time` (unix seconds) of the newest message this device has processed. Used as the

@@ -89,6 +89,7 @@ fun ExtraTimeRequestCard(
                         size = 40.dp,
                         remoteLoader = { viewModel.childAppIcon(it) },
                         refreshKey = iconRefresh,
+                        label = targetName,
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {

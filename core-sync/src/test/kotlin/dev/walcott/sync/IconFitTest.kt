@@ -1,6 +1,7 @@
 package dev.walcott.sync
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -44,6 +45,32 @@ class IconFitTest {
     fun `a single icon that cannot fit yields null instead of a doomed message`() {
         val payload = IconPayload("device-1", listOf(icon("huge", 20_000)))
         assertNull(IconFit.encode(payload, key))
+    }
+
+    @Test
+    fun `a message carrying only the icons that will never come is still sent`() {
+        // The child saying "these two I cannot render" is the whole message, and it is the one
+        // that stops the parent asking on every publish for the rest of the family's life.
+        val payload = IconPayload("device-1", emptyList(), unavailable = listOf("com.a", "com.b"))
+        val encoded = IconFit.encode(payload, key)
+        assertNotNull(encoded)
+        assertEquals(listOf("com.a", "com.b"), decode(encoded!!).unavailable)
+    }
+
+    @Test
+    fun `an oversized icon with nothing else to say is still not sent`() {
+        // Dropping it leaves an empty message with no news in it, which is not worth a publish.
+        assertNull(IconFit.encode(IconPayload("device-1", listOf(icon("huge", 20_000))), key))
+    }
+
+    @Test
+    fun `an oversized icon rides out with the news that others cannot be rendered`() {
+        val payload = IconPayload("device-1", listOf(icon("huge", 20_000)), unavailable = listOf("com.a"))
+        val encoded = IconFit.encode(payload, key)
+        assertNotNull(encoded)
+        val out = decode(encoded!!)
+        assertTrue(out.icons.isEmpty())
+        assertEquals(listOf("com.a"), out.unavailable)
     }
 
     @Test

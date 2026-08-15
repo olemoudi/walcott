@@ -86,6 +86,7 @@ fun UsageRow(entry: UsageEntry, apps: List<InstalledAppInfo>, viewModel: Walcott
                 // misses and this is what answers (see AppIcon).
                 remoteLoader = { viewModel.childAppIcon(it) },
                 refreshKey = iconRefresh,
+                label = usageLabel(entry, apps),
             )
         }
         Text(

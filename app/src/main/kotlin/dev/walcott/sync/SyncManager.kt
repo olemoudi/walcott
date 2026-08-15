@@ -1449,6 +1449,7 @@ class SyncManager(
                 diagHistory = s.diagHistory - deviceId,
                 // Only legacy devices ledger under their deviceId; child-keyed history stays.
                 usageHistory = s.usageHistory - deviceId,
+                usageByApp = s.usageByApp - deviceId,
             )
         }
     }
@@ -1918,7 +1919,7 @@ class SyncManager(
                 // child can serve can't starve the ones behind it.
                 val shownApps = state.children.flatMap { c -> c.apps.map { it.packageName } }
                 val iconRequests = IconSync.toRequest(
-                    shownApps, iconStore.cachedAmong(shownApps),
+                    shownApps, iconStore.cachedAmong(shownApps) + state.iconsUnavailable,
                     rotation = (System.currentTimeMillis() / ICON_REQUEST_ROTATE_MS).toInt(),
                 )
                 val snapshot = ParentSnapshot(
@@ -2062,23 +2063,37 @@ class SyncManager(
      */
     private suspend fun answerIconRequests(requests: List<String>, id: FamilyIdentity) {
         val transport = transport ?: return
-        val candidates = withContext(Dispatchers.IO) {
-            requests.asSequence()
-                .filter { runCatching { context.packageManager.getApplicationInfo(it, 0) }.isSuccess }
-                .take(ICON_RENDER_LIMIT)
-                .mapNotNull { pkg ->
-                    val drawable = runCatching { context.packageManager.getApplicationIcon(pkg) }.getOrNull()
-                    drawable?.let { IconStore.encode(it) }?.let { AppIconData(pkg, it) }
-                }
-                .toList()
+        // Rendered and un-renderable are gathered in one pass, and the limit counts only the
+        // ones that WORKED. Taking the first eight requests and then encoding them meant a
+        // package whose icon cannot be produced consumed a slot every single cycle — and, once
+        // it was the only one left, produced an empty batch that was never sent at all. That
+        // is the shape of an icon still missing after days.
+        val rendered = mutableListOf<AppIconData>()
+        val unavailable = mutableListOf<String>()
+        withContext(Dispatchers.IO) {
+            for (pkg in requests) {
+                if (rendered.size >= ICON_RENDER_LIMIT) break
+                val installed = runCatching { context.packageManager.getApplicationInfo(pkg, 0) }.isSuccess
+                // Not installed here is not this child's answer to give: another child may have
+                // it, and this one's app list already says it does not.
+                if (!installed) continue
+                val encoded = runCatching { context.packageManager.getApplicationIcon(pkg) }.getOrNull()
+                    ?.let { IconStore.encode(it) }
+                if (encoded == null) unavailable += pkg else rendered += AppIconData(pkg, encoded)
+            }
         }
-        val packed = IconSync.pack(candidates)
-        if (packed.isEmpty()) return
+        val packed = IconSync.pack(rendered)
+        // An icon that packing had to skip is one this message cannot carry; it is not a
+        // failure of the child, so it is left for the next cycle rather than declared missing.
+        if (packed.isEmpty() && unavailable.isEmpty()) return
+        if (unavailable.isNotEmpty()) {
+            dev.walcott.debug.DebugLog.w(TAG, "cannot render icons for ${unavailable.joinToString()}")
+        }
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         // Fit-or-drop: the pack budget is measured pre-envelope, so verify the real wire size
         // like the snapshot does — an oversized publish would be 413-rejected every cycle and
         // silently jam this icon (and everything queued behind it) forever.
-        val message = IconFit.encode(IconPayload(id.deviceId, packed), familyKey)
+        val message = IconFit.encode(IconPayload(id.deviceId, packed, unavailable), familyKey)
         if (message == null) {
             dev.walcott.debug.DebugLog.w(TAG, "icon message over size budget even with one icon; dropped")
             return
@@ -2216,6 +2231,15 @@ class SyncManager(
      * burst quickly and then falls silent (empty requests cost nothing).
      */
     private suspend fun applyIconPayload(payload: IconPayload) {
+        if (payload.unavailable.isNotEmpty()) {
+            // Pruned to what the children still report having, so an app that is uninstalled
+            // and put back gets one more chance — the realistic way "it cannot be rendered"
+            // stops being true.
+            val shown = syncStore.current().children.flatMap { c -> c.apps.map { it.packageName } }.toSet()
+            syncStore.update {
+                it.copy(iconsUnavailable = (it.iconsUnavailable + payload.unavailable).intersect(shown))
+            }
+        }
         var stored = 0
         for (icon in payload.icons) {
             if (iconStore.has(icon.packageName)) continue
@@ -2227,8 +2251,10 @@ class SyncManager(
         }
         if (stored == 0) return
         iconsCached.value = iconsCached.value + 1 // nudge the UI to re-read the cache
-        val shown = syncStore.current().children.flatMap { c -> c.apps.map { it.packageName } }
-        if (IconSync.toRequest(shown, iconStore.cachedAmong(shown)).isNotEmpty()) publishSelf()
+        val after = syncStore.current()
+        val shown = after.children.flatMap { c -> c.apps.map { it.packageName } }
+        val stillMissing = IconSync.toRequest(shown, iconStore.cachedAmong(shown) + after.iconsUnavailable)
+        if (stillMissing.isNotEmpty()) publishSelf()
     }
 
     /** Bumps whenever new icons land, so the app list recomposes and re-reads the disk cache. */
@@ -2471,6 +2497,12 @@ class SyncManager(
             snapshot.epochDay,
             snapshot.usage.sumOf { it.seconds },
         )
+        val byApp = UsageLedger.mergeByApp(
+            before.usageByApp[ledgerKey].orEmpty(),
+            snapshot.history,
+            snapshot.epochDay,
+            snapshot.usage,
+        )
         // Track when this device's install window was first seen open, so the hourly reminder
         // can count "open for an hour" from reality rather than from worker cadence.
         val installWindowOpen = snapshot.installExemptionUntilMs > System.currentTimeMillis()
@@ -2480,6 +2512,7 @@ class SyncManager(
                 lastSeen = it.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
                 commands = if (ackedId != null) it.commands.filterNot { c -> c.id == ackedId } else it.commands,
                 usageHistory = it.usageHistory + (ledgerKey to ledger),
+                usageByApp = it.usageByApp + (ledgerKey to byApp),
                 installWindowSeen = when {
                     installWindowOpen && snapshot.deviceId !in it.installWindowSeen ->
                         it.installWindowSeen + (snapshot.deviceId to System.currentTimeMillis())

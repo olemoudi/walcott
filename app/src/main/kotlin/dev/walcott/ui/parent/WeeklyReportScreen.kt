@@ -13,98 +13,174 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.InsertChart
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
-import dev.walcott.sync.DeviceMode
+import dev.walcott.sync.UsageEntry
+import dev.walcott.sync.UsageLedger
 import dev.walcott.ui.WalcottViewModel
-import dev.walcott.ui.format.humanize
-import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
+import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.components.cardPosition
+import dev.walcott.ui.format.humanize
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 import java.time.Duration
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
-import androidx.compose.ui.res.stringResource
 
+/** The periods the report can be read over. Today is a period too — it is the one in progress. */
+private enum class Range(val days: Int, val labelRes: Int) {
+    TODAY(1, R.string.report_range_today),
+    WEEK(7, R.string.report_range_week),
+    MONTH(30, R.string.report_range_month),
+}
+
+/**
+ * Where the family's screen time went, app by app, over the period the parent picks.
+ *
+ * One shape for all three periods, because "today" and "this month" are the same question asked
+ * over different lengths — and answering them differently (a per-app list here, a bare total
+ * there) was what made the month unavailable at all. It reads the parent's own ledger rather
+ * than the children's live snapshots: a snapshot carries seven days, so a month app by app
+ * exists nowhere else (see [UsageLedger.mergeByApp]).
+ */
 @Composable
 fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val spacing = Tokens.spacing
-    val identity by viewModel.identity.collectAsStateWithLifecycle()
-    val localWeekly by viewModel.weeklyUsage.collectAsStateWithLifecycle()
-    val childrenWeekly by viewModel.childrenWeeklyUsage.collectAsStateWithLifecycle()
-    // Packages are what the counters are keyed by; the children's own app lists name them.
+    val ledgers by viewModel.usageByApp.collectAsStateWithLifecycle()
     val childSnapshots by viewModel.children.collectAsStateWithLifecycle()
-    val appLabels = remember(childSnapshots) {
-        childSnapshots.flatMap { it.apps }.associate { it.packageName to it.label }
-    }
-    // On a parent phone the local usage is empty; show the children's aggregate instead.
-    val weekly = if (identity.effectiveMode == DeviceMode.PARENT) childrenWeekly else localWeekly
+    // Packages are what the counters are keyed by; the children's own app lists name them.
+    val apps = remember(childSnapshots) { childSnapshots.flatMap { it.apps }.distinctBy { it.packageName } }
 
+    var range by rememberSaveable { mutableStateOf(Range.WEEK) }
     val today = LocalDate.now().toEpochDay()
-    val days = (0..6).map { today - 6 + it }
-    val dayTotals = days.map { day ->
-        weekly[day]?.values?.fold(Duration.ZERO) { acc, d -> acc + d } ?: Duration.ZERO
-    }
-    val maxSeconds = (dayTotals.maxOfOrNull { it.seconds } ?: 0L).coerceAtLeast(1L)
 
-    val categoryTotals = mutableMapOf<String, Duration>()
-    weekly.values.forEach { byCat ->
-        byCat.forEach { (cat, d) -> categoryTotals[cat] = (categoryTotals[cat] ?: Duration.ZERO) + d }
+    // Every child's ledger, added together: the report is about the family's screen time, and
+    // each child's detail page is where one child's own is.
+    val family = remember(ledgers) {
+        val byDay = mutableMapOf<Long, MutableMap<String, Long>>()
+        ledgers.values.forEach { ledger ->
+            ledger.forEach { (day, byApp) ->
+                val into = byDay.getOrPut(day) { mutableMapOf() }
+                byApp.forEach { (pkg, seconds) -> into[pkg] = (into[pkg] ?: 0L) + seconds }
+            }
+        }
+        byDay
     }
+    val totals = remember(family, range, today) { UsageLedger.totalsByApp(family, today, range.days) }
+    val covered = remember(family, range, today) { UsageLedger.daysCovered(family, today, range.days) }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_report_title), onBack)
-        Column(Modifier.fillMaxSize().padding(spacing.screen), verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
-            if (categoryTotals.isEmpty()) {
-                Text(stringResource(R.string.report_no_data), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                return@Column
-            }
-
-            WalcottCard {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = spacing.screen),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            item {
                 Row(
-                    Modifier.fillMaxWidth().height(180.dp).padding(spacing.lg),
+                    Modifier.fillMaxWidth().padding(top = spacing.md),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                    verticalAlignment = Alignment.Bottom,
                 ) {
-                    days.forEachIndexed { i, day ->
-                        DayBar(
-                            fraction = dayTotals[i].seconds.toFloat() / maxSeconds,
-                            label = LocalDate.ofEpochDay(day).dayOfWeek
-                                .getDisplayName(TextStyle.SHORT, Locale.getDefault()),
-                            modifier = Modifier.weight(1f),
+                    Range.entries.forEach { option ->
+                        dev.walcott.ui.components.ChoiceChip(
+                            selected = range == option,
+                            onClick = { range = option },
+                            label = stringResource(option.labelRes),
                         )
                     }
                 }
             }
 
-            // Per app now, busiest first: "where did the week go" is an app-shaped question.
-            categoryTotals.entries
-                .sortedByDescending { it.value.seconds }
-                .take(USAGE_ROWS)
-                .forEach { (pkg, total) ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier.width(12.dp).height(12.dp).clip(RoundedCornerShape(50))
-                                .background(MaterialTheme.colorScheme.primary),
-                        )
-                        Spacer(Modifier.width(spacing.sm))
-                        Text(appLabels[pkg] ?: pkg, Modifier.weight(1f))
-                        Text(total.humanize(), style = MaterialTheme.typography.titleSmall)
+            if (totals.isEmpty()) {
+                item {
+                    Text(
+                        stringResource(R.string.report_no_data),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = spacing.lg),
+                    )
+                }
+                return@LazyColumn
+            }
+
+            // The shape of the period, skipped for today — one bar is not a chart.
+            if (range != Range.TODAY) {
+                item { DayChart(family, today, range.days) }
+            }
+
+            item {
+                SectionHeader(
+                    stringResource(R.string.report_by_app),
+                    supporting = pluralStringResource(R.plurals.report_days_covered, covered, covered),
+                    icon = Icons.Outlined.InsertChart,
+                    accent = SectionAccent.ACTIVITY,
+                )
+            }
+            val rows = totals.entries.sortedByDescending { it.value }.take(USAGE_ROWS)
+            item {
+                Column {
+                    rows.forEachIndexed { index, (pkg, seconds) ->
+                        WalcottCard(position = cardPosition(index, rows.size)) {
+                            Box(Modifier.padding(horizontal = spacing.lg, vertical = spacing.xs)) {
+                                UsageRow(UsageEntry(pkg, seconds), apps, viewModel)
+                            }
+                        }
                     }
                 }
+            }
+            item { Spacer(Modifier.height(spacing.xl)) }
+        }
+    }
+}
+
+/**
+ * One bar per day of the period, tallest day full height. Weekday initials only when there is
+ * room for them to be read — a month of labels is a smudge, and the shape is the point.
+ */
+@Composable
+private fun DayChart(family: Map<Long, Map<String, Long>>, todayEpochDay: Long, days: Int) {
+    val spacing = Tokens.spacing
+    val range = (todayEpochDay - days + 1)..todayEpochDay
+    val totals = range.map { day -> family[day]?.values?.sum() ?: 0L }
+    val max = (totals.maxOrNull() ?: 0L).coerceAtLeast(1L)
+    WalcottCard(position = CardPosition.Single) {
+        Row(
+            Modifier.fillMaxWidth().height(180.dp).padding(spacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(if (days > 10) 2.dp else spacing.sm),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            range.forEachIndexed { i, day ->
+                DayBar(
+                    fraction = totals[i].toFloat() / max,
+                    label = if (days > 10) {
+                        ""
+                    } else {
+                        LocalDate.ofEpochDay(day).dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }
@@ -121,7 +197,9 @@ private fun DayBar(fraction: Float, label: String, modifier: Modifier) {
                     .background(MaterialTheme.colorScheme.primary),
             )
         }
-        Spacer(Modifier.height(6.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
+        if (label.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
+        }
     }
 }

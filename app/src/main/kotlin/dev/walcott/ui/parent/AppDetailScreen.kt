@@ -99,6 +99,7 @@ fun AppDetailScreen(
                         size = 44.dp,
                         remoteLoader = { viewModel.childAppIcon(it) },
                         refreshKey = iconRefresh,
+                        label = label,
                     )
                     Spacer(Modifier.width(spacing.md))
                     Text(label, style = MaterialTheme.typography.titleLarge)

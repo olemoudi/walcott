@@ -101,12 +101,17 @@ object IconFit {
 
     fun encode(payload: IconPayload, familyKey: SecretKey, maxBytes: Int = SnapshotFit.MAX_BYTES): String? {
         var icons = payload.icons
-        while (icons.isNotEmpty()) {
+        while (true) {
             val encoded = SyncProtocol.encodeChildIcons(payload.copy(icons = icons), familyKey)
-            if (encoded.length <= maxBytes) return encoded
+            if (encoded.length <= maxBytes) {
+                // Carrying no icons is a real message when it is carrying the list of the ones
+                // this child will never manage to render — that is what stops the parent asking
+                // for ever (see IconPayload.unavailable). Carrying neither is not.
+                return encoded.takeUnless { icons.isEmpty() && payload.unavailable.isEmpty() }
+            }
+            if (icons.isEmpty()) return null
             icons = icons.dropLast(1)
         }
-        return null
     }
 }
 

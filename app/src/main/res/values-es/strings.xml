@@ -21,6 +21,8 @@
         <item quantity="one">Se te ha acabado el tiempo en %d app</item>
         <item quantity="other">Se te ha acabado el tiempo en %d apps</item>
     </plurals>
+    <!-- One app spent and another nearly: two facts, one line, because the cards below show two. -->
+    <string name="hero_out_and_low">%1$d sin tiempo, %2$d a punto</string>
     <string name="hero_nothing_urgent">No se te acaba nada</string>
     <string name="home_section_running_low">Se está acabando</string>
     <!-- Each app counts separately against this — it is not a shared screen-time pot, and
@@ -65,6 +67,50 @@
     <plurals name="override_value_locks">
         <item quantity="one">%d bloqueo activo</item>
         <item quantity="other">%d bloqueos activos</item>
+    </plurals>
+
+    <!-- Los números del hijo, en su propia pantalla. Varias frases por dato, elegidas según el
+         día, para que la misma noticia no llegue nunca con las mismas palabras. Aquí no se
+         aconseja nada: la comparación es lo que cuenta, y una frase que sermonea es una que
+         aprenden a saltarse. -->
+    <string name="child_today_screen_time">%1$s de pantalla hoy</string>
+    <string-array name="insight_top_app_week">
+        <item>%1$s se ha llevado %2$s de tu semana.</item>
+        <item>Casi toda la semana se fue en %1$s: %2$s.</item>
+        <item>Siete días, y %2$s de ellos en %1$s.</item>
+    </string-array>
+    <string-array name="insight_week_down">
+        <item>Llevas %1$s menos que la semana pasada.</item>
+        <item>%1$s por debajo de la semana anterior.</item>
+    </string-array>
+    <string-array name="insight_week_up">
+        <item>Llevas %1$s más que la semana pasada.</item>
+        <item>%1$s por encima de la semana anterior.</item>
+    </string-array>
+    <string-array name="insight_busiest_day">
+        <item>El %1$s fue tu día más largo: %2$s.</item>
+        <item>Tu día más cargado de la semana fue el %1$s, con %2$s.</item>
+    </string-array>
+    <string-array name="insight_one_app_share">
+        <item>El %1$d%% de tu semana fue una sola app: %2$s.</item>
+        <item>Casi todo — un %1$d%% — se fue en %2$s.</item>
+    </string-array>
+    <!-- Un mes en una app, medido en algo que se pueda imaginar. -->
+    <plurals name="insight_month_sleep">
+        <item quantity="one">%1$s en %2$s este mes: lo que duermes en %3$d noche.</item>
+        <item quantity="other">%1$s en %2$s este mes: lo que duermes en %3$d noches.</item>
+    </plurals>
+    <plurals name="insight_month_film">
+        <item quantity="one">%1$s en %2$s este mes. Son %3$d película.</item>
+        <item quantity="other">%1$s en %2$s este mes. Son %3$d películas.</item>
+    </plurals>
+    <plurals name="insight_month_match">
+        <item quantity="one">%1$s en %2$s este mes: %3$d partido de fútbol.</item>
+        <item quantity="other">%1$s en %2$s este mes: %3$d partidos de fútbol.</item>
+    </plurals>
+    <plurals name="insight_month_album">
+        <item quantity="one">%1$s en %2$s este mes: %3$d disco entero.</item>
+        <item quantity="other">%1$s en %2$s este mes: %3$d discos enteros.</item>
     </plurals>
 
     <!-- Estado de la app -->
@@ -247,8 +293,8 @@
     <string name="nav_earn_subtitle">Convierte tiempo de estudio en tiempo de ocio</string>
     <string name="nav_calendar_title">Días especiales</string>
     <string name="nav_calendar_subtitle">Cuándo empieza y acaba el finde, más festivos y días libres</string>
-    <string name="nav_report_title">Informe semanal</string>
-    <string name="nav_report_subtitle">Uso de los últimos 7 días</string>
+    <string name="nav_report_title">Informe de tiempo de pantalla</string>
+    <string name="nav_report_subtitle">En qué se ha ido el día, la semana y el mes, app por app</string>
     <string name="earn_add_rule">Añadir regla</string>
     <string name="earn_empty">Aún no hay reglas. Añade una para premiar el estudio con tiempo de ocio.</string>
     <string name="earn_rule_summary">%1$d min de %2$s → %3$d min de %4$s</string>
@@ -277,7 +323,15 @@
     <string name="calendar_add_holiday">Añadir día especial</string>
     <string name="calendar_add_vacation">Añadir periodo</string>
     <string name="calendar_empty">Nada configurado. Un día especial sigue las reglas del finde: añade uno para un festivo o un día libre.</string>
-    <string name="report_no_data">Aún no hay uso registrado esta semana.</string>
+    <string name="report_no_data">Todavía no hay tiempo de pantalla registrado.</string>
+    <string name="report_range_today">Hoy</string>
+    <string name="report_range_week">7 días</string>
+    <string name="report_range_month">30 días</string>
+    <string name="report_by_app">En qué se ha ido</string>
+    <plurals name="report_days_covered">
+        <item quantity="one">%d día registrado</item>
+        <item quantity="other">%d días registrados</item>
+    </plurals>
     <string name="give_bonus">Dar tiempo extra</string>
     <string name="bonus_granted">Extra añadido</string>
 
@@ -580,6 +634,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_56_0">
+        <item>El informe cubre ahora hoy, los últimos 7 días y los últimos 30 — los tres app por app y con el icono de cada una, para que "en qué se ha ido el mes" sea una pregunta con respuesta.</item>
+        <item>Una app cuyo icono no llegaba nunca ya no se queda tras un cuadro gris: el hijo que no puede generarlo lo dice, el padre deja de pedirlo en cada sincronización, y cualquier app sin icono muestra su inicial.</item>
+        <item>La pantalla de tu hijo le dice cuánto lleva hoy en el móvil, y una cosa sobre su semana o su mes — la app que se llevó más, su día más largo, un mes en una app medido en noches de sueño. Cambia cada día y nunca lo cuenta dos veces igual.</item>
+    </string-array>
     <string-array name="whats_new_0_55_0">
         <item>Los cambios de reglas ya llegan solos a tus hijos. Antes sólo se enviaban al salir de la app o al volver a abrirla — el temporizador que debía mandarlos se cancelaba a sí mismo, así que un cambio podía quedarse en tu móvil todo el rato que siguieras en la pantalla.</item>
         <item>Y salen antes: diez segundos después de que dejes de tocar, y nunca más de treinta segundos desde que hiciste el cambio, por mucho que sigas ajustando cosas.</item>

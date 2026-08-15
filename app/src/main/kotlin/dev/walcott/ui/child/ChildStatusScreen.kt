@@ -139,6 +139,13 @@ fun ChildStatusScreen(
     var showRequestSheet by remember { mutableStateOf(false) }
     var requestTarget by remember { mutableStateOf<RequestTarget?>(null) }
     val myApps by viewModel.myApps.collectAsStateWithLifecycle()
+    val screenTimeToday by viewModel.childScreenTimeToday.collectAsStateWithLifecycle()
+    val insight by viewModel.childInsight.collectAsStateWithLifecycle()
+    // Rendered here rather than in the hero so the day's number picks the phrasing too — the
+    // same rotation that chose the fact (see Insights.forToday).
+    val insightLine = insight?.let {
+        insightText(it, label = { pkg -> viewModel.repository.inventory.label(pkg) ?: pkg }, rotation = java.time.LocalDate.now().dayOfYear)
+    }
 
     // This screen's own clock, for the two things on it that age without anything being written:
     // the install window's countdown and how old the parents' last answer is. Everything else
@@ -213,6 +220,8 @@ fun ChildStatusScreen(
                     state,
                     runningLow = lowApps.count { !it.blocked },
                     outOfTime = lowApps.count { it.blocked && it.moreTimeWouldHelp },
+                    screenTimeToday = screenTimeToday,
+                    insight = insightLine,
                 )
             }
             // Honest channel health: without this, a dead channel (server unreachable,
@@ -991,7 +1000,13 @@ private fun Header(identity: FamilyIdentity, familyName: String, onOpenParent: (
  * has an answer in the same glance.
  */
 @Composable
-private fun HeroCard(state: ChildUiState, runningLow: Int, outOfTime: Int) {
+private fun HeroCard(
+    state: ChildUiState,
+    runningLow: Int,
+    outOfTime: Int,
+    screenTimeToday: Duration,
+    insight: String?,
+) {
     val spacing = Tokens.spacing
     // Whatever has the whole phone closed right now, and when it lets go. Screen-free time
     // belongs here for the same reason bedtime does: it is the answer to "why did everything
@@ -1068,6 +1083,10 @@ private fun HeroCard(state: ChildUiState, runningLow: Int, outOfTime: Int) {
                     // something about, and calling it "running out" was simply not true.
                     val summary = when {
                         !anyLimit -> stringResource(R.string.hero_pending_setup)
+                        // Both, when there are both: one number over two cards that plainly say
+                        // different things is the screen disagreeing with itself again.
+                        outOfTime > 0 && runningLow > 0 ->
+                            stringResource(R.string.hero_out_and_low, outOfTime, runningLow)
                         outOfTime > 0 ->
                             pluralStringResource(R.plurals.hero_out_of_time, outOfTime, outOfTime)
                         runningLow > 0 ->
@@ -1079,6 +1098,16 @@ private fun HeroCard(state: ChildUiState, runningLow: Int, outOfTime: Int) {
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onPrimary,
                     )
+                    // Their own number, which the card is titled after and never actually said.
+                    // A limit is somebody else's decision; this is just what the day has been.
+                    if (screenTimeToday >= Duration.ofMinutes(1)) {
+                        Text(
+                            stringResource(R.string.child_today_screen_time, screenTimeToday.humanize()),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(top = spacing.xs),
+                        )
+                    }
                     // The standing rules, as short lines rather than cards of their own. Absent
                     // entirely when the family has set none, which is a real configuration.
                     val bedtimeTonight = state.bedtimeTonight
@@ -1103,6 +1132,22 @@ private fun HeroCard(state: ChildUiState, runningLow: Int, outOfTime: Int) {
                                 ),
                             )
                         }
+                    }
+                    // One thing about their own week or month, under a rule of its own: only
+                    // when it is worth saying, only one at a time, and never twice in the same
+                    // words (see Insights). It sits below the limits deliberately — the rules
+                    // are somebody else's, this part is theirs.
+                    if (insight != null) {
+                        Spacer(Modifier.height(spacing.md))
+                        androidx.compose.material3.HorizontalDivider(
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
+                        )
+                        Text(
+                            insight,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(top = spacing.md),
+                        )
                     }
                 }
             }

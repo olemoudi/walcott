@@ -655,7 +655,20 @@ data class AppIconData(val packageName: String, val webpB64: String)
  * message so the initial burst at enrollment spreads across the channel politely.
  */
 @Serializable
-data class IconPayload(val deviceId: String, val icons: List<AppIconData> = emptyList())
+data class IconPayload(
+    val deviceId: String,
+    val icons: List<AppIconData> = emptyList(),
+    /**
+     * Packages this child HAS but cannot turn into an icon — a drawable that refuses to render,
+     * or one that will not fit the size cap even at the smallest rendition.
+     *
+     * Without this the parent has no way to tell "not yet" from "never": it asked on every
+     * publish for ever, the child produced nothing every time, and the app sat behind a blank
+     * grey square for days. Saying so once ends both. Additive, so a child on an older build
+     * simply never says it and the parent keeps its old patience.
+     */
+    val unavailable: List<String> = emptyList(),
+)
 
 /**
  * A child's health report, sent on request ([RemoteAction.DIAGNOSE]) in its own message kind

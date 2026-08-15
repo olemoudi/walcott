@@ -123,12 +123,17 @@ class WalcottRepository(
     /** Extra applied to budgets (manual grants + idle-earned, which is granted into extra_time). */
     suspend fun effectiveExtraNow(): Map<String, Duration> = extraNow()
 
-    /** Usage for the last 7 days: epochDay -> (categoryId -> duration). Per-app counters stripped. */
-    suspend fun weeklyUsage(): Map<Long, Map<String, Duration>> {
-        val end = today()
-        return db.usage().getRange(end - 6, end)
-            // Same story as reportedUsageNow: this filter removed the per-app detail back when
-            // counters were per category, and removes the whole week now that they are per app.
+    /** Usage for the last 7 days: epochDay -> (package -> duration). */
+    suspend fun weeklyUsage(): Map<Long, Map<String, Duration>> = usageBetween(today() - 6, today())
+
+    /**
+     * Usage per day between two epoch days, inclusive: epochDay -> (package -> duration).
+     *
+     * Room keeps ninety days on this device, so a month of app-by-app history is a query rather
+     * than something to accumulate — the child's own numbers never left their phone.
+     */
+    suspend fun usageBetween(startDay: Long, endDay: Long): Map<Long, Map<String, Duration>> {
+        return db.usage().getRange(startDay, endDay)
             .groupBy { it.epochDay }
             .mapValues { (_, rows) -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }

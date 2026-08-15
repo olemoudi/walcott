@@ -476,10 +476,15 @@ class PolicySeedReceiver : BroadcastReceiver() {
         val historyDays = intent.getIntExtra("child_history_days", 0)
         if (historyDays > 0) {
             // Route through the real merge so the seeded ledger is exactly what snapshots build.
+            // Spread over the apps this fake child reports, so the per-app ledger the report
+            // reads has something app-shaped in it rather than one synthetic package.
+            val packages = apps.map { it.packageName }.ifEmpty { listOf("com.seeded.app") }
             val history = (1..historyDays).map { d ->
                 dev.walcott.sync.DayUsage(
                     today - d,
-                    listOf(dev.walcott.sync.UsageEntry("com.seeded.app", 5400L + (d % 5) * 900L)),
+                    packages.mapIndexed { i, pkg ->
+                        dev.walcott.sync.UsageEntry(pkg, 5400L / (i + 1) + (d % 5) * 900L)
+                    },
                 )
             }
             val key = dev.walcott.sync.UsageLedger.keyOf(childId, snapshot.deviceId)
@@ -488,6 +493,11 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     usageHistory = s.usageHistory + (
                         key to dev.walcott.sync.UsageLedger.merge(
                             s.usageHistory[key].orEmpty(), history, today, usage.sumOf { it.seconds },
+                        )
+                        ),
+                    usageByApp = s.usageByApp + (
+                        key to dev.walcott.sync.UsageLedger.mergeByApp(
+                            s.usageByApp[key].orEmpty(), history, today, usage,
                         )
                         ),
                 )
