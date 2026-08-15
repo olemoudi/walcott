@@ -48,10 +48,24 @@ class RuleEventScenarioTest : DeviceScenario() {
         return headroomMinutes
     }
 
+    /**
+     * Burns everything the app may spend today and a little more.
+     *
+     * "A little more than its budget" is not enough: extra time lives in Room beside the usage
+     * and survives re-pairing, so a grant some other scenario made to this same fixture is still
+     * widening its allowance — and the app then quietly never runs out of anything. What has to
+     * be burned is the ALLOWANCE, grants included.
+     */
+    private fun exhaust(headroomMinutes: Int) {
+        val granted = childReports { true }.extra
+            .firstOrNull { it.categoryId == limitedApp }?.seconds ?: 0
+        device.addUsage(limitedApp to (headroomMinutes + 5) * 60L + granted)
+    }
+
     @Test
     fun `running out of time on an app is reported to the parent`() {
         val headroom = settleAllowedWithHeadroom()
-        device.addUsage(limitedApp to (headroom + 5) * 60L)
+        exhaust(headroom)
 
         val reported = childEventuallyReports { snapshot ->
             snapshot.ruleEvents.any { it.kind == ChildEvent.KIND_BUDGET_OUT && it.pkg == limitedApp }
@@ -75,7 +89,7 @@ class RuleEventScenarioTest : DeviceScenario() {
         // three tests deep carries a history that makes "comfortably inside its budget" a much
         // narrower thing to arrange.
         val headroom = settleAllowedWithHeadroom(Fixture.SECOND)
-        device.addUsage(limitedApp to (headroom + 5) * 60L)
+        exhaust(headroom)
         childEventuallyReports { snapshot ->
             snapshot.ruleEvents.any { it.kind == ChildEvent.KIND_BUDGET_OUT && it.pkg == limitedApp }
         }

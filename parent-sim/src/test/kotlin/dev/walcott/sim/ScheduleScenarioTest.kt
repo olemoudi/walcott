@@ -52,6 +52,13 @@ class ScheduleScenarioTest : DeviceScenario() {
         // the answer can arrive.
         childEventuallyReports { it.appliedPolicyVersion >= parent.currentVersion() }
         awaitDevice("the app settled as allowed") { !device.isSuspended(app) }
+        // And the loop has to have SEEN a tick with nothing closing the phone. A device-wide
+        // block is reported as a TRANSITION (see RuleEvents.kindsFor): one that arrives while
+        // the loop still remembers the previous scenario's window reads as "still inside one"
+        // and is never reported at all — the scenario then waits out a minute for a line that
+        // was correctly never written. The check above cannot stand in for this, because a
+        // fixture installed a second ago is unsuspended before the loop has run even once.
+        Thread.sleep(LOOP_SETTLE_MS)
     }
 
     @Test
@@ -120,6 +127,10 @@ class ScheduleScenarioTest : DeviceScenario() {
         parent.pushPolicy(PolicyJson.build(version = 3, bedtime = start to end))
         awaitDevice("the app suspended by bedtime") { device.isSuspended(app) }
 
+        // A DELTA, not a total: extra time lives in Room and survives re-pairing, so this
+        // fixture is still carrying whatever earlier runs granted it. The question here is
+        // whether THIS hour arrived, and only the difference answers it.
+        val before = childReports { true }.extra.firstOrNull { it.categoryId == app }?.seconds ?: 0
         device.requestExtraTime(app, minutes = 60, reason = "please")
         val asking = childEventuallyReports { it.requests.isNotEmpty() }
         val request = asking.requests.first()
@@ -127,14 +138,19 @@ class ScheduleScenarioTest : DeviceScenario() {
 
         // The grant lands — this is not a message that went missing…
         val granted = childEventuallyReports { snapshot ->
-            snapshot.extra.any { it.categoryId == app && it.seconds > 0 }
+            snapshot.extra.any { it.categoryId == app && it.seconds >= before + 60 * 60L }
         }
         assertEquals(
-            60 * 60L,
+            before + 60 * 60L,
             granted.extra.first { it.categoryId == app }.seconds,
             "the hour was granted, so the app being shut is the schedule and not a lost message",
         )
         // …and the app stays shut anyway, because no number of minutes ends a window.
         assertDeviceNever("opened by extra time during bedtime", windowMs = 20_000) { !device.isSuspended(app) }
+    }
+
+    private companion object {
+        /** Comfortably past the enforcement loop's idle tick (15s), so it has run at least once. */
+        const val LOOP_SETTLE_MS = 20_000L
     }
 }
