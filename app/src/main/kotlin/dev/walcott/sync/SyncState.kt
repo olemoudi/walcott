@@ -281,8 +281,12 @@ data class SyncState(
      * notice and push.
      */
     val pendingPolicyPush: Boolean = false,
-    /** Edits accumulated in the current burst; drives how long the hold lasts. */
-    val policyEditBurst: Int = 0,
+    /**
+     * When the edit still waiting was first made (0 = nothing waiting). The ceiling in
+     * [dev.walcott.data.PolicyPush] is measured from here, so a sitting that goes on and on
+     * cannot keep pushing its own earliest change further into the future.
+     */
+    val policyHoldStartedAtMs: Long = 0,
     /** The policy as last put on the wire, so the screens can say which settings are still local. */
     val deployedPolicyJson: String = "",
     /** deviceId -> the parent version that child has confirmed, and when it did. */

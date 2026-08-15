@@ -1,57 +1,86 @@
 package dev.walcott.data
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+/**
+ * When a sitting's worth of rule edits actually goes on the wire.
+ *
+ * Two promises, and the tests exist to keep them apart: ten seconds after the parent stops, and
+ * thirty from the first change whatever they do next.
+ */
 class PolicyPushTest {
 
     private val t0 = 1_700_000_000_000L
 
     @Test
-    fun `the hold grows five seconds per edit and then stops`() {
-        assertEquals(15_000L, PolicyPush.holdMs(1))
-        assertEquals(20_000L, PolicyPush.holdMs(2))
-        assertEquals(25_000L, PolicyPush.holdMs(3))
-        assertEquals(30_000L, PolicyPush.holdMs(4))
-        // Past the ceiling every further edit simply restarts the maximum.
-        assertEquals(30_000L, PolicyPush.holdMs(5))
-        assertEquals(PolicyPush.MAX_HOLD_MS, PolicyPush.holdMs(50))
+    fun `one edit and nothing else goes out ten seconds later`() {
+        assertEquals(t0 + 10_000L, PolicyPush.dueAtMs(firstEditAtMs = t0, lastEditAtMs = t0))
+        assertEquals(PolicyPush.IDLE_HOLD_MS, PolicyPush.remainingMs(t0, t0, t0))
     }
 
     @Test
-    fun `a first edit with no others is sent after the first hold`() {
-        assertEquals(t0 + 15_000L, PolicyPush.dueAtMs(t0, 1))
+    fun `each further edit restarts the ten seconds, measured from the last one`() {
+        // Three taps four seconds apart: the burst is due ten seconds after the third, not
+        // after the first — the point of coalescing at all.
+        val third = t0 + 8_000
+        assertEquals(third + 10_000L, PolicyPush.dueAtMs(firstEditAtMs = t0, lastEditAtMs = third))
     }
 
     @Test
-    fun `the wait is measured from the LAST edit, not the first`() {
-        // Two edits ten seconds apart: the deadline is 20 s after the second, i.e. 30 s after
-        // the first — not 20 s after the burst began.
-        val second = t0 + 10_000
-        assertEquals(second + 20_000L, PolicyPush.dueAtMs(second, 2))
+    fun `a sitting that keeps going still ships its oldest change at thirty seconds`() {
+        // The parent is still editing at t+28s. Ten more seconds would put this at t+38s;
+        // the ceiling from the first edit cuts it at t+30s.
+        val stillGoing = t0 + 28_000
+        assertEquals(t0 + PolicyPush.MAX_HOLD_MS, PolicyPush.dueAtMs(t0, stillGoing))
+        assertEquals(2_000L, PolicyPush.remainingMs(t0, stillGoing, stillGoing))
     }
 
     @Test
-    fun `at the ceiling each new edit restarts the full thirty seconds`() {
-        val fifth = t0 + 60_000
-        assertEquals(fifth + PolicyPush.MAX_HOLD_MS, PolicyPush.dueAtMs(fifth, 5))
-        val sixth = fifth + 29_000
-        assertEquals(sixth + PolicyPush.MAX_HOLD_MS, PolicyPush.dueAtMs(sixth, 6))
+    fun `an edit made past the ceiling is due at once`() {
+        // Half a minute of steady editing: whatever has been waiting goes now, and the next
+        // edit starts a fresh burst with a clock of its own (see SyncManager.onPolicyEdited).
+        val late = t0 + 45_000
+        assertEquals(0L, PolicyPush.remainingMs(t0, late, late))
+    }
+
+    @Test
+    fun `the ceiling is thirty seconds and the idle wait is ten`() {
+        // The numbers themselves are the promise, so they are asserted rather than implied.
+        assertEquals(10_000L, PolicyPush.IDLE_HOLD_MS)
+        assertEquals(30_000L, PolicyPush.MAX_HOLD_MS)
+        assertTrue(PolicyPush.IDLE_HOLD_MS < PolicyPush.MAX_HOLD_MS)
     }
 
     @Test
     fun `remaining counts down and never goes negative`() {
-        assertEquals(15_000L, PolicyPush.remainingMs(t0, 1, t0))
-        assertEquals(5_000L, PolicyPush.remainingMs(t0, 1, t0 + 10_000))
-        assertEquals(0L, PolicyPush.remainingMs(t0, 1, t0 + 15_000))
-        assertEquals(0L, PolicyPush.remainingMs(t0, 1, t0 + 999_000))
+        assertEquals(10_000L, PolicyPush.remainingMs(t0, t0, t0))
+        assertEquals(4_000L, PolicyPush.remainingMs(t0, t0, t0 + 6_000))
+        assertEquals(0L, PolicyPush.remainingMs(t0, t0, t0 + 10_000))
+        assertEquals(0L, PolicyPush.remainingMs(t0, t0, t0 + 999_000))
     }
 
     @Test
     fun `a clock that jumped cannot park an edit in the future or make it look ancient`() {
-        // Backwards: still bounded by the hold rather than by how far the clock moved.
-        assertEquals(PolicyPush.holdMs(1), PolicyPush.remainingMs(t0, 1, t0 - 86_400_000))
+        // Backwards: still bounded by the idle hold rather than by how far the clock moved.
+        assertEquals(PolicyPush.IDLE_HOLD_MS, PolicyPush.remainingMs(t0, t0, t0 - 86_400_000))
         // Forwards: overdue, which reads as "send it now".
-        assertEquals(0L, PolicyPush.remainingMs(t0, 1, t0 + 86_400_000))
+        assertEquals(0L, PolicyPush.remainingMs(t0, t0, t0 + 86_400_000))
+    }
+
+    @Test
+    fun `no wait can ever exceed the ceiling from the first edit`() {
+        // The property the old shape did not have: whatever the pattern of edits, nothing
+        // already changed is still sitting here thirty seconds later.
+        var last = t0
+        repeat(40) {
+            last += 3_000
+            val due = PolicyPush.dueAtMs(firstEditAtMs = t0, lastEditAtMs = last)
+            assertTrue(
+                due <= t0 + PolicyPush.MAX_HOLD_MS,
+                "an edit from t0 was still being held at ${due - t0}ms",
+            )
+        }
     }
 }

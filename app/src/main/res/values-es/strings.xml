@@ -580,6 +580,10 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_55_0">
+        <item>Los cambios de reglas ya llegan solos a tus hijos. Antes sólo se enviaban al salir de la app o al volver a abrirla — el temporizador que debía mandarlos se cancelaba a sí mismo, así que un cambio podía quedarse en tu móvil todo el rato que siguieras en la pantalla.</item>
+        <item>Y salen antes: diez segundos después de que dejes de tocar, y nunca más de treinta segundos desde que hiciste el cambio, por mucho que sigas ajustando cosas.</item>
+    </string-array>
     <string-array name="whats_new_0_54_0">
         <item>Los ajustes están ahora organizados por capítulos. Cada uno lleva su color, y las filas lo conservan — así una fila sigue diciendo a qué capítulo pertenece mucho después de que su cabecera se haya ido de la pantalla.</item>
         <item>Lo que despliegas contiene de verdad lo que abre: sangrado y unido a su cabecera por una línea lateral, para que dónde acaba una sección se vea en vez de deducirse.</item>

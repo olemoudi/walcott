@@ -9,44 +9,49 @@ package dev.walcott.data
  * middle two states real on a child's phone for a few seconds each, including whatever half-typed
  * intermediate they immediately corrected.
  *
- * So edits coalesce. The first one waits [FIRST_HOLD_MS]; each further edit inside the window
- * extends the wait by [STEP_MS] up to [MAX_HOLD_MS], always measured from the LAST edit. Once at
- * the maximum, every new edit simply restarts that maximum. The burst ends when the parent stops
- * touching things, and exactly one policy goes out with all of it.
+ * So edits coalesce, under two deadlines, and the earlier one wins:
+ *
+ * - [IDLE_HOLD_MS] after the parent's last touch. This is the common case — they finish, and a
+ *   few seconds later the whole sitting goes out as one policy.
+ * - [MAX_HOLD_MS] after the FIRST edit still waiting, whatever happens next. A long sitting used
+ *   to defer everything in it indefinitely: the hold was measured only from the last edit, so a
+ *   parent who kept adjusting kept pushing the deadline out in front of them, and a change made
+ *   at the start could sit on the phone for as long as they went on. The first edit's own clock
+ *   is what stops that, and it never stops for anything.
  *
  * Pure, because "when does this actually get sent" is the part that has to be reasoned about
  * rather than watched: the whole mechanism is invisible when it works.
  */
 object PolicyPush {
 
-    /** Wait after a single edit — long enough to catch the correction that follows a typo. */
-    const val FIRST_HOLD_MS = 15_000L
+    /**
+     * The wait after the parent's last touch.
+     *
+     * Long enough to swallow the correction that follows a typo and the second tap of a pair,
+     * short enough that "I changed it and nothing happened" is never a fair description.
+     */
+    const val IDLE_HOLD_MS = 10_000L
 
-    /** Added per further edit within the window. */
-    const val STEP_MS = 5_000L
-
-    /** Ceiling, so a parent editing steadily still ships something every half minute. */
+    /** The longest anything already changed waits, however long the parent keeps going. */
     const val MAX_HOLD_MS = 30_000L
 
     /**
-     * How long to wait from the most recent edit, given how many have accumulated unsent
-     * ([edits] is 1 for the first). 15 s, 20 s, 25 s, then 30 s for ever.
+     * When a burst that began at [firstEditAtMs] and last moved at [lastEditAtMs] is due.
+     *
+     * The earlier of the two deadlines, so continuing to edit can postpone a change up to the
+     * ceiling and not one millisecond past it.
      */
-    fun holdMs(edits: Int): Long {
-        if (edits <= 1) return FIRST_HOLD_MS
-        return (FIRST_HOLD_MS + STEP_MS * (edits - 1)).coerceAtMost(MAX_HOLD_MS)
-    }
-
-    /** When a burst of [edits] whose last edit landed at [lastEditAtMs] should be published. */
-    fun dueAtMs(lastEditAtMs: Long, edits: Int): Long = lastEditAtMs + holdMs(edits)
+    fun dueAtMs(firstEditAtMs: Long, lastEditAtMs: Long): Long =
+        minOf(lastEditAtMs + IDLE_HOLD_MS, firstEditAtMs + MAX_HOLD_MS)
 
     /**
      * How long is still left to wait at [nowMs], never negative.
      *
      * Clamped at both ends on purpose: a clock that jumped forward must not make a pending edit
      * look overdue by a day, and one that jumped backwards must not park it in the future. The
-     * caller only ever needs "how much longer", and the honest answer is bounded by the hold.
+     * caller only ever needs "how much longer", and the honest answer is bounded by the idle
+     * hold — no deadline can ever be further away than that, since a fresh edit resets it.
      */
-    fun remainingMs(lastEditAtMs: Long, edits: Int, nowMs: Long): Long =
-        (dueAtMs(lastEditAtMs, edits) - nowMs).coerceIn(0, holdMs(edits))
+    fun remainingMs(firstEditAtMs: Long, lastEditAtMs: Long, nowMs: Long): Long =
+        (dueAtMs(firstEditAtMs, lastEditAtMs) - nowMs).coerceIn(0, IDLE_HOLD_MS)
 }

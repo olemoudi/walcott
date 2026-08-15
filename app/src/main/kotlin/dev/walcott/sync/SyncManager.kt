@@ -1483,35 +1483,60 @@ class SyncManager(
      */
     private suspend fun onPolicyEdited() {
         val now = System.currentTimeMillis()
-        val edits = syncStore.current().let { if (it.pendingPolicyPush) it.policyEditBurst + 1 else 1 }
+        val current = syncStore.current()
+        // The burst keeps its own start: the ceiling is measured from the oldest edit still
+        // waiting, not from this one, or a parent who keeps adjusting would keep moving it.
+        val startedAt = if (current.pendingPolicyPush && current.policyHoldStartedAtMs > 0) {
+            current.policyHoldStartedAtMs
+        } else {
+            now
+        }
         syncStore.update {
             it.copy(
                 pendingPolicyPush = true,
-                policyEditBurst = edits,
+                policyHoldStartedAtMs = startedAt,
                 // What the reminder ladder measures a saved backup against: a file older than
                 // the last edit is stale and worth nagging about.
                 lastPolicyEditAtMs = now,
             )
         }
-        val hold = dev.walcott.data.PolicyPush.holdMs(edits)
-        dev.walcott.debug.DebugLog.i(TAG, "rule edit $edits held for ${hold / 1000}s")
+        val hold = dev.walcott.data.PolicyPush.remainingMs(startedAt, now, now)
+        dev.walcott.debug.DebugLog.i(TAG, "rule edit held for ${hold / 1000}s")
         policyPushJob?.cancel()
         policyPushJob = scope.launch {
             delay(hold)
-            runCatching { flushPolicyPush() }
+            // [publishHeldPolicy], not [flushPolicyPush]: the latter cancels this very job
+            // first, and cancelling the coroutine you are running in kills it at its next
+            // suspension point — which is the store read on the line after. So the timer
+            // aborted before writing anything, every single time, and a parent's rule edit
+            // only ever went out when they left the app (setInteractive) or relaunched it.
+            // It looked exactly like a slow window; it was a window that never fired.
+            runCatching { publishHeldPolicy() }
                 .onFailure { dev.walcott.debug.DebugLog.e(TAG, "publishing the held policy failed", it) }
         }
     }
 
     /**
-     * Publishes whatever is being held, now. Called when the hold expires, when the parent puts
-     * the app away (they have plainly stopped editing), and at start-up for a burst interrupted
-     * by a process death.
+     * Stops the timer and publishes whatever is being held, now. For the callers that are not
+     * the timer: the parent putting the app away (they have plainly stopped editing), and
+     * start-up for a burst interrupted by a process death.
      */
     suspend fun flushPolicyPush() {
         policyPushJob?.cancel()
         policyPushJob = null
-        if (!syncStore.current().pendingPolicyPush) return
+        publishHeldPolicy()
+    }
+
+    /** The publish itself, with no opinion about the timer that may or may not be running. */
+    private suspend fun publishHeldPolicy() {
+        val held = syncStore.current()
+        if (!held.pendingPolicyPush) return
+        // How long the oldest edit in this burst actually waited. The hold is invisible when it
+        // works, so "it feels slow" has no evidence behind it either way without this line.
+        held.policyHoldStartedAtMs.takeIf { it > 0 }?.let { startedAt ->
+            val waited = (System.currentTimeMillis() - startedAt).coerceAtLeast(0)
+            dev.walcott.debug.DebugLog.i(TAG, "publishing rule edits held for ${waited / 1000}s")
+        }
         // Bump the version and clear the flag in ONE write, then publish.
         //
         // The bump is what makes the edit adoptable at all — a child refuses a policy whose
@@ -1523,7 +1548,7 @@ class SyncManager(
             it.copy(
                 parentVersion = it.parentVersion + 1,
                 pendingPolicyPush = false,
-                policyEditBurst = 0,
+                policyHoldStartedAtMs = 0,
             )
         }
         publishSelf()
