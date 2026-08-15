@@ -56,15 +56,12 @@ fun RuleEngine.appStatus(
     if (own?.blockedWindows?.get(dayType).orEmpty().any { it.appliesAt(now, specialDay) }) {
         return blocked(BlockReason.BLOCKED_WINDOW)
     }
-    if (budget == null) return AppStatus(packageName, AppState.ALLOWED, used, null, null, null)
-
-    // Same widening rule as the engine: a grant to this app always counts, an "all apps" grant
-    // only reaches apps running on the family default (see RuleEngine.evaluate).
-    val appExtra = extraTime[packageName] ?: Duration.ZERO
-    val sharedExtra =
-        if (config.usesDefaultBudget(packageName)) extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO
-        else Duration.ZERO
-    val remaining = budget + appExtra + sharedExtra - used
+    // The budget plus whatever extra time reaches this app, by the same widening rule the
+    // engine uses — one implementation, in FamilyConfig, so the two cannot drift apart. Null
+    // for exactly the apps that have no budget at all, which is what "no limit today" means.
+    val allowance = config.allowanceFor(packageName, dayType, extraTime)
+        ?: return AppStatus(packageName, AppState.ALLOWED, used, null, null, null)
+    val remaining = allowance - used
     return if (remaining > Duration.ZERO) {
         AppStatus(packageName, AppState.BUDGETED, used, budget, remaining, null)
     } else {

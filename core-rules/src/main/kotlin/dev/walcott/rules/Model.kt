@@ -193,6 +193,29 @@ data class FamilyConfig(
         val own = perAppPolicies[packageName] ?: return true
         return !own.unlimited && own.dailyBudget.isEmpty()
     }
+
+    /**
+     * Everything [packageName] may spend today: its budget plus whatever extra time reaches it.
+     * Null when it has no budget at all, which is not the same as zero.
+     *
+     * The widening rule lives here so that every reader of an allowance agrees on it — a grant
+     * to this app always counts, an "all apps" grant only reaches apps running on the family
+     * default (see [RuleEngine.evaluate]). It was written out twice before, once in the engine
+     * and once in the screen's [appStatus], which is exactly how a screen comes to disagree with
+     * the phone it is describing.
+     */
+    fun allowanceFor(
+        packageName: String,
+        dayType: DayType,
+        extraTime: Map<String, Duration> = emptyMap(),
+    ): Duration? {
+        val budget = budgetFor(packageName, dayType) ?: return null
+        val own = extraTime[packageName] ?: Duration.ZERO
+        val shared =
+            if (usesDefaultBudget(packageName)) extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO
+            else Duration.ZERO
+        return budget + own + shared
+    }
 }
 
 sealed interface Verdict {

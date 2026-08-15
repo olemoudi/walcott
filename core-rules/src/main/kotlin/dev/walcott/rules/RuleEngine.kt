@@ -46,17 +46,14 @@ object RuleEngine {
             return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
         }
 
-        val budget = config.budgetFor(packageName, dayType) ?: return Verdict.Allowed
+        // The budget plus the extra time that reaches this app: its own grant always, plus any
+        // "all apps" grant — but only while the app is on the family default. A budget somebody
+        // set for this app on purpose is not something a blanket "everyone gets 30 more minutes"
+        // should blow past. Written once, in FamilyConfig, because everything that draws a
+        // number for a child reads it and they have to agree (see appStatus, activeBlocks).
+        val allowance = config.allowanceFor(packageName, dayType, extraTime) ?: return Verdict.Allowed
 
-        // Extra time reaching this app: its own grant always, plus any "all apps" grant — but
-        // only while the app is on the family default. A budget somebody set for this app on
-        // purpose is not something a blanket "everyone gets 30 more minutes" should blow past.
-        val appExtra = extraTime[packageName] ?: Duration.ZERO
-        val sharedExtra =
-            if (config.usesDefaultBudget(packageName)) extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO
-            else Duration.ZERO
-
-        val remaining = budget + appExtra + sharedExtra - (usageToday[packageName] ?: Duration.ZERO)
+        val remaining = allowance - (usageToday[packageName] ?: Duration.ZERO)
         return if (remaining > Duration.ZERO) {
             Verdict.AllowedWithBudget(remaining)
         } else {

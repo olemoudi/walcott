@@ -33,6 +33,40 @@
     <string name="window_until">Las apps descansan hasta las %1$s</string>
     <string name="settings_content_desc">Modo padre</string>
 
+    <!-- Qué está cerrado ahora mismo en el móvil del hijo (detalle del hijo, modo padre) -->
+    <string name="blocking_now_title">Bloqueando ahora</string>
+    <string name="blocking_now_hint">Las reglas que están parando algo en su móvil en este momento.</string>
+    <string name="blocking_until">Hasta las %1$s</string>
+    <string name="blocking_out_of_time">%1$s de %2$s usados hoy</string>
+    <string name="blocking_give_time">Dar tiempo</string>
+    <!-- Volver a las reglas de la familia para un hijo -->
+    <string name="override_inherit_all">Usar las reglas de la familia para todo</string>
+    <string name="override_inherit_all_title">¿Volver a las reglas de la familia?</string>
+    <string name="override_inherit_all_body">%1$s deja de tener reglas propias: hora de dormir, horarios sin pantalla, límites, filtro web, protección, ubicación y actualizaciones vuelven a las de la familia. Sus valores personalizados se pierden.</string>
+    <string name="override_inherit_all_confirm">Heredarlo todo</string>
+    <!-- Qué dice cada regla hoy, en las filas de override -->
+    <string name="override_row_inherited">De la familia: %1$s</string>
+    <string name="override_row_custom">%1$s · la familia: %2$s</string>
+    <string name="override_row_same">%1$s — igual que la familia, pero ya no la sigue</string>
+    <string name="override_value_none">Ninguno</string>
+    <string name="override_value_no_limit">Sin límite</string>
+    <plurals name="override_value_windows">
+        <item quantity="one">%d horario</item>
+        <item quantity="other">%d horarios</item>
+    </plurals>
+    <plurals name="override_value_apps">
+        <item quantity="one">%d app con reglas</item>
+        <item quantity="other">%d apps con reglas</item>
+    </plurals>
+    <plurals name="override_value_domains">
+        <item quantity="one">%d dominio bloqueado</item>
+        <item quantity="other">%d dominios bloqueados</item>
+    </plurals>
+    <plurals name="override_value_locks">
+        <item quantity="one">%d bloqueo activo</item>
+        <item quantity="other">%d bloqueos activos</item>
+    </plurals>
+
     <!-- Estado de la app -->
     <string name="status_available">Disponible</string>
     <string name="status_blocked">Bloqueado</string>
@@ -546,6 +580,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_53_0">
+        <item>La ficha de un hijo ahora empieza por lo que de verdad le está parando en ese momento — la hora de dormir, un horario sin pantalla, una app que se ha quedado sin tiempo — cada cosa con el único botón que la termina: la regla, o los minutos.</item>
+        <item>Cada regla que pones a un hijo dice qué está sustituyendo: su hora de dormir junto a la de la familia, su límite junto al de la familia. "Personalizado" era verdad y no decía nunca qué había cambiado.</item>
+        <item>Y un botón devuelve a un hijo a las reglas de la familia por completo, en vez de buscar cada interruptor que encendiste alguna vez.</item>
+    </string-array>
     <string-array name="whats_new_0_52_0">
         <item>La hora de dormir y los horarios sin pantalla ya dicen cuándo vuelve el móvil — la hora a la que terminan, en vez de "hasta mañana" para un horario que acaba esta tarde.</item>
         <item>Mientras uno de esos horarios está activo, las apps dejan de ofrecer pedir más minutos. Ningún tiempo extra puede terminar un horario, y pedirlo parecía que sí: se concedía la petición, la app seguía cerrada, y nadie veía por qué.</item>

@@ -372,6 +372,15 @@ fun WalcottApp(
                             onEditWebFilter = { overrideChildId = childId; screen = Screen.WEBFILTER },
                             onEditProtection = { overrideChildId = childId; screen = Screen.PROTECTION },
                             onEditApps = { overrideChildId = childId; screen = Screen.APPS },
+                            onOpenFamilyLimits = {
+                                budgetsReturnTo = Screen.CHILD_DETAIL
+                                screen = Screen.BUDGETS
+                            },
+                            onOpenFamilyApps = {
+                                overrideChildId = null
+                                appsReturnTo = Screen.CHILD_DETAIL
+                                screen = Screen.APPS
+                            },
                             onOpenSpecialDays = {
                                 calendarReturnTo = Screen.CHILD_DETAIL
                                 screen = Screen.CALENDAR

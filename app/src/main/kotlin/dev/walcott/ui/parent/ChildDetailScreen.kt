@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,19 +22,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Rule
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,8 +56,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -86,6 +94,10 @@ import dev.walcott.ui.components.FoldCard
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.cardPosition
+import dev.walcott.rules.ActiveBlock
+import dev.walcott.rules.RuleEngine
+import dev.walcott.rules.activeBlocks
+import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.qr.rememberQrBitmap
 import dev.walcott.ui.theme.Tokens
@@ -108,6 +120,10 @@ fun ChildDetailScreen(
     onEditWebFilter: () -> Unit,
     onEditProtection: () -> Unit,
     onEditApps: () -> Unit,
+    /** The family's own limits and schedules — where an inherited rule is actually changed. */
+    onOpenFamilyLimits: () -> Unit,
+    /** The family's app list, for the same reason. */
+    onOpenFamilyApps: () -> Unit,
     onOpenSpecialDays: () -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -134,9 +150,54 @@ fun ChildDetailScreen(
     val entry = settings.children.firstOrNull { it.childId == childId } ?: return
     val snapshot = snapshots.firstOrNull { it.childId == childId }
 
+    // The child's day, as the child's own clock has it: its counters are keyed to its calendar
+    // day, and the time matters too because a weekend edge flips the day type mid-day and with
+    // it every rule below. Hoisted out of the cards that need it so the dashboard and the
+    // "what is shut right now" list can never disagree about what "now" is.
+    val parentNow = java.time.LocalDateTime.now()
+    val childNow = dev.walcott.data.ChildStats.localNow(snapshot?.tzOffsetMinutes, nowMs, parentNow)
+    val reportedToday = snapshot != null && dev.walcott.data.ChildStats
+        .reportsCurrentDay(snapshot.epochDay, snapshot.tzOffsetMinutes, nowMs, parentNow)
+    val childSettings = remember(settings, childId) { settings.resolveForChild(childId) }
+    val childConfig = remember(childSettings) { childSettings.toFamilyConfig(emptySet()) }
+    // The family's own rules, unresolved, so every override row can say what it is overriding
+    // instead of only that it is overriding something.
+    val familyConfig = remember(settings) { settings.toFamilyConfig(emptySet()) }
+    val childDayType = childConfig.calendar.dayTypeOf(childNow)
+    // Its own calendar: a child can have special days the family doesn't (see childHolidays),
+    // so the day type the family's rules answer to today is not always the same one.
+    val familyDayType = familyConfig.calendar.dayTypeOf(childNow)
+    val usageToday = if (reportedToday) {
+        snapshot!!.usage.associate { it.categoryId to Duration.ofSeconds(it.seconds) }
+    } else {
+        emptyMap()
+    }
+    val extraToday = if (reportedToday) {
+        snapshot!!.extra.associate { it.categoryId to Duration.ofSeconds(it.seconds) }
+    } else {
+        emptyMap()
+    }
+    // Computed here rather than reported by the child: the parent holds the rules and the
+    // child's day, so this is the same verdict its enforcement loop is reaching, a minute of
+    // tick behind at worst — and it stays honest about a device that hasn't checked in today
+    // (windows still read; a budget judged from yesterday's counters would not).
+    val blockingNow = remember(childConfig, snapshot?.apps, childNow.withSecond(0), usageToday, extraToday, reportedToday) {
+        RuleEngine.activeBlocks(
+            config = childConfig,
+            packages = snapshot?.apps?.map { it.packageName }.orEmpty(),
+            now = childNow,
+            usageToday = usageToday,
+            extraTime = extraToday,
+            usageIsToday = reportedToday,
+        )
+    }
+
     var showRename by remember { mutableStateOf(false) }
     var showRemove by remember { mutableStateOf(false) }
-    var showBonus by remember { mutableStateOf(false) }
+    // Which app the bonus dialog opens on: the all-apps sentinel from the general button, the
+    // package itself when it was opened from the app that has just run out. Null = closed.
+    var bonusTarget by remember { mutableStateOf<String?>(null) }
+    var showInheritAll by remember { mutableStateOf(false) }
     var showCode by rememberSaveable { mutableStateOf(false) }
     // The technical tail (remote fixes, live health, update transport) folded away: it is
     // rarely what the parent came for, and it used to push location and limits off-screen.
@@ -144,10 +205,26 @@ fun ChildDetailScreen(
     // Same for the per-child rule overrides: an all-inherited child used to open on a wall
     // of greyed-out rules, which read as "settings to fix" instead of "nothing customized".
     // Starts open only when something IS customized, so active state is never hidden.
-    val hasCustomRules = entry.overrides.bedtime != null || entry.overrides.budgets != null ||
-        entry.overrides.blockedDomains != null || entry.overrides.deviceRestrictions != null ||
-        entry.overrides.appPolicies != null || entry.overrides.allAppsBlockedWindows != null
-    var showRules by rememberSaveable { mutableStateOf(hasCustomRules) }
+    var showRules by rememberSaveable { mutableStateOf(entry.overrides.customRuleCount > 0) }
+    // Sending the parent to a rule of this child's own means opening the fold it lives in — and
+    // that fold is near the bottom of a long screen, so expanding it alone looks like the button
+    // did nothing. Bumping this asks the list to travel there, once the rows exist to travel to.
+    val listState = rememberLazyListState()
+    var goToRules by remember { mutableIntStateOf(0) }
+    LaunchedEffect(goToRules) {
+        if (goToRules == 0) return@LaunchedEffect
+        // Second from the end, always: the rules are one item and "Additional settings" — itself
+        // collapsed on the way past — is the last. Landing on the section's own header puts the
+        // rule that was tapped directly under it.
+        val target = (listState.layoutInfo.totalItemsCount - 2).coerceAtLeast(0)
+        listState.animateScrollToItem(target)
+    }
+    fun openChildRules() {
+        showRules = true
+        showAdvanced = false
+        goToRules++
+    }
+
 
     // Location earns a prominent slot only when it can actually show something: tracking or
     // history on for this child, or a trail already reported. Otherwise the card (which is
@@ -191,8 +268,13 @@ fun ChildDetailScreen(
             onRemove = { showRemove = true },
         )
         LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = spacing.screen),
+            state = listState,
+            modifier = Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
+            // Breathing room at the bottom as padding rather than a trailing spacer item: the
+            // jump to the rules counts back from the end of the list, and an item that exists
+            // only to be blank would make "the end of the list" mean something else.
+            contentPadding = PaddingValues(bottom = spacing.xl),
         ) {
             // --- Enrollment ---
             if (snapshot == null || showCode) {
@@ -229,35 +311,14 @@ fun ChildDetailScreen(
             // --- Dashboard: the child's day at a glance, plus their recent events ---
             if (snapshot != null) {
                 item {
-                    // The child's clock, falling back to the parent's when it doesn't report one.
-                    // Its epochDay and counters are keyed to its own calendar day, and the time
-                    // matters too because a weekend edge flips the day type mid-day, and with it
-                    // the budget this card reports.
-                    val parentNow = java.time.LocalDateTime.now()
-                    val now = dev.walcott.data.ChildStats.localNow(snapshot.tzOffsetMinutes, nowMs, parentNow)
-                    val today = now.toLocalDate().toEpochDay()
-                    val reportedToday = dev.walcott.data.ChildStats
-                        .reportsCurrentDay(snapshot.epochDay, snapshot.tzOffsetMinutes, nowMs, parentNow)
-                    val config = remember(settings, childId) {
-                        settings.resolveForChild(childId).toFamilyConfig(emptySet())
-                    }
-                    val usage = if (reportedToday) {
-                        snapshot.usage.associate { it.categoryId to Duration.ofSeconds(it.seconds) }
-                    } else {
-                        emptyMap()
-                    }
-                    val extra = if (reportedToday) {
-                        snapshot.extra.associate { it.categoryId to Duration.ofSeconds(it.seconds) }
-                    } else {
-                        emptyMap()
-                    }
+                    val today = childNow.toLocalDate().toEpochDay()
                     val ledger = ledgers[dev.walcott.sync.UsageLedger.keyOf(snapshot.childId, snapshot.deviceId)].orEmpty()
                     ChildDashboardCard(
                         childName = entry.name,
-                        usedToday = Duration.ofSeconds(usage.values.sumOf { it.seconds }),
+                        usedToday = Duration.ofSeconds(usageToday.values.sumOf { it.seconds }),
                         avg7 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 7),
                         avg30 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 30),
-                        defaultBudget = dev.walcott.data.ChildStats.defaultBudgetToday(config, now),
+                        defaultBudget = dev.walcott.data.ChildStats.defaultBudgetToday(childConfig, childNow),
                         events = dev.walcott.sync.ParentEvent
                             .collapseRepeats(events.filter { it.childId == childId && eventRenderable(it) })
                             .take(3),
@@ -321,6 +382,49 @@ fun ChildDetailScreen(
                 item { WrongPinCard(snapshot.pinWrongTotal, snapshot.lastWrongPinMs) }
             }
 
+            // --- What is shut right now, and the one thing that opens it ---
+            // Under the alarms above and over everything else: those say the rules are not being
+            // applied as written, and this says what the rules are doing. A parent arrives here
+            // because a child said "it won't let me", and until now the answer was to open four
+            // editors and work it out — the rules were all visible and which of them was biting
+            // was not.
+            if (snapshot != null && blockingNow.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        stringResource(R.string.blocking_now_title),
+                        supporting = stringResource(R.string.blocking_now_hint),
+                    )
+                }
+                item {
+                    CardGroup {
+                        blockingNow.forEachIndexed { index, block ->
+                            BlockingRow(
+                                block = block,
+                                appLabel = snapshot.apps.firstOrNull { it.packageName == block.packageName }
+                                    ?.label?.ifBlank { null } ?: block.packageName,
+                                position = cardPosition(index, blockingNow.size),
+                                onAct = {
+                                    when (block.kind) {
+                                        // More minutes is the only thing that ends a spent
+                                        // budget, and it is what the child's own screen asks
+                                        // for — the same grant, from the side that can give it.
+                                        ActiveBlock.Kind.BUDGET -> bonusTarget = block.packageName
+                                        // Otherwise: the rule itself. Where it lives depends on
+                                        // whose it is — this child's own copy, or the family's.
+                                        ActiveBlock.Kind.BEDTIME ->
+                                            if (entry.overrides.bedtime != null) openChildRules() else onOpenFamilyLimits()
+                                        ActiveBlock.Kind.SCREEN_FREE ->
+                                            if (entry.overrides.allAppsBlockedWindows != null) openChildRules() else onOpenFamilyLimits()
+                                        ActiveBlock.Kind.APP_WINDOW ->
+                                            if (entry.overrides.appPolicies != null) onEditApps() else onOpenFamilyApps()
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
             // --- Location, right under the day-at-a-glance while it's in use ---
             if (locationActive) {
                 item { locationCard() }
@@ -336,7 +440,7 @@ fun ChildDetailScreen(
                             snapshot,
                             viewModel,
                             position = if (hasHistory) CardPosition.First else CardPosition.Single,
-                            onGiveBonus = { showBonus = true },
+                            onGiveBonus = { bonusTarget = dev.walcott.rules.ExtraTime.ALL_APPS },
                         )
                         if (hasHistory) {
                             HistoryCard(snapshot, position = CardPosition.Last)
@@ -346,175 +450,189 @@ fun ChildDetailScreen(
             }
 
             // --- Per-child overrides, behind a fold ---
+            // One list item, not nine: it is the only way a LazyColumn can be asked to travel to
+            // this section (see openChildRules) — an index is all it understands, and the index of
+            // one item that is always second from the end is a fact, where a count of nine that
+            // grows whenever somebody adds a rule is a bug waiting to be written.
             item {
-                val customized = listOf(
-                    entry.overrides.bedtime, entry.overrides.budgets,
-                    entry.overrides.blockedDomains, entry.overrides.deviceRestrictions,
-                    entry.overrides.appPolicies, entry.overrides.allAppsBlockedWindows,
-                ).count { it != null }
-                FoldCard(
-                    icon = Icons.Outlined.Rule,
-                    title = stringResource(R.string.override_section_title),
-                    subtitle = if (customized > 0) {
-                        pluralStringResource(R.plurals.override_fold_customized, customized, customized)
-                    } else {
-                        stringResource(R.string.override_inherited_hint)
-                    },
-                    expanded = showRules,
-                    onToggle = { showRules = !showRules },
-                )
-            }
-            if (showRules) {
-                // Each override is a connected pair: the switch that owns the rule on top, the
-                // rule itself (always rendered, refused while inherited) attached below it.
-                item {
-                    CardGroup {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    // The rules this fold actually owns. `budgets` used to be counted here and is
+                    // the pre-0.35 category map, blanked by the migration and null on every install
+                    // since — so the count was one short whenever the one rule most likely to be
+                    // customized, this child's own daily limit, was the customized one.
+                    val customized = entry.overrides.customRuleCount
+                    FoldCard(
+                        icon = Icons.Outlined.Rule,
+                        title = stringResource(R.string.override_section_title),
+                        subtitle = if (customized > 0) {
+                            pluralStringResource(R.plurals.override_fold_customized, customized, customized)
+                        } else {
+                            stringResource(R.string.override_inherited_hint)
+                        },
+                        expanded = showRules,
+                        onToggle = { showRules = !showRules },
+                    )
+                    if (showRules) {
+                        // Each override is a connected pair: the switch that owns the rule on top, the
+                        // rule itself (always rendered, refused while inherited) attached below it.
+                        CardGroup {
+                            OverrideSwitchRow(
+                                title = stringResource(R.string.override_bedtime_title),
+                                checked = entry.overrides.bedtime != null,
+                                position = CardPosition.First,
+                                childValue = windowValue(childConfig.bedtime[childDayType]),
+                                familyValue = windowValue(familyConfig.bedtime[familyDayType]),
+                                onToggle = { on ->
+                                    viewModel.setChildOverrides(
+                                        childId,
+                                        entry.overrides.copy(bedtime = if (on) settings.bedtime else null),
+                                    )
+                                },
+                            )
+                            BedtimeCard(
+                                bedtime = entry.overrides.bedtime ?: settings.bedtime,
+                                enabled = entry.overrides.bedtime != null,
+                                position = CardPosition.Last,
+                                specialDaysOwnRules = settings.specialDaysOwnRules,
+                                onOpenSpecialDays = onOpenSpecialDays,
+                                onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                            ) { updated ->
+                                viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
+                            }
+                        }
+                        // Family-wide screen-free windows, per child: the one field that used to be
+                        // truly family-only — a laxer sibling couldn't opt out of "no screens at
+                        // dinner" until this row existed.
+                        CardGroup {
+                            OverrideSwitchRow(
+                                title = stringResource(R.string.override_windows_title),
+                                checked = entry.overrides.allAppsBlockedWindows != null,
+                                position = CardPosition.First,
+                                childValue = windowsValue(childConfig.blockedWindows[childDayType].orEmpty()),
+                                familyValue = windowsValue(familyConfig.blockedWindows[familyDayType].orEmpty()),
+                                onToggle = { on ->
+                                    viewModel.setChildOverrides(
+                                        childId,
+                                        entry.overrides.copy(
+                                            allAppsBlockedWindows = if (on) settings.allAppsBlockedWindows else null,
+                                        ),
+                                    )
+                                },
+                            )
+                            BlockedWindowsCard(
+                                title = stringResource(R.string.all_apps_windows_title),
+                                hint = stringResource(R.string.all_apps_windows_hint),
+                                windowsByDay = entry.overrides.allAppsBlockedWindows ?: settings.allAppsBlockedWindows,
+                                enabled = entry.overrides.allAppsBlockedWindows != null,
+                                position = CardPosition.Last,
+                                specialDaysOwnRules = settings.specialDaysOwnRules,
+                                onOpenSpecialDays = onOpenSpecialDays,
+                                onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                                onChange = { windows ->
+                                    // The whole schedule in one write, same list under every day
+                                    // type (see WalcottViewModel.setAllAppsWindows). An empty list
+                                    // clears the override's map rather than storing empty ones.
+                                    viewModel.setChildOverrides(
+                                        childId,
+                                        entry.overrides.copy(
+                                            allAppsBlockedWindows = if (windows.isEmpty()) {
+                                                emptyMap()
+                                            } else {
+                                                dev.walcott.rules.DayType.entries.associate { it.name to windows }
+                                            },
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                        // This child's own version of the family default: the same one number, so
+                        // "Ana gets two hours an app, her brother one" needs no new concept.
+                        val budget = entry.overrides.defaultAppBudget ?: settings.defaultAppBudget
+                        CardGroup {
+                            OverrideSwitchRow(
+                                title = stringResource(R.string.override_budgets_title),
+                                checked = entry.overrides.defaultAppBudget != null,
+                                position = CardPosition.First,
+                                childValue = budgetValue(childConfig.defaultAppBudget[childDayType]),
+                                familyValue = budgetValue(familyConfig.defaultAppBudget[familyDayType]),
+                                onToggle = { on ->
+                                    viewModel.setChildOverrides(
+                                        childId,
+                                        entry.overrides.copy(
+                                            defaultAppBudget = if (on) settings.defaultAppBudget else null,
+                                        ),
+                                    )
+                                },
+                            )
+                            DailyBudgetCard(
+                                title = stringResource(R.string.default_budget_title),
+                                icon = Icons.Outlined.Apps,
+                                perDay = budget,
+                                enabled = entry.overrides.defaultAppBudget != null,
+                                position = CardPosition.Last,
+                                specialDaysOwnRules = settings.specialDaysOwnRules,
+                                onOpenSpecialDays = onOpenSpecialDays,
+                                onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                                onSetBudget = { dayType, minutes ->
+                                    viewModel.setDefaultBudget(dayType, minutes, childId)
+                                },
+                            )
+                        }
+                        // Per-app limits for this child's own apps. The Edit door only exists while
+                        // the override is on: the scoped Apps screens always write the override.
                         OverrideSwitchRow(
-                            title = stringResource(R.string.override_bedtime_title),
-                            checked = entry.overrides.bedtime != null,
-                            position = CardPosition.First,
+                            title = stringResource(R.string.override_apps_title),
+                            checked = entry.overrides.appPolicies != null,
+                            childValue = countValue(childSettings.appPolicies.count { !it.value.isEmpty }, R.plurals.override_value_apps),
+                            familyValue = countValue(settings.appPolicies.count { !it.value.isEmpty }, R.plurals.override_value_apps),
                             onToggle = { on ->
                                 viewModel.setChildOverrides(
                                     childId,
-                                    entry.overrides.copy(bedtime = if (on) settings.bedtime else null),
+                                    entry.overrides.copy(appPolicies = if (on) settings.appPolicies else null),
                                 )
                             },
+                            onEdit = if (entry.overrides.appPolicies != null) onEditApps else null,
                         )
-                        BedtimeCard(
-                            bedtime = entry.overrides.bedtime ?: settings.bedtime,
-                            enabled = entry.overrides.bedtime != null,
-                            position = CardPosition.Last,
-                            specialDaysOwnRules = settings.specialDaysOwnRules,
-                            onOpenSpecialDays = onOpenSpecialDays,
-                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                        ) { updated ->
-                            viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
+                        OverrideSwitchRow(
+                            title = stringResource(R.string.override_webfilter_title),
+                            checked = entry.overrides.blockedDomains != null,
+                            childValue = countValue(childSettings.blockedDomains.size, R.plurals.override_value_domains),
+                            familyValue = countValue(settings.blockedDomains.size, R.plurals.override_value_domains),
+                            onToggle = { on ->
+                                viewModel.setChildOverrides(
+                                    childId,
+                                    entry.overrides.copy(blockedDomains = if (on) settings.blockedDomains else null),
+                                )
+                            },
+                            onEdit = onEditWebFilter,
+                            editable = entry.overrides.blockedDomains != null,
+                        )
+                        OverrideSwitchRow(
+                            title = stringResource(R.string.override_protection_title),
+                            checked = entry.overrides.deviceRestrictions != null,
+                            childValue = countValue(childSettings.deviceRestrictions.size, R.plurals.override_value_locks),
+                            familyValue = countValue(settings.deviceRestrictions.size, R.plurals.override_value_locks),
+                            onToggle = { on ->
+                                viewModel.setChildOverrides(
+                                    childId,
+                                    entry.overrides.copy(deviceRestrictions = if (on) settings.deviceRestrictions else null),
+                                )
+                            },
+                            onEdit = onEditProtection,
+                            editable = entry.overrides.deviceRestrictions != null,
+                        )
+                        // The way back. Undoing this child's rules meant finding every switch that was
+                        // on — including the ones in other sections — and remembering which those were,
+                        // which is exactly what a parent who wants to start over has lost track of.
+                        if (!entry.overrides.isEmpty) {
+                            OutlinedButton(
+                                onClick = { showInheritAll = true },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(stringResource(R.string.override_inherit_all)) }
                         }
                     }
                 }
-                // Family-wide screen-free windows, per child: the one field that used to be
-                // truly family-only — a laxer sibling couldn't opt out of "no screens at
-                // dinner" until this row existed.
-                item {
-                    CardGroup {
-                        OverrideSwitchRow(
-                            title = stringResource(R.string.override_windows_title),
-                            checked = entry.overrides.allAppsBlockedWindows != null,
-                            position = CardPosition.First,
-                            onToggle = { on ->
-                                viewModel.setChildOverrides(
-                                    childId,
-                                    entry.overrides.copy(
-                                        allAppsBlockedWindows = if (on) settings.allAppsBlockedWindows else null,
-                                    ),
-                                )
-                            },
-                        )
-                        BlockedWindowsCard(
-                            title = stringResource(R.string.all_apps_windows_title),
-                            hint = stringResource(R.string.all_apps_windows_hint),
-                            windowsByDay = entry.overrides.allAppsBlockedWindows ?: settings.allAppsBlockedWindows,
-                            enabled = entry.overrides.allAppsBlockedWindows != null,
-                            position = CardPosition.Last,
-                            specialDaysOwnRules = settings.specialDaysOwnRules,
-                            onOpenSpecialDays = onOpenSpecialDays,
-                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                            onChange = { windows ->
-                                // The whole schedule in one write, same list under every day
-                                // type (see WalcottViewModel.setAllAppsWindows). An empty list
-                                // clears the override's map rather than storing empty ones.
-                                viewModel.setChildOverrides(
-                                    childId,
-                                    entry.overrides.copy(
-                                        allAppsBlockedWindows = if (windows.isEmpty()) {
-                                            emptyMap()
-                                        } else {
-                                            dev.walcott.rules.DayType.entries.associate { it.name to windows }
-                                        },
-                                    ),
-                                )
-                            },
-                        )
-                    }
-                }
-                item {
-                    // This child's own version of the family default: the same one number, so
-                    // "Ana gets two hours an app, her brother one" needs no new concept.
-                    val budget = entry.overrides.defaultAppBudget ?: settings.defaultAppBudget
-                    CardGroup {
-                        OverrideSwitchRow(
-                            title = stringResource(R.string.override_budgets_title),
-                            checked = entry.overrides.defaultAppBudget != null,
-                            position = CardPosition.First,
-                            onToggle = { on ->
-                                viewModel.setChildOverrides(
-                                    childId,
-                                    entry.overrides.copy(
-                                        defaultAppBudget = if (on) settings.defaultAppBudget else null,
-                                    ),
-                                )
-                            },
-                        )
-                        DailyBudgetCard(
-                            title = stringResource(R.string.default_budget_title),
-                            icon = Icons.Outlined.Apps,
-                            perDay = budget,
-                            enabled = entry.overrides.defaultAppBudget != null,
-                            position = CardPosition.Last,
-                            specialDaysOwnRules = settings.specialDaysOwnRules,
-                            onOpenSpecialDays = onOpenSpecialDays,
-                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                            onSetBudget = { dayType, minutes ->
-                                viewModel.setDefaultBudget(dayType, minutes, childId)
-                            },
-                        )
-                    }
-                }
-                item {
-                    // Per-app limits for this child's own apps. The Edit door only exists while
-                    // the override is on: the scoped Apps screens always write the override.
-                    OverrideSwitchRow(
-                        title = stringResource(R.string.override_apps_title),
-                        checked = entry.overrides.appPolicies != null,
-                        onToggle = { on ->
-                            viewModel.setChildOverrides(
-                                childId,
-                                entry.overrides.copy(appPolicies = if (on) settings.appPolicies else null),
-                            )
-                        },
-                        onEdit = if (entry.overrides.appPolicies != null) onEditApps else null,
-                    )
-                }
-                item {
-                    OverrideSwitchRow(
-                        title = stringResource(R.string.override_webfilter_title),
-                        checked = entry.overrides.blockedDomains != null,
-                        onToggle = { on ->
-                            viewModel.setChildOverrides(
-                                childId,
-                                entry.overrides.copy(blockedDomains = if (on) settings.blockedDomains else null),
-                            )
-                        },
-                        onEdit = onEditWebFilter,
-                        editable = entry.overrides.blockedDomains != null,
-                    )
-                }
-                item {
-                    OverrideSwitchRow(
-                        title = stringResource(R.string.override_protection_title),
-                        checked = entry.overrides.deviceRestrictions != null,
-                        onToggle = { on ->
-                            viewModel.setChildOverrides(
-                                childId,
-                                entry.overrides.copy(deviceRestrictions = if (on) settings.deviceRestrictions else null),
-                            )
-                        },
-                        onEdit = onEditProtection,
-                        editable = entry.overrides.deviceRestrictions != null,
-                    )
-                }
             }
-
             // --- Additional settings: the technical tail, folded until asked for ---
             item {
                 FoldCard(
@@ -563,7 +681,6 @@ fun ChildDetailScreen(
                 }
             }
 
-            item { Spacer(Modifier.height(spacing.xl)) }
         }
     }
 
@@ -592,15 +709,120 @@ fun ChildDetailScreen(
             dismissButton = { TextButton(onClick = { showRemove = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
-    if (showBonus && snapshot != null) {
+    bonusTarget?.let { target ->
+        if (snapshot == null) return@let
         BonusDialog(
             apps = snapshot.apps.map { it.packageName to it.label },
-            onDismiss = { showBonus = false },
+            initialTarget = target,
+            onDismiss = { bonusTarget = null },
             onGrant = { categoryId, minutes ->
                 viewModel.giveBonus(snapshot.deviceId, categoryId, minutes)
-                showBonus = false
+                bonusTarget = null
             },
         )
+    }
+    if (showInheritAll) {
+        AlertDialog(
+            onDismissRequest = { showInheritAll = false },
+            title = { Text(stringResource(R.string.override_inherit_all_title)) },
+            text = { Text(stringResource(R.string.override_inherit_all_body, entry.name)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showInheritAll = false
+                    viewModel.setChildOverrides(childId, dev.walcott.data.ChildOverrides())
+                }) { Text(stringResource(R.string.override_inherit_all_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showInheritAll = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
+}
+
+/**
+ * A rule as one short line, for the override rows: what it says TODAY.
+ *
+ * Today rather than the whole week because that is the version a parent is looking at the child
+ * about, and a row that tried to print every day type would be a table, not a line.
+ */
+@Composable
+private fun windowValue(window: dev.walcott.rules.TimeWindow?): String =
+    window?.let { "${it.start.hhmm()} – ${it.end.hhmm()}" } ?: stringResource(R.string.override_value_none)
+
+@Composable
+private fun windowsValue(windows: List<dev.walcott.rules.TimeWindow>): String = when (windows.size) {
+    0 -> stringResource(R.string.override_value_none)
+    // One window is worth naming; several are worth counting, and the editor is one tap away.
+    1 -> windowValue(windows.first())
+    else -> pluralStringResource(R.plurals.override_value_windows, windows.size, windows.size)
+}
+
+@Composable
+private fun budgetValue(budget: Duration?): String =
+    budget?.humanize() ?: stringResource(R.string.override_value_no_limit)
+
+@Composable
+private fun countValue(count: Int, plural: Int): String =
+    if (count == 0) stringResource(R.string.override_value_none) else pluralStringResource(plural, count, count)
+
+/**
+ * One rule that is shutting something right now, and the single thing that would end it.
+ *
+ * One action per row on purpose: a spent budget ends with minutes and a window ends by being
+ * changed, and offering both on every row would make the parent choose between them each time
+ * over a difference the rule already settles.
+ */
+@Composable
+private fun BlockingRow(
+    block: ActiveBlock,
+    appLabel: String,
+    position: CardPosition,
+    onAct: () -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val (icon, title) = when (block.kind) {
+        ActiveBlock.Kind.BEDTIME -> Icons.Filled.Bedtime to stringResource(R.string.bedtime_title)
+        ActiveBlock.Kind.SCREEN_FREE -> Icons.Outlined.DoNotDisturbOn to stringResource(R.string.screen_free_title)
+        ActiveBlock.Kind.APP_WINDOW -> Icons.Outlined.Schedule to appLabel
+        ActiveBlock.Kind.BUDGET -> Icons.Outlined.HourglassEmpty to appLabel
+    }
+    val detail = when (block.kind) {
+        ActiveBlock.Kind.BUDGET -> stringResource(
+            R.string.blocking_out_of_time,
+            (block.used ?: Duration.ZERO).humanize(),
+            (block.allowance ?: Duration.ZERO).humanize(),
+        )
+        // The hour it lets go, which is the parent's actual question about a window.
+        else -> block.until?.let { stringResource(R.string.blocking_until, it.hhmm()) }.orEmpty()
+    }
+    val action = stringResource(
+        if (block.kind == ActiveBlock.Kind.BUDGET) R.string.blocking_give_time else R.string.action_edit,
+    )
+    WalcottCard(position = position) {
+        Row(
+            Modifier.padding(horizontal = spacing.lg, vertical = spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                if (detail.isNotBlank()) {
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.width(spacing.sm))
+            TextButton(onClick = onAct) { Text(action) }
+        }
     }
 }
 
@@ -1643,18 +1865,33 @@ private fun OverrideSwitchRow(
     /** Whether [onEdit] opens the rules to change them, or just to look at what is inherited. */
     editable: Boolean = checked,
     position: CardPosition = CardPosition.Single,
+    /** What this child gets today, and what the family says. The row states both. */
+    childValue: String? = null,
+    familyValue: String? = null,
 ) {
     val spacing = Tokens.spacing
     WalcottCard(position = position) {
         Row(Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)
-                // Make the "snapshot" nature of overrides explicit: once on, it stops tracking
-                // later family edits (resolveForChild replaces the whole field).
-                Text(
-                    stringResource(
+                // The values, not a description of the mechanism. A switch labelled
+                // "Customized" told the parent that something differed and never what — so
+                // the only way to see what this child was actually getting was to turn the
+                // override off and watch the numbers change, which changes the rules.
+                //
+                // An override is a snapshot, not a link: once on it stops following later
+                // family edits. That matters most in the case that otherwise reads as
+                // harmless — identical values — so that is where it is said out loud.
+                val subtitle = when {
+                    childValue == null || familyValue == null -> stringResource(
                         if (checked) R.string.override_customized_hint else R.string.override_inherited_row_hint,
-                    ),
+                    )
+                    !checked -> stringResource(R.string.override_row_inherited, familyValue)
+                    childValue == familyValue -> stringResource(R.string.override_row_same, childValue)
+                    else -> stringResource(R.string.override_row_custom, childValue, familyValue)
+                }
+                Text(
+                    subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

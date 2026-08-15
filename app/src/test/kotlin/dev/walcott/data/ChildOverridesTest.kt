@@ -196,4 +196,38 @@ class ChildOverridesTest {
         assertEquals(5, fam.resolveForChild("t1").trackingIntervalMinutes) // per-child override
         assertEquals(15, fam.resolveForChild("t2").trackingIntervalMinutes) // inherits family default
     }
+
+    @Test
+    fun `the customized count sees this child's own daily limit`() {
+        // The count used to be built from `budgets`, the pre-0.35 category map that the
+        // migration blanks and no install has written since — so the one rule most likely to
+        // be customized read as inherited, and the fold said "nothing customized" over a child
+        // with their own limit.
+        assertEquals(1, ChildOverrides(defaultAppBudget = mapOf("SCHOOL" to 60)).customRuleCount)
+        assertEquals(0, ChildOverrides(budgets = mapOf("games" to mapOf("SCHOOL" to 60))).customRuleCount)
+    }
+
+    @Test
+    fun `it counts the six rules that section owns, and nothing else`() {
+        val all = ChildOverrides(
+            bedtime = emptyMap(), allAppsBlockedWindows = emptyMap(), defaultAppBudget = emptyMap(),
+            appPolicies = emptyMap(), blockedDomains = emptySet(), deviceRestrictions = emptySet(),
+        )
+        assertEquals(6, all.customRuleCount)
+        // Location and updates have their own rows elsewhere on that screen: counting them
+        // there would report a number the section cannot explain.
+        assertEquals(
+            0,
+            ChildOverrides(trackingIntervalMinutes = 15, locationHistoryEnabled = true, updateWifiOnly = true)
+                .customRuleCount,
+        )
+    }
+
+    @Test
+    fun `an override set to empty still counts as this child's own`() {
+        // Empty is a real answer — "no bedtime for this one" — and the whole reason the fields
+        // are nullable. A count that treated it as inherited would hide the laxer sibling.
+        assertEquals(1, ChildOverrides(bedtime = emptyMap()).customRuleCount)
+        assertTrue(!ChildOverrides(bedtime = emptyMap()).isEmpty)
+    }
 }

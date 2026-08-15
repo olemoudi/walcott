@@ -27,11 +27,17 @@ import dev.walcott.ui.theme.Tokens
 internal fun BonusDialog(
     /** The child's apps (package -> label), so a grant can name one of them. */
     apps: List<Pair<String, String>> = emptyList(),
+    /**
+     * What it opens on. The general button means every app; opened from the one that has just
+     * run out, it means that one — a dialog that lands on "all apps" after the parent tapped a
+     * row about Roblox is asking a question they already answered.
+     */
+    initialTarget: String = dev.walcott.rules.ExtraTime.ALL_APPS,
     onDismiss: () -> Unit,
     onGrant: (String, Int) -> Unit,
 ) {
     val spacing = Tokens.spacing
-    var target by remember { mutableStateOf(dev.walcott.rules.ExtraTime.ALL_APPS) }
+    var target by remember(initialTarget) { mutableStateOf(initialTarget) }
     var minutes by remember { mutableIntStateOf(15) }
     val allApps = stringResource(R.string.request_all_apps)
     AlertDialog(

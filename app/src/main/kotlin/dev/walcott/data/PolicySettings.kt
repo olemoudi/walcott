@@ -429,6 +429,22 @@ data class ChildOverrides(
             deviceRestrictions == null &&
             trackingIntervalMinutes == null && locationHistoryEnabled == null &&
             updateWifiOnly == null && appPolicies == null && allAppsBlockedWindows == null
+
+    /**
+     * How many of the SIX rules the child's rules section owns are this child's own rather than
+     * inherited — what its "N rules customized" line counts.
+     *
+     * Location and updates are deliberately outside it: they have their own rows elsewhere on
+     * that screen, and counting them there would report a number the section cannot explain.
+     * [budgets] is outside it too, and used to be inside: it is the pre-0.35 category map, blanked
+     * by the migration and null on every install since, so the count silently ignored the one
+     * rule most likely to be customized — this child's own daily limit.
+     */
+    val customRuleCount: Int
+        get() = listOfNotNull(
+            bedtime, allAppsBlockedWindows, defaultAppBudget,
+            appPolicies, blockedDomains, deviceRestrictions,
+        ).size
 }
 
 /** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */

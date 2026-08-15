@@ -33,6 +33,40 @@
     <string name="window_until">Apps rest until %1$s</string>
     <string name="settings_content_desc">Parent mode</string>
 
+    <!-- What is shut on the child's phone right now (parent's child detail) -->
+    <string name="blocking_now_title">Blocking right now</string>
+    <string name="blocking_now_hint">The rules stopping something on their phone at this moment.</string>
+    <string name="blocking_until">Until %1$s</string>
+    <string name="blocking_out_of_time">%1$s of %2$s used today</string>
+    <string name="blocking_give_time">Give time</string>
+    <!-- Back to the family's rules for one child -->
+    <string name="override_inherit_all">Use the family\'s rules for everything</string>
+    <string name="override_inherit_all_title">Back to the family\'s rules?</string>
+    <string name="override_inherit_all_body">%1$s stops having rules of their own: bedtime, screen-free times, limits, web filter, protection, location and updates all go back to the family\'s. Their custom values are lost.</string>
+    <string name="override_inherit_all_confirm">Inherit everything</string>
+    <!-- What a rule says today, on the override rows -->
+    <string name="override_row_inherited">Family: %1$s</string>
+    <string name="override_row_custom">%1$s · the family\'s: %2$s</string>
+    <string name="override_row_same">%1$s — same as the family, but no longer follows it</string>
+    <string name="override_value_none">None</string>
+    <string name="override_value_no_limit">No limit</string>
+    <plurals name="override_value_windows">
+        <item quantity="one">%d window</item>
+        <item quantity="other">%d windows</item>
+    </plurals>
+    <plurals name="override_value_apps">
+        <item quantity="one">%d app with rules</item>
+        <item quantity="other">%d apps with rules</item>
+    </plurals>
+    <plurals name="override_value_domains">
+        <item quantity="one">%d domain blocked</item>
+        <item quantity="other">%d domains blocked</item>
+    </plurals>
+    <plurals name="override_value_locks">
+        <item quantity="one">%d lock on</item>
+        <item quantity="other">%d locks on</item>
+    </plurals>
+
     <!-- App status -->
     <string name="status_available">Available</string>
     <string name="status_blocked">Blocked</string>
@@ -547,6 +581,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_53_0">
+        <item>A child\'s page now opens with what is actually stopping them at that moment — bedtime, a screen-free window, an app that has run out — each with the one button that ends it: the rule, or the minutes.</item>
+        <item>Every rule you set for one child says what it is overriding: their bedtime next to the family\'s, their limit next to the family\'s. "Customized" was true and never said what had changed.</item>
+        <item>And one button puts a child back on the family\'s rules entirely, instead of hunting for every switch you once turned on.</item>
+    </string-array>
     <string-array name="whats_new_0_52_0">
         <item>Bedtime and screen-free time now say when the phone comes back — the hour they end, instead of "until tomorrow" for a window that ends this afternoon.</item>
         <item>While one of those windows is on, apps stop offering to ask for more minutes. No amount of extra time can end a window, and asking used to look like it might: the request was granted, the app stayed shut, and nobody could see why.</item>
