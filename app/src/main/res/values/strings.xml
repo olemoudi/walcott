@@ -50,6 +50,24 @@
     <string name="blocking_origin_child_app">%1$s\'s own limit for this app</string>
     <string name="blocking_origin_family_app">The family\'s limit for this app</string>
     <string name="blocking_origin_child_default">%1$s\'s own default limit, which this app follows</string>
+
+    <!-- Where the child stands in the rules right now, including what is NOT running -->
+    <string name="now_section_title">Right now</string>
+    <string name="now_section_hint">Which day the rules think it is, and which of their windows are running.</string>
+    <string name="now_daytype_change">%1$s from %2$s</string>
+    <string name="now_when_today">today at %1$s</string>
+    <string name="now_when_tomorrow">tomorrow at %1$s</string>
+    <string name="now_when_weekday">%1$s at %2$s</string>
+    <string name="now_special_day">Today is a special day</string>
+    <string name="now_not_special_day">Today is not a special day</string>
+    <string name="now_bedtime_running">Bedtime, until %1$s</string>
+    <string name="now_bedtime_later">Not bedtime · it starts at %1$s</string>
+    <string name="now_bedtime_none">No bedtime today</string>
+    <string name="now_bedtime_over">Today\'s bedtime is already over</string>
+    <string name="now_screenfree_running">Screen-free time, until %1$s</string>
+    <string name="now_screenfree_later">No screen-free time · the next one is %1$s to %2$s</string>
+    <string name="now_screenfree_none">No screen-free times today</string>
+    <string name="now_screenfree_over">No screen-free time left today</string>
     <string name="blocking_origin_family_default">The family\'s default limit, which this app follows</string>
     <!-- Back to the family's rules for one child -->
     <string name="override_inherit_all">Use the family\'s rules for everything</string>
@@ -756,6 +774,10 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_61_0">
+        <item>Each child\'s page now says where they stand in the rules, including everything that is NOT running: whether the rules already count today as the weekend (by your own Friday and Sunday edges), whether today is one of your special days, and that it is not bedtime — with the hour it starts.</item>
+        <item>The same for screen-free times: none running, and either the next one today with both its hours, or that there are none left. Most of a child\'s day is the hours when nothing is stopping them, and that was the one thing this app never described.</item>
+    </string-array>
     <string-array name="whats_new_0_60_0">
         <item>Every rule that is blocking something right now says whose it is: the family\'s, or one written for that child alone. Their own are the ones you would never find by opening the family\'s editors, so they are the ones marked, and the button beside them opens the rule that is actually biting.</item>
         <item>An app you blocked outright is no longer described as one that ran out of time. It used to read "0s of 0s used today" — which looks like a bug, and offered more minutes as the way out of a rule whose whole point is that there are none. Now it says it is blocked all day, and the button edits the limit.</item>

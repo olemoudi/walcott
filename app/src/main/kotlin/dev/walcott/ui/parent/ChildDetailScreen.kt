@@ -106,6 +106,7 @@ import dev.walcott.ui.components.cardPosition
 import dev.walcott.rules.ActiveBlock
 import dev.walcott.rules.RuleEngine
 import dev.walcott.rules.activeBlocks
+import dev.walcott.rules.ruleContext
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.qr.rememberQrBitmap
@@ -471,6 +472,25 @@ fun ChildDetailScreen(
                         }
                     }
                 }
+            }
+
+            // --- Where they stand in the rules, including everything that is NOT running ---
+            // Under "what is stopping them" and always present, because most of the time the
+            // honest answer to "what are the rules doing right now" is "nothing yet, and here
+            // is when that changes" — which had no home on this screen at all.
+            item {
+                SectionHeader(
+                    stringResource(R.string.now_section_title),
+                    icon = Icons.Outlined.Schedule,
+                    accent = SectionAccent.RULES,
+                    supporting = stringResource(R.string.now_section_hint),
+                )
+            }
+            item {
+                val context = remember(childConfig, childNow.withSecond(0)) {
+                    RuleEngine.ruleContext(childConfig, childNow)
+                }
+                RuleContextCard(context, childNow)
             }
 
             // --- Location, right under the day-at-a-glance while it's in use ---

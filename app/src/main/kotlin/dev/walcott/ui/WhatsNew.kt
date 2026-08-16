@@ -26,6 +26,7 @@ object WhatsNew {
      * then has nothing to show and doesn't appear.
      */
     val RELEASES: List<Release> = listOf(
+        Release(114, "0.61.0-beta", R.array.whats_new_0_61_0),
         Release(113, "0.60.0-beta", R.array.whats_new_0_60_0),
         Release(112, "0.59.0-beta", R.array.whats_new_0_59_0),
         Release(111, "0.58.0-beta", R.array.whats_new_0_58_0),

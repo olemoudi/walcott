@@ -50,6 +50,24 @@
     <string name="blocking_origin_child_app">Límite propio de %1$s para esta app</string>
     <string name="blocking_origin_family_app">Límite de la familia para esta app</string>
     <string name="blocking_origin_child_default">Límite por defecto propio de %1$s, que esta app sigue</string>
+
+    <!-- En qué punto de las reglas está el hijo ahora mismo, incluido lo que NO está activo -->
+    <string name="now_section_title">Ahora mismo</string>
+    <string name="now_section_hint">Qué día creen las reglas que es, y cuáles de sus horarios están corriendo.</string>
+    <string name="now_daytype_change">%1$s desde %2$s</string>
+    <string name="now_when_today">hoy a las %1$s</string>
+    <string name="now_when_tomorrow">mañana a las %1$s</string>
+    <string name="now_when_weekday">el %1$s a las %2$s</string>
+    <string name="now_special_day">Hoy es día especial</string>
+    <string name="now_not_special_day">Hoy no es día especial</string>
+    <string name="now_bedtime_running">Hora de dormir, hasta las %1$s</string>
+    <string name="now_bedtime_later">No es hora de dormir · empieza a las %1$s</string>
+    <string name="now_bedtime_none">Hoy no hay hora de dormir</string>
+    <string name="now_bedtime_over">La hora de dormir de hoy ya pasó</string>
+    <string name="now_screenfree_running">Horario sin pantalla, hasta las %1$s</string>
+    <string name="now_screenfree_later">No hay horario sin pantalla · el siguiente es de %1$s a %2$s</string>
+    <string name="now_screenfree_none">Hoy no hay horarios sin pantalla</string>
+    <string name="now_screenfree_over">Hoy ya no queda ningún horario sin pantalla</string>
     <string name="blocking_origin_family_default">Límite por defecto de la familia, que esta app sigue</string>
     <!-- Volver a las reglas de la familia para un hijo -->
     <string name="override_inherit_all">Usar las reglas de la familia para todo</string>
@@ -756,6 +774,10 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_61_0">
+        <item>La ficha de cada hijo dice ahora en qué punto de las reglas está, incluido todo lo que NO está activo: si las reglas ya cuentan hoy como finde (según tus propios bordes del viernes y del domingo), si hoy es uno de tus días especiales, y que no es hora de dormir — con la hora a la que empieza.</item>
+        <item>Igual con los horarios sin pantalla: ninguno corriendo, y o bien el siguiente de hoy con sus dos horas, o que ya no queda ninguno. La mayor parte del día de un hijo son las horas en las que nada le está parando, y eso era justo lo que esta app no contaba en ningún sitio.</item>
+    </string-array>
     <string-array name="whats_new_0_60_0">
         <item>Cada regla que está bloqueando algo ahora mismo dice de quién es: de la familia, o escrita solo para ese hijo. Las suyas son las que nunca encontrarías abriendo los editores de la familia, así que son las que van marcadas, y el botón de al lado abre la regla que está mordiendo de verdad.</item>
         <item>Una app que bloqueaste del todo ya no se describe como una a la que se le acabó el tiempo. Antes ponía «0 s de 0 s usados hoy» — que parece un fallo, y ofrecía dar más minutos como salida a una regla cuyo sentido es justo que no hay ninguno. Ahora dice que está bloqueada todo el día, y el botón edita el límite.</item>
