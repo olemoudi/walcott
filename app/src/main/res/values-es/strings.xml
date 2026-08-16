@@ -378,8 +378,8 @@
     <string name="device_settings_title">Ajustes del dispositivo</string>
 
     <!-- Detalle del hijo (modo padre) -->
-    <string name="child_detail_linked">Vinculado · %1$s</string>
-    <string name="child_detail_show_code">Ver código</string>
+    <string name="child_detail_show_code">Ver código de vinculación</string>
+    <string name="bonus_no_app_matches">Ninguna app con ese nombre.</string>
     <string name="child_enroll_qr_instructions">En el teléfono de %1$s, abre Walcott, elige \"Este es el teléfono de un hijo\" y escanea este código.</string>
     <string name="rename_child">Renombrar</string>
     <string name="remove_child">Quitar hijo</string>
@@ -696,6 +696,12 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_58_0">
+        <item>Apagar la localización a un hijo consistía en encender algo y luego elegir «Desactivado» dentro. Ese interruptor ya dice lo que es — ajustes de localización personalizados para ese hijo — y, mientras está apagado, dice que activarlo es la forma de darle otra frecuencia, o ninguna.</item>
+        <item>La ficha de un hijo abre con una tarjeta en vez de dos: su día, su actividad reciente y, debajo, el estado del propio móvil — reglas, batería, versión de la app. El código de vinculación, que casi ninguna familia necesita más de una vez, pasa a un botón en la barra de arriba.</item>
+        <item>Dar tiempo extra muestra ahora las apps de ese hijo como una lista con sus iconos, primero las que ha usado hoy, y con buscador en cuanto hay más de unas pocas. Antes era un muro de pastillas grises iguales en orden alfabético.</item>
+        <item>Una app cuyo icono no llegó nunca ya puede recuperarse sola. Al móvil que dijo que no podía generarlo se le vuelve a preguntar un día después en vez de nunca, tiene un segundo sitio donde buscar el icono, y un icono guardado en un formato que tu móvil no sabe leer se vuelve a pedir en lugar de quedarse así para siempre.</item>
+    </string-array>
     <string-array name="whats_new_0_57_0">
         <item>Dar de alta el móvil de un hijo ya no se acaba en el código. En cuanto queda vinculado, ese móvil guía a quien lo tenga en la mano por los permisos que las reglas necesitan de verdad — acceso al tiempo de uso, bloqueo, notificaciones — uno a uno. Cada paso abre la pantalla exacta del sistema y se marca solo al volver. Es un minuto, y es el minuto del que depende todo lo demás el resto del año.</item>
         <item>Si devuelves el móvil antes de terminar, nadie tiene que acordarse. La pantalla del hijo dice lo que falta, tu móvil lo nombra en la ficha de ese hijo con un botón para avisar al dispositivo, la lista de configuración mantiene el paso abierto, y te lo recuerda hasta que esté hecho.</item>
@@ -930,6 +936,8 @@
     <string name="override_earn_title">Tiempo ganado personalizado</string>
     <string name="override_webfilter_title">Filtro web personalizado</string>
     <string name="override_protection_title">Protección del dispositivo personalizada</string>
+    <string name="override_location_title">Ajustes de localización personalizados</string>
+    <string name="location_customize_hint">Actívalo para darle a este hijo otra frecuencia — o ninguna.</string>
     <string name="location_inherited">Ajuste de la familia: %1$s · historial %2$s</string>
     <string name="location_customized">Personalizado para este hijo: %1$s · historial %2$s</string>
     <string name="location_history_on">activado</string>

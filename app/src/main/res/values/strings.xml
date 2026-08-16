@@ -378,8 +378,8 @@
     <string name="device_settings_title">Device settings</string>
 
     <!-- Child detail (parent mode) -->
-    <string name="child_detail_linked">Linked · %1$s</string>
-    <string name="child_detail_show_code">Show code</string>
+    <string name="child_detail_show_code">Show enrollment code</string>
+    <string name="bonus_no_app_matches">No app with that name.</string>
     <string name="child_enroll_qr_instructions">On %1$s\'s phone, open Walcott, choose \"This is a child\'s phone\" and scan this code.</string>
     <string name="rename_child">Rename</string>
     <string name="remove_child">Remove child</string>
@@ -696,6 +696,12 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_58_0">
+        <item>Turning location off for one child used to mean switching something on and then choosing "Off" inside it. That switch now says what it is — custom location settings for this child — and, while it is off, says that turning it on is how you give them a different interval or none at all.</item>
+        <item>A child\'s page opens with one card instead of two: their day, their recent activity, and underneath it the state of the phone itself — rules, battery, app version. The enrollment code, which most families need about once ever, moved to a button in the top bar.</item>
+        <item>Giving extra time now shows that child\'s apps as a list with their icons, the ones they have actually used today first, and a search box once there are more than a handful. It used to be a wall of identical grey pills in alphabetical order.</item>
+        <item>An app whose icon never arrived can now recover on its own. The phone that said it could not produce one is asked again a day later instead of never, it has a second place to look for the icon, and an icon cached in a form your phone cannot read is fetched again rather than kept for ever.</item>
+    </string-array>
     <string-array name="whats_new_0_57_0">
         <item>Setting up a child\'s phone no longer stops at the code. The moment it is linked, that phone walks whoever is holding it through the permissions the rules actually need — screen-time access, blocking, notifications — one at a time. Each one opens the exact system screen, and the step ticks itself off when you come back. It takes about a minute, and it is the minute everything else depends on for the rest of the year.</item>
         <item>If you hand the phone back before finishing, nobody has to remember. The child\'s own screen says what is left, your phone names it on that child\'s page with a button to nudge the device, the setup checklist keeps the step open, and you are reminded until it is done.</item>
@@ -930,6 +936,8 @@
     <string name="override_earn_title">Custom earned time</string>
     <string name="override_webfilter_title">Custom web filter</string>
     <string name="override_protection_title">Custom device protection</string>
+    <string name="override_location_title">Custom location settings</string>
+    <string name="location_customize_hint">Turn it on to give this child a different interval — or none at all.</string>
     <string name="location_inherited">Family setting: %1$s · history %2$s</string>
     <string name="location_customized">Custom for this child: %1$s · history %2$s</string>
     <string name="location_history_on">on</string>

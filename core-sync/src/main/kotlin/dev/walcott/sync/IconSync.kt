@@ -17,6 +17,9 @@ object IconSync {
     /** Cap on the parent's request list, keeping the parent message small during the burst. */
     const val MAX_REQUESTS = 24
 
+    /** How long a child's "I cannot render this" is taken as final before asking again. */
+    const val UNRENDERABLE_RETRY_MS = 24 * 60 * 60 * 1000L
+
     /** Byte budget for one icon message's payload, comfortably under ntfy's ~4 KB cap. */
     const val MESSAGE_BUDGET = 3000
 
@@ -33,6 +36,27 @@ object IconSync {
         val offset = ((rotation % missing.size) + missing.size) % missing.size
         return (missing.drop(offset) + missing.take(offset)).take(MAX_REQUESTS)
     }
+
+    /**
+     * Which of the packages a child reported as unrenderable ([IconPayload.unavailable], keyed
+     * to when it last said so) to keep out of the next request — and only until [retryAfterMs]
+     * has passed.
+     *
+     * "Never ask again" was the wrong reading of that answer. What the child reports is that it
+     * failed to produce an icon once, and the reasons it fails are mostly temporary: a package
+     * installed by something other than the store and still settling, a build of ours whose
+     * renderer has since been fixed, an app that has replaced its own drawable since. Treated as
+     * permanent, one bad answer left that app behind a blank square for the life of the install,
+     * with no way back short of uninstalling it — which is exactly the state this exists to end.
+     *
+     * A timestamp from the future (the parent's clock moved back) is not suppressed: retrying a
+     * day early costs one request slot and stops a bad clock from hiding an icon indefinitely.
+     */
+    fun suppressed(
+        unrenderable: Map<String, Long>,
+        nowMs: Long,
+        retryAfterMs: Long = UNRENDERABLE_RETRY_MS,
+    ): Set<String> = unrenderable.filterValues { nowMs - it in 0 until retryAfterMs }.keys
 
     /**
      * Greedily packs [candidates] (already-rendered icons the child can provide) under

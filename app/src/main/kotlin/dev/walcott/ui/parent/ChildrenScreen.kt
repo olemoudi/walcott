@@ -98,7 +98,8 @@ fun ChildrenScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 
     bonusTarget?.let { child ->
         BonusDialog(
-            apps = child.apps.map { it.packageName to it.label },
+            apps = bonusApps(child),
+            viewModel = viewModel,
             onDismiss = { bonusTarget = null },
             onGrant = { categoryId, minutes ->
                 viewModel.giveBonus(child.deviceId, categoryId, minutes)

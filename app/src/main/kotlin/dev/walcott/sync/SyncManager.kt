@@ -1923,9 +1923,11 @@ class SyncManager(
                 // The rotation slides the bounded request window over time, so a package no
                 // child can serve can't starve the ones behind it.
                 val shownApps = state.children.flatMap { c -> c.apps.map { it.packageName } }
+                val nowMs = System.currentTimeMillis()
                 val iconRequests = IconSync.toRequest(
-                    shownApps, iconStore.cachedAmong(shownApps) + state.iconsUnavailable,
-                    rotation = (System.currentTimeMillis() / ICON_REQUEST_ROTATE_MS).toInt(),
+                    shownApps,
+                    iconStore.cachedAmong(shownApps) + IconSync.suppressed(state.iconsUnrenderable, nowMs),
+                    rotation = (nowMs / ICON_REQUEST_ROTATE_MS).toInt(),
                 )
                 val snapshot = ParentSnapshot(
                     version = state.parentVersion,
@@ -2086,14 +2088,23 @@ class SyncManager(
         val rendered = mutableListOf<AppIconData>()
         val unavailable = mutableListOf<String>()
         withContext(Dispatchers.IO) {
+            val pm = context.packageManager
             for (pkg in requests) {
                 if (rendered.size >= ICON_RENDER_LIMIT) break
-                val installed = runCatching { context.packageManager.getApplicationInfo(pkg, 0) }.isSuccess
+                val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
                 // Not installed here is not this child's answer to give: another child may have
                 // it, and this one's app list already says it does not.
-                if (!installed) continue
-                val encoded = runCatching { context.packageManager.getApplicationIcon(pkg) }.getOrNull()
-                    ?.let { IconStore.encode(it) }
+                if (info == null) continue
+                // Two sources, because they can disagree. The application icon is what an app
+                // declares about itself, and an app whose install never registered one (a
+                // sideload gone sideways, a package restored by an old installer) has nothing
+                // to declare — while its launcher activity, the thing the child actually taps,
+                // still carries the icon the launcher draws.
+                val drawable = runCatching { pm.getApplicationIcon(info) }.getOrNull()
+                    ?: runCatching {
+                        pm.getLaunchIntentForPackage(pkg)?.resolveActivityInfo(pm, 0)?.loadIcon(pm)
+                    }.getOrNull()
+                val encoded = drawable?.let { IconStore.encode(it) }
                 if (encoded == null) unavailable += pkg else rendered += AppIconData(pkg, encoded)
             }
         }
@@ -2247,13 +2258,21 @@ class SyncManager(
      */
     private suspend fun applyIconPayload(payload: IconPayload) {
         if (payload.unavailable.isNotEmpty()) {
-            // Pruned to what the children still report having, so an app that is uninstalled
-            // and put back gets one more chance — the realistic way "it cannot be rendered"
-            // stops being true.
+            // Stamped rather than remembered for good: the ask resumes a day later (see
+            // IconSync.suppressed). Pruned to what the children still report having, so an app
+            // that is uninstalled and put back also gets its chance immediately.
             val shown = syncStore.current().children.flatMap { c -> c.apps.map { it.packageName } }.toSet()
-            syncStore.update {
-                it.copy(iconsUnavailable = (it.iconsUnavailable + payload.unavailable).intersect(shown))
+            val nowMs = System.currentTimeMillis()
+            syncStore.update { state ->
+                val stamped = state.iconsUnrenderable + payload.unavailable.associateWith { nowMs }
+                state.copy(iconsUnrenderable = stamped.filterKeys { it in shown })
             }
+            // Said out loud on the parent too: the child logs why it failed, but the parent is
+            // where the blank icon is actually being looked at.
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "child cannot render icons for ${payload.unavailable.joinToString()}; asking again in a day",
+            )
         }
         var stored = 0
         for (icon in payload.icons) {
@@ -2268,7 +2287,10 @@ class SyncManager(
         iconsCached.value = iconsCached.value + 1 // nudge the UI to re-read the cache
         val after = syncStore.current()
         val shown = after.children.flatMap { c -> c.apps.map { it.packageName } }
-        val stillMissing = IconSync.toRequest(shown, iconStore.cachedAmong(shown) + after.iconsUnavailable)
+        val stillMissing = IconSync.toRequest(
+            shown,
+            iconStore.cachedAmong(shown) + IconSync.suppressed(after.iconsUnrenderable, System.currentTimeMillis()),
+        )
         if (stillMissing.isNotEmpty()) publishSelf()
     }
 

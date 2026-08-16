@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.BatteryChargingFull
+import androidx.compose.material.icons.outlined.BatteryStd
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
@@ -40,8 +42,12 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InsertChart
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -270,6 +276,7 @@ fun ChildDetailScreen(
             onBack = onBack,
             onRename = { showRename = true },
             onRemove = { showRemove = true },
+            onShowCode = if (snapshot != null) ({ showCode = !showCode }) else null,
         )
         LazyColumn(
             state = listState,
@@ -302,24 +309,21 @@ fun ChildDetailScreen(
                         },
                     )
                 }
-            } else {
-                item {
-                    LinkedCard(
-                        snapshot,
-                        rulesSyncing = snapshot.appliedPolicyVersion in 1 until parentVersion,
-                        rulesConfirmedAtMs = policyConfirmedAt[snapshot.deviceId] ?: 0L,
-                        onShowCode = { showCode = true },
-                    )
-                }
             }
 
-            // --- Dashboard: the child's day at a glance, plus their recent events ---
+            // --- Dashboard: the child's day at a glance, its device's state, and its feed ---
+            // One card, because it is one question ("how are they doing?") — the device's own
+            // health used to answer it from a separate card above, which spent the most
+            // valuable slot on the screen restating that the phone is still linked.
             if (snapshot != null) {
                 item {
                     val today = childNow.toLocalDate().toEpochDay()
                     val ledger = ledgers[dev.walcott.sync.UsageLedger.keyOf(snapshot.childId, snapshot.deviceId)].orEmpty()
                     ChildDashboardCard(
                         childName = entry.name,
+                        snapshot = snapshot,
+                        rulesSyncing = snapshot.appliedPolicyVersion in 1 until parentVersion,
+                        rulesConfirmedAtMs = policyConfirmedAt[snapshot.deviceId] ?: 0L,
                         usedToday = Duration.ofSeconds(usageToday.values.sumOf { it.seconds }),
                         avg7 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 7),
                         avg30 = dev.walcott.sync.UsageLedger.averageDaily(ledger, today, days = 30),
@@ -742,7 +746,8 @@ fun ChildDetailScreen(
     bonusTarget?.let { target ->
         if (snapshot == null) return@let
         BonusDialog(
-            apps = snapshot.apps.map { it.packageName to it.label },
+            apps = bonusApps(snapshot),
+            viewModel = viewModel,
             initialTarget = target,
             onDismiss = { bonusTarget = null },
             onGrant = { categoryId, minutes ->
@@ -857,7 +862,14 @@ private fun BlockingRow(
 }
 
 @Composable
-private fun DetailTopBar(title: String, onBack: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
+private fun DetailTopBar(
+    title: String,
+    onBack: () -> Unit,
+    onRename: () -> Unit,
+    onRemove: () -> Unit,
+    /** Toggles the enrollment code back on. Null before a device has ever linked (it is already shown). */
+    onShowCode: (() -> Unit)?,
+) {
     val spacing = Tokens.spacing
     Row(
         Modifier.fillMaxWidth().padding(horizontal = spacing.sm, vertical = spacing.sm),
@@ -868,6 +880,17 @@ private fun DetailTopBar(title: String, onBack: () -> Unit, onRename: () -> Unit
         }
         Spacer(Modifier.width(spacing.xs))
         Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        // Re-enrolling a child happens about once ever, so the code lives here rather than in a
+        // card of its own at the top of the screen: the same door, out of the way of the things
+        // this screen is opened for.
+        if (onShowCode != null) {
+            IconButton(onClick = onShowCode) {
+                Icon(
+                    Icons.Outlined.QrCode2,
+                    contentDescription = stringResource(R.string.child_detail_show_code),
+                )
+            }
+        }
         IconButton(onClick = onRename) {
             Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.rename_child))
         }
@@ -1060,95 +1083,19 @@ private fun EnrollInstallStep(mode: EnrollMode) {
     }
 }
 
-@Composable
-private fun LinkedCard(
-    snapshot: ChildSnapshot,
-    rulesSyncing: Boolean,
-    rulesConfirmedAtMs: Long,
-    onShowCode: () -> Unit,
-) {
-    val spacing = Tokens.spacing
-    WalcottCard {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.CheckCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(Modifier.width(spacing.sm))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.child_detail_linked, snapshot.displayName),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                // Rules in flight, or the positive counterpart. Saying "up to date, confirmed at
-                // X" matters as much as the warning: a healthy child used to be shown by the
-                // ABSENCE of a line, which is also exactly what a child that has never reported
-                // anything looks like — so the one state a parent most wants to confirm was the
-                // one the screen said nothing about.
-                if (rulesSyncing) {
-                    Text(
-                        stringResource(R.string.detail_rules_syncing),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFB26A00),
-                    )
-                } else if (rulesConfirmedAtMs > 0) {
-                    Text(
-                        stringResource(
-                            R.string.detail_rules_current,
-                            android.text.format.DateUtils.getRelativeTimeSpanString(rulesConfirmedAtMs).toString(),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                // Battery at a glance (legacy children report -1 and show nothing).
-                if (snapshot.batteryPercent in 0..100) {
-                    val low = snapshot.batteryPercent < 20 && !snapshot.charging
-                    Text(
-                        stringResource(
-                            if (snapshot.charging) R.string.child_battery_charging else R.string.child_battery,
-                            snapshot.batteryPercent,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                // The fleet is sideloaded + self-updating; a child stuck behind our own build
-                // (0 = legacy child that doesn't report it yet) is worth a red flag.
-                if (snapshot.appVersionCode > 0) {
-                    val outdated = snapshot.appVersionCode < BuildConfig.VERSION_CODE
-                    Text(
-                        if (outdated) {
-                            stringResource(
-                                R.string.child_version_outdated, snapshot.appVersionName, snapshot.appVersionCode,
-                            )
-                        } else {
-                            stringResource(R.string.child_version, snapshot.appVersionName, snapshot.appVersionCode)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (outdated) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-            }
-            TextButton(onClick = onShowCode) { Text(stringResource(R.string.child_detail_show_code)) }
-        }
-    }
-}
-
 /**
  * The child's day at a glance: screen time so far, budget left, and the week/month averages
- * from the parent-side ledger — plus this child's slice of the activity feed. Sits at the top
- * of the detail so the answer to "how are they doing?" needs no scrolling.
+ * from the parent-side ledger — plus this child's slice of the activity feed, and the state of
+ * the device underneath it all. Sits at the top of the detail so the answer to "how are they
+ * doing?" needs no scrolling.
  */
 @Composable
 private fun ChildDashboardCard(
     childName: String,
+    /** The device's own last report, for the status strip along the bottom. */
+    snapshot: ChildSnapshot,
+    rulesSyncing: Boolean,
+    rulesConfirmedAtMs: Long,
     usedToday: Duration,
     avg7: dev.walcott.sync.UsageLedger.Average?,
     avg30: dev.walcott.sync.UsageLedger.Average?,
@@ -1182,7 +1129,89 @@ private fun ChildDashboardCard(
                 HorizontalDivider(Modifier.padding(vertical = spacing.md))
                 events.forEach { (event, times) -> EventLine(event, childName, nowMs, repeat = times) }
             }
+            HorizontalDivider(Modifier.padding(vertical = spacing.md))
+            DeviceStatusStrip(snapshot, rulesSyncing, rulesConfirmedAtMs)
         }
+    }
+}
+
+/**
+ * The device under the numbers: are its rules the ones we sent, has it got battery, is it on
+ * this build. Small, dim and last on purpose — it is what a parent checks when something looks
+ * wrong, not what they came to read — but never absent, because "nothing is shown" and "nothing
+ * has ever reported" used to look identical.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun DeviceStatusStrip(snapshot: ChildSnapshot, rulesSyncing: Boolean, rulesConfirmedAtMs: Long) {
+    val spacing = Tokens.spacing
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(spacing.md),
+        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        // Rules in flight, or the positive counterpart. Saying "up to date, confirmed at X"
+        // matters as much as the warning: a healthy child would otherwise be shown by the
+        // ABSENCE of a line, which is also exactly what a child that has never reported
+        // anything looks like.
+        if (rulesSyncing) {
+            StatusItem(
+                icon = Icons.Outlined.Sync,
+                text = stringResource(R.string.detail_rules_syncing),
+                color = Color(0xFFB26A00),
+            )
+        } else if (rulesConfirmedAtMs > 0) {
+            StatusItem(
+                icon = Icons.Filled.CheckCircle,
+                text = stringResource(
+                    R.string.detail_rules_current,
+                    android.text.format.DateUtils.getRelativeTimeSpanString(rulesConfirmedAtMs).toString(),
+                ),
+                iconColor = MaterialTheme.colorScheme.secondary,
+            )
+        }
+        // Battery at a glance (legacy children report -1 and show nothing).
+        if (snapshot.batteryPercent in 0..100) {
+            val low = snapshot.batteryPercent < 20 && !snapshot.charging
+            StatusItem(
+                icon = if (snapshot.charging) Icons.Outlined.BatteryChargingFull else Icons.Outlined.BatteryStd,
+                text = stringResource(
+                    if (snapshot.charging) R.string.child_battery_charging else R.string.child_battery,
+                    snapshot.batteryPercent,
+                ),
+                color = if (low) MaterialTheme.colorScheme.error else null,
+            )
+        }
+        // The fleet is sideloaded + self-updating; a child stuck behind our own build
+        // (0 = legacy child that doesn't report it yet) is worth a red flag.
+        if (snapshot.appVersionCode > 0) {
+            val outdated = snapshot.appVersionCode < BuildConfig.VERSION_CODE
+            StatusItem(
+                icon = if (outdated) Icons.Outlined.SystemUpdate else Icons.Outlined.Smartphone,
+                text = stringResource(
+                    if (outdated) R.string.child_version_outdated else R.string.child_version,
+                    snapshot.appVersionName,
+                    snapshot.appVersionCode,
+                ),
+                color = if (outdated) MaterialTheme.colorScheme.error else null,
+            )
+        }
+    }
+}
+
+/** One icon+label fact in the status strip. [color] null = the ordinary dim treatment. */
+@Composable
+private fun StatusItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    color: Color? = null,
+    iconColor: Color? = null,
+) {
+    val spacing = Tokens.spacing
+    val ink = color ?: MaterialTheme.colorScheme.onSurfaceVariant
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = iconColor ?: ink, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(spacing.xs))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = ink)
     }
 }
 
@@ -1876,27 +1905,44 @@ private fun LocationCard(
         Column(Modifier.padding(spacing.lg)) {
             Text(stringResource(R.string.location_section_title), style = MaterialTheme.typography.titleMedium)
             // Children inherit the family's location defaults; the switch snapshots them
-            // into a per-child override, mirroring the other override rows.
+            // into a per-child override, mirroring the other override rows — and, like them,
+            // it says so. An unlabelled switch under a heading reading "Location" is read as
+            // the feature's own on/off, so turning location OFF for one child meant switching
+            // what looked like "off" ON and then choosing "Off" inside — a sequence nobody
+            // guesses. The title names what it customizes; the hint names what that is for.
             Row(
                 Modifier.fillMaxWidth().padding(top = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    stringResource(
-                        if (customized) R.string.location_customized else R.string.location_inherited,
-                        if (intervalMinutes == 0) {
-                            stringResource(R.string.tracking_off)
-                        } else {
-                            stringResource(R.string.tracking_minutes_fmt, intervalMinutes)
-                        },
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.override_location_title),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
                         stringResource(
-                            if (historyEnabled) R.string.location_history_on else R.string.location_history_off,
+                            if (customized) R.string.location_customized else R.string.location_inherited,
+                            if (intervalMinutes == 0) {
+                                stringResource(R.string.tracking_off)
+                            } else {
+                                stringResource(R.string.tracking_minutes_fmt, intervalMinutes)
+                            },
+                            stringResource(
+                                if (historyEnabled) R.string.location_history_on else R.string.location_history_off,
+                            ),
                         ),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!customized) {
+                        Text(
+                            stringResource(R.string.location_customize_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(spacing.sm))
                 Switch(checked = customized, onCheckedChange = onSetCustomized)
             }
             if (customized) {

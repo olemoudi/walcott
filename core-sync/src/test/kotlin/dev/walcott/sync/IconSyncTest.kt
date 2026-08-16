@@ -56,6 +56,35 @@ class IconSyncTest {
         assertEquals(IconSync.MAX_REQUESTS, IconSync.toRequest(many, emptySet(), rotation = Int.MAX_VALUE).size)
     }
 
+    // --- suppressed ---
+
+    @Test
+    fun `a fresh unrenderable report is left out of the request`() {
+        val out = IconSync.suppressed(mapOf("a" to 1_000L), nowMs = 1_000L + 60_000)
+        assertEquals(setOf("a"), out)
+    }
+
+    @Test
+    fun `an aged-out unrenderable report is asked for again`() {
+        // The whole point: "cannot render" is an answer about one moment, not for ever.
+        val stamped = mapOf("a" to 0L, "b" to IconSync.UNRENDERABLE_RETRY_MS)
+        val out = IconSync.suppressed(stamped, nowMs = IconSync.UNRENDERABLE_RETRY_MS + 1)
+        assertEquals(setOf("b"), out)
+    }
+
+    @Test
+    fun `a timestamp in the future does not suppress`() {
+        val out = IconSync.suppressed(mapOf("a" to 10_000L), nowMs = 5_000L)
+        assertTrue(out.isEmpty())
+    }
+
+    @Test
+    fun `suppressed packages drop out of the request list`() {
+        val stamped = mapOf("b" to 500L)
+        val cached = setOf("c") + IconSync.suppressed(stamped, nowMs = 1_000L)
+        assertEquals(listOf("a"), IconSync.toRequest(listOf("a", "b", "c"), cached))
+    }
+
     // --- pack ---
 
     private fun icon(pkg: String, bytes: Int) = AppIconData(pkg, "x".repeat(bytes))

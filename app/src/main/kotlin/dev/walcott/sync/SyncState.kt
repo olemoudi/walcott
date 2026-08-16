@@ -279,12 +279,17 @@ data class SyncState(
     /** deviceIds already alerted for clock tampering (cleared once the skew is back to normal). */
     val clockTamperNotified: Set<String> = emptySet(),
     /**
-     * Packages a child has told us it cannot turn into an icon (see [IconPayload.unavailable]).
-     * Subtracted from every icon request, so a drawable that will never render stops being
-     * asked for on every publish for ever — which is what left one app behind a blank square
-     * for days while every other icon arrived.
+     * Packages a child has told us it cannot turn into an icon (see [IconPayload.unavailable]),
+     * each mapped to when it last said so. Left out of icon requests until the entry ages out
+     * ([IconSync.suppressed]), so a drawable that will not render stops being asked for on every
+     * publish — without the "not now" hardening into "not ever", which is what left one app
+     * behind a monogram permanently while every other icon arrived.
+     *
+     * Replaces the old `iconsUnavailable` set, and deliberately under a new key: the old one is
+     * dropped as an unknown key on first read, so every package a parent had blacklisted for
+     * good gets asked for again on the next publish. That re-ask IS the migration.
      */
-    val iconsUnavailable: Set<String> = emptySet(),
+    val iconsUnrenderable: Map<String, Long> = emptyMap(),
     /**
      * A rule edit is written locally but not yet published (see [dev.walcott.data.PolicyPush]).
      *
