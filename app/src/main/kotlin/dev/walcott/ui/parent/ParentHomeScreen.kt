@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEvents
@@ -78,6 +79,7 @@ fun ParentHomeScreen(
     onOpenEarn: () -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenReport: () -> Unit,
+    onOpenBlocks: () -> Unit,
     onOpenWebFilter: () -> Unit,
     onOpenDomainMonitor: () -> Unit,
     onOpenProtection: () -> Unit,
@@ -179,9 +181,22 @@ fun ParentHomeScreen(
                     stringResource(R.string.nav_report_title),
                     stringResource(R.string.nav_report_subtitle),
                     onOpenReport,
-                    position = if (childDevice) CardPosition.First else CardPosition.Single,
+                    position = CardPosition.First,
                     accent = SectionAccent.ACTIVITY,
                 )
+                // The other half of "what happened": not where the time went, but what was
+                // stopped. Only on the parent — a child's own device settings do not report on
+                // the child to the child.
+                if (!childDevice) {
+                    NavCard(
+                        Icons.Outlined.Block,
+                        stringResource(R.string.nav_blocks_title),
+                        stringResource(R.string.nav_blocks_subtitle),
+                        onOpenBlocks,
+                        position = CardPosition.Last,
+                        accent = SectionAccent.ACTIVITY,
+                    )
+                }
                 // On the parent the gear on the home screen opens App settings; only the
                 // child's PIN-gated device-settings hub keeps an inline entry.
                 if (childDevice) {

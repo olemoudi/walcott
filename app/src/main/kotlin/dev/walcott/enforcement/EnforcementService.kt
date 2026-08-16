@@ -345,6 +345,8 @@ class EnforcementService : LifecycleService() {
         var usageAccessCheckedAt = 0L
         // Last direct database read of the counters (see the resync below).
         var lastCounterResyncAt = 0L
+        // Last time what the filter and the rules blocked was written down (see BlockCounters).
+        var lastBlockFlushAt = 0L
         // Managed-set cache: enumerating PackageManager (launchable apps + labels) on every
         // 2s tick was pure binder churn — the set only changes on (un)installs and
         // classification edits, both of which invalidate it explicitly below.
@@ -481,6 +483,14 @@ class EnforcementService : LifecycleService() {
                 usageAccessCached = UsageAccess.grantedForEnforcement(this)
                 usageAccessCheckedAt = nowClock
             }
+
+            // Block counting is a map increment on two hot paths (the DNS loop and this one);
+            // this is where it reaches disk. A minute of counts is what a process death costs,
+            // which for statistics is cheaper than a write per blocked lookup.
+            if (nowClock - lastBlockFlushAt > BLOCK_FLUSH_MILLIS && !dev.walcott.data.BlockCounters.isEmpty()) {
+                lastBlockFlushAt = nowClock
+                lifecycleScope.launch { runCatching { repo.flushBlockCounters() } }
+            }
             val usageAccessOk = usageAccessCached
             if (usageAccessOk != lastUsageAccess) {
                 if (lastUsageAccess != null) {
@@ -528,6 +538,19 @@ class EnforcementService : LifecycleService() {
                 deviceBlockSeen = true
                 if (kinds.isNotEmpty()) {
                     val stampedAt = System.currentTimeMillis()
+                    // The same transitions, counted. A device-wide block is counted under its own
+                    // key rather than against every app it closed, for the reason RuleEvents
+                    // collapses it in the first place: one thing happened, not forty.
+                    kinds.forEach { (kind, pkg) ->
+                        dev.walcott.data.BlockCounters.recordRuleBlock(
+                            when (kind) {
+                                dev.walcott.sync.ChildEvent.KIND_BEDTIME -> dev.walcott.data.BlockKinds.DEVICE_BEDTIME
+                                dev.walcott.sync.ChildEvent.KIND_SCREEN_FREE ->
+                                    dev.walcott.data.BlockKinds.DEVICE_SCREEN_FREE
+                                else -> pkg
+                            },
+                        )
+                    }
                     app.syncManager.recordRuleEvents(
                         kinds.map { (kind, pkg) ->
                             dev.walcott.sync.ChildEvent(
@@ -678,6 +701,7 @@ class EnforcementService : LifecycleService() {
 
         /** How long the cached usage-access answer is trusted (an AppOps binder call). */
         private const val USAGE_ACCESS_TTL_MILLIS = 10_000L
+        private const val BLOCK_FLUSH_MILLIS = 60_000L
 
         /** Safety net against a counter subscription that stops delivering (see the loop). */
         private const val COUNTER_RESYNC_MILLIS = 60_000L

@@ -14,6 +14,7 @@ import dev.walcott.debug.DebugLog
         UsageCounterEntity::class,
         ExtraTimeEntity::class,
         LocationPointEntity::class,
+        BlockCounterEntity::class,
     ],
     version = WalcottDatabase.VERSION,
     exportSchema = true,
@@ -22,6 +23,7 @@ abstract class WalcottDatabase : RoomDatabase() {
     abstract fun assignments(): AppAssignmentDao
     abstract fun usage(): UsageDao
     abstract fun locations(): LocationDao
+    abstract fun blocks(): BlockDao
 
     companion object {
         /**
@@ -29,7 +31,7 @@ abstract class WalcottDatabase : RoomDatabase() {
          * chains 1 → [VERSION] — a forgotten migration is the classic way to brick every child
          * at once, and it must be caught in CI, not on a family's phone.
          */
-        const val VERSION = 3
+        const val VERSION = 4
 
         private const val NAME = "walcott.db"
         private const val TAG = "WalcottDb"
@@ -56,6 +58,19 @@ abstract class WalcottDatabase : RoomDatabase() {
             object : Migration(2, 3) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     db.execSQL("ALTER TABLE `location_point` ADD COLUMN `mock` INTEGER NOT NULL DEFAULT 0")
+                }
+            },
+            // v4: per-day block counters (web filter refusals and rule-closed apps).
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `block_counter` (" +
+                            "`epochDay` INTEGER NOT NULL, " +
+                            "`kind` TEXT NOT NULL, " +
+                            "`key` TEXT NOT NULL, " +
+                            "`count` INTEGER NOT NULL, " +
+                            "PRIMARY KEY(`epochDay`, `kind`, `key`))",
+                    )
                 }
             },
         )

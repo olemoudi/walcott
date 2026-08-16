@@ -573,6 +573,11 @@ data class ChildSnapshot(
      */
     val ruleEvents: List<ChildEvent> = emptyList(),
     /**
+     * What the filter and the rules blocked here (see [BlockReport]). Null on a legacy child and
+     * on the first publish of a day with nothing blocked yet, which costs the message nothing.
+     */
+    val blocks: BlockReport? = null,
+    /**
      * Whether the rules ask this device for a DNS filter, and whether the tunnel is actually up.
      *
      * They are different questions. Only one VPN can be active on Android at a time, consent can

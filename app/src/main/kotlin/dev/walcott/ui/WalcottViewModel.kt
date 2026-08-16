@@ -567,6 +567,21 @@ class WalcottViewModel(
         }
     }
 
+    /**
+     * Turns one of the built-in lists on or off for the whole family (see
+     * [dev.walcott.rules.Blocklists]). Family-wide by design: what travels is the id, and the
+     * lists are one household decision — a child can still have domains of its own.
+     */
+    fun setBlocklist(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            repository.updateSettings {
+                it.copy(
+                    enabledBlocklists = if (enabled) it.enabledBlocklists + id else it.enabledBlocklists - id,
+                )
+            }
+        }
+    }
+
     fun removeBlockedDomain(domain: String, childId: String? = null) =
         if (childId == null) {
             viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains - domain) } }
@@ -688,6 +703,11 @@ class WalcottViewModel(
     /** Per-child daily usage ledger (see [dev.walcott.sync.UsageLedger]), for the dashboard average. */
     val usageLedgers: StateFlow<Map<String, Map<Long, Long>>> =
         sync.state.map { it.usageHistory }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Per-child ledger of what the filter and the rules blocked (see [dev.walcott.sync.BlockLedger]). */
+    val blockLedgers: StateFlow<Map<String, dev.walcott.sync.BlockLedger.Ledger>> =
+        sync.state.map { it.blockLedgers }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     // --- Family backup / restore ---

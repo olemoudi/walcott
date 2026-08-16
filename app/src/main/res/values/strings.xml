@@ -327,7 +327,31 @@
     <string name="report_range_today">Today</string>
     <string name="report_range_week">7 days</string>
     <string name="report_range_month">30 days</string>
+    <string name="report_range_all">All time</string>
     <string name="report_by_app">Where it went</string>
+
+    <!-- Block statistics -->
+    <string name="nav_blocks_title">Blocks</string>
+    <string name="nav_blocks_subtitle">What the filter and the rules actually stopped</string>
+    <string name="blocks_all_children">Everyone</string>
+    <string name="blocks_empty">Nothing was blocked in this period.</string>
+    <string name="blocks_empty_no_filter">Nothing blocked yet. The web filter is off, so only the time rules can stop anything.</string>
+    <string name="blocks_net_title">Stopped by the web filter</string>
+    <plurals name="blocks_net_total">
+        <item quantity="one">%d lookup blocked</item>
+        <item quantity="other">%d lookups blocked</item>
+    </plurals>
+    <string name="blocks_by_domain">Sites</string>
+    <string name="blocks_by_app">Apps that were asking</string>
+    <string name="blocks_rule_title">Closed by the rules</string>
+    <plurals name="blocks_rule_total">
+        <item quantity="one">%d time</item>
+        <item quantity="other">%d times</item>
+    </plurals>
+    <string name="blocks_key_other">Everything else</string>
+    <string name="blocks_key_unknown">No app identified</string>
+    <string name="blocks_range_note">A blocked lookup is a request that never left the phone — most of them are apps calling home, not someone trying to visit a site.</string>
+    <string name="blocks_all_time_note">Everything recorded since this phone started counting. Recent days are kept in full; older ones are added into a running total.</string>
     <plurals name="report_days_covered">
         <item quantity="one">%d day on record</item>
         <item quantity="other">%d days on record</item>
@@ -349,6 +373,31 @@
     <string name="webfilter_rule_allow_only">%1$s · only from %2$s</string>
     <string name="webfilter_rule_block_in">%1$s · blocked in %2$s</string>
     <string name="webfilter_dns_note">DNS-level blocking. Apps using their own encrypted DNS (some browsers, the YouTube app) may bypass it.</string>
+
+    <!-- Built-in blocklists -->
+    <string name="blocklist_section_title">Ready-made lists</string>
+    <string name="blocklist_section_hint">Kept up to date with the app. Turn one on and its domains are blocked on every child\'s phone.</string>
+    <string name="blocklist_adult_title">Adult content</string>
+    <string name="blocklist_adult_desc">Porn, cam sites and the boards built around them.</string>
+    <string name="blocklist_gambling_title">Betting and gambling</string>
+    <string name="blocklist_gambling_desc">Sports betting, casinos and skin gambling.</string>
+    <string name="blocklist_trackers_title">Trackers and ads</string>
+    <string name="blocklist_trackers_desc">Advertising and analytics servers that profile whoever is holding the phone.</string>
+    <string name="blocklist_trackers_warning">Nothing an app needs to work is on this list, but if an app starts misbehaving, this is the first one to turn off.</string>
+    <plurals name="blocklist_domain_count">
+        <item quantity="one">%d domain</item>
+        <item quantity="other">%d domains</item>
+    </plurals>
+    <string name="blocklist_family_scope_note">Lists are switched on for the whole family. Domains below can be this child\'s own.</string>
+    <string name="blocklist_quick_setup">Set up the filter in a minute</string>
+    <string name="setup_step_filter">Turn on the web filter</string>
+    <string name="preset_filter_title">Quick filter setup</string>
+    <string name="step_blocklists_teach">Pick what this family blocks. The first two are the ones nobody argues about and cannot get in an app\'s way; the third is about privacy rather than content.</string>
+    <string name="step_blocklists_own_domains">You can add domains of your own afterwards, in Web filter.</string>
+    <plurals name="summary_blocklists">
+        <item quantity="one">%d list</item>
+        <item quantity="other">%d lists</item>
+    </plurals>
 
     <!-- Device mode selection -->
     <string name="mode_select_title">Who uses this phone?</string>
@@ -696,6 +745,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_59_0">
+        <item>The web filter comes with lists now. Adult content and betting are one switch each instead of a page of domains you have to think of yourself, and a one-minute run through them is offered from the setup list and from the filter screen. A family that has never configured a filter gets those two already on.</item>
+        <item>There is a third list for advertising and tracking servers — privacy rather than content — with what it costs written on the row: nothing an app needs to work is on it, but if an app starts misbehaving, that is the first list to turn off.</item>
+        <item>A new Blocks screen says what was actually stopped: the sites the phone was reaching for, the app that was asking for them, and the times a rule closed an app — today, this week, this month, or since the beginning. Recent days are kept in full and older ones are added into a running total, so it stays the same size after years of use.</item>
+    </string-array>
     <string-array name="whats_new_0_58_0">
         <item>Turning location off for one child used to mean switching something on and then choosing "Off" inside it. That switch now says what it is — custom location settings for this child — and, while it is off, says that turning it on is how you give them a different interval or none at all.</item>
         <item>A child\'s page opens with one card instead of two: their day, their recent activity, and underneath it the state of the phone itself — rules, battery, app version. The enrollment code, which most families need about once ever, moved to a button in the top bar.</item>

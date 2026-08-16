@@ -24,13 +24,18 @@ data class DomainAppRule(
  */
 object DomainFilter {
 
+    /**
+     * The hot-path form: the blocklist arrives already compiled ([DomainMatcher]), because it is
+     * now hundreds of domains long (see [Blocklists]) and this runs per DNS query. The per-app
+     * rules stay a plain list — they are written one at a time by a parent, and stay short.
+     */
     fun isBlocked(
         host: String,
         packageName: String?,
-        blockedDomains: Set<String>,
+        blocked: DomainMatcher,
         appRules: List<DomainAppRule>,
     ): Boolean {
-        val h = host.lowercase().trimEnd('.')
+        val h = DomainMatcher.normalize(host)
 
         val allowOnlyForHost = appRules.filter { it.allowOnlyFromApp && matches(h, it.domain) }
         if (allowOnlyForHost.isNotEmpty()) {
@@ -43,8 +48,19 @@ object DomainFilter {
         }
         if (blockedInThisApp) return true
 
-        return blockedDomains.any { matches(h, it) }
+        return blocked.matches(h)
     }
+
+    /**
+     * Convenience for callers holding a plain set (tests, and anything asking a one-off
+     * question). Compiles a matcher per call, so it does not belong in the packet loop.
+     */
+    fun isBlocked(
+        host: String,
+        packageName: String?,
+        blockedDomains: Set<String>,
+        appRules: List<DomainAppRule>,
+    ): Boolean = isBlocked(host, packageName, DomainMatcher.of(blockedDomains), appRules)
 
     private fun matches(host: String, domain: String): Boolean {
         val d = domain.lowercase().trimEnd('.')

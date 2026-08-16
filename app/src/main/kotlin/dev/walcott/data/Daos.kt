@@ -67,6 +67,44 @@ interface UsageDao {
     suspend fun deleteExtraBefore(cutoffDay: Long)
 }
 
+/** One (day, kind) pair's total, for the cheap "how many that day" queries. */
+data class BlockDayTotal(val epochDay: Long, val kind: String, val total: Long)
+
+@Dao
+interface BlockDao {
+
+    /** Atomic add to the (day, kind, key) counter. */
+    @Query(
+        """
+        INSERT INTO block_counter (epochDay, kind, `key`, count)
+        VALUES (:epochDay, :kind, :key, :count)
+        ON CONFLICT(epochDay, kind, `key`)
+        DO UPDATE SET count = count + :count
+        """,
+    )
+    suspend fun add(epochDay: Long, kind: String, key: String, count: Long)
+
+    @Query("SELECT * FROM block_counter WHERE epochDay = :epochDay AND kind = :kind ORDER BY count DESC")
+    suspend fun getDayKind(epochDay: Long, kind: String): List<BlockCounterEntity>
+
+    @Query(
+        """
+        SELECT epochDay, kind, SUM(count) AS total FROM block_counter
+        WHERE epochDay BETWEEN :start AND :end GROUP BY epochDay, kind
+        """,
+    )
+    suspend fun totalsBetween(start: Long, end: Long): List<BlockDayTotal>
+
+    @Query("SELECT COUNT(*) FROM block_counter WHERE epochDay = :epochDay AND kind = :kind")
+    suspend fun keyCount(epochDay: Long, kind: String): Int
+
+    @Query("DELETE FROM block_counter WHERE epochDay = :epochDay AND kind = :kind AND `key` IN (:keys)")
+    suspend fun deleteKeys(epochDay: Long, kind: String, keys: List<String>)
+
+    @Query("DELETE FROM block_counter WHERE epochDay < :cutoffDay")
+    suspend fun deleteBefore(cutoffDay: Long)
+}
+
 @Dao
 interface LocationDao {
     @Insert

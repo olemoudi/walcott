@@ -13,10 +13,12 @@ import javax.crypto.SecretKey
  * Degradation order trades the least critical data first:
  *  1. location trail → newest fix only (the map loses history, never the current position)
  *  2. usage history → empty (the weekly report degrades; today's usage still travels)
- *  3. domain slices → fewer per message (the rest ride the next publish; they are resent
+ *  3. block statistics → breakdown first, then the whole report (the totals come back in the
+ *     next report's catch-up days, so this costs a day's long tail and never a number)
+ *  4. domain slices → fewer per message (the rest ride the next publish; they are resent
  *     until acknowledged anyway, so this costs latency and nothing else)
- *  4. app list → progressively halved (classification of the tail waits for a leaner day)
- *  5. asks → dropped, and only here. An ask is a child waiting for an answer, so losing one is
+ *  5. app list → progressively halved (classification of the tail waits for a leaner day)
+ *  6. asks → dropped, and only here. An ask is a child waiting for an answer, so losing one is
  *     worse than losing any of the above; it is still better than a rejected publish, which
  *     loses the child's whole voice rather than one sentence of it.
  *
@@ -46,13 +48,27 @@ object SnapshotFit {
             if (it.length <= maxBytes) return Result(it, "trail,history")
         }
 
+        // Block statistics, breakdown first and then entirely. The totals are what the parent's
+        // ledger accumulates, and a later report carries the days it missed — so what a squeezed
+        // message costs here is the long tail of one day's domains, and never a number.
+        val thinBlocks = noHistory.copy(blocks = noHistory.blocks?.totalsOnly())
+        SyncProtocol.encodeChild(thinBlocks, familyKey).let {
+            if (it.length <= maxBytes) return Result(it, "trail,history,blocks:totals")
+        }
+        val noBlocks = thinBlocks.copy(blocks = null)
+        SyncProtocol.encodeChild(noBlocks, familyKey).let {
+            if (it.length <= maxBytes) return Result(it, "trail,history,blocks")
+        }
+
         // Domain slices are the only payload here that is retried by design, so thinning them
         // costs a publish cycle and never a domain.
-        var trimmed = noHistory
+        var trimmed = noBlocks
         while (trimmed.domainChunks.size > 1) {
             trimmed = trimmed.copy(domainChunks = trimmed.domainChunks.dropLast(1))
             SyncProtocol.encodeChild(trimmed, familyKey).let {
-                if (it.length <= maxBytes) return Result(it, "trail,history,chunks:${trimmed.domainChunks.size}")
+                if (it.length <= maxBytes) {
+                    return Result(it, "trail,history,blocks,chunks:${trimmed.domainChunks.size}")
+                }
             }
         }
 
@@ -60,13 +76,13 @@ object SnapshotFit {
         while (apps.isNotEmpty()) {
             apps = apps.take(apps.size / 2)
             SyncProtocol.encodeChild(trimmed.copy(apps = apps), familyKey).let {
-                if (it.length <= maxBytes) return Result(it, "trail,history,apps:${apps.size}")
+                if (it.length <= maxBytes) return Result(it, "trail,history,blocks,apps:${apps.size}")
             }
         }
 
         val bare = trimmed.copy(apps = emptyList())
         SyncProtocol.encodeChild(bare, familyKey).let {
-            if (it.length <= maxBytes) return Result(it, "trail,history,apps:0")
+            if (it.length <= maxBytes) return Result(it, "trail,history,blocks,apps:0")
         }
 
         // Still too big, so something variable is left: the last domain slice, then the asks.
@@ -74,13 +90,15 @@ object SnapshotFit {
         // a rejected publish, and a rejected publish is a child that has simply gone quiet.
         val noChunks = bare.copy(domainChunks = emptyList())
         SyncProtocol.encodeChild(noChunks, familyKey).let {
-            if (it.length <= maxBytes) return Result(it, "trail,history,apps:0,chunks:0")
+            if (it.length <= maxBytes) return Result(it, "trail,history,blocks,apps:0,chunks:0")
         }
         var asks = noChunks.asks
         while (asks.isNotEmpty()) {
             asks = asks.dropLast(1)
             SyncProtocol.encodeChild(noChunks.copy(asks = asks), familyKey).let {
-                if (it.length <= maxBytes) return Result(it, "trail,history,apps:0,chunks:0,asks:${asks.size}")
+                if (it.length <= maxBytes) {
+                    return Result(it, "trail,history,blocks,apps:0,chunks:0,asks:${asks.size}")
+                }
             }
         }
         return Result(

@@ -557,6 +557,42 @@ class PolicySeedReceiver : BroadcastReceiver() {
             )
             target.syncStore.update { s -> feed.fold(s) { acc, e -> acc.plusEvent(e) } }
         }
+        // `--ei child_block_days N`: N days of synthetic block statistics for this fake child,
+        // folded in through the real ledger so what the screen renders is what a year of
+        // reports would actually leave behind — archive included, once N passes the window.
+        val blockDays = intent.getIntExtra("child_block_days", 0)
+        if (blockDays > 0) {
+            val domains = listOf(
+                "doubleclick.net", "google-analytics.com", "pornhub.com", "bet365.com",
+                "app-measurement.com", "criteo.com", "adnxs.com", "taboola.com",
+            )
+            val apps = apps.map { it.packageName }.ifEmpty { listOf("com.seeded.app") }
+            var ledger = dev.walcott.sync.BlockLedger.Ledger()
+            for (back in (blockDays - 1) downTo 0) {
+                val day = today - back
+                val scale = (back % 7) + 1
+                ledger = dev.walcott.sync.BlockLedger.merge(
+                    ledger,
+                    dev.walcott.sync.BlockReport(
+                        epochDay = day,
+                        netToday = (domains.size * 13L * scale),
+                        ruleToday = (apps.size * 1L * scale),
+                        domains = domains.mapIndexed { i, d ->
+                            dev.walcott.sync.BlockCount(d, 13L * scale * (domains.size - i) / domains.size)
+                        },
+                        netApps = apps.mapIndexed { i, p ->
+                            dev.walcott.sync.BlockCount(p, 11L * scale * (apps.size - i) / apps.size)
+                        },
+                        ruleApps = apps.take(3).map { dev.walcott.sync.BlockCount(it, scale.toLong()) } +
+                            dev.walcott.sync.BlockCount(dev.walcott.data.BlockKinds.DEVICE_BEDTIME, 1),
+                    ),
+                    todayEpochDay = day,
+                )
+            }
+            val key = dev.walcott.sync.UsageLedger.keyOf(childId, snapshot.deviceId)
+            target.syncStore.update { s -> s.copy(blockLedgers = s.blockLedgers + (key to ledger)) }
+            DebugLog.i("WalcottSeed", "seeded $blockDays days of block stats for $childId")
+        }
         if (intent.getBooleanExtra("child_diag", false)) {
             val report = dev.walcott.sync.DiagPayload(
                 deviceId = snapshot.deviceId,

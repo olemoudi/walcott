@@ -51,7 +51,8 @@ object PolicyDiff {
         if (deployed.bedtime != current.bedtime) changed += BEDTIME
         if (deployed.allAppsBlockedWindows != current.allAppsBlockedWindows) changed += SCREEN_FREE
         if (deployed.blockedDomains != current.blockedDomains ||
-            deployed.domainAppRules != current.domainAppRules
+            deployed.domainAppRules != current.domainAppRules ||
+            deployed.enabledBlocklists != current.enabledBlocklists
         ) {
             changed += WEB_FILTER
         }

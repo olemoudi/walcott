@@ -414,6 +414,13 @@ data class SyncState(
      * so the averages every parent already has on file keep working.
      */
     val usageByApp: Map<String, Map<Long, Map<String, Long>>> = emptyMap(),
+    /**
+     * What each child's filter and rules blocked, keyed the same way (see [BlockLedger]). Its
+     * size does not depend on how long the family has been running Walcott: a bounded window of
+     * days plus a bounded archive of everything older, which is what makes "all time" a number
+     * this phone can keep answering in three years.
+     */
+    val blockLedgers: Map<String, BlockLedger.Ledger> = emptyMap(),
     // Both sides
     /**
      * ntfy `time` (unix seconds) of the newest message this device has processed. Used as the

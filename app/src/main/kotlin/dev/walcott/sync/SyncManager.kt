@@ -2,6 +2,7 @@ package dev.walcott.sync
 
 import android.content.Context
 import android.os.Build
+import dev.walcott.data.BlockKinds
 import dev.walcott.data.PinLockout
 import dev.walcott.data.PinResult
 import dev.walcott.data.PolicySettings
@@ -1455,6 +1456,7 @@ class SyncManager(
                 // Only legacy devices ledger under their deviceId; child-keyed history stays.
                 usageHistory = s.usageHistory - deviceId,
                 usageByApp = s.usageByApp - deviceId,
+                blockLedgers = s.blockLedgers - deviceId,
             )
         }
     }
@@ -2049,6 +2051,7 @@ class SyncManager(
                     lastCrashMs = crashes.lastAtMs,
                     unauthorized = s.unauthorizedApps,
                     setupUnmet = setupUnmet,
+                    blocks = blockReport(today),
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
                 // child would silently vanish from the parent, which is far worse than a
@@ -2071,6 +2074,48 @@ class SyncManager(
             Role.UNPAIRED -> Unit
         }
         if (id.role != Role.UNPAIRED) lastPublishAtMs = System.currentTimeMillis()
+    }
+
+    /**
+     * Child: what the filter and the rules blocked, for the snapshot.
+     *
+     * Flushed first, so the report includes the last minute rather than everything up to the
+     * previous flush — a publish is exactly the moment the counts are about to be read. Null
+     * when nothing has been blocked at all, which is the normal state of a family that has not
+     * turned the filter on and costs the message nothing.
+     */
+    private suspend fun blockReport(today: Long): BlockReport? {
+        runCatching { repository.flushBlockCounters() }
+        val report = runCatching {
+            val domains = repository.blockCounts(BlockKinds.DOMAIN, today)
+            val netApps = repository.blockCounts(BlockKinds.NET_APP, today)
+            val ruleApps = repository.blockCounts(BlockKinds.RULE_APP, today)
+            BlockReport(
+                epochDay = today,
+                // Summed from the rows rather than kept as a separate counter: the tail is
+                // folded, never dropped, so the rows still add up to the truth.
+                netToday = domains.sumOf { it.count },
+                ruleToday = ruleApps.sumOf { it.count },
+                domains = BlockReports.cap(domains.map { BlockCount(it.key, it.count) }),
+                netApps = BlockReports.cap(netApps.map { BlockCount(it.key, it.count) }),
+                ruleApps = BlockReports.cap(ruleApps.map { BlockCount(it.key, it.count) }),
+                recentDays = recentBlockDays(today),
+            )
+        }.getOrNull() ?: return null
+        return report.takeUnless { it.isEmpty() }
+    }
+
+    /** Totals for the days before today this device still has, oldest first. */
+    private suspend fun recentBlockDays(today: Long): List<DayBlockTotals> {
+        val first = today - BlockReports.MAX_RECENT_DAYS
+        val rows = repository.blockTotals(first, today - 1)
+        return rows.groupBy { it.epochDay }.entries.sortedBy { it.key }.map { (day, kinds) ->
+            DayBlockTotals(
+                epochDay = day,
+                net = kinds.firstOrNull { it.kind == BlockKinds.DOMAIN }?.total ?: 0L,
+                rule = kinds.firstOrNull { it.kind == BlockKinds.RULE_APP }?.total ?: 0L,
+            )
+        }
     }
 
     /**
@@ -2540,6 +2585,11 @@ class SyncManager(
             snapshot.epochDay,
             snapshot.usage,
         )
+        // The same for what was blocked. Pruning is part of the merge, so the ledger is trimmed
+        // by the act of being written to rather than by a job somebody has to remember to run.
+        val blocks = snapshot.blocks?.let {
+            BlockLedger.merge(before.blockLedgers[ledgerKey] ?: BlockLedger.Ledger(), it, snapshot.epochDay)
+        }
         // Track when this device's install window was first seen open, so the hourly reminder
         // can count "open for an hour" from reality rather than from worker cadence.
         val installWindowOpen = snapshot.installExemptionUntilMs > System.currentTimeMillis()
@@ -2550,6 +2600,7 @@ class SyncManager(
                 commands = if (ackedId != null) it.commands.filterNot { c -> c.id == ackedId } else it.commands,
                 usageHistory = it.usageHistory + (ledgerKey to ledger),
                 usageByApp = it.usageByApp + (ledgerKey to byApp),
+                blockLedgers = if (blocks != null) it.blockLedgers + (ledgerKey to blocks) else it.blockLedgers,
                 installWindowSeen = when {
                     installWindowOpen && snapshot.deviceId !in it.installWindowSeen ->
                         it.installWindowSeen + (snapshot.deviceId to System.currentTimeMillis())

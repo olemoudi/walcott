@@ -223,7 +223,50 @@ class WalcottRepository(
         val cutoff = today() - USAGE_RETENTION_DAYS
         db.usage().deleteUsageBefore(cutoff)
         db.usage().deleteExtraBefore(cutoff)
+        db.blocks().deleteBefore(today() - BLOCK_RETENTION_DAYS)
     }
+
+    // --- Block counters (child side) ---
+
+    /**
+     * Writes what the DNS and enforcement loops have counted since the last flush.
+     *
+     * Called on a timer and before every publish, never per event: see [BlockCounters] for why
+     * the hot path stays in memory. Compaction runs here too, so a day that saw an unusual
+     * number of distinct domains is folded back under its cap at the first opportunity rather
+     * than at the end of the day, when the rows already exist.
+     */
+    suspend fun flushBlockCounters() {
+        val drained = BlockCounters.drain()
+        if (drained.isEmpty()) return
+        val day = today()
+        for ((slot, count) in drained) {
+            db.blocks().add(day, slot.first, slot.second, count)
+        }
+        for (kind in drained.keys.mapTo(mutableSetOf()) { it.first }) {
+            if (db.blocks().keyCount(day, kind) > BlockKinds.MAX_KEYS_PER_DAY) compactBlocks(day, kind)
+        }
+    }
+
+    /**
+     * Folds everything past the [BlockKinds.KEEP_ON_COMPACT] biggest keys of a (day, kind) into
+     * one OTHER row. The day's total is unchanged by construction — the tail is added up, not
+     * discarded — so only the breakdown loses its long tail, which is the part nobody reads.
+     */
+    private suspend fun compactBlocks(day: Long, kind: String) {
+        val rows = db.blocks().getDayKind(day, kind)
+        val tail = rows.filterNot { it.key == BlockKinds.OTHER }.drop(BlockKinds.KEEP_ON_COMPACT)
+        if (tail.isEmpty()) return
+        db.blocks().add(day, kind, BlockKinds.OTHER, tail.sumOf { it.count })
+        db.blocks().deleteKeys(day, kind, tail.map { it.key })
+    }
+
+    /** One day's counters for [kind], biggest first. */
+    suspend fun blockCounts(kind: String, day: Long = today()): List<BlockCounterEntity> =
+        db.blocks().getDayKind(day, kind)
+
+    /** Per-day totals over a closed range of days, for the catch-up a report carries. */
+    suspend fun blockTotals(from: Long, to: Long): List<BlockDayTotal> = db.blocks().totalsBetween(from, to)
 
     /**
      * Emergency release ([dev.walcott.enforcement.PanicRelease]): forgets the rules and every
@@ -252,5 +295,12 @@ class WalcottRepository(
          * that lasts years doesn't grow a row per app per day without end.
          */
         private const val USAGE_RETENTION_DAYS = 90L
+
+        /**
+         * How many days of block counters the child keeps. Short on purpose: the parent is where
+         * the history lives (see BlockLedger), and this only has to cover today plus the days a
+         * report carries for a device that was offline.
+         */
+        private const val BLOCK_RETENTION_DAYS = 10L
     }
 }

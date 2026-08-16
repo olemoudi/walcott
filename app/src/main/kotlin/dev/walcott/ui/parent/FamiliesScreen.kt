@@ -123,6 +123,7 @@ fun FamiliesScreen(
     // Setup-checklist shortcuts: a first-time parent taps a pending step and lands on the
     // screen that completes it, instead of hunting through the rules hub.
     onOpenBudgets: () -> Unit,
+    onOpenWebFilter: () -> Unit,
     onOpenGuidedSetup: () -> Unit,
     onOpenActivity: () -> Unit,
     onOpenDomainRequest: (String) -> Unit,
@@ -356,6 +357,11 @@ fun FamiliesScreen(
                         SetupStep(stringResource(R.string.setup_step_limits), limitsDone, onOpenBudgets),
                         SetupStep(stringResource(R.string.setup_step_bedtime), bedtimeDone, onOpenBudgets),
                         SetupStep(stringResource(R.string.setup_step_pin), pinDone) { showSetPin = true },
+                        // Deliberately not part of the condition above: a family that has
+                        // decided against a filter should not be shown a permanent unticked
+                        // box. It belongs on the list while the list is up, and the web-filter
+                        // screen keeps the same door open afterwards.
+                        SetupStep(stringResource(R.string.setup_step_filter), settings.hasWebFilter(), onOpenWebFilter),
                     ),
                 )
             }

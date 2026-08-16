@@ -11,6 +11,7 @@ import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
 import dev.walcott.rules.DomainAppRule
 import dev.walcott.rules.DomainFilter
+import dev.walcott.rules.DomainMatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +38,8 @@ class WalcottVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeLock = Any()
 
-    @Volatile private var blockedDomains: Set<String> = emptySet()
+    /** Compiled once per policy change, matched per query (see [DomainMatcher]). */
+    @Volatile private var blocked: DomainMatcher = DomainMatcher.EMPTY
     @Volatile private var appRules: List<DomainAppRule> = emptyList()
     @Volatile private var running = false
     private var tunnel: ParcelFileDescriptor? = null
@@ -67,7 +69,7 @@ class WalcottVpnService : VpnService() {
         val repo = (application as WalcottApplication).repository
         scope.launch {
             repo.settingsFlow.collect { settings ->
-                blockedDomains = settings.blockedDomains
+                blocked = DomainMatcher.of(settings.blockedDomainsResolved())
                 appRules = settings.toDomainAppRules()
             }
         }
@@ -168,7 +170,9 @@ class WalcottVpnService : VpnService() {
         // app keeps trying X" is worth seeing even when X is already blocked. No-op otherwise.
         DomainMonitor.record(host, pkg)
 
-        if (DomainFilter.isBlocked(host, pkg, blockedDomains, appRules)) {
+        if (DomainFilter.isBlocked(host, pkg, blocked, appRules)) {
+            // Counted in memory and flushed elsewhere: this is the packet loop (see BlockCounters).
+            dev.walcott.data.BlockCounters.recordNetworkBlock(host, pkg)
             writePacket(output, buildResponse(packet, dnsStart, nxDomain(packet, dnsStart)))
         } else {
             forward(packet, dnsStart, srcIp, srcPort, output)

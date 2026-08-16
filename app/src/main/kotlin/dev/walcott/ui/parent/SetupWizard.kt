@@ -55,6 +55,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -90,12 +91,18 @@ enum class WizardStep { BEDTIME, SCREEN_TIME, WEEKEND, PROTECTION, LOCATION, EAR
 enum class SetupPreset(val minutes: Int, val steps: List<WizardStep>) {
     BASIC(3, listOf(WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.WEEKEND, WizardStep.SUMMARY)),
     RECOMMENDED(
-        5,
+        6,
         listOf(
             WizardStep.BEDTIME, WizardStep.SCREEN_TIME, WizardStep.WEEKEND, WizardStep.PROTECTION,
-            WizardStep.LOCATION, WizardStep.SUMMARY,
+            WizardStep.LOCATION, WizardStep.WEBFILTER, WizardStep.SUMMARY,
         ),
     ),
+    /**
+     * The filter on its own, for a family that set everything else up before the lists existed.
+     * Not offered on the chooser — it is entered from the web-filter screen, which is where a
+     * parent is when the question occurs to them.
+     */
+    FILTER(1, listOf(WizardStep.WEBFILTER, WizardStep.SUMMARY)),
     FULL(
         9,
         listOf(
@@ -226,6 +233,7 @@ fun SetupWizardScreen(
                             SetupPreset.BASIC -> R.string.preset_basic_title
                             SetupPreset.RECOMMENDED -> R.string.preset_recommended_title
                             SetupPreset.FULL -> R.string.preset_full_title
+                            SetupPreset.FILTER -> R.string.preset_filter_title
                         },
                     ),
                     style = MaterialTheme.typography.titleLarge,
@@ -283,7 +291,7 @@ fun SetupWizardScreen(
                     WizardStep.PROTECTION -> ProtectionStep(viewModel)
                     WizardStep.LOCATION -> LocationStep(viewModel)
                     WizardStep.EARN -> EarnStep(viewModel)
-                    WizardStep.WEBFILTER -> WebFilterStep(viewModel)
+                    WizardStep.WEBFILTER -> BlocklistStep(viewModel)
                     WizardStep.SUMMARY -> SummaryStep(settings = settings, steps = steps)
                 }
             }
@@ -517,39 +525,47 @@ private fun EarnStep(viewModel: WalcottViewModel) {
     }
 }
 
+/**
+ * The filter step: the lists, not a text box.
+ *
+ * Typing domains one at a time was the only thing on offer here, which meant the honest answer
+ * to "what does this family block?" was "whatever they could think of in thirty seconds" —
+ * usually nothing. The two lists nobody argues about start switched on for a family that has
+ * never touched this, so the default is a filter rather than an empty one; the privacy list is
+ * offered next to them with what it costs written on the row.
+ */
 @Composable
-private fun WebFilterStep(viewModel: WalcottViewModel) {
+private fun BlocklistStep(viewModel: WalcottViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val spacing = Tokens.spacing
     StepHeader(
         Icons.Outlined.Language,
         stringResource(R.string.nav_webfilter_title),
-        stringResource(R.string.step_webfilter_teach),
+        stringResource(R.string.step_blocklists_teach),
     )
-    var domain by remember { mutableStateOf("") }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-        OutlinedTextField(
-            value = domain,
-            onValueChange = { domain = it },
-            label = { Text(stringResource(R.string.step_webfilter_hint)) },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        Button(
-            enabled = domain.isNotBlank(),
-            onClick = {
-                viewModel.addBlockedDomain(domain)
-                domain = ""
-            },
-        ) { Text(stringResource(R.string.action_add)) }
+    // Only ever on the way IN, and only for a family that has never configured a filter: a
+    // parent who deliberately turned a list off must not find it back on because they walked
+    // through the wizard again.
+    LaunchedEffect(Unit) {
+        if (!settings.hasWebFilter()) {
+            dev.walcott.rules.Blocklists.CONSERVATIVE.forEach { viewModel.setBlocklist(it, true) }
+        }
     }
-    if (settings.blockedDomains.isNotEmpty()) {
-        Text(
-            settings.blockedDomains.joinToString(" · "),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    BlocklistRows(
+        enabled = settings.enabledBlocklists,
+        onToggle = { id, on -> viewModel.setBlocklist(id, on) },
+    )
+    Text(
+        stringResource(R.string.webfilter_dns_note),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = spacing.xs),
+    )
+    Text(
+        stringResource(R.string.step_blocklists_own_domains),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -627,6 +643,18 @@ private fun SummaryStep(settings: dev.walcott.data.PolicySettings, steps: List<W
             stringResource(R.string.nav_earn_title),
             stringResource(if (settings.idleEarn != null) R.string.summary_on else R.string.summary_off),
             settings.idleEarn != null,
+        )
+    }
+    if (WizardStep.WEBFILTER in steps) {
+        val lists = settings.enabledBlocklists.size
+        SummaryRow(
+            stringResource(R.string.nav_webfilter_title),
+            if (lists > 0) {
+                pluralStringResource(R.plurals.summary_blocklists, lists, lists)
+            } else {
+                stringResource(R.string.summary_off)
+            },
+            lists > 0,
         )
     }
     Spacer(Modifier.height(spacing.sm))

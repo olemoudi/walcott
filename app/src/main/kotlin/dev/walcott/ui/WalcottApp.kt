@@ -38,6 +38,7 @@ import dev.walcott.ui.parent.AppAssignScreen
 import dev.walcott.ui.parent.AppDetailScreen
 import dev.walcott.ui.parent.ActivityScreen
 import dev.walcott.ui.parent.AppSettingsScreen
+import dev.walcott.ui.parent.BlockStatsScreen
 import dev.walcott.ui.parent.LocationSettingsScreen
 import dev.walcott.ui.parent.BudgetsScreen
 import dev.walcott.ui.parent.CalendarScreen
@@ -67,7 +68,7 @@ private fun overrideChildName(settings: PolicySettings, childId: String?): Strin
 private enum class Screen {
     MODE_SELECT, CHILD, GATE, FAMILIES, FAMILY_CHOOSER, SETUP_PRESETS, SETUP_WIZARD, FAMILY,
     CHILD_DETAIL, CHILD_MAP,
-    APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, WEBFILTER, PROTECTION, LOCATION,
+    APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, BLOCKS, WEBFILTER, PROTECTION, LOCATION,
     APP_SETTINGS, DEBUG_LOGS, DEVICE_SETUP, CHILD_SETUP, PANIC, CHILD_RULES, ACTIVITY, CHILD_HEALTH,
     DOMAIN_MONITOR, DOMAIN_REVIEW,
 }
@@ -118,6 +119,9 @@ fun WalcottApp(
     var setupReturnTo by remember { mutableStateOf<Screen?>(null) }
     // Which guided-setup preset is running (SETUP_WIZARD screen).
     var wizardPreset by remember { mutableStateOf<SetupPreset?>(null) }
+    // Where a wizard run should land when it finishes. Null = the families hub, which is where
+    // the full guided setup belongs; the short filter run returns to the screen that opened it.
+    var wizardReturnTo by remember { mutableStateOf<Screen?>(null) }
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
     // policy, and back returns to the child detail.
     var overrideChildId by remember { mutableStateOf<String?>(null) }
@@ -335,6 +339,13 @@ fun WalcottApp(
                         },
                         onOpenAppSettings = { screen = Screen.APP_SETTINGS },
                         onOpenBudgets = { budgetsReturnTo = Screen.FAMILIES; screen = Screen.BUDGETS },
+                        // The checklist's filter step goes straight into the short guided run,
+                        // not to the editor: what it is asking for is the lists.
+                        onOpenWebFilter = {
+                            wizardPreset = SetupPreset.FILTER
+                            wizardReturnTo = Screen.FAMILIES
+                            screen = Screen.SETUP_WIZARD
+                        },
                         onOpenGuidedSetup = { screen = Screen.SETUP_PRESETS },
                         onOpenActivity = { screen = Screen.ACTIVITY },
                         onOpenDomainRequest = { batchId ->
@@ -372,11 +383,15 @@ fun WalcottApp(
                         onSkip = { screen = Screen.FAMILIES },
                     )
                     Screen.SETUP_WIZARD -> wizardPreset?.let { preset ->
+                        fun leaveWizard() {
+                            screen = wizardReturnTo ?: Screen.FAMILIES
+                            wizardReturnTo = null
+                        }
                         SetupWizardScreen(
                             viewModel,
                             preset = preset,
-                            onDone = { screen = Screen.FAMILIES },
-                            onExit = { screen = Screen.FAMILIES },
+                            onDone = { leaveWizard() },
+                            onExit = { leaveWizard() },
                         )
                     }
                     Screen.CHILD_DETAIL -> childDetailId?.let { childId ->
@@ -432,6 +447,7 @@ fun WalcottApp(
                         onOpenEarn = { overrideChildId = null; screen = Screen.EARN },
                         onOpenCalendar = { screen = Screen.CALENDAR },
                         onOpenReport = { screen = Screen.REPORT },
+                        onOpenBlocks = { screen = Screen.BLOCKS },
                         onOpenWebFilter = { overrideChildId = null; screen = Screen.WEBFILTER },
                         onOpenDomainMonitor = { screen = Screen.DOMAIN_MONITOR },
                         onOpenProtection = { overrideChildId = null; screen = Screen.PROTECTION },
@@ -474,9 +490,20 @@ fun WalcottApp(
                     )
                     Screen.CALENDAR -> CalendarScreen(viewModel, onBack = ::back)
                     Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.BLOCKS -> BlockStatsScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.WEBFILTER -> WebFilterScreen(
                         viewModel, onBack = ::back,
                         childId = overrideChildId, childName = overrideChildName(settings, overrideChildId),
+                        // The short run through the lists, and back to the filter afterwards.
+                        onQuickSetup = if (overrideChildId == null) {
+                            {
+                                wizardPreset = SetupPreset.FILTER
+                                wizardReturnTo = Screen.WEBFILTER
+                                screen = Screen.SETUP_WIZARD
+                            }
+                        } else {
+                            null
+                        },
                     )
                     Screen.PROTECTION -> DeviceProtectionScreen(
                         viewModel, onBack = ::back,

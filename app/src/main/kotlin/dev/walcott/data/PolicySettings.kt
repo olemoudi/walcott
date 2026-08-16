@@ -527,6 +527,15 @@ data class PolicySettings(
     val earnRules: List<EarnRuleDto> = emptyList(),
     /** Domains blocked at DNS level (suffix match). */
     val blockedDomains: Set<String> = emptySet(),
+    /**
+     * Built-in blocklists switched on for this family, by id (see [dev.walcott.rules.Blocklists]).
+     * Ids rather than their domains, because this policy is published in one ~4 KB message and
+     * the lists are hundreds of domains long; both sides expand them locally.
+     *
+     * Family-wide: a child can still have its own [blockedDomains], but the lists are one
+     * decision for the household.
+     */
+    val enabledBlocklists: Set<String> = emptySet(),
     /** Advanced per-app domain rules. */
     val domainAppRules: List<DomainAppRuleDto> = emptyList(),
     val pinHash: String? = null,
@@ -652,7 +661,12 @@ data class PolicySettings(
     fun toDomainAppRules(): List<DomainAppRule> = domainAppRules.map { it.toDomainAppRule() }
 
     /** True when any DNS filtering is configured (drives whether the VPN runs). */
-    fun hasWebFilter(): Boolean = blockedDomains.isNotEmpty() || domainAppRules.isNotEmpty()
+    fun hasWebFilter(): Boolean =
+        blockedDomains.isNotEmpty() || domainAppRules.isNotEmpty() || enabledBlocklists.isNotEmpty()
+
+    /** Everything the DNS filter blocks by name: the family's own domains plus its lists. */
+    fun blockedDomainsResolved(): Set<String> =
+        blockedDomains + dev.walcott.rules.Blocklists.domains(enabledBlocklists)
 
     /** Builds the engine's [FamilyConfig] from these rules. */
     fun toFamilyConfig(essentials: Set<String>): FamilyConfig {

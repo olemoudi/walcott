@@ -30,6 +30,26 @@ data class ExtraTimeEntity(
     val seconds: Long,
 )
 
+/**
+ * How many times something was blocked on this device on one local day.
+ *
+ * [kind] is one of [BlockKinds] and [key] is a domain or a package, so one table answers three
+ * questions ("which sites", "which app was asking", "which app hit a rule") without three
+ * schemas. Counters only ever grow within their day, which is what makes a replayed report
+ * harmless on the parent's side.
+ *
+ * Bounded on both axes and deliberately: old days are pruned, and a day that sees more distinct
+ * keys than [BlockKinds.MAX_KEYS_PER_DAY] folds its tail into [BlockKinds.OTHER] rather than
+ * growing a row per domain a tracker-happy app ever asked for.
+ */
+@Entity(tableName = "block_counter", primaryKeys = ["epochDay", "kind", "key"])
+data class BlockCounterEntity(
+    val epochDay: Long,
+    val kind: String,
+    val key: String,
+    val count: Long,
+)
+
 /** A GPS fix captured on the child device (only ever populated on the child). */
 @Entity(tableName = "location_point")
 data class LocationPointEntity(

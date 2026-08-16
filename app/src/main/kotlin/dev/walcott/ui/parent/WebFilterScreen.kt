@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,6 +54,8 @@ fun WebFilterScreen(
     onBack: () -> Unit,
     childId: String? = null,
     childName: String? = null,
+    /** Opens the short guided run through the lists; null hides the entry (child scope). */
+    onQuickSetup: (() -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -91,6 +94,40 @@ fun WebFilterScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = spacing.sm),
                 )
+            }
+
+            // The lists first: they are what a family should be turning on, and the hand-typed
+            // domains below them are the exception rather than the starting point.
+            item {
+                SectionHeader(
+                    stringResource(R.string.blocklist_section_title),
+                    icon = Icons.Outlined.Shield,
+                    accent = SectionAccent.RULES,
+                    supporting = stringResource(R.string.blocklist_section_hint),
+                )
+            }
+            item {
+                BlocklistRows(
+                    enabled = settings.enabledBlocklists,
+                    onToggle = { id, on -> viewModel.setBlocklist(id, on) },
+                    // Lists are a family decision; in a child's scope they are shown, not edited.
+                    editable = childId == null,
+                )
+            }
+            if (childId != null) {
+                item {
+                    Text(
+                        stringResource(R.string.blocklist_family_scope_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (onQuickSetup != null) {
+                item {
+                    OutlinedButton(onClick = onQuickSetup, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.blocklist_quick_setup))
+                    }
+                }
             }
 
             item {

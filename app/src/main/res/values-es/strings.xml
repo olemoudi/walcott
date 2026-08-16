@@ -327,7 +327,31 @@
     <string name="report_range_today">Hoy</string>
     <string name="report_range_week">7 días</string>
     <string name="report_range_month">30 días</string>
+    <string name="report_range_all">Histórico</string>
     <string name="report_by_app">En qué se ha ido</string>
+
+    <!-- Estadísticas de bloqueos -->
+    <string name="nav_blocks_title">Bloqueos</string>
+    <string name="nav_blocks_subtitle">Qué han parado de verdad el filtro y las reglas</string>
+    <string name="blocks_all_children">Todos</string>
+    <string name="blocks_empty">No se bloqueó nada en este periodo.</string>
+    <string name="blocks_empty_no_filter">Aún no hay bloqueos. El filtro web está apagado, así que solo pueden parar algo las reglas de tiempo.</string>
+    <string name="blocks_net_title">Parado por el filtro web</string>
+    <plurals name="blocks_net_total">
+        <item quantity="one">%d consulta bloqueada</item>
+        <item quantity="other">%d consultas bloqueadas</item>
+    </plurals>
+    <string name="blocks_by_domain">Sitios</string>
+    <string name="blocks_by_app">Apps que lo pedían</string>
+    <string name="blocks_rule_title">Cerrado por las reglas</string>
+    <plurals name="blocks_rule_total">
+        <item quantity="one">%d vez</item>
+        <item quantity="other">%d veces</item>
+    </plurals>
+    <string name="blocks_key_other">Todo lo demás</string>
+    <string name="blocks_key_unknown">Sin app identificada</string>
+    <string name="blocks_range_note">Una consulta bloqueada es una petición que no salió del móvil: la mayoría son apps llamando a casa, no alguien intentando entrar en una web.</string>
+    <string name="blocks_all_time_note">Todo lo registrado desde que este móvil empezó a contar. Los días recientes se guardan enteros; los antiguos se suman a un total acumulado.</string>
     <plurals name="report_days_covered">
         <item quantity="one">%d día registrado</item>
         <item quantity="other">%d días registrados</item>
@@ -349,6 +373,31 @@
     <string name="webfilter_rule_allow_only">%1$s · solo desde %2$s</string>
     <string name="webfilter_rule_block_in">%1$s · bloqueado en %2$s</string>
     <string name="webfilter_dns_note">Bloqueo a nivel DNS. Apps con su propio DNS cifrado (algunos navegadores, la app de YouTube) pueden saltárselo.</string>
+
+    <!-- Listas incluidas -->
+    <string name="blocklist_section_title">Listas ya hechas</string>
+    <string name="blocklist_section_hint">Se actualizan con la app. Enciende una y sus dominios quedan bloqueados en el móvil de todos los hijos.</string>
+    <string name="blocklist_adult_title">Contenido adulto</string>
+    <string name="blocklist_adult_desc">Porno, webcams y los foros montados alrededor.</string>
+    <string name="blocklist_gambling_title">Apuestas y juego</string>
+    <string name="blocklist_gambling_desc">Casas de apuestas, casinos y juego con skins.</string>
+    <string name="blocklist_trackers_title">Rastreadores y publicidad</string>
+    <string name="blocklist_trackers_desc">Servidores de publicidad y analítica que perfilan a quien tiene el móvil en la mano.</string>
+    <string name="blocklist_trackers_warning">En esta lista no hay nada que una app necesite para funcionar, pero si una app empieza a fallar, esta es la primera que hay que apagar.</string>
+    <plurals name="blocklist_domain_count">
+        <item quantity="one">%d dominio</item>
+        <item quantity="other">%d dominios</item>
+    </plurals>
+    <string name="blocklist_family_scope_note">Las listas se encienden para toda la familia. Los dominios de abajo sí pueden ser propios de este hijo.</string>
+    <string name="blocklist_quick_setup">Configurar el filtro en un minuto</string>
+    <string name="setup_step_filter">Activar el filtro web</string>
+    <string name="preset_filter_title">Configuración rápida del filtro</string>
+    <string name="step_blocklists_teach">Elige qué bloquea esta familia. Las dos primeras son las que nadie discute y no pueden estorbar a ninguna app; la tercera va de privacidad, no de contenido.</string>
+    <string name="step_blocklists_own_domains">Después puedes añadir dominios tuyos en Filtro web.</string>
+    <plurals name="summary_blocklists">
+        <item quantity="one">%d lista</item>
+        <item quantity="other">%d listas</item>
+    </plurals>
 
     <!-- Selección de modo del dispositivo -->
     <string name="mode_select_title">¿Quién usa este teléfono?</string>
@@ -696,6 +745,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_59_0">
+        <item>El filtro web ya viene con listas. Contenido adulto y apuestas son un interruptor cada uno, en vez de una página de dominios que tienes que ir pensando tú, y hay un recorrido de un minuto para activarlas desde la lista de configuración y desde la pantalla del filtro. Una familia que nunca configuró filtro se las encuentra ya encendidas.</item>
+        <item>Hay una tercera lista para servidores de publicidad y rastreo — privacidad, no contenido — con lo que cuesta escrito en la propia fila: ahí no hay nada que una app necesite para funcionar, pero si una app empieza a fallar, esa es la primera que hay que apagar.</item>
+        <item>Una pantalla nueva, Bloqueos, dice qué se ha parado de verdad: los sitios que el móvil intentaba alcanzar, la app que los pedía, y las veces que una regla cerró una app — hoy, esta semana, este mes o desde el principio. Los días recientes se guardan enteros y los antiguos se suman a un acumulado, así que ocupa lo mismo después de años.</item>
+    </string-array>
     <string-array name="whats_new_0_58_0">
         <item>Apagar la localización a un hijo consistía en encender algo y luego elegir «Desactivado» dentro. Ese interruptor ya dice lo que es — ajustes de localización personalizados para ese hijo — y, mientras está apagado, dice que activarlo es la forma de darle otra frecuencia, o ninguna.</item>
         <item>La ficha de un hijo abre con una tarjeta en vez de dos: su día, su actividad reciente y, debajo, el estado del propio móvil — reglas, batería, versión de la app. El código de vinculación, que casi ninguna familia necesita más de una vez, pasa a un botón en la barra de arriba.</item>
