@@ -41,6 +41,16 @@
     <string name="blocking_until">Until %1$s</string>
     <string name="blocking_out_of_time">%1$s of %2$s used today</string>
     <string name="blocking_give_time">Give time</string>
+    <string name="blocking_detail_window">Schedule · from %1$s to %2$s</string>
+    <string name="blocking_detail_blocked">Blocked all day · this app has no time at all today</string>
+    <string name="blocking_detail_budget">Out of time · %1$s of %2$s used today</string>
+    <string name="blocking_detail_budget_extra">Out of time · %1$s of %2$s used today (%3$s limit + %4$s given)</string>
+    <string name="blocking_origin_child">%1$s\'s own rule</string>
+    <string name="blocking_origin_family">Family rule</string>
+    <string name="blocking_origin_child_app">%1$s\'s own limit for this app</string>
+    <string name="blocking_origin_family_app">The family\'s limit for this app</string>
+    <string name="blocking_origin_child_default">%1$s\'s own default limit, which this app follows</string>
+    <string name="blocking_origin_family_default">The family\'s default limit, which this app follows</string>
     <!-- Back to the family's rules for one child -->
     <string name="override_inherit_all">Use the family\'s rules for everything</string>
     <string name="override_inherit_all_title">Back to the family\'s rules?</string>
@@ -119,6 +129,7 @@
     <string name="reason_bedtime">It\'s bedtime</string>
     <string name="reason_blocked_window">Not available at this time</string>
     <string name="reason_budget_exhausted">Out of time for today</string>
+    <string name="reason_blocked_today">Blocked today</string>
     <string name="reason_fail_closed">Locked until this phone is fixed</string>
     <string name="request_more_time">Ask for more time</string>
 
@@ -745,6 +756,11 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_60_0">
+        <item>Every rule that is blocking something right now says whose it is: the family\'s, or one written for that child alone. Their own are the ones you would never find by opening the family\'s editors, so they are the ones marked, and the button beside them opens the rule that is actually biting.</item>
+        <item>An app you blocked outright is no longer described as one that ran out of time. It used to read "0s of 0s used today" — which looks like a bug, and offered more minutes as the way out of a rule whose whole point is that there are none. Now it says it is blocked all day, and the button edits the limit.</item>
+        <item>The rest of the sentence is there too: a schedule shows both of its ends rather than only when it lets go, and a spent limit shows what the limit was — plus, separately, any minutes you had already granted on top of it.</item>
+    </string-array>
     <string-array name="whats_new_0_59_0">
         <item>The web filter comes with lists now. Adult content and betting are one switch each instead of a page of domains you have to think of yourself, and a one-minute run through them is offered from the setup list and from the filter screen. A family that has never configured a filter gets those two already on.</item>
         <item>There is a third list for advertising and tracking servers — privacy rather than content — with what it costs written on the row: nothing an app needs to work is on it, but if an app starts misbehaving, that is the first list to turn off.</item>

@@ -430,10 +430,17 @@ fun ChildDetailScreen(
                 item {
                     CardGroup {
                         blockingNow.forEachIndexed { index, block ->
+                            // Whose rule this is decides both what the row says and where its
+                            // button goes: one answer, from one place, so the sentence and the
+                            // door can never disagree (see BlockOrigin).
+                            val owner = dev.walcott.data.BlockOrigin.of(block, entry.overrides)
+                            val ownRule = owner == dev.walcott.data.RuleOwner.CHILD
                             BlockingRow(
                                 block = block,
                                 appLabel = snapshot.apps.firstOrNull { it.packageName == block.packageName }
                                     ?.label?.ifBlank { null } ?: block.packageName,
+                                childName = entry.name,
+                                owner = owner,
                                 position = cardPosition(index, blockingNow.size),
                                 onAct = {
                                     when (block.kind) {
@@ -444,11 +451,20 @@ fun ChildDetailScreen(
                                         // Otherwise: the rule itself. Where it lives depends on
                                         // whose it is — this child's own copy, or the family's.
                                         ActiveBlock.Kind.BEDTIME ->
-                                            if (entry.overrides.bedtime != null) openChildRules() else onOpenFamilyLimits()
+                                            if (ownRule) openChildRules() else onOpenFamilyLimits()
                                         ActiveBlock.Kind.SCREEN_FREE ->
-                                            if (entry.overrides.allAppsBlockedWindows != null) openChildRules() else onOpenFamilyLimits()
+                                            if (ownRule) openChildRules() else onOpenFamilyLimits()
                                         ActiveBlock.Kind.APP_WINDOW ->
-                                            if (entry.overrides.appPolicies != null) onEditApps() else onOpenFamilyApps()
+                                            if (ownRule) onEditApps() else onOpenFamilyApps()
+                                        // A blocked app is a limit, and the limit that blocked it
+                                        // is on one of two different screens: the app's own entry,
+                                        // or the default that reaches every app nobody set one for.
+                                        ActiveBlock.Kind.APP_BLOCKED -> when {
+                                            block.fromDefaultBudget && ownRule -> openChildRules()
+                                            block.fromDefaultBudget -> onOpenFamilyLimits()
+                                            ownRule -> onEditApps()
+                                            else -> onOpenFamilyApps()
+                                        }
                                     }
                                 },
                             )
@@ -811,24 +827,62 @@ private fun countValue(count: Int, plural: Int): String =
 private fun BlockingRow(
     block: ActiveBlock,
     appLabel: String,
+    childName: String,
+    owner: dev.walcott.data.RuleOwner,
     position: CardPosition,
     onAct: () -> Unit,
 ) {
     val spacing = Tokens.spacing
+    val ownRule = owner == dev.walcott.data.RuleOwner.CHILD
     val (icon, title) = when (block.kind) {
         ActiveBlock.Kind.BEDTIME -> Icons.Filled.Bedtime to stringResource(R.string.bedtime_title)
         ActiveBlock.Kind.SCREEN_FREE -> Icons.Outlined.DoNotDisturbOn to stringResource(R.string.screen_free_title)
         ActiveBlock.Kind.APP_WINDOW -> Icons.Outlined.Schedule to appLabel
         ActiveBlock.Kind.BUDGET -> Icons.Outlined.HourglassEmpty to appLabel
+        ActiveBlock.Kind.APP_BLOCKED -> Icons.Outlined.Block to appLabel
     }
+    // What the rule actually says: a window with both its ends, a limit with what was spent
+    // against it, or the flat fact that this app has no time at all today. The three used to
+    // collapse into "until 18:00" or "0s of 0s used", which answered neither "when does this
+    // end" nor "why is it shut".
     val detail = when (block.kind) {
-        ActiveBlock.Kind.BUDGET -> stringResource(
-            R.string.blocking_out_of_time,
-            (block.used ?: Duration.ZERO).humanize(),
-            (block.allowance ?: Duration.ZERO).humanize(),
-        )
-        // The hour it lets go, which is the parent's actual question about a window.
-        else -> block.until?.let { stringResource(R.string.blocking_until, it.hhmm()) }.orEmpty()
+        ActiveBlock.Kind.APP_BLOCKED -> stringResource(R.string.blocking_detail_blocked)
+        ActiveBlock.Kind.BUDGET -> {
+            val used = (block.used ?: Duration.ZERO).humanize()
+            val allowed = block.allowance ?: Duration.ZERO
+            val base = block.budget
+            if (base != null) {
+                stringResource(
+                    R.string.blocking_detail_budget_extra,
+                    used, allowed.humanize(), base.humanize(), (allowed - base).humanize(),
+                )
+            } else {
+                stringResource(R.string.blocking_detail_budget, used, allowed.humanize())
+            }
+        }
+        else -> {
+            val from = block.from
+            val until = block.until
+            when {
+                from != null && until != null ->
+                    stringResource(R.string.blocking_detail_window, from.hhmm(), until.hhmm())
+                until != null -> stringResource(R.string.blocking_until, until.hhmm())
+                else -> ""
+            }
+        }
+    }
+    // And whose rule it is. Never omitted, not even for the family's own: "unstated" is what
+    // the row said before, and it was read as "the family's" exactly as often as it was true.
+    val origin = when (block.kind) {
+        ActiveBlock.Kind.BUDGET, ActiveBlock.Kind.APP_BLOCKED -> when {
+            block.fromDefaultBudget && ownRule -> stringResource(R.string.blocking_origin_child_default, childName)
+            block.fromDefaultBudget -> stringResource(R.string.blocking_origin_family_default)
+            ownRule -> stringResource(R.string.blocking_origin_child_app, childName)
+            else -> stringResource(R.string.blocking_origin_family_app)
+        }
+        else ->
+            if (ownRule) stringResource(R.string.blocking_origin_child, childName)
+            else stringResource(R.string.blocking_origin_family)
     }
     val action = stringResource(
         if (block.kind == ActiveBlock.Kind.BUDGET) R.string.blocking_give_time else R.string.action_edit,
@@ -854,6 +908,17 @@ private fun BlockingRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Text(
+                    origin,
+                    style = MaterialTheme.typography.labelSmall,
+                    // A child's own rule is the surprising one, and the one a parent looking at
+                    // the family's editors will never find. It gets the colour.
+                    color = if (ownRule) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
             Spacer(Modifier.width(spacing.sm))
             TextButton(onClick = onAct) { Text(action) }

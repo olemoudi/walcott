@@ -1295,7 +1295,7 @@ private fun AppCard(
                 // — the request was granted, the app stayed shut, and neither of them knew why.
                 // Say what is holding it instead.
                 Text(
-                    blockedReasonText(app.blockReason),
+                    blockedReasonText(app),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1380,10 +1380,19 @@ private fun fractionUsed(app: AppStatusUi): Float {
 }
 
 @Composable
-private fun blockedReasonText(reason: BlockReason?): String = when (reason) {
+private fun blockedReasonText(app: AppStatusUi): String = when (app.blockReason) {
     BlockReason.BEDTIME -> stringResource(R.string.reason_bedtime)
     BlockReason.BLOCKED_WINDOW -> stringResource(R.string.reason_blocked_window)
-    BlockReason.BUDGET_EXHAUSTED -> stringResource(R.string.reason_budget_exhausted)
+    // An app whose limit is zero never had time to run out of, and telling the child it did is
+    // the same sentence their parent was reading on the other side — "0 of 0 used" — with the
+    // numbers hidden. Only when nothing was used: a grant spent down to zero really is a
+    // budget that ran out, whatever the underlying limit says.
+    BlockReason.BUDGET_EXHAUSTED ->
+        if (app.budget.isZero && app.used.isZero) {
+            stringResource(R.string.reason_blocked_today)
+        } else {
+            stringResource(R.string.reason_budget_exhausted)
+        }
     BlockReason.FAIL_CLOSED -> stringResource(R.string.reason_fail_closed)
     null -> ""
 }

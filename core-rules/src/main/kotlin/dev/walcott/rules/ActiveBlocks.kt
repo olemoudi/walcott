@@ -17,11 +17,20 @@ data class ActiveBlock(
     val kind: Kind,
     /** The app this is about; "" for the rules that close the whole phone. */
     val packageName: String = "",
-    /** When the window lets go, for the two kinds that are windows. */
+    /** The window this block is, for the kinds that are windows: when it started and when it lets go. */
+    val from: LocalTime? = null,
     val until: LocalTime? = null,
-    /** For [Kind.BUDGET]: how long it was allowed, and how long it got used for. */
+    /** For [Kind.BUDGET]: how long it was allowed today, and how long it got used for. */
     val allowance: Duration? = null,
     val used: Duration? = null,
+    /**
+     * For [Kind.BUDGET]: the day's budget before extra time was added, when a grant made the two
+     * differ. Null means the allowance IS the budget — saying "1h of 1h" while a grant is
+     * silently inside the number is how a parent comes to believe the rules are not being applied.
+     */
+    val budget: Duration? = null,
+    /** Whether the budget behind this block is the family default rather than one set for the app. */
+    val fromDefaultBudget: Boolean = false,
 ) {
     enum class Kind {
         /** The family's bedtime is running. */
@@ -35,6 +44,18 @@ data class ActiveBlock(
 
         /** This app's time for today is spent. More minutes are the thing that ends this one. */
         BUDGET,
+
+        /**
+         * This app is blocked outright today: its limit is zero, so there is no time to run out
+         * of and nothing ends this at any hour.
+         *
+         * Its own kind rather than a budget of zero, because they are different facts and the
+         * parent reads them as different sentences. A blocked app reported as a spent budget
+         * says "used 0s of 0s" — which looks like a bug, or like a child who somehow exhausted
+         * an allowance without opening the app — and offers "give time" as the way out of a rule
+         * whose whole point is that there is no time.
+         */
+        APP_BLOCKED,
     }
 }
 
@@ -66,24 +87,46 @@ fun RuleEngine.activeBlocks(
     val blocks = mutableListOf<ActiveBlock>()
 
     config.bedtime[dayType]?.takeIf { time in it }?.let {
-        blocks += ActiveBlock(ActiveBlock.Kind.BEDTIME, until = it.end)
+        blocks += ActiveBlock(ActiveBlock.Kind.BEDTIME, from = it.start, until = it.end)
     }
     config.blockedWindows[dayType].orEmpty()
         .filter { it.appliesAt(now, specialDay) }
-        .forEach { blocks += ActiveBlock(ActiveBlock.Kind.SCREEN_FREE, until = it.end) }
+        .forEach { blocks += ActiveBlock(ActiveBlock.Kind.SCREEN_FREE, from = it.start, until = it.end) }
 
     // Sorted so the same rules always read in the same order: a list that reshuffles itself
     // between two glances is one nobody trusts.
     packages.filterNot { it in config.essentialPackages }.sorted().forEach { pkg ->
         config.perAppPolicies[pkg]?.blockedWindows?.get(dayType).orEmpty()
             .filter { it.appliesAt(now, specialDay) }
-            .forEach { blocks += ActiveBlock(ActiveBlock.Kind.APP_WINDOW, pkg, until = it.end) }
+            .forEach { blocks += ActiveBlock(ActiveBlock.Kind.APP_WINDOW, pkg, from = it.start, until = it.end) }
 
-        if (!usageIsToday) return@forEach
         val allowance = config.allowanceFor(pkg, dayType, extraTime) ?: return@forEach
+        val budget = config.budgetFor(pkg, dayType)
+        val onDefault = config.usesDefaultBudget(pkg)
+        // A zero allowance is not a spent one: nothing was ever available, so it is reported
+        // whatever the counters say — including on a device whose counters are not today's,
+        // where "blocked all day" is still exactly as true as it was this morning.
+        if (allowance.isZero || allowance.isNegative) {
+            blocks += ActiveBlock(
+                ActiveBlock.Kind.APP_BLOCKED,
+                pkg,
+                allowance = allowance,
+                fromDefaultBudget = onDefault,
+            )
+            return@forEach
+        }
+        if (!usageIsToday) return@forEach
         val used = usageToday[pkg] ?: Duration.ZERO
         if (used >= allowance) {
-            blocks += ActiveBlock(ActiveBlock.Kind.BUDGET, pkg, allowance = allowance, used = used)
+            blocks += ActiveBlock(
+                ActiveBlock.Kind.BUDGET,
+                pkg,
+                allowance = allowance,
+                used = used,
+                // Only when a grant actually widened it; otherwise the two numbers are one.
+                budget = budget?.takeIf { it != allowance },
+                fromDefaultBudget = onDefault,
+            )
         }
     }
     return blocks

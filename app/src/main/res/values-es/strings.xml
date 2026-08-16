@@ -41,6 +41,16 @@
     <string name="blocking_until">Hasta las %1$s</string>
     <string name="blocking_out_of_time">%1$s de %2$s usados hoy</string>
     <string name="blocking_give_time">Dar tiempo</string>
+    <string name="blocking_detail_window">Horario · de %1$s a %2$s</string>
+    <string name="blocking_detail_blocked">Bloqueada todo el día · hoy no tiene tiempo ninguno</string>
+    <string name="blocking_detail_budget">Sin tiempo · %1$s de %2$s usados hoy</string>
+    <string name="blocking_detail_budget_extra">Sin tiempo · %1$s de %2$s usados hoy (%3$s de límite + %4$s concedidos)</string>
+    <string name="blocking_origin_child">Regla propia de %1$s</string>
+    <string name="blocking_origin_family">Regla de la familia</string>
+    <string name="blocking_origin_child_app">Límite propio de %1$s para esta app</string>
+    <string name="blocking_origin_family_app">Límite de la familia para esta app</string>
+    <string name="blocking_origin_child_default">Límite por defecto propio de %1$s, que esta app sigue</string>
+    <string name="blocking_origin_family_default">Límite por defecto de la familia, que esta app sigue</string>
     <!-- Volver a las reglas de la familia para un hijo -->
     <string name="override_inherit_all">Usar las reglas de la familia para todo</string>
     <string name="override_inherit_all_title">¿Volver a las reglas de la familia?</string>
@@ -120,6 +130,7 @@
     <string name="reason_bedtime">Es hora de dormir</string>
     <string name="reason_blocked_window">No disponible en este horario</string>
     <string name="reason_budget_exhausted">Se acabó el tiempo de hoy</string>
+    <string name="reason_blocked_today">Bloqueada hoy</string>
     <string name="reason_fail_closed">Bloqueado hasta arreglar este móvil</string>
     <string name="request_more_time">Pedir más tiempo</string>
 
@@ -745,6 +756,11 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_60_0">
+        <item>Cada regla que está bloqueando algo ahora mismo dice de quién es: de la familia, o escrita solo para ese hijo. Las suyas son las que nunca encontrarías abriendo los editores de la familia, así que son las que van marcadas, y el botón de al lado abre la regla que está mordiendo de verdad.</item>
+        <item>Una app que bloqueaste del todo ya no se describe como una a la que se le acabó el tiempo. Antes ponía «0 s de 0 s usados hoy» — que parece un fallo, y ofrecía dar más minutos como salida a una regla cuyo sentido es justo que no hay ninguno. Ahora dice que está bloqueada todo el día, y el botón edita el límite.</item>
+        <item>Y el resto de la frase también está: un horario enseña sus dos extremos y no solo cuándo suelta, y un límite agotado enseña cuánto era el límite — y aparte, los minutos que ya le habías concedido encima.</item>
+    </string-array>
     <string-array name="whats_new_0_59_0">
         <item>El filtro web ya viene con listas. Contenido adulto y apuestas son un interruptor cada uno, en vez de una página de dominios que tienes que ir pensando tú, y hay un recorrido de un minuto para activarlas desde la lista de configuración y desde la pantalla del filtro. Una familia que nunca configuró filtro se las encuentra ya encendidas.</item>
         <item>Hay una tercera lista para servidores de publicidad y rastreo — privacidad, no contenido — con lo que cuesta escrito en la propia fila: ahí no hay nada que una app necesite para funcionar, pero si una app empieza a fallar, esa es la primera que hay que apagar.</item>

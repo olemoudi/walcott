@@ -128,6 +128,78 @@ class ActiveBlocksTest {
     }
 
     @Test
+    fun `an app blocked outright is not an app that ran out of time`() {
+        // A limit of zero is how "Blocked" is written, and reporting it as a spent budget said
+        // "0s used of 0s" — which reads as a bug, and offered more minutes as the way out of a
+        // rule whose entire content is that there are none.
+        val cfg = config(perApp = mapOf(game to AppPolicy(dailyBudget = DayType.entries.associateWith { Duration.ZERO })))
+        val blocks = RuleEngine.activeBlocks(cfg, installed, monday)
+        assertEquals(listOf(ActiveBlock.Kind.APP_BLOCKED), blocks.map { it.kind })
+        assertEquals(game, blocks[0].packageName)
+        assertEquals(Duration.ZERO, blocks[0].allowance)
+        assertTrue(blocks[0].used == null, "nothing was used, and nothing is what it should say")
+        assertTrue(!blocks[0].fromDefaultBudget, "this one was set for the app itself")
+    }
+
+    @Test
+    fun `a family default of zero blocks every app it reaches, and says so`() {
+        val blocks = RuleEngine.activeBlocks(config(default = Duration.ZERO), installed, monday)
+        assertEquals(listOf(ActiveBlock.Kind.APP_BLOCKED, ActiveBlock.Kind.APP_BLOCKED), blocks.map { it.kind })
+        assertTrue(blocks.all { it.fromDefaultBudget }, "it is the family's default doing this")
+    }
+
+    @Test
+    fun `extra time turns a blocked app into one with time to spend`() {
+        // Zero plus a grant is a real allowance, so the app is not blocked outright any more —
+        // and once that is spent it is a budget, not a block.
+        val cfg = config(perApp = mapOf(game to AppPolicy(dailyBudget = DayType.entries.associateWith { Duration.ZERO })))
+        val granted = RuleEngine.activeBlocks(
+            cfg, installed, monday,
+            extraTime = mapOf(game to Duration.ofMinutes(20)),
+        )
+        assertEquals(emptyList<ActiveBlock>(), granted)
+
+        val spent = RuleEngine.activeBlocks(
+            cfg, installed, monday,
+            usageToday = mapOf(game to Duration.ofMinutes(25)),
+            extraTime = mapOf(game to Duration.ofMinutes(20)),
+        )
+        assertEquals(listOf(ActiveBlock.Kind.BUDGET), spent.map { it.kind })
+        assertEquals(Duration.ofMinutes(20), spent[0].allowance)
+        assertEquals(Duration.ZERO, spent[0].budget, "the day's own limit, beside what a grant added")
+    }
+
+    @Test
+    fun `a budget nobody widened does not pretend a grant is inside it`() {
+        val blocks = RuleEngine.activeBlocks(
+            config(default = Duration.ofMinutes(30)), installed, monday,
+            usageToday = mapOf(game to Duration.ofMinutes(45)),
+        )
+        assertTrue(blocks[0].budget == null, "budget is only stated when a grant made it differ")
+        assertTrue(blocks[0].fromDefaultBudget, "and this one comes from the family default")
+    }
+
+    @Test
+    fun `a blocked app reports even while the counters are stale`() {
+        // There is no counter to disbelieve: nothing was allowed today whatever the phone
+        // last managed to report.
+        val cfg = config(perApp = mapOf(game to AppPolicy(dailyBudget = DayType.entries.associateWith { Duration.ZERO })))
+        val blocks = RuleEngine.activeBlocks(cfg, installed, monday, usageIsToday = false)
+        assertEquals(listOf(ActiveBlock.Kind.APP_BLOCKED), blocks.map { it.kind })
+    }
+
+    @Test
+    fun `windows carry both ends, so the rule can be named and not just its exit`() {
+        val cfg = config(
+            bedtime = TimeWindow(LocalTime.of(16, 0), LocalTime.of(7, 30)),
+            screenFree = listOf(TimeWindow(LocalTime.of(16, 30), LocalTime.of(18, 0))),
+        )
+        val blocks = RuleEngine.activeBlocks(cfg, installed, monday)
+        assertEquals(LocalTime.of(16, 0), blocks[0].from)
+        assertEquals(LocalTime.of(16, 30), blocks[1].from)
+    }
+
+    @Test
     fun `counters that are not today's produce no budget verdict`() {
         // A device that hasn't checked in since yesterday reports real numbers for the wrong
         // day. Quoting them as "out of time today" would be worse than saying nothing.
