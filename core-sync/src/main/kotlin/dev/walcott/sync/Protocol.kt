@@ -60,6 +60,16 @@ data class ChildRequest(
          * an install of exactly [pkg] (the tight single-app window), never a blanket window.
          */
         const val KIND_INSTALL = "install"
+
+        /**
+         * "I need help with this phone", from the one button on an assisted device's screen.
+         *
+         * Its own kind rather than a [KIND_OTHER] with a fixed sentence, because it is the only
+         * ask that is about the PERSON rather than about an app: it is what an adult being helped
+         * has instead of a phone call they cannot always make, and the parent's side treats it as
+         * the most urgent thing on the screen.
+         */
+        const val KIND_HELP = "help"
     }
 }
 
@@ -414,6 +424,37 @@ object RemoteAction {
     const val DETAIL_INSTALLED = "installed"
     const val DETAIL_ALREADY_INSTALLED = "already_installed"
 
+    /**
+     * Set this device's unlock PIN to [RemoteCommand.arg] (4–8 digits), or remove the lock screen
+     * when the arg is empty. Needs a reset token the device armed in advance — see `LockScreen`,
+     * and [ChildSnapshot.lockResetReady] for whether it can work at all right now.
+     *
+     * The one command with a SHORT life ([LOCK_PIN_TTL_MS]): every other action is harmless when it
+     * lands late, and this one would change somebody's PIN days after they were told a different
+     * one. The ack says what happened ([DETAIL_LOCK_SET], [DETAIL_LOCK_NOT_ARMED]).
+     */
+    const val SET_LOCK_PIN = "set_lock_pin"
+
+    /** Lock the screen now — the phone left on a café table. Takes nothing away, needs no token. */
+    const val LOCK_NOW = "lock_now"
+
+    /**
+     * Publish the notifications this device received (see `NotificationLog`), newest first.
+     * [RemoteCommand.arg] carries the query — which app, and where to page from (see
+     * [NotificationQuery]).
+     */
+    const val NOTIFICATION_LOG = "notification_log"
+
+    /** How long a [SET_LOCK_PIN] stays valid after the parent issued it. */
+    const val LOCK_PIN_TTL_MS = 30 * 60 * 1000L
+
+    /** [SET_LOCK_PIN] outcomes. */
+    const val DETAIL_LOCK_SET = "lock_set"
+    const val DETAIL_LOCK_CLEARED = "lock_cleared"
+    const val DETAIL_LOCK_NOT_ARMED = "lock_not_armed"
+    const val DETAIL_LOCK_REFUSED = "lock_refused"
+    const val DETAIL_EXPIRED = "expired"
+
     /** [UNINSTALL_APP]/[ALLOW_APP] outcomes. "removing" = the uninstall was handed to the OS. */
     const val DETAIL_REMOVING = "removing"
     const val DETAIL_NOT_INSTALLED = "not_installed"
@@ -606,6 +647,40 @@ data class ChildSnapshot(
     val filterListDomains: Int = 0,
     val filterListsPending: List<String> = emptyList(),
     /**
+     * Whether a call would actually be HEARD on this device, and whether something is still
+     * muting it (see `AudioGuard`).
+     *
+     * The reason this is worth a field: a phone on silent is, from the other end, exactly a phone
+     * that is off, out of battery, or being ignored — and its owner does not know. [ringerAudible]
+     * answers it directly. [ringerDndSilencing] separates "we put the ringer back" from "Do Not
+     * Disturb is on and this app is not allowed to switch it off", which is a permission the phone's
+     * owner has to grant and therefore a sentence the parent has to be able to read.
+     *
+     * [ringerRestores] counts how many times this device has had to put its own ringer back — the
+     * difference between a one-off and a person who silences their phone every single day, which is
+     * a conversation rather than a bug. Cumulative like [pinWrongTotal]: the parent reads growth.
+     *
+     * Defaults say "audible, nothing wrong", so a legacy child raises no alarm.
+     */
+    val ringerAudible: Boolean = true,
+    val ringerDndSilencing: Boolean = false,
+    val ringerRestores: Int = 0,
+    /**
+     * Whether this device could actually have its unlock PIN changed remotely right now: a reset
+     * token registered AND activated by its owner unlocking the phone once (see `LockScreen`).
+     *
+     * Reported continuously and not on demand, because the whole value of the escape hatch is
+     * knowing it is armed BEFORE somebody is locked out. False on every legacy child and on every
+     * device that is not Device Owner.
+     */
+    val lockResetReady: Boolean = false,
+    /**
+     * Whether the phone's owner has granted notification access, when the rules ask this device to
+     * keep a notification log (see `NotificationLog`). Defaults true so a family that never turned
+     * the log on is never told about a permission it does not need.
+     */
+    val notificationAccess: Boolean = true,
+    /**
      * Uncaught exceptions this install has died of, and when the last one happened.
      *
      * Cumulative, like [pinWrongTotal], on purpose: the parent alerts on GROWTH between two
@@ -707,6 +782,101 @@ data class IconPayload(
 )
 
 /**
+ * What a request for the notification log is asking for: one app or all of them, and where to
+ * start.
+ *
+ * Two parameters in one [RemoteCommand.arg] rather than a new wire field, encoded as `k=v;k=v` so
+ * an unrecognised key is skipped instead of shifting the meaning of the next one — the same
+ * forgiving shape as everything else that crosses between two builds here.
+ *
+ * The per-app query is the one a family actually makes. "Show me everything that happened
+ * yesterday" is a lot of somebody's private messages to read in order to answer "did the message
+ * from the clinic arrive?"; asking for one app is both a smaller message and a smaller intrusion.
+ */
+object NotificationQuery {
+
+    data class Query(
+        /** Package to answer for, or "" for every app. */
+        val pkg: String = "",
+        /** Answer only with notifications older than this epoch-ms; 0 starts at now. */
+        val beforeMs: Long = 0,
+    )
+
+    fun encode(pkg: String = "", beforeMs: Long = 0): String = buildList {
+        if (pkg.isNotBlank()) add("pkg=$pkg")
+        if (beforeMs > 0) add("before=$beforeMs")
+    }.joinToString(";")
+
+    fun decode(arg: String): Query {
+        // A bare number is what the first cut of this sent, before the per-app query existed.
+        arg.trim().toLongOrNull()?.let { return Query(beforeMs = it) }
+        var pkg = ""
+        var before = 0L
+        for (part in arg.split(';')) {
+            val key = part.substringBefore('=', "").trim()
+            val value = part.substringAfter('=', "").trim()
+            when (key) {
+                "pkg" -> pkg = value
+                "before" -> before = value.toLongOrNull() ?: 0L
+            }
+        }
+        return Query(pkg, before)
+    }
+}
+
+/**
+ * One notification a device received, on its way to the person supporting it.
+ *
+ * Deliberately the same shape the device stored: package, title, text, when. The parent's screen
+ * resolves the app's human name from the list that child already publishes, so the wire does not
+ * repeat "WhatsApp" four hundred times.
+ */
+@Serializable
+data class NotificationEntry(
+    val atMs: Long,
+    val pkg: String,
+    val title: String = "",
+    val text: String = "",
+)
+
+/**
+ * A device's answer to "show me the notifications" ([RemoteAction.NOTIFICATION_LOG]).
+ *
+ * Its own message kind rather than a field on the snapshot, for the same reason the diagnostics
+ * report is: it is large, it is asked for, and it must never take room from the check-in that says
+ * a child is alive.
+ *
+ * [total] is how many the device HAS in the window it was asked about, against [entries] which is
+ * how many fitted in one message. The pair is what lets the parent's screen say "the 40 most recent
+ * of 137" instead of quietly showing 40 and letting a family believe that was all of it — and
+ * [oldestAtMs] is the cursor they page backwards from.
+ */
+@Serializable
+data class NotificationPayload(
+    val deviceId: String,
+    val atMs: Long,
+    /** Newest first. */
+    val entries: List<NotificationEntry> = emptyList(),
+    val total: Int = 0,
+    /** [atMs] of the oldest entry included, or 0 when none. The cursor for "load older". */
+    val oldestAtMs: Long = 0,
+    /** The window this answers for, as the parent asked: entries older than this were not read. */
+    val sinceMs: Long = 0,
+    /**
+     * The app this page answers for, or "" for all of them (see [NotificationQuery]).
+     *
+     * Carried back rather than assumed, because the parent's screen keeps pages per device and a
+     * page about one app must not be folded into the list that claims to be everything — that
+     * would answer "what arrived yesterday?" with a filtered subset.
+     */
+    val pkg: String = "",
+    /** True when the device has no notification access and therefore recorded nothing. */
+    val noAccess: Boolean = false,
+    /** True when the family's rules do not ask this device for a log at all. */
+    val notEnabled: Boolean = false,
+)
+
+/**
  * A child's health report, sent on request ([RemoteAction.DIAGNOSE]) in its own message kind
  * (like [IconPayload]) so the log lines never bloat the regular [ChildSnapshot]. Everything a
  * parent needs to diagnose a misbehaving device without physically holding it.
@@ -756,6 +926,7 @@ sealed interface IncomingMessage {
     data class FromChild(val snapshot: ChildSnapshot) : IncomingMessage
     data class FromChildIcons(val payload: IconPayload) : IncomingMessage
     data class FromChildDiag(val payload: DiagPayload) : IncomingMessage
+    data class FromChildNotifications(val payload: NotificationPayload) : IncomingMessage
 }
 
 /**
@@ -842,6 +1013,15 @@ object SyncProtocol {
         )
     }
 
+    fun encodeChildNotifications(payload: NotificationPayload, familyKey: javax.crypto.SecretKey): String {
+        val bytes = gzip(json.encodeToString(NotificationPayload.serializer(), payload).toByteArray())
+        val ciphertext = FamilyCrypto.encrypt(familyKey, bytes)
+        return json.encodeToString(
+            Envelope.serializer(),
+            Envelope("notif", payload.deviceId, 0, FamilyCrypto.toB64(ciphertext), null),
+        )
+    }
+
     fun encodeChild(snapshot: ChildSnapshot, familyKey: javax.crypto.SecretKey): String {
         val payload = gzip(json.encodeToString(ChildSnapshot.serializer(), snapshot).toByteArray())
         val ciphertext = FamilyCrypto.encrypt(familyKey, payload)
@@ -895,6 +1075,11 @@ object SyncProtocol {
             }.getOrNull()
             "diag" -> runCatching {
                 IncomingMessage.FromChildDiag(json.decodeFromString(DiagPayload.serializer(), text))
+            }.getOrNull()
+            "notif" -> runCatching {
+                IncomingMessage.FromChildNotifications(
+                    json.decodeFromString(NotificationPayload.serializer(), text),
+                )
             }.getOrNull()
             else -> null
         } ?: return null

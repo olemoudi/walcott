@@ -73,6 +73,30 @@ DNS. You can see what a child's app is actually contacting and block it from the
 children, its own rules and its own private channel, kept completely apart. Add one from
 *Switch family*, or take one over from its backup file.
 
+### Also for a phone you help with, not just one you limit
+
+When you add someone you choose whether it is **a child** or **an adult you help** — a parent, a
+grandparent, anybody who changes a setting by accident and can't find their way back. The choice
+never limits what you can switch on; it decides what that phone *starts* with and what the app asks
+you next. An adult's phone starts with no limits, no bedtime and no location, and instead locks the
+settings people change by accident: airplane mode, the language, brightness, screen timeout, mobile
+data, resetting the network, accounts, default apps, and installing or removing apps. Their own
+screen is a single page with one big **Ask for help** button, which reaches you as an alert.
+
+Three support tools are offered for *every* phone in the family, child or adult — a teenager's phone
+on silent for two days is the same problem as a grandparent's:
+
+- **Keep the ringer audible.** Silent and vibrate are undone and the ring volume kept up, and you
+  are told how many times that has been necessary. From your end, a phone on silent is
+  indistinguishable from one that is off — and its owner has no idea.
+- **The lock screen.** Change or remove their unlock PIN from your phone, or lock theirs now. Their
+  page tells you whether that is ready *before* you need it: the phone has to be unlocked once with
+  its current PIN first, and finding that out on the day somebody is locked out is too late.
+- **A notification log you ask for.** Off by default. Their phone keeps what arrived for 48 hours
+  and answers when you ask — everything, or just one app, so "did the message from the clinic
+  arrive?" doesn't mean reading a day of somebody's messages. Nothing is ever uploaded on its own,
+  and switching it off deletes what was kept.
+
 **Emergency button.** A way out that doesn't depend on you being reachable — see below.
 
 The app is fully usable in **English** and **Spanish**, following your phone's language.

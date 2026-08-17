@@ -134,6 +134,37 @@ object IconFit {
 }
 
 /**
+ * Same guarantee for the notification log: entries are dropped from the OLDEST end until the
+ * message fits, which is the right end — the parent asked for a window and reads it newest first,
+ * and the page cursor ([NotificationPayload.oldestAtMs]) is what they use to ask for the rest.
+ *
+ * [NotificationPayload.total] is left exactly as the device counted it, so a trimmed answer says
+ * how much it is not showing. That is the whole difference between "the 40 most recent of 137" and
+ * a family believing 40 was all that arrived yesterday.
+ */
+object NotificationFit {
+
+    fun encode(
+        payload: NotificationPayload,
+        familyKey: SecretKey,
+        maxBytes: Int = SnapshotFit.MAX_BYTES,
+    ): String {
+        var entries = payload.entries
+        while (true) {
+            val page = payload.copy(
+                entries = entries,
+                oldestAtMs = entries.lastOrNull()?.atMs ?: 0,
+            )
+            val encoded = SyncProtocol.encodeChildNotifications(page, familyKey)
+            if (encoded.length <= maxBytes || entries.isEmpty()) return encoded
+            // A tenth at a time rather than one by one: a busy phone can hand this a few hundred
+            // entries, and each attempt costs a gzip and an encrypt.
+            entries = entries.dropLast((entries.size / 10).coerceAtLeast(1))
+        }
+    }
+}
+
+/**
  * Same guarantee for the diagnostics report: the log tail is the only unbounded part, so it
  * is halved (dropping the OLDEST lines) until the encoded message fits. The fixed fields are
  * a few hundred bytes and always fit.

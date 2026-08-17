@@ -36,25 +36,43 @@ the v0.21.0 mechanism. New children never use them, but a v0.21.0 ask can still 
 the update, and one was — it rendered correctly on the emulator during this verification. Delete
 only once no 0.21.0 child remains.
 
-## Known e2e failures that are NOT yours (checked, 2026-08-17)
+## SOLVED (0.63.0): the "known e2e failures" were the emulator falling asleep
 
-Four `:parent-sim:e2eTest` scenarios fail on the `walcott-spike` AVD, and they fail **identically on
-v0.61.0-beta** — the release already published — so a session that changes something unrelated and
-finds them red has not broken anything. Verified by installing the previous build's APK on the same
-emulator and running the same class: same three failures, same messages.
+The four `:parent-sim:e2eTest` scenarios previously recorded here as pre-existing failures —
+`RuleEventScenarioTest` (all 3) and `GrantScenarioTest > a replayed snapshot does not grant the bonus
+a second time` — were **not product bugs and not harness logic**. They were a sleeping screen.
 
-- `RuleEventScenarioTest` (all 3): time out at `settleAllowedWithHeadroom`, waiting for the child to
-  report `appliedPolicyVersion >= parent.currentVersion()` (45–60 s). The child publishes — the
-  seed log shows it — but never that field.
-- `GrantScenarioTest > a replayed snapshot does not grant the bonus a second time`: fails with
-  `expected: <8100> but was: <7500>`, i.e. extra time went DOWN by exactly the grant. The invariant
-  it guards (never grant twice) would fail UPWARDS; reading 600 s less is a stale child snapshot
-  being read after `relay.replay`, not a double grant.
+`EnforcementService`'s loop deliberately PARKS while the screen is off (`screenOn.first { it }`): it
+suspends nothing new and burns no wakeups, which is right on a real phone and fatal in a test. The
+`walcott-spike` AVD dozes off within a minute of the last input, so any scenario running more than a
+minute into a session was waiting on a phone that was not evaluating rules at all. Every symptom
+followed from that: no suspension, no rule events, no `appliedPolicyVersion` moving, and — worst —
+`assertDeviceNever` passing without having tested anything.
 
-Worth fixing, but as its own piece of work, and with the understanding that neither is a product bug
-anyone in a family can see.
+It presented as "pre-existing" purely because scenario order is stable: the classes that run late in
+an alphabetical sweep are the ones that find a sleeping phone.
+
+The fix is in the harness, in three places (see `ChildDevice.keepAwake`/`nudgeAwake`):
+
+- `DeviceScenario.pairFreshFamily` sets a 24-hour `screen_off_timeout` and wakes the device.
+- `awaitDevice`, `assertDeviceNever` and `childEventuallyReports` send `KEYCODE_WAKEUP` on **every**
+  poll. Once at the start is not enough — a 60-second wait outlives the doze either way.
+- `svc power stayon true` is set as well, and does nothing on its own: an emulator reports
+  `mStayOn=false` because nothing is plugged into a virtual phone. Even the long timeout is not
+  enough by itself, which is why the nudge lives inside the waits.
+
+After it: **79/79 e2e scenarios pass on the walcott-spike AVD.** If a schedule or budget scenario ever
+goes red again, check `adb shell dumpsys power | grep mWakefulness` before suspecting the product.
 
 ## Emulator notes that cost time
+
+- **`adb root` silently breaks `cmd notification post`.** With adbd running as root the command
+  still prints `posting: Notification(...)` and returns success, and the notification never lands —
+  it is not in `dumpsys notification` and no listener is told about it. `adb unroot` (shell uid
+  2000) and it works again. It cost half an hour on 2026-08-17, because `adb root` had been used
+  earlier in the session to restart the app (see the force-stop note below) and nothing connects
+  the two. If a notification-log scenario says the device recorded nothing, check `adb shell id -u`
+  before anything else.
 
 - **`am force-stop` does not kill the app on the Device Owner emulator.** The system brings it
   straight back (foreground service + device owner), so anything you changed on disk expecting the

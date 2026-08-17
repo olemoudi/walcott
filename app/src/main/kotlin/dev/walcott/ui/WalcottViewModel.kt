@@ -138,6 +138,13 @@ class WalcottViewModel(
         sync.state.map { it.children }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val lastSeen: StateFlow<Map<String, Long>> =
         sync.state.map { it.lastSeen }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * The whole device-local sync state, for the screens that need more of it than one field: the
+     * notification log reads its pages AND the app names of the device that sent them, and those
+     * have to come from the same emission or a page renders against a stale app list.
+     */
+    val syncState: StateFlow<dev.walcott.sync.SyncState> = sync.state
     /**
      * The settings edited on this phone that are not on the wire yet (see [PolicyDiff]), so each
      * screen can mark exactly what it is showing that no child has been told about.
@@ -199,6 +206,70 @@ class WalcottViewModel(
     fun allowChildApp(deviceId: String, pkg: String) = viewModelScope.launch {
         sync.sendCommand(deviceId, dev.walcott.sync.RemoteAction.ALLOW_APP, arg = pkg)
     }
+
+    // --- Remote support: the lock screen, and what arrived on that phone ---
+
+    /**
+     * Sets that device's unlock PIN, or removes its lock screen when [pin] is blank.
+     *
+     * The PIN is remembered on THIS phone (see [SyncState.lastLockPin]) because the person doing
+     * the helping has to be able to read it back down the line — "I have changed it and I do not
+     * know to what" is not help. It never travels anywhere else.
+     */
+    fun setChildLockPin(deviceId: String, pin: String) = viewModelScope.launch {
+        sync.rememberLockPin(deviceId, pin)
+        sync.sendCommand(deviceId, dev.walcott.sync.RemoteAction.SET_LOCK_PIN, arg = pin)
+    }
+
+    fun lockChildNow(deviceId: String) = viewModelScope.launch {
+        sync.sendCommand(deviceId, dev.walcott.sync.RemoteAction.LOCK_NOW)
+    }
+
+    /**
+     * deviceId -> the unlock PIN this phone last set there (see [dev.walcott.sync.SyncState.lastLockPin]).
+     *
+     * A flow rather than a lookup: the PIN is written just before the command goes out, so a screen
+     * that read it once while drawing would show nothing at all until something else on it changed
+     * — and the whole point is reading the new number back to somebody on the telephone, seconds
+     * after tapping.
+     */
+    val lastLockPins: StateFlow<Map<String, String>> =
+        sync.state.map { it.lastLockPin }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * Corrects who a member is, long after enrollment (see [dev.walcott.data.MemberKind]).
+     *
+     * Deliberately only the label: the other kind's DEFAULTS are not applied. Defaults answer
+     * "what should this start as", and by the time somebody uses this row the phone has a history
+     * — re-seeding it would switch rules and locks nobody asked to change.
+     */
+    fun setMemberKind(childId: String, kind: String) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            s.copy(
+                children = s.children.map {
+                    if (it.childId == childId) it.copy(kind = dev.walcott.data.MemberKind.of(kind)) else it
+                },
+            )
+        }
+    }
+
+    /**
+     * Asks that device for its notification log.
+     *
+     * [pkg] narrows it to one app — the question a family usually has ("did the message from the
+     * clinic arrive?"), answered without reading a day of somebody's private messages. [beforeMs]
+     * pages backwards: 0 starts at now, and the oldest entry of a page is the cursor for the one
+     * before it.
+     */
+    fun requestNotifications(deviceId: String, pkg: String = "", beforeMs: Long = 0) =
+        viewModelScope.launch {
+            sync.sendCommand(
+                deviceId,
+                dev.walcott.sync.RemoteAction.NOTIFICATION_LOG,
+                arg = dev.walcott.sync.NotificationQuery.encode(pkg, beforeMs),
+            )
+        }
 
     // --- Domain monitor: the child device, driven by a parent holding it ---
 
@@ -299,21 +370,38 @@ class WalcottViewModel(
 
     // --- Children registry (parent mode) ---
 
-    /** Registers a child and returns its id so the UI can navigate to the detail right away. */
-    fun addChild(name: String): String {
+    /**
+     * Registers a member and returns its id so the UI can navigate to the detail right away.
+     *
+     * [kind] decides what they START with, never what they can have (see [dev.walcott.data.MemberKind]):
+     *
+     *  - A **child** gets location tracking, because that is what a parent expects from enrolling
+     *    one, and no protections beyond the family's.
+     *  - An **adult** gets the accident-proofing instead ([DeviceRestrictions.RECOMMENDED_FOR_ADULT])
+     *    and a ringer that stays audible — the two things somebody supporting a phone from a
+     *    distance always ends up wanting — and NO location tracking, because an adult's whereabouts
+     *    is not something to switch on for them by default. One tap turns it on if they agree.
+     */
+    fun addChild(name: String, kind: String = dev.walcott.data.MemberKind.CHILD): String {
         val childId = java.util.UUID.randomUUID().toString()
+        val adult = kind == dev.walcott.data.MemberKind.ADULT
         viewModelScope.launch {
             repository.updateSettings {
                 it.copy(
                     children = it.children + dev.walcott.data.ChildEntry(
                         childId,
                         name,
-                        // Location tracking on by default — it's what a parent expects from
-                        // enrollment; the LocationCard can still turn it off per child.
                         overrides = dev.walcott.data.ChildOverrides(
-                            trackingIntervalMinutes = DEFAULT_TRACKING_MINUTES,
+                            trackingIntervalMinutes = if (adult) 0 else DEFAULT_TRACKING_MINUTES,
+                            deviceRestrictions = if (adult) {
+                                it.deviceRestrictions + dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_FOR_ADULT
+                            } else {
+                                null
+                            },
+                            keepRingerAudible = if (adult) true else null,
                         ),
                         addedAtMs = System.currentTimeMillis(),
+                        kind = dev.walcott.data.MemberKind.of(kind),
                     ),
                 )
             }

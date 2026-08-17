@@ -38,6 +38,11 @@ class RemoteCommandRunner(
     private val removeApp: suspend (pkg: String) -> Boolean = { false },
     /** Lets a quarantined app stay (see [RemoteAction.ALLOW_APP]). */
     private val allowApp: suspend (pkg: String) -> Boolean = { false },
+    /** Sets or clears this device's unlock PIN (see [RemoteAction.SET_LOCK_PIN]). */
+    private val setLockPin: suspend (pin: String) -> dev.walcott.enforcement.LockScreen.Result =
+        { dev.walcott.enforcement.LockScreen.Result.REFUSED },
+    /** Publishes the notification log a [RemoteAction.NOTIFICATION_LOG] asks for (see [NotificationQuery]). */
+    private val publishNotifications: suspend (arg: String) -> Int = { 0 },
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -52,6 +57,9 @@ class RemoteCommandRunner(
                 RemoteAction.ALLOW_APP -> allowQuarantined(command.arg)
                 RemoteAction.DIAGNOSE -> diagnose()
                 RemoteAction.DENY_PANIC -> denyPanic(command.arg)
+                RemoteAction.SET_LOCK_PIN -> setLock(command)
+                RemoteAction.LOCK_NOW -> lockNow()
+                RemoteAction.NOTIFICATION_LOG -> notificationLog(command.arg)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -159,6 +167,45 @@ class RemoteCommandRunner(
     private suspend fun diagnose(): Pair<Boolean, String> {
         publishDiagnostics()
         return true to "diag_sent"
+    }
+
+    /**
+     * Sets the unlock PIN, or removes the lock when the arg is empty.
+     *
+     * Refuses an expired command outright. Every other action here is harmless when it lands late —
+     * an update, a policy re-apply, an uninstall — but a PIN change is not: a replayed "set 1234"
+     * arriving next week would lock somebody out of their own phone with a number nobody remembers
+     * telling them. The ack distinguishes "the token was not armed" from "the platform said no",
+     * because those are different things for the parent to do next.
+     */
+    private suspend fun setLock(command: RemoteCommand): Pair<Boolean, String> {
+        if (System.currentTimeMillis() - command.issuedAtMs > RemoteAction.LOCK_PIN_TTL_MS) {
+            DebugLog.w(TAG, "ignoring a lock-screen command that is too old to still be meant")
+            return false to RemoteAction.DETAIL_EXPIRED
+        }
+        val pin = command.arg
+        if (pin.isNotEmpty() && !dev.walcott.enforcement.LockScreen.isValidPin(pin)) {
+            return false to RemoteAction.DETAIL_LOCK_REFUSED
+        }
+        return when (setLockPin(pin)) {
+            dev.walcott.enforcement.LockScreen.Result.DONE ->
+                true to if (pin.isEmpty()) RemoteAction.DETAIL_LOCK_CLEARED else RemoteAction.DETAIL_LOCK_SET
+            dev.walcott.enforcement.LockScreen.Result.NOT_ARMED ->
+                false to RemoteAction.DETAIL_LOCK_NOT_ARMED
+            dev.walcott.enforcement.LockScreen.Result.REFUSED ->
+                false to RemoteAction.DETAIL_LOCK_REFUSED
+        }
+    }
+
+    private fun lockNow(): Pair<Boolean, String> {
+        dev.walcott.enforcement.LockScreen.lockNow(context)
+        return true to "locked"
+    }
+
+    /** Publishes the notification log for the app and page the parent asked about ([NotificationQuery]). */
+    private suspend fun notificationLog(arg: String): Pair<Boolean, String> {
+        val sent = publishNotifications(arg)
+        return true to "sent_$sent"
     }
 
     /**

@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.sync.DeviceMode
+import dev.walcott.sync.Role
 import dev.walcott.sync.SyncNotifications
 import dev.walcott.ui.child.ChildStatusScreen
 import dev.walcott.ui.child.PanicScreen
@@ -70,6 +71,7 @@ private enum class Screen {
     CHILD_DETAIL, CHILD_MAP,
     APPS, APP_DETAIL, BUDGETS, CHILDREN, EARN, CALENDAR, REPORT, BLOCKS, WEBFILTER, PROTECTION, LOCATION,
     APP_SETTINGS, DEBUG_LOGS, DEVICE_SETUP, CHILD_SETUP, PANIC, CHILD_RULES, ACTIVITY, CHILD_HEALTH,
+    CHILD_NOTIFICATIONS,
     DOMAIN_MONITOR, DOMAIN_REVIEW,
 }
 
@@ -103,6 +105,9 @@ fun WalcottApp(
         )
     }
     var childDetailId by remember { mutableStateOf<String?>(null) }
+    // Whose notification log is open. The device, not the member: the log belongs to one phone,
+    // and a member who is re-paired to another one has not inherited what the old phone received.
+    var notificationDeviceId by remember { mutableStateOf<String?>(null) }
     // Which domain request the parent is reviewing (DOMAIN_REVIEW screen).
     var domainBatchId by remember { mutableStateOf<String?>(null) }
     // Where "Special days" was opened from, so Back lands on the screen that sent the parent
@@ -130,6 +135,11 @@ fun WalcottApp(
     // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
     var gateAllowCreate by remember { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
+    // Which of the two homes this phone shows. Read from the registry the parent pushes, so a
+    // member's kind corrected on the parent's phone reaches this one with the next policy — and an
+    // unknown kind from a newer build reads as CHILD, which is the screen that says more.
+    val assistedMember = identity.role == Role.CHILD &&
+        settings.children.firstOrNull { it.childId == identity.childId }?.isAdult == true
     val context = LocalContext.current
 
     // A notification deep-link (e.g. "new app installed" -> Apps). Honored in parent mode only;
@@ -261,7 +271,7 @@ fun WalcottApp(
             Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
             Screen.CHILD_DETAIL -> Screen.FAMILIES
             Screen.CHILD_MAP -> mapReturnTo?.also { mapReturnTo = null } ?: Screen.CHILD_DETAIL
-            Screen.CHILD_HEALTH -> Screen.CHILD_DETAIL
+            Screen.CHILD_HEALTH, Screen.CHILD_NOTIFICATIONS -> Screen.CHILD_DETAIL
             Screen.DOMAIN_MONITOR -> Screen.FAMILY
             Screen.DOMAIN_REVIEW -> Screen.FAMILIES
             // The guided setup is reachable from both ends: the child home right after
@@ -295,14 +305,27 @@ fun WalcottApp(
                         onParentCreated = { gateAllowCreate = true; screen = Screen.GATE },
                         onChildSelected = { screen = Screen.CHILD },
                     )
-                    Screen.CHILD -> ChildStatusScreen(
-                        viewModel,
-                        deviceOwner = deviceOwner,
-                        onOpenParent = { gateAllowCreate = false; screen = Screen.GATE },
-                        onOpenPanic = { screen = Screen.PANIC },
-                        onOpenRules = { screen = Screen.CHILD_RULES },
-                        onOpenSetupJourney = { setupReturnTo = null; screen = Screen.CHILD_SETUP },
-                    )
+                    // A phone whose member is an adult being helped gets the stripped-down home
+                    // instead (see AssistedStatusScreen). Only once it is actually enrolled: the
+                    // pairing flow lives on the full screen, and a phone that has never been
+                    // paired has no member to read a kind from.
+                    Screen.CHILD -> if (assistedMember) {
+                        dev.walcott.ui.child.AssistedStatusScreen(
+                            viewModel,
+                            onOpenParent = { gateAllowCreate = false; screen = Screen.GATE },
+                            onOpenPanic = { screen = Screen.PANIC },
+                            onOpenSetupJourney = { setupReturnTo = null; screen = Screen.CHILD_SETUP },
+                        )
+                    } else {
+                        ChildStatusScreen(
+                            viewModel,
+                            deviceOwner = deviceOwner,
+                            onOpenParent = { gateAllowCreate = false; screen = Screen.GATE },
+                            onOpenPanic = { screen = Screen.PANIC },
+                            onOpenRules = { screen = Screen.CHILD_RULES },
+                            onOpenSetupJourney = { setupReturnTo = null; screen = Screen.CHILD_SETUP },
+                        )
+                    }
                     // Not behind the PIN gate, like PANIC: it grants permissions and shows
                     // nothing private, and it opens by itself the moment a device is enrolled —
                     // which is before anybody has typed a PIN into this phone.
@@ -420,6 +443,10 @@ fun WalcottApp(
                                 calendarReturnTo = Screen.CHILD_DETAIL
                                 screen = Screen.CALENDAR
                             },
+                            onOpenNotifications = { deviceId ->
+                                notificationDeviceId = deviceId
+                                screen = Screen.CHILD_NOTIFICATIONS
+                            },
                         )
                     }
                     Screen.CHILD_MAP -> childDetailId?.let { childId ->
@@ -427,6 +454,14 @@ fun WalcottApp(
                     }
                     Screen.CHILD_HEALTH -> childDetailId?.let { childId ->
                         HealthReportsScreen(viewModel, childId, onBack = ::back)
+                    }
+                    Screen.CHILD_NOTIFICATIONS -> notificationDeviceId?.let { deviceId ->
+                        dev.walcott.ui.parent.NotificationLogScreen(
+                            viewModel = viewModel,
+                            deviceId = deviceId,
+                            memberName = overrideChildName(settings, childDetailId).orEmpty(),
+                            onBack = ::back,
+                        )
                     }
                     Screen.DOMAIN_MONITOR -> DomainMonitorScreen(viewModel, onBack = ::back)
                     Screen.DOMAIN_REVIEW -> domainBatchId?.let { batchId ->

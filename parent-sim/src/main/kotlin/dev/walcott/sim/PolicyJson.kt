@@ -57,7 +57,9 @@ object PolicyJson {
         bedtime: Pair<Int, Int>? = null,
         screenFree: List<Pair<Int, Int>> = emptyList(),
         newAppAlerts: Boolean = true,
-        extra: Map<String, JsonObject> = emptyMap(),
+        // Any JSON value, not only objects: the fields worth reaching for by hand are as often a
+        // bare flag ("keepRingerAudible") as a nested structure.
+        extra: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap(),
     ): String {
         val root = buildJsonObject {
             put("version", version)

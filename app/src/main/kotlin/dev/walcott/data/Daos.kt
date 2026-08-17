@@ -123,3 +123,69 @@ interface LocationDao {
     @Query("DELETE FROM location_point WHERE epochMs < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long)
 }
+
+/** The notification log on the device that received them (see [NotificationEntity]). */
+@Dao
+interface NotificationDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: NotificationEntity)
+
+    /** Replaces the row for an updated notification instead of adding a second one. */
+    @Query("DELETE FROM notification_log WHERE key = :key AND key != ''")
+    suspend fun deleteByKey(key: String)
+
+    /**
+     * A page, newest first: everything posted in [sinceMs, beforeMs). The parent asks for the last
+     * 24 h and then pages backwards from the oldest it received, so a window too big for one
+     * message is not a window it can never see.
+     */
+    @Query(
+        """
+        SELECT * FROM notification_log
+        WHERE postedAtMs >= :sinceMs AND postedAtMs < :beforeMs
+        ORDER BY postedAtMs DESC LIMIT :limit
+        """,
+    )
+    suspend fun page(sinceMs: Long, beforeMs: Long, limit: Int): List<NotificationEntity>
+
+    @Query("SELECT COUNT(*) FROM notification_log WHERE postedAtMs >= :sinceMs AND postedAtMs < :beforeMs")
+    suspend fun countBetween(sinceMs: Long, beforeMs: Long): Int
+
+    /**
+     * The same page, about ONE app — the query a family actually makes ("did the message from the
+     * clinic arrive?"). Both a smaller message and a smaller intrusion than reading a whole day of
+     * somebody's private messages to answer one question.
+     */
+    @Query(
+        """
+        SELECT * FROM notification_log
+        WHERE packageName = :pkg AND postedAtMs >= :sinceMs AND postedAtMs < :beforeMs
+        ORDER BY postedAtMs DESC LIMIT :limit
+        """,
+    )
+    suspend fun pageForApp(pkg: String, sinceMs: Long, beforeMs: Long, limit: Int): List<NotificationEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM notification_log
+        WHERE packageName = :pkg AND postedAtMs >= :sinceMs AND postedAtMs < :beforeMs
+        """,
+    )
+    suspend fun countForApp(pkg: String, sinceMs: Long, beforeMs: Long): Int
+
+    @Query("DELETE FROM notification_log WHERE postedAtMs < :cutoffMs")
+    suspend fun deleteOlderThan(cutoffMs: Long)
+
+    /** Keeps the newest [keep] rows and drops the rest — the cap that bounds a busy phone. */
+    @Query(
+        """
+        DELETE FROM notification_log WHERE id NOT IN
+        (SELECT id FROM notification_log ORDER BY postedAtMs DESC LIMIT :keep)
+        """,
+    )
+    suspend fun trimTo(keep: Int)
+
+    @Query("DELETE FROM notification_log")
+    suspend fun clear()
+}

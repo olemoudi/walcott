@@ -370,6 +370,7 @@ private fun startWebFilter(context: Context) {
 
 internal fun iconFor(requirement: DeviceRequirement): ImageVector = when (requirement) {
     DeviceRequirement.NOTIFICATIONS -> Icons.Outlined.NotificationsOff
+    DeviceRequirement.NOTIFICATION_ACCESS -> Icons.Outlined.NotificationsOff
     DeviceRequirement.USAGE_ACCESS -> Icons.Outlined.Timer
     DeviceRequirement.ACCESSIBILITY -> Icons.Outlined.TouchApp
     DeviceRequirement.WEB_FILTER -> Icons.Outlined.Language

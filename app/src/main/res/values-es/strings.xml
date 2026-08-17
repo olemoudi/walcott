@@ -458,9 +458,9 @@
     <string name="badge_child_mode">Modo hijo</string>
 
     <!-- Familias (home del padre) -->
-    <string name="children_section">Hijos</string>
-    <string name="children_empty">Aún no hay hijos. Añade uno para generar su código de enrolamiento.</string>
-    <string name="add_child">Añadir hijo</string>
+    <string name="children_section">Sus móviles</string>
+    <string name="children_empty">Aún no hay nadie. Añade a alguien para generar su código de enrolamiento.</string>
+    <string name="add_child">Añadir a alguien</string>
     <string name="child_name_label">Nombre</string>
     <string name="device_not_linked">Aún sin vincular</string>
     <string name="stat_today">Hoy</string>
@@ -790,6 +790,14 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_63_0">
+        <item>Walcott sirve ahora también para el móvil de un adulto al que ayudas — una madre, un abuelo, cualquiera que cambia un ajuste sin querer y luego no sabe volver. Al añadir a alguien eliges de qué tipo es, y esa elección solo decide con qué empieza ese móvil: todas las opciones siguen disponibles para los dos.</item>
+        <item>El móvil de un adulto empieza sin límites, sin hora de dormir y sin ubicación, y en su lugar bloquea los ajustes que se cambian sin querer: modo avión, idioma, brillo, apagado de pantalla, datos móviles, restablecer la red, cuentas, apps por defecto e instalar o desinstalar apps. Su pantalla es una sola página con un botón grande de «Pedir ayuda», que te llega como aviso.</item>
+        <item>Mantener el timbre audible, en cualquier móvil de aquí. Un móvil en silencio es, desde tu lado, exactamente un móvil apagado — y su dueño no lo sabe. Walcott lo devuelve a su sitio y te dice cuántas veces ha tenido que hacerlo, que es la diferencia entre un accidente y una costumbre.</item>
+        <item>Cambia o quita el PIN de desbloqueo de alguien desde tu móvil, o bloquea el suyo ahora si se lo ha dejado en la mesa de un bar. Su ficha te dice si eso está listo antes de que lo necesites: hay que desbloquear ese móvil una vez con su PIN actual, y enterarse el día que alguien se queda fuera es demasiado tarde.</item>
+        <item>Un registro de notificaciones que puedes pedir, apagado por defecto: su móvil guarda lo que le llegó durante 48 horas y contesta cuando preguntas — todo, o una sola app, para que «¿ha llegado el mensaje de la clínica?» no signifique leer un día entero de los mensajes de alguien. Nunca se sube nada solo, y al apagarlo se borra lo guardado.</item>
+        <item>La protección del dispositivo se agrupa ahora en manipulación, ajustes que se cambian sin querer y apps — diez bloqueos nuevos en total, disponibles también para el móvil de un hijo.</item>
+    </string-array>
     <string-array name="whats_new_0_62_0">
         <item>El filtro web ofrece ahora ocho listas ya hechas en vez de tres, y las grandes son las listas públicas de verdad, no un puñado de dominios escritos aquí: contenido adulto es la lista de oisd, 494.000 dominios rehecha cada hora, y hay listas nuevas de redes sociales, vídeo y streaming, piratería y torrents, estafas y phishing, y una de VPN, proxies y DNS cifrado — las formas en que un móvil deja de estar filtrado.</item>
         <item>El móvil de cada hijo se descarga esas listas y las mantiene al día: a diario, cada tres días o semanal, como quieras, en Filtro web. Después de la primera vez no cuesta nada: el móvil pregunta si la lista ha cambiado y normalmente le dicen que no. Las listas incluidas en la app siguen aplicándose desde el segundo en que enciendes una, así que un móvil sin cobertura todavía no es un móvil sin filtro.</item>
@@ -1525,4 +1533,102 @@
         <item quantity="other">Horario sin pantalla en %1$d minutos</item>
     </plurals>
     <string name="warn_screen_free_text">Tus apps se pausan hasta que acabe el horario.</string>
+
+    <!-- ===== 0.63: el móvil de alguien a quien se ayuda, no a quien se limita ===== -->
+    <string name="member_kind_question">¿De quién es este móvil?</string>
+    <string name="member_kind_child">De un hijo</string>
+    <string name="member_kind_child_desc">Límites, horarios y dónde está.</string>
+    <string name="member_kind_adult">De un adulto al que ayudo</string>
+    <string name="member_kind_adult_desc">Sin límites: un móvil que sigue funcionando y que puedes arreglar desde aquí.</string>
+    <string name="member_kind_compare">¿Qué cambia?</string>
+    <string name="member_kind_sheet_title">Un hijo, o un adulto al que ayudas</string>
+    <string name="member_kind_sheet_intro">Ninguna de las dos quita nada: todos los ajustes están disponibles para las dos. Lo que cambia es con qué empieza este móvil y qué te pregunta la app después.</string>
+    <string name="member_kind_sheet_child_title">Un hijo — el móvil pone límites</string>
+    <string name="member_kind_sheet_child_body">Empieza con la ubicación activada y las protecciones antimanipulación de la familia, y hereda las reglas de la familia. Después la app te guía por la hora de dormir, los límites diarios y los horarios sin pantalla. En su móvil ve el tiempo que le queda y los botones para pedir más.</string>
+    <string name="member_kind_sheet_adult_title">Un adulto al que ayudas — el móvil evita accidentes</string>
+    <string name="member_kind_sheet_adult_body">Empieza sin ubicación, sin hora de dormir y sin límites. Mantiene su propio timbre audible y bloquea los ajustes que se cambian sin querer: modo avión, idioma, brillo, apagado de pantalla, datos móviles, restablecer red, cuentas, apps por defecto e instalar o desinstalar apps. En su móvil ve una sola pantalla con un botón de «Pedir ayuda».</string>
+    <string name="member_kind_sheet_shared_title">Disponible para las dos</string>
+    <string name="member_kind_sheet_shared_body">El timbre, la pantalla de bloqueo y el registro de notificaciones se ofrecen para todos los móviles de aquí. Un móvil de adolescente dos días en silencio es el mismo problema que el de un abuelo.</string>
+    <string name="member_kind_row_title">Este móvil es</string>
+    <string name="member_kind_row_note">Cambia por dónde empieza esta pantalla y qué pregunta la configuración guiada. No cambia nada de lo que ya esté activado.</string>
+
+    <string name="assist_section_title">Ayuda con este móvil</string>
+    <string name="assist_section_hint">El timbre, el bloqueo y lo que ha llegado</string>
+    <string name="ringer_title">Mantener el timbre audible</string>
+    <string name="ringer_desc">Deshace el silencio y la vibración, y mantiene el volumen de llamada.</string>
+    <string name="ringer_state_audible">Ahora mismo se oiría una llamada.</string>
+    <string name="ringer_state_silent">Ahora mismo este móvil está en silencio.</string>
+    <string name="ringer_dnd_blocked">Tiene el modo No molestar y Walcott no puede quitarlo desde aquí — hay que quitarlo en ese móvil.</string>
+    <plurals name="ringer_restores">
+        <item quantity="one">Restablecido una vez desde que se configuró.</item>
+        <item quantity="other">Restablecido %1$d veces desde que se configuró.</item>
+    </plurals>
+    <string name="lock_title">Pantalla de bloqueo</string>
+    <string name="lock_ready">Listo: puedes cambiar o quitar el PIN de desbloqueo desde aquí.</string>
+    <string name="lock_not_ready">Todavía no está listo. Hay que desbloquear ese móvil una vez con su PIN actual para que esto funcione.</string>
+    <string name="lock_last_pin">Lo último que pusiste: %1$s</string>
+    <string name="lock_set_pin">Cambiar el PIN de desbloqueo</string>
+    <string name="lock_set_pin_hint">De 4 a 8 dígitos. Díselo en voz alta: este móvil es el único sitio donde se guarda.</string>
+    <string name="lock_pin_label">PIN nuevo</string>
+    <string name="lock_remove">Quitar la pantalla de bloqueo</string>
+    <string name="lock_remove_confirm">Ese móvil se abrirá sin PIN. Para quien no consigue teclearlo bien, eso es más seguro que un PIN apuntado en la funda.</string>
+    <string name="lock_now">Bloquearlo ahora</string>
+    <string name="notiflog_title">Registro de notificaciones</string>
+    <string name="notiflog_desc">Guarda lo que llega a ese móvil durante 48 horas, con título y texto, para poder responder «¿ha llegado?».</string>
+    <string name="notiflog_no_access">Ese móvil aún no ha dado acceso a las notificaciones, así que no se está guardando nada.</string>
+    <string name="notiflog_open">Ver lo que ha llegado</string>
+    <string name="notiflog_screen_title">%1$s — notificaciones</string>
+    <string name="notiflog_screen_hint">No se envía nada solo. Tú preguntas y ese móvil contesta una vez.</string>
+    <string name="notiflog_asked_at">Última respuesta: %1$s</string>
+    <string name="notiflog_filter_all">Todo</string>
+    <string name="notiflog_filter_one">Una app</string>
+    <string name="notiflog_request">Pedir las últimas 48 horas</string>
+    <string name="notiflog_request_one">Preguntar por %1$s</string>
+    <string name="notiflog_not_enabled">El registro está apagado en este móvil, así que no tiene nada guardado.</string>
+    <string name="notiflog_empty">No llegó nada en ese periodo.</string>
+    <string name="notiflog_never_asked">Todavía no has preguntado. Pulsa arriba y ese móvil contestará una vez con lo que tenga guardado.</string>
+    <string name="notiflog_showing">Mostrando %1$d de %2$d</string>
+    <string name="notiflog_older">Cargar más antiguas</string>
+
+    <string name="assist_home_title">Tu móvil</string>
+    <string name="assist_home_ok">Conectado. Tu familia puede ayudarte desde el suyo.</string>
+    <string name="assist_home_offline">Este móvil no puede contactar con tu familia ahora mismo.</string>
+    <string name="assist_help_title">¿Necesitas ayuda?</string>
+    <string name="assist_help_body">Pulsa el botón y tu familia recibirá un aviso. No tienes que explicar nada.</string>
+    <string name="assist_help_button">Pedir ayuda</string>
+    <string name="assist_help_sent">Enviado. Ya pueden verlo.</string>
+    <string name="assist_help_waiting">Has pedido ayuda. Tu familia ya está avisada.</string>
+    <string name="assist_help_text">Ha pedido ayuda desde su móvil</string>
+    <string name="assist_ask_help_summary">%1$s ha pedido ayuda.</string>
+    <string name="assist_ask_help_hint">Ha pulsado el botón de ayuda en su móvil. Llámale, o usa las tarjetas de su ficha.</string>
+    <string name="assist_ask_help_done">Ya le he ayudado</string>
+    <string name="sync_help_ask_title">%1$s necesita ayuda</string>
+    <string name="sync_help_ask_text">Ha pulsado el botón de ayuda en su móvil.</string>
+
+    <string name="req_notification_access_title">Permite a Walcott leer las notificaciones</string>
+    <string name="req_notification_access_body">Tu familia ha pedido guardar un registro de lo que llega a este móvil, para poder responder «¿ha llegado?» sin que tengas que leerles la pantalla. Solo tú puedes darlo.</string>
+
+    <string name="restriction_group_tamper">Manipulación</string>
+    <string name="restriction_group_settings">Ajustes que se cambian sin querer</string>
+    <string name="restriction_group_apps">Apps</string>
+    <string name="restriction_airplane_title">Bloquear el modo avión</string>
+    <string name="restriction_airplane_desc">El modo avión encendido es el motivo más común de que un móvil deje de recibir nada sin que nadie se entere</string>
+    <string name="restriction_locale_title">Bloquear el cambio de idioma</string>
+    <string name="restriction_locale_desc">Un móvil en un idioma que nadie de la casa lee no se puede devolver sin ayuda</string>
+    <string name="restriction_brightness_title">Bloquear el cambio de brillo</string>
+    <string name="restriction_brightness_desc">Una pantalla a cero parece exactamente un móvil roto</string>
+    <string name="restriction_screen_timeout_title">Bloquear el apagado de pantalla</string>
+    <string name="restriction_screen_timeout_desc">Evita que la pantalla se apague dos segundos después de cada toque</string>
+    <string name="restriction_wifi_title">Bloquear los cambios de Wi‑Fi</string>
+    <string name="restriction_wifi_desc">Cuidado: un móvil que pierde su Wi‑Fi y no puede reconectarse no tiene vuelta por sí solo</string>
+    <string name="restriction_mobile_networks_title">Bloquear los cambios de datos móviles</string>
+    <string name="restriction_mobile_networks_desc">Con los datos apagados, el móvil se queda mudo en cuanto sale de casa</string>
+    <string name="restriction_network_reset_title">Bloquear el restablecimiento de red</string>
+    <string name="restriction_network_reset_desc">Un botón de Ajustes que borra de golpe todos los ajustes de Wi‑Fi y de datos</string>
+    <string name="restriction_accounts_title">Bloquear añadir o quitar cuentas</string>
+    <string name="restriction_accounts_desc">Quitar la cuenta de Google se lleva por delante la tienda de apps y las copias de seguridad</string>
+    <string name="restriction_default_apps_title">Bloquear el cambio de apps por defecto</string>
+    <string name="restriction_default_apps_desc">Qué app abre un enlace, una llamada o una foto</string>
+    <string name="restriction_uninstall_title">Bloquear la desinstalación de apps</string>
+    <string name="restriction_uninstall_desc">Una app borrada sin querer, incluidas las que venían con el móvil</string>
 </resources>

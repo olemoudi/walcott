@@ -26,6 +26,44 @@ class DeviceSetupTest {
     )
 
     @Test
+    fun `notification access is asked for only where a log was asked for`() {
+        // Never implicit. A family that has not turned the log on must never be shown a card
+        // offering to let this app read their messages — the surest way to have somebody grant it
+        // for no reason is to put it in a list of things a phone "needs".
+        assertFalse(
+            DeviceRequirement.NOTIFICATION_ACCESS in
+                DeviceSetup.applicable(healthy().copy(notificationAccessGranted = false)),
+            "notification access was asked for on a device with no log",
+        )
+        assertTrue(
+            DeviceRequirement.NOTIFICATION_ACCESS in
+                DeviceSetup.unmet(
+                    healthy().copy(notificationLogWanted = true, notificationAccessGranted = false),
+                ),
+            "the log was switched on and the permission it needs was never asked for",
+        )
+    }
+
+    @Test
+    fun `notification access is a child-side requirement, not a parent one`() {
+        // The log lives on the phone that receives the notifications. A parent phone keeping one
+        // would be recording the wrong person.
+        val parent = healthy(enforcingChild = false, deviceOwner = false)
+            .copy(notificationLogWanted = true, notificationAccessGranted = false)
+        assertFalse(DeviceRequirement.NOTIFICATION_ACCESS in DeviceSetup.unmet(parent))
+    }
+
+    @Test
+    fun `notification access is asked for even on a Device Owner`() {
+        // The one permission a fully managed device cannot grant itself: notification listeners
+        // are enabled by a human in Settings, full stop. So unlike battery optimisation, being
+        // Device Owner is not a reason to skip it — it is the reason it has to be asked for.
+        val owner = healthy(deviceOwner = true)
+            .copy(notificationLogWanted = true, notificationAccessGranted = false)
+        assertTrue(DeviceRequirement.NOTIFICATION_ACCESS in DeviceSetup.unmet(owner))
+    }
+
+    @Test
     fun `a healthy device asks for nothing`() {
         assertTrue(DeviceSetup.unmet(healthy()).isEmpty())
         assertTrue(DeviceSetup.unmet(healthy(enforcingChild = false, deviceOwner = false)).isEmpty())

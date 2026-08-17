@@ -154,6 +154,16 @@ data class ParentEvent(
 const val MAX_DIAG_HISTORY = 10
 
 /**
+ * How many pages of a device's notification log a parent's phone keeps (see
+ * [SyncState.notificationPages]).
+ *
+ * Six is about a day of paging backwards on a busy phone, and the point of the ceiling is not
+ * memory: it is that this is somebody's messages sitting on another person's phone, and it should
+ * age out on its own rather than only when a family thinks to clear it.
+ */
+const val MAX_NOTIFICATION_PAGES = 6
+
+/**
  * A health report as the parent filed it: what the child sent, plus what the parent knew at
  * that moment. [seenAtVersionCode] exists because a report is dated: judging its app-version
  * row against whatever the parent runs *today* would turn every release into a retroactive
@@ -335,6 +345,31 @@ data class SyncState(
      * answer. Live status comes from the child's check-in ([ChildSnapshot]).
      */
     val diagHistory: Map<String, List<StoredDiag>> = emptyMap(),
+    /**
+     * PARENT, device-local: deviceId -> the notification pages that device has sent, newest page
+     * first (see [NotificationPayload]).
+     *
+     * Never in the policy and never in a backup: this is somebody's messages, it belongs to the
+     * phone that asked for it, and a family restoring a backup on a new phone should start from a
+     * blank page rather than inherit a log they cannot even ask that device to confirm.
+     */
+    val notificationPages: Map<String, List<NotificationPayload>> = emptyMap(),
+    /**
+     * PARENT, device-local: deviceId -> the unlock PIN this phone last set on that device.
+     *
+     * Held in the clear on purpose, and only here. Setting a PIN remotely is useless if the person
+     * supporting cannot then read it back down the phone — "I have changed it, but I do not know to
+     * what" is not help. Same reasoning, and the same boundaries, as the family PIN a parent can
+     * reveal ([FamilyIdentity.pinPlain]): device-local, never on the wire, never in the backup.
+     */
+    val lastLockPin: Map<String, String> = emptyMap(),
+    /**
+     * CHILD, device-local: this device's lock-screen reset token, base64. Never travels — it is the
+     * thing that would let anybody holding it change the lock (see [dev.walcott.enforcement.LockScreen]).
+     */
+    val lockTokenB64: String = "",
+    /** CHILD: how many times this device has had to put its own ringer back. Cumulative. */
+    val ringerRestores: Int = 0,
     /**
      * deviceId -> "requestId@checkpoints" of the emergency release already alerted about, so
      * each two-hourly notice raises exactly one alert and a re-started request alerts again.

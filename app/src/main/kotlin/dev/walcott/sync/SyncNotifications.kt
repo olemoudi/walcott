@@ -353,6 +353,21 @@ object SyncNotifications {
         )
     }
 
+    /**
+     * Somebody pressed the help button on an assisted phone (see [ChildRequest.KIND_HELP]).
+     *
+     * No quick-answer actions, unlike every other ask: there is nothing to approve from the shade,
+     * and a notification offering "Approve" over "Mum needs a hand" would be answering the wrong
+     * question. Tapping opens the request, which is where the phone's cards are one step away.
+     */
+    fun notifyHelpAsk(context: Context, childName: String, requestId: String) = post(
+        context, CHANNEL, R.string.sync_request_channel_name,
+        title = context.getString(R.string.sync_help_ask_title, childName),
+        text = context.getString(R.string.sync_help_ask_text),
+        notifId = ("ask$requestId").hashCode(),
+        dest = requestDest(requestId),
+    )
+
     /** A child shared one concrete app from Play and wants it installed (see KIND_INSTALL). */
     fun notifyInstallAsk(
         context: Context,

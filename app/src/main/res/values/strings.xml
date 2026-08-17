@@ -458,9 +458,11 @@
     <string name="badge_child_mode">Child mode</string>
 
     <!-- Families (parent home) -->
-    <string name="children_section">Children</string>
-    <string name="children_empty">No children yet. Add one to generate their enrollment code.</string>
-    <string name="add_child">Add child</string>
+    <!-- The list holds children AND adults being helped since 0.63, so it is named for the people
+         in it rather than for one of the two kinds (see MemberKind). -->
+    <string name="children_section">Their phones</string>
+    <string name="children_empty">Nobody here yet. Add someone to generate their enrollment code.</string>
+    <string name="add_child">Add someone</string>
     <string name="child_name_label">Name</string>
     <string name="device_not_linked">Not linked yet</string>
     <string name="stat_today">Today</string>
@@ -790,6 +792,14 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_63_0">
+        <item>Walcott now also looks after the phone of an adult you help — a parent, a grandparent, anybody who changes a setting by accident and can\'t find their way back. When you add someone you choose which it is, and the choice only decides what that phone starts with: every option is still available for both.</item>
+        <item>An adult\'s phone starts with no limits, no bedtime and no location, and instead locks the settings people change by accident: airplane mode, the language, brightness, screen timeout, mobile data, resetting the network, accounts, default apps, and installing or removing apps. Their own screen is a single page with one big "Ask for help" button, which reaches you as an alert.</item>
+        <item>Keep the ringer audible, for any phone here. A phone left on silent is, from your end, exactly a phone that is off — and its owner has no idea. Walcott puts it back and tells you how many times it has had to, which is the difference between an accident and a habit.</item>
+        <item>Change or remove somebody\'s unlock PIN from your phone, or lock theirs now if it is left on a café table. Their page says whether that is ready before you need it: the phone has to be unlocked once with its current PIN first, and finding that out on the day somebody is locked out is too late.</item>
+        <item>A notification log you can ask for, off by default: their phone keeps what arrived for 48 hours and answers when you ask — everything, or just one app, so "did the message from the clinic arrive?" doesn\'t mean reading a day of somebody\'s messages. Nothing is ever uploaded on its own, and switching it off deletes what was kept.</item>
+        <item>Device protection is now grouped into tampering, settings changed by accident, and apps — ten new locks in all, available for a child\'s phone too.</item>
+    </string-array>
     <string-array name="whats_new_0_62_0">
         <item>The web filter now offers eight ready-made lists instead of three, and the big ones are the real public lists rather than a handful of domains typed in here: adult content is oisd\'s 494 000-domain list, rebuilt hourly, and there are new lists for social networks, video and streaming, piracy and torrents, scams and phishing, and one for VPNs, proxies and encrypted DNS — the ways a phone stops being filtered at all.</item>
         <item>Each child\'s phone downloads those lists itself and keeps them current, daily, every three days or weekly — your choice, in Web filter. It costs nothing after the first time: the phone asks whether the list changed and is usually told no. The lists in the app are still enforced from the second you switch one on, so a phone with no signal yet is not a phone with no filter.</item>
@@ -1525,4 +1535,108 @@
         <item quantity="other">Screen-free time in %1$d minutes</item>
     </plurals>
     <string name="warn_screen_free_text">Your apps pause until the schedule is over.</string>
+
+    <!-- ===== 0.63: the phone of somebody being helped rather than limited ===== -->
+    <!-- Choosing at enrollment. The kind never limits what can be switched on: it decides the
+         defaults this phone starts with and the questions its setup asks (see MemberKind). -->
+    <string name="member_kind_question">Whose phone is this?</string>
+    <string name="member_kind_child">A child</string>
+    <string name="member_kind_child_desc">Limits, schedules, and where they are.</string>
+    <string name="member_kind_adult">An adult I help</string>
+    <string name="member_kind_adult_desc">No limits: a phone that keeps working, and that you can put right from here.</string>
+    <string name="member_kind_compare">What changes?</string>
+    <string name="member_kind_sheet_title">Child, or adult you help</string>
+    <string name="member_kind_sheet_intro">Neither choice takes anything away — every setting is available for both. What it changes is what this phone starts with, and what the app asks you next.</string>
+    <string name="member_kind_sheet_child_title">A child — the phone sets limits</string>
+    <string name="member_kind_sheet_child_body">Starts with location on and the family\'s anti-tamper locks, and inherits the family\'s rules. Next, the app walks you through bedtime, daily limits and screen-free times. On their phone they see the time they have left and the buttons to ask for more.</string>
+    <string name="member_kind_sheet_adult_title">An adult you help — the phone avoids accidents</string>
+    <string name="member_kind_sheet_adult_body">Starts with no location, no bedtime and no limits. It keeps its own ringer audible, and locks the settings people change by accident: airplane mode, language, brightness, screen timeout, mobile data, network reset, accounts, default apps, and installing or removing apps. On their phone they see one screen with an \"Ask for help\" button.</string>
+    <string name="member_kind_sheet_shared_title">Offered for both</string>
+    <string name="member_kind_sheet_shared_body">The ringer, the lock screen and the notification log are offered for every phone here. A teenager\'s phone on silent for two days is the same problem as a grandparent\'s.</string>
+    <string name="member_kind_row_title">This phone belongs to</string>
+    <string name="member_kind_row_note">Changes what this screen leads with and what the guided setup asks. Nothing already switched on is changed.</string>
+
+    <!-- Helping with a phone from a distance: the three things that get used. -->
+    <string name="assist_section_title">Helping with this phone</string>
+    <string name="assist_section_hint">The ringer, the lock screen, and what has arrived</string>
+    <string name="ringer_title">Keep the ringer audible</string>
+    <string name="ringer_desc">Undoes silent and vibrate, and keeps the ring volume up.</string>
+    <string name="ringer_state_audible">A call would be heard right now.</string>
+    <string name="ringer_state_silent">This phone is on silent right now.</string>
+    <string name="ringer_dnd_blocked">Do Not Disturb is on, and Walcott can\'t switch it off from here — it has to be turned off on that phone.</string>
+    <plurals name="ringer_restores">
+        <item quantity="one">Put back once since it was set up.</item>
+        <item quantity="other">Put back %1$d times since it was set up.</item>
+    </plurals>
+    <string name="lock_title">Lock screen</string>
+    <string name="lock_ready">Ready: you can change or remove the unlock PIN from here.</string>
+    <string name="lock_not_ready">Not ready yet. That phone has to be unlocked once with its current PIN before this can work.</string>
+    <string name="lock_last_pin">You last set: %1$s</string>
+    <string name="lock_set_pin">Change the unlock PIN</string>
+    <string name="lock_set_pin_hint">4 to 8 digits. Read it out to them — this phone is the only place it is kept.</string>
+    <string name="lock_pin_label">New PIN</string>
+    <string name="lock_remove">Remove the lock screen</string>
+    <string name="lock_remove_confirm">That phone will open with no PIN. For somebody who can\'t reliably enter one, that is safer than a PIN written on the case.</string>
+    <string name="lock_now">Lock it now</string>
+    <string name="notiflog_title">Notification log</string>
+    <string name="notiflog_desc">Keeps what arrives on that phone for 48 hours, titles and text included, so you can answer \"did it arrive?\".</string>
+    <string name="notiflog_no_access">That phone hasn\'t granted notification access yet, so nothing is being recorded.</string>
+    <string name="notiflog_open">See what has arrived</string>
+    <string name="notiflog_screen_title">%1$s — notifications</string>
+    <string name="notiflog_screen_hint">Nothing is sent on its own. You ask, and that phone answers once.</string>
+    <string name="notiflog_asked_at">Last answer: %1$s</string>
+    <string name="notiflog_filter_all">Everything</string>
+    <string name="notiflog_filter_one">One app</string>
+    <string name="notiflog_request">Ask for the last 48 hours</string>
+    <string name="notiflog_request_one">Ask about %1$s</string>
+    <string name="notiflog_not_enabled">The log is off for this phone, so it has nothing stored.</string>
+    <string name="notiflog_empty">Nothing arrived in that window.</string>
+    <string name="notiflog_never_asked">You haven\'t asked yet. Tap above and that phone will answer once with what it kept.</string>
+    <string name="notiflog_showing">Showing %1$d of %2$d</string>
+    <string name="notiflog_older">Load older</string>
+
+    <!-- The assisted phone's own screen: one thing to do, and no rules to read. -->
+    <string name="assist_home_title">Your phone</string>
+    <string name="assist_home_ok">Connected. Your family can help you from theirs.</string>
+    <string name="assist_home_offline">This phone can\'t reach your family right now.</string>
+    <string name="assist_help_title">Need a hand?</string>
+    <string name="assist_help_body">Press the button and your family gets a message. You don\'t have to explain anything.</string>
+    <string name="assist_help_button">Ask for help</string>
+    <string name="assist_help_sent">Sent. They can see it now.</string>
+    <string name="assist_help_waiting">You asked for help. Your family has been told.</string>
+    <string name="assist_help_text">Asked for help from their phone</string>
+    <string name="assist_ask_help_summary">%1$s asked for help.</string>
+    <string name="assist_ask_help_hint">They pressed the help button on their phone. Call them, or use the cards on their page.</string>
+    <string name="assist_ask_help_done">I\'ve helped</string>
+    <string name="sync_help_ask_title">%1$s needs a hand</string>
+    <string name="sync_help_ask_text">They pressed the help button on their phone.</string>
+
+    <!-- The one permission only the phone's owner can grant, asked for where it is needed. -->
+    <string name="req_notification_access_title">Let Walcott read notifications</string>
+    <string name="req_notification_access_body">Your family asked to keep a log of what arrives on this phone, so they can answer \"did it arrive?\" without you having to read your screen to them. Nobody but you can grant this.</string>
+
+    <!-- Device protection, grouped: tampering, settings changed by accident, apps. -->
+    <string name="restriction_group_tamper">Tampering</string>
+    <string name="restriction_group_settings">Settings changed by accident</string>
+    <string name="restriction_group_apps">Apps</string>
+    <string name="restriction_airplane_title">Block airplane mode</string>
+    <string name="restriction_airplane_desc">Airplane mode left on is the commonest reason a phone quietly stops receiving anything</string>
+    <string name="restriction_locale_title">Block changing the language</string>
+    <string name="restriction_locale_desc">A phone switched to a language nobody in the house reads can\'t be put back without help</string>
+    <string name="restriction_brightness_title">Block changing the brightness</string>
+    <string name="restriction_brightness_desc">A screen at zero looks exactly like a broken phone</string>
+    <string name="restriction_screen_timeout_title">Block changing the screen timeout</string>
+    <string name="restriction_screen_timeout_desc">Stops the screen going dark two seconds after every tap</string>
+    <string name="restriction_wifi_title">Block changing Wi‑Fi</string>
+    <string name="restriction_wifi_desc">Careful: a phone that loses its Wi‑Fi and can\'t reconnect has no way back on its own</string>
+    <string name="restriction_mobile_networks_title">Block changing mobile data</string>
+    <string name="restriction_mobile_networks_desc">With mobile data switched off, the phone goes quiet the moment it leaves home</string>
+    <string name="restriction_network_reset_title">Block resetting the network</string>
+    <string name="restriction_network_reset_desc">One button in Settings that clears every Wi‑Fi and mobile setting at once</string>
+    <string name="restriction_accounts_title">Block adding or removing accounts</string>
+    <string name="restriction_accounts_desc">Removing the Google account takes the app store and the backups with it</string>
+    <string name="restriction_default_apps_title">Block changing the default apps</string>
+    <string name="restriction_default_apps_desc">Which app opens a link, a call or a photo</string>
+    <string name="restriction_uninstall_title">Block uninstalling apps</string>
+    <string name="restriction_uninstall_desc">An app deleted by accident, including the ones the phone came with</string>
 </resources>

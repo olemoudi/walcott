@@ -113,6 +113,21 @@
                 android:resource="@xml/accessibility_config" />
         </service>
 
+        <!--
+            The notification log (see NotificationLog). Bound by the system only once the phone's
+            owner enables it in Settings — there is no way for a Device Owner to grant it — and it
+            records nothing unless the family's rules ask for it.
+        -->
+        <service
+            android:name=".notifications.WalcottNotificationListener"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".net.WalcottVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"

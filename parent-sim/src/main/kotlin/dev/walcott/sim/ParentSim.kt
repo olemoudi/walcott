@@ -81,6 +81,9 @@ class ParentSim(
     val iconPayloads = CopyOnWriteArrayList<IconPayload>()
     val diagReports = CopyOnWriteArrayList<DiagPayload>()
 
+    /** Notification-log pages the child has answered with (see RemoteAction.NOTIFICATION_LOG). */
+    val notificationPages = CopyOnWriteArrayList<dev.walcott.sync.NotificationPayload>()
+
     /** Newest snapshot per child device. */
     val children = ConcurrentHashMap<String, ChildSnapshot>()
 
@@ -148,9 +151,20 @@ class ParentSim(
     }
 
     /** Queues a remote fix for [deviceId] and returns its id, so a scenario can await the ack. */
-    fun sendCommand(deviceId: String, action: String, arg: String = "", label: String = ""): String {
+    /**
+     * @param issuedAtMs when the parent claims to have issued this. Settable because one command
+     *   — the lock-screen PIN — deliberately expires (see `RemoteAction.LOCK_PIN_TTL_MS`), and a
+     *   scenario cannot wait half an hour to prove it. Everything else ignores the field.
+     */
+    fun sendCommand(
+        deviceId: String,
+        action: String,
+        arg: String = "",
+        label: String = "",
+        issuedAtMs: Long = System.currentTimeMillis(),
+    ): String {
         val id = UUID.randomUUID().toString()
-        commands += RemoteCommand(id, deviceId, action, System.currentTimeMillis(), arg, label)
+        commands += RemoteCommand(id, deviceId, action, issuedAtMs, arg, label)
         publishSnapshot()
         return id
     }
@@ -251,6 +265,7 @@ class ParentSim(
             }
             is IncomingMessage.FromChildIcons -> iconPayloads += decoded.payload
             is IncomingMessage.FromChildDiag -> diagReports += decoded.payload
+            is IncomingMessage.FromChildNotifications -> notificationPages += decoded.payload
             // Our own snapshot, echoed back by the relay.
             is IncomingMessage.FromParent -> return
         }
@@ -296,6 +311,21 @@ class ParentSim(
     fun awaitIcons(timeoutMs: Long = DEFAULT_TIMEOUT_MS): IconPayload =
         awaitOrNull(timeoutMs) { iconPayloads.lastOrNull() }
             ?: throw AssertionError("no icons within ${timeoutMs}ms")
+
+    /**
+     * The next notification-log page the child sends, counting only pages that arrive AFTER
+     * [after] have already been seen.
+     *
+     * A count rather than "the last one": the log is asked for repeatedly in one scenario (all
+     * apps, then one app, then a page older than that), and every request produces a page — so
+     * "the newest page" would happily return the answer to the previous question.
+     */
+    fun awaitNotifications(
+        after: Int = 0,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    ): dev.walcott.sync.NotificationPayload =
+        awaitOrNull(timeoutMs) { notificationPages.getOrNull(after) }
+            ?: throw AssertionError("no notification page #$after within ${timeoutMs}ms")
 
     /**
      * Asserts that nothing matching [predicate] shows up within [windowMs]. Needed as often as

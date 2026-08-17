@@ -14,6 +14,7 @@ import dev.walcott.BuildConfig
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.enforcement.EnforcementBackends
 import dev.walcott.enforcement.UsageAccess
+import dev.walcott.notifications.NotificationLog
 import dev.walcott.location.LocationSampler
 import dev.walcott.rules.EarnGrant
 import dev.walcott.rules.IdleEarnConfig
@@ -2000,6 +2001,15 @@ class SyncManager(
                 val blocklistState = withContext(Dispatchers.IO) {
                     dev.walcott.net.BlocklistStore.get(context).state.value
                 }
+                val ringer = dev.walcott.enforcement.AudioGuard.read(context)
+                // Read, never armed, here: this is the publish path, and arming belongs where the
+                // rules are applied (see EnforcementService). A check-in must not be the thing that
+                // quietly changes what a device can do.
+                val lockState = dev.walcott.enforcement.LockScreen.state(
+                    context,
+                    token = s.lockTokenB64.takeIf { it.isNotBlank() }
+                        ?.let { runCatching { FamilyCrypto.fromB64(it) }.getOrNull() },
+                )
                 val locations = if (historyOn) {
                     LocationTrail.compress(repository.recentLocations(), System.currentTimeMillis())
                 } else {
@@ -2056,6 +2066,18 @@ class SyncManager(
                     // store's own state file, so it costs no disk read of the lists themselves.
                     filterListDomains = blocklistState.domainsFor(settings.enabledBlocklists),
                     filterListsPending = blocklistState.pending(settings.enabledBlocklists),
+                    // Whether this phone can actually be heard, whether something is still muting
+                    // it, and how often it has had to be put right (see AudioGuard). Reported
+                    // whatever the rules say: a family that has not turned the guard on still wants
+                    // to know that the phone they cannot reach is on silent.
+                    ringerAudible = ringer.audible,
+                    ringerDndSilencing = ringer.dndSilencing,
+                    ringerRestores = s.ringerRestores,
+                    // Whether the lock could be reset from the parent's phone RIGHT NOW. Reported
+                    // before it is needed on purpose — see LockScreen.
+                    lockResetReady = lockState.tokenRegistered && lockState.tokenActive,
+                    notificationAccess = !settings.notificationLogEnabled ||
+                        NotificationLog.accessGranted(context),
                     crashTotal = crashes.total,
                     lastCrashMs = crashes.lastAtMs,
                     unauthorized = s.unauthorizedApps,
@@ -2214,6 +2236,112 @@ class SyncManager(
         transport.publish(DiagFit.encode(payload, familyKey))
     }
 
+    /**
+     * Child: publishes the notification log for the window the parent asked about, newest first.
+     *
+     * [beforeMs] is the page cursor (0 = start at now), and the window reaches back
+     * [NotificationLog.RETAIN_HOURS] because that is all this device kept. Returns how many entries
+     * were read, for the command's acknowledgement.
+     *
+     * The two "there is nothing here and this is why" cases are reported rather than answered with
+     * an empty list: a family that switched the log on and never granted notification access would
+     * otherwise read a silent phone as a quiet day.
+     */
+    /**
+     * Parent: remembers the PIN this phone is about to set on [deviceId] (see [SyncState.lastLockPin]).
+     * Written BEFORE the command goes out, so a phone that dies between the two still knows what it
+     * asked for — the opposite order loses the number and leaves somebody locked out.
+     */
+    suspend fun rememberLockPin(deviceId: String, pin: String) {
+        syncStore.update { s ->
+            s.copy(
+                lastLockPin = if (pin.isBlank()) s.lastLockPin - deviceId else s.lastLockPin + (deviceId to pin),
+            )
+        }
+    }
+
+    /**
+     * Child: counts one ringer restore, so "this phone was on silent again" is a number the parent
+     * can watch grow rather than a moment nobody was there for.
+     */
+    suspend fun recordRingerRestore() {
+        syncStore.update { it.copy(ringerRestores = it.ringerRestores + 1) }
+    }
+
+    /**
+     * Child: arms the lock-screen escape hatch, if this device can have one. Called where the rules
+     * are applied, so a family that never asked for it never registers a token.
+     */
+    suspend fun armLockReset() {
+        lockToken()
+    }
+
+    /**
+     * This device's lock-screen reset token, minted and registered on first use (see [LockScreen]).
+     *
+     * Kept device-local and re-registered every time it is read, which is cheap and covers the one
+     * failure that matters: the platform can forget a token, and a device that believes it is
+     * rescuable when it is not is worse than one that says so. Whether the SYSTEM has activated it
+     * is a separate question, answered in the snapshot ([ChildSnapshot.lockResetReady]).
+     */
+    private suspend fun lockToken(): ByteArray? {
+        val stored = syncStore.current().lockTokenB64
+        val token = if (stored.isNotBlank()) {
+            runCatching { FamilyCrypto.fromB64(stored) }.getOrNull()
+        } else {
+            null
+        } ?: dev.walcott.enforcement.LockScreen.newToken().also {
+            syncStore.update { s -> s.copy(lockTokenB64 = FamilyCrypto.toB64(it)) }
+        }
+        return if (dev.walcott.enforcement.LockScreen.register(context, token)) token else null
+    }
+
+    suspend fun publishNotifications(arg: String): Int {
+        val id = identityStore.current()
+        val transport = transport ?: return 0
+        val settings = settingsStore.current()
+        val query = NotificationQuery.decode(arg)
+        val now = System.currentTimeMillis()
+        val before = if (query.beforeMs > 0) query.beforeMs else now + 1
+        val since = now - java.util.concurrent.TimeUnit.HOURS.toMillis(NotificationLog.RETAIN_HOURS)
+        val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
+
+        val enabled = NotificationLog.enabledBy(settings)
+        val access = NotificationLog.accessGranted(context)
+        val dao = repository.notifications
+        val onePackage = query.pkg.isNotBlank()
+        val entries = if (enabled && access) {
+            runCatching {
+                if (onePackage) dao.pageForApp(query.pkg, since, before, NOTIFICATION_PAGE_ROWS)
+                else dao.page(since, before, NOTIFICATION_PAGE_ROWS)
+            }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        val payload = NotificationPayload(
+            deviceId = id.deviceId,
+            atMs = now,
+            entries = entries.map {
+                NotificationEntry(atMs = it.postedAtMs, pkg = it.packageName, title = it.title, text = it.text)
+            },
+            total = if (enabled && access) {
+                runCatching {
+                    if (onePackage) dao.countForApp(query.pkg, since, before)
+                    else dao.countBetween(since, before)
+                }.getOrDefault(entries.size)
+            } else {
+                0
+            },
+            sinceMs = since,
+            pkg = query.pkg,
+            noAccess = enabled && !access,
+            notEnabled = !enabled,
+        )
+        transport.publish(NotificationFit.encode(payload, familyKey))
+        dev.walcott.debug.DebugLog.i(TAG, "notification log published: ${entries.size} of ${payload.total}")
+        return entries.size
+    }
+
     /** Current battery percentage (0–100), or -1 if the platform won't say. */
     private fun batteryPercent(): Int =
         runCatching {
@@ -2272,6 +2400,8 @@ class SyncManager(
             id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot)
             id.role == Role.PARENT && message is IncomingMessage.FromChildIcons -> applyIconPayload(message.payload)
             id.role == Role.PARENT && message is IncomingMessage.FromChildDiag -> applyDiagPayload(message.payload)
+            id.role == Role.PARENT && message is IncomingMessage.FromChildNotifications ->
+                applyNotificationPayload(message.payload)
         }
 
         // The emergency release runs on the server's clock, and a LIVE message proves both that
@@ -2301,6 +2431,26 @@ class SyncManager(
                 diagHistory = s.diagHistory +
                     (payload.deviceId to (listOf(filed) + previous).take(MAX_DIAG_HISTORY)),
                 diagReports = s.diagReports - payload.deviceId,
+            )
+        }
+    }
+
+    /**
+     * Parent: file a page of notifications a device just sent.
+     *
+     * Pages accumulate rather than replace, because that is what "load older" means — the parent
+     * asked for the 24 h window, got what fitted, and asked again for what came before it. Bounded
+     * at [MAX_NOTIFICATION_PAGES] and de-duplicated by the instant the page was taken, since the
+     * relay replays its backlog on reconnect and a page filed twice would put every notification on
+     * the screen twice.
+     */
+    private suspend fun applyNotificationPayload(payload: NotificationPayload) {
+        syncStore.update { s ->
+            val previous = s.notificationPages[payload.deviceId].orEmpty()
+            if (previous.any { it.atMs == payload.atMs }) return@update s
+            s.copy(
+                notificationPages = s.notificationPages +
+                    (payload.deviceId to (listOf(payload) + previous).take(MAX_NOTIFICATION_PAGES)),
             )
         }
     }
@@ -2537,6 +2687,8 @@ class SyncManager(
                 denyPanic = { requestId -> denyPanic(requestId) },
                 removeApp = { pkg -> removeAppNow(pkg) },
                 allowApp = { pkg -> allowAppNow(pkg) },
+                setLockPin = { pin -> dev.walcott.enforcement.LockScreen.apply(context, pin, lockToken()) },
+                publishNotifications = { arg -> publishNotifications(arg) },
             )
         }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
@@ -2995,6 +3147,10 @@ class SyncManager(
             // one ask the parent can answer entirely from the notification shade's tap.
             if (ask.kind == ChildRequest.KIND_INSTALL) {
                 SyncNotifications.notifyInstallAsk(context, who, ask.text, ask.requestId, quickAnswer)
+            } else if (ask.kind == ChildRequest.KIND_HELP) {
+                // The one ask with no answer to give from the shade — it is a person, not a
+                // permission (see notifyHelpAsk).
+                SyncNotifications.notifyHelpAsk(context, who, ask.requestId)
             } else {
                 SyncNotifications.notifyAsk(context, who, ask.text, ask.requestId, quickAnswer)
             }
@@ -3109,6 +3265,15 @@ class SyncManager(
         private const val CLOCK_SKEW_RECORD_DELTA_MS = 60_000L
         /** Log lines offered to the diagnostics report before DiagFit trims to the size cap. */
         private const val DIAG_LOG_LINES = 80
+
+        /**
+         * Notifications read for one page before [NotificationFit] trims to the size cap.
+         *
+         * Generous on purpose: reading them costs a query, and the cap that matters is the message
+         * size, which Fit measures rather than guesses. What this bounds is the query, so a phone
+         * with a thousand rows does not load them all to send sixty.
+         */
+        private const val NOTIFICATION_PAGE_ROWS = 200
         /** One backup rewrite per burst of edits (a wizard changes many settings in seconds). */
 
         /**

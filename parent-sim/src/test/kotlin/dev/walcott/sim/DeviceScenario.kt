@@ -34,6 +34,11 @@ abstract class DeviceScenario {
         // passed. If the device is not ready, the run should say so where someone will read it.
         precondition("a device is attached", device.isAvailable())
         precondition("dev.walcott is installed", device.isWalcottInstalled())
+        // Before anything else, and every time: the enforcement loop parks while the screen is off,
+        // so an emulator that dozed off half an hour into a run evaluates no rules at all and every
+        // scenario about a schedule or a budget times out waiting for a suspension nothing was even
+        // going to attempt. It reads as a product that stopped enforcing, and it cost an hour once.
+        device.keepAwake()
         relay = MockRelay().start()
         // The device reaches the relay over `adb reverse`, on its own loopback, so none of this
         // depends on the emulator's network stack — the part that vanishes under a long run.
@@ -116,6 +121,9 @@ abstract class DeviceScenario {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             parent.children.values.firstOrNull(predicate)?.let { return it }
+            // Awake before asking: what the child reports about the rules is decided by a loop
+            // that does not run while the screen is off (see awaitDevice).
+            device.nudgeAwake()
             device.publish()
             runCatching { parent.awaitChild(timeoutMs = 4_000, predicate = predicate) }
                 .getOrNull()?.let { return it }
@@ -132,6 +140,10 @@ abstract class DeviceScenario {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (probe()) return
+            // Keep the phone awake while waiting on it. The enforcement loop PARKS while the
+            // screen is off, so a doze halfway through this wait means the device is not deciding
+            // anything — and the timeout that follows reads as a product that stopped enforcing.
+            device.nudgeAwake()
             Thread.sleep(1_000)
         }
         throw AssertionError("device never reached: $what (within ${timeoutMs}ms)")
@@ -162,6 +174,9 @@ abstract class DeviceScenario {
         val deadline = System.currentTimeMillis() + windowMs
         while (System.currentTimeMillis() < deadline) {
             if (probe()) throw AssertionError("device reached a state it must not: $what")
+            // Awake for the same reason as awaitDevice, and here it matters more: a dozing phone
+            // reaches no state at all, so this would pass without having tested anything.
+            device.nudgeAwake()
             Thread.sleep(1_000)
         }
     }

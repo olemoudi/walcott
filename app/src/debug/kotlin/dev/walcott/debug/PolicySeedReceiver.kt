@@ -8,6 +8,7 @@ import dev.walcott.data.PolicySettings
 import dev.walcott.sync.DeviceMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
@@ -216,6 +217,35 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         target.repository.addUsageSeconds(pkg, seconds)
                     }
                     DebugLog.i("WalcottSeed", "usage seeded: $spec")
+                }
+                // `--es lower_ringer now`: put this phone's ringer where a pocket or a stray
+                // volume key would leave it. Silent first, which is the real failure and also the
+                // one that broadcasts RINGER_MODE_CHANGED; the platform refuses that without
+                // notification-policy access, so a volume below the family's floor is the
+                // fallback — the same guard answers both, by a different trigger (see AudioGuard).
+                if (intent.getStringExtra("lower_ringer") != null) {
+                    val audio = context.getSystemService(android.media.AudioManager::class.java)
+                    val silenced = runCatching {
+                        audio.ringerMode = android.media.AudioManager.RINGER_MODE_SILENT
+                    }.isSuccess
+                    if (!silenced) {
+                        runCatching {
+                            audio.setStreamVolume(android.media.AudioManager.STREAM_RING, 1, 0)
+                        }
+                    }
+                    DebugLog.i("WalcottSeed", "ringer lowered (silent=$silenced)")
+                }
+                // `--es assert_ringer now`: the watchdog's ringer pass on demand. The periodic one
+                // runs on WorkManager's own schedule, which a test cannot wait out, and it is the
+                // pass that matters most — the one that notices a phone silenced while the process
+                // was dead and no broadcast reached anybody.
+                if (intent.getStringExtra("assert_ringer") != null) {
+                    val settings = target.repository.settingsFlow.first()
+                    dev.walcott.enforcement.AudioGuard.liftDoNotDisturb(context)
+                    val restored = dev.walcott.enforcement.AudioGuard
+                        .enforce(context, settings.minRingVolumePercent)
+                    if (restored) target.syncManager.recordRingerRestore()
+                    DebugLog.i("WalcottSeed", "ringer asserted (restored=$restored)")
                 }
                 // `--es publish now`: publish this device's snapshot immediately. The regular
                 // heartbeat is throttled (it must be — it rides on wakeups that happen anyway),

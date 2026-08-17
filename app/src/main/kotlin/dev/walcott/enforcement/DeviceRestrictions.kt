@@ -15,11 +15,18 @@ import dev.walcott.WalcottAdminReceiver
  * Deliberately NOT offered while the app is beta: blocking factory reset, safe mode,
  * sideloading or USB debugging. Those are the recovery paths if Walcott itself
  * misbehaves — locking them could leave the device unrecoverable. The parent gets a
- * check-in staleness alert instead (see StaleChildWorker).
+ * check-in staleness alert instead (see StaleChildWorker). [KEY_NETWORK_RESET] is not one of
+ * those: it undoes Wi-Fi and mobile settings, not this app, and it is one of the buttons an
+ * adult being helped presses while looking for something else.
  *
  * Note: Android has no restriction that prevents the primary user from CHANGING the
  * screen lock; the closest supported control is disabling biometric unlock entirely
- * (keyguard feature), which is what [KEY_BIOMETRICS] does.
+ * (keyguard feature), which is what [KEY_BIOMETRICS] does. What DOES exist is resetting the
+ * lock remotely, which is a different feature (see [LockScreen]).
+ *
+ * And one restriction that looks made for this and is not: `DISALLOW_ADJUST_VOLUME`. Reaching for
+ * it to stop somebody silencing their phone does the opposite — "if set, the master volume will be
+ * muted". Keeping a ringer audible is re-assertion, not prohibition (see [AudioGuard]).
  */
 object DeviceRestrictions {
 
@@ -32,6 +39,21 @@ object DeviceRestrictions {
     const val KEY_APPS_CONTROL = "apps_control"
     const val KEY_UNKNOWN_SOURCES = "unknown_sources"
 
+    // The settings a person changes by accident and cannot find their way back from. Written for
+    // an adult being helped (see MemberKind.ADULT) and offered for a child too, because a phone
+    // whose language has been switched to one nobody in the house reads is the same problem at
+    // any age.
+    const val KEY_AIRPLANE = "airplane"
+    const val KEY_LOCALE = "locale"
+    const val KEY_BRIGHTNESS = "brightness"
+    const val KEY_SCREEN_TIMEOUT = "screen_timeout"
+    const val KEY_WIFI = "wifi"
+    const val KEY_MOBILE_NETWORKS = "mobile_networks"
+    const val KEY_DEFAULT_APPS = "default_apps"
+    const val KEY_ACCOUNTS = "accounts"
+    const val KEY_UNINSTALL = "uninstall"
+    const val KEY_NETWORK_RESET = "network_reset"
+
     /** The PIN-gated window choices: a quick errand, a session, and "I don't know" (8 h). */
     const val INSTALL_EXEMPTION_SHORT_MS = 10 * 60 * 1000L
     const val INSTALL_EXEMPTION_MEDIUM_MS = 30 * 60 * 1000L
@@ -40,17 +62,53 @@ object DeviceRestrictions {
     /** Anti-tamper features seeded on by default for new families (see PolicySettings.seedRestrictions). */
     val RECOMMENDED_DEFAULTS = setOf(KEY_DATETIME, KEY_VPN, KEY_APPS_CONTROL, KEY_UNKNOWN_SOURCES)
 
-    data class Feature(val key: String, val restrictions: List<String>)
+    /**
+     * What an adult being helped is offered as a starting point: the accidents, plus not installing
+     * apps without being asked.
+     *
+     * Airplane mode and the connectivity ones are in it because the failure they cause is the one
+     * that matters most — a phone nobody can reach, whose owner does not know why. Brightness and
+     * screen timeout are in it because a screen at zero reads as a broken phone. The language is in
+     * it because recovering from it means navigating Settings in a script you cannot read.
+     */
+    val RECOMMENDED_FOR_ADULT = setOf(
+        KEY_AIRPLANE, KEY_LOCALE, KEY_BRIGHTNESS, KEY_SCREEN_TIMEOUT,
+        KEY_MOBILE_NETWORKS, KEY_DEFAULT_APPS, KEY_ACCOUNTS, KEY_UNINSTALL,
+        KEY_NETWORK_RESET, KEY_INSTALLS, KEY_APPS_CONTROL, KEY_DATETIME,
+    )
+
+    /** Which part of the screen a feature belongs under, so twenty switches read as three lists. */
+    enum class Group { TAMPER, SETTINGS, APPS }
+
+    data class Feature(val key: String, val restrictions: List<String>, val group: Group = Group.TAMPER)
 
     val FEATURES = listOf(
         Feature(KEY_VPN, listOf(UserManager.DISALLOW_CONFIG_VPN)),
         Feature(KEY_LOCATION, listOf(UserManager.DISALLOW_CONFIG_LOCATION)),
         Feature(KEY_DATETIME, listOf(UserManager.DISALLOW_CONFIG_DATE_TIME)),
         Feature(KEY_BIOMETRICS, emptyList()), // keyguard feature, not a user restriction
-        Feature(KEY_INSTALLS, listOf(UserManager.DISALLOW_INSTALL_APPS)),
         Feature(KEY_ADD_USER, listOf(UserManager.DISALLOW_ADD_USER)),
-        Feature(KEY_APPS_CONTROL, listOf(UserManager.DISALLOW_APPS_CONTROL)),
-        Feature(KEY_UNKNOWN_SOURCES, listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)),
+
+        // Settings somebody changes by accident.
+        Feature(KEY_AIRPLANE, listOf(UserManager.DISALLOW_AIRPLANE_MODE), Group.SETTINGS),
+        Feature(KEY_LOCALE, listOf(UserManager.DISALLOW_CONFIG_LOCALE), Group.SETTINGS),
+        Feature(KEY_BRIGHTNESS, listOf(UserManager.DISALLOW_CONFIG_BRIGHTNESS), Group.SETTINGS),
+        Feature(KEY_SCREEN_TIMEOUT, listOf(UserManager.DISALLOW_CONFIG_SCREEN_TIMEOUT), Group.SETTINGS),
+        Feature(
+            KEY_WIFI,
+            listOf(UserManager.DISALLOW_CONFIG_WIFI, UserManager.DISALLOW_CHANGE_WIFI_STATE),
+            Group.SETTINGS,
+        ),
+        Feature(KEY_MOBILE_NETWORKS, listOf(UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS), Group.SETTINGS),
+        Feature(KEY_NETWORK_RESET, listOf(UserManager.DISALLOW_NETWORK_RESET), Group.SETTINGS),
+        Feature(KEY_ACCOUNTS, listOf(UserManager.DISALLOW_MODIFY_ACCOUNTS), Group.SETTINGS),
+
+        // Apps.
+        Feature(KEY_INSTALLS, listOf(UserManager.DISALLOW_INSTALL_APPS), Group.APPS),
+        Feature(KEY_UNKNOWN_SOURCES, listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY), Group.APPS),
+        Feature(KEY_UNINSTALL, listOf(UserManager.DISALLOW_UNINSTALL_APPS), Group.APPS),
+        Feature(KEY_APPS_CONTROL, listOf(UserManager.DISALLOW_APPS_CONTROL), Group.APPS),
+        Feature(KEY_DEFAULT_APPS, listOf(UserManager.DISALLOW_CONFIG_DEFAULT_APPS), Group.APPS),
     )
 
     /** [enabledKeys] minus the install block while a PIN-gated exemption window is open. */

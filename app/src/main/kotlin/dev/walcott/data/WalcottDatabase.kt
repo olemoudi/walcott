@@ -15,6 +15,7 @@ import dev.walcott.debug.DebugLog
         ExtraTimeEntity::class,
         LocationPointEntity::class,
         BlockCounterEntity::class,
+        NotificationEntity::class,
     ],
     version = WalcottDatabase.VERSION,
     exportSchema = true,
@@ -24,6 +25,7 @@ abstract class WalcottDatabase : RoomDatabase() {
     abstract fun usage(): UsageDao
     abstract fun locations(): LocationDao
     abstract fun blocks(): BlockDao
+    abstract fun notifications(): NotificationDao
 
     companion object {
         /**
@@ -31,7 +33,7 @@ abstract class WalcottDatabase : RoomDatabase() {
          * chains 1 → [VERSION] — a forgotten migration is the classic way to brick every child
          * at once, and it must be caught in CI, not on a family's phone.
          */
-        const val VERSION = 4
+        const val VERSION = 5
 
         private const val NAME = "walcott.db"
         private const val TAG = "WalcottDb"
@@ -70,6 +72,21 @@ abstract class WalcottDatabase : RoomDatabase() {
                             "`key` TEXT NOT NULL, " +
                             "`count` INTEGER NOT NULL, " +
                             "PRIMARY KEY(`epochDay`, `kind`, `key`))",
+                    )
+                }
+            },
+            // v5: the notification log an adult being helped can have kept for their family to
+            // read on request (see NotificationLog). Empty on every device that never turns it on.
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `notification_log` (" +
+                            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "`postedAtMs` INTEGER NOT NULL, " +
+                            "`packageName` TEXT NOT NULL, " +
+                            "`title` TEXT NOT NULL, " +
+                            "`text` TEXT NOT NULL, " +
+                            "`key` TEXT NOT NULL DEFAULT '')",
                     )
                 }
             },

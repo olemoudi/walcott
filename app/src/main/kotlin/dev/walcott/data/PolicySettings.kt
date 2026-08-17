@@ -422,13 +422,31 @@ data class ChildOverrides(
      * none at all, the laxer-sibling case. Null inherits the family's.
      */
     val allAppsBlockedWindows: Map<String, List<WindowDto>>? = null,
+    /**
+     * Keep this device's ringer audible: silent/vibrate put back to normal and the ring volume
+     * raised to [PolicySettings.minRingVolumePercent] whenever they drop (see `AudioGuard`).
+     *
+     * Null inherits the family value, which is off. The reason it exists at all is the phone that
+     * nobody can reach: a ringer switched to silent by accident is invisible to its owner and
+     * indistinguishable, from the other end, from a phone that is off, lost, or worse.
+     */
+    val keepRingerAudible: Boolean? = null,
+    /**
+     * Keep a local log of the notifications this device receives, for the person supporting it to
+     * ask for (see `NotificationLog`). Null inherits the family value, which is off.
+     *
+     * Off by default and never implicit: it records titles and text, which is the most intrusive
+     * thing this app can do, and it only makes sense where the phone's owner knows about it.
+     */
+    val notificationLogEnabled: Boolean? = null,
 ) {
     val isEmpty: Boolean
         get() = defaultAppBudget == null && bedtime == null &&
             blockedDomains == null && domainAppRules == null &&
             deviceRestrictions == null &&
             trackingIntervalMinutes == null && locationHistoryEnabled == null &&
-            updateWifiOnly == null && appPolicies == null && allAppsBlockedWindows == null
+            updateWifiOnly == null && appPolicies == null && allAppsBlockedWindows == null &&
+            keepRingerAudible == null && notificationLogEnabled == null
 
     /**
      * How many of the SIX rules the child's rules section owns are this child's own rather than
@@ -455,7 +473,40 @@ data class ChildEntry(
     val overrides: ChildOverrides = ChildOverrides(),
     /** When this child was registered (epoch ms); 0 for legacy entries. Used to alert on a child that never checked in. */
     val addedAtMs: Long = 0,
-)
+    /**
+     * Who this device belongs to: a child, or an adult being helped (see [MemberKind]).
+     *
+     * Additive, and every install predating it reads [MemberKind.CHILD] — which is what they all
+     * were. The kind changes NOTHING about what a parent can switch on: it changes the defaults a
+     * member starts with and the questions their setup asks. An adult phone does not need a
+     * bedtime, and a child phone may well want the ringer kept audible.
+     *
+     * The wire keeps saying `children`, because renaming the key would make every not-yet-updated
+     * device lose the whole registry — the meaning widened, the key cannot.
+     */
+    val kind: String = MemberKind.CHILD,
+) {
+    val isAdult: Boolean get() = kind == MemberKind.ADULT
+}
+
+/**
+ * The two kinds of person whose phone this app looks after.
+ *
+ * [CHILD] is what the app was built for: limits, schedules, a budget that runs out. [ADULT] is
+ * the other job it turns out to do — a phone belonging to someone who does not want to be
+ * limited and does need to be helped: a parent, a grandparent, anybody who changes a setting by
+ * accident and cannot find their way back. Ringer silenced and nobody can reach them; the
+ * language switched to one they cannot read; the screen brightness at zero; the PIN forgotten.
+ *
+ * Unknown kinds read as [CHILD] rather than crashing, so a member created by a newer build
+ * degrades into the stricter, more familiar shape on an older phone.
+ */
+object MemberKind {
+    const val CHILD = "child"
+    const val ADULT = "adult"
+
+    fun of(value: String): String = if (value == ADULT) ADULT else CHILD
+}
 
 /**
  * Parent-editable configuration, serialized as JSON in DataStore. Holds everything that is
@@ -569,6 +620,21 @@ data class PolicySettings(
     /** True once recommended anti-tamper defaults were seeded (so we only seed once). */
     val hardeningSeeded: Boolean = false,
     /**
+     * Family default for keeping a device's ringer audible (see [ChildOverrides.keepRingerAudible]).
+     * Off: a family of teenagers has not asked for their phones to un-silence themselves.
+     */
+    val keepRingerAudible: Boolean = false,
+    /**
+     * How loud "audible" is, as a percentage of the ring stream's maximum.
+     *
+     * 80 rather than 100 on purpose: the point is a ring heard across a room, and a phone pinned
+     * at maximum sounds broken enough that its owner goes hunting for the volume control — which
+     * is the loop this whole feature exists to end.
+     */
+    val minRingVolumePercent: Int = DEFAULT_RING_VOLUME_PERCENT,
+    /** Family default for the notification log (see [ChildOverrides.notificationLogEnabled]). */
+    val notificationLogEnabled: Boolean = false,
+    /**
      * Restrict the child's background downloads to unmetered (Wi-Fi) connections: its own
      * self-update, and the public blocklists behind [enabledBlocklists].
      *
@@ -612,6 +678,8 @@ data class PolicySettings(
             updateWifiOnly = overrides.updateWifiOnly ?: updateWifiOnly,
             appPolicies = overrides.appPolicies ?: appPolicies,
             allAppsBlockedWindows = overrides.allAppsBlockedWindows ?: allAppsBlockedWindows,
+            keepRingerAudible = overrides.keepRingerAudible ?: keepRingerAudible,
+            notificationLogEnabled = overrides.notificationLogEnabled ?: notificationLogEnabled,
             // This child's own special days on top of the family's; the others' never travel here.
             holidays = holidays + childHolidays[childId].orEmpty(),
             vacations = vacations + childVacations[childId].orEmpty(),
@@ -718,5 +786,10 @@ data class PolicySettings(
                 weekendEndsSunday = weekendEndsSundayAtMinute.toTimeOfDayOrNull(),
             ),
         )
+    }
+
+    companion object {
+        /** See [minRingVolumePercent]. */
+        const val DEFAULT_RING_VOLUME_PERCENT = 80
     }
 }

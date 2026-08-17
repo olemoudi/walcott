@@ -220,6 +220,11 @@ fun AskCard(pending: SyncManager.PendingAsk, viewModel: dev.walcott.ui.WalcottVi
             onDone = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
             onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
         )
+    } else if (pending.ask.kind == ChildRequest.KIND_HELP) {
+        HelpAskCard(
+            pending = pending,
+            onDone = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
+        )
     } else if (pending.ask.kind == ChildRequest.KIND_INSTALL && pending.ask.pkg.isNotBlank()) {
         InstallAskCard(
             pending = pending,
@@ -232,6 +237,40 @@ fun AskCard(pending: SyncManager.PendingAsk, viewModel: dev.walcott.ui.WalcottVi
             onApprove = { viewModel.resolveRequest(pending.ask.requestId, true, 0) },
             onDeny = { viewModel.resolveRequest(pending.ask.requestId, false, 0) },
         )
+    }
+}
+
+/**
+ * Somebody pressed the help button on the phone they are being helped with ([ChildRequest.KIND_HELP]).
+ *
+ * The only ask with nothing to approve or deny. Everything else here is a permission the parent
+ * grants or withholds; this is a person saying they are stuck, and the answer to it happens on the
+ * telephone. So the card carries one button, and what it means is "I have dealt with this" — which
+ * is what clears the ask, stops the reminder, and lets the next press be a new one rather than a
+ * duplicate of an ask nobody ever closed.
+ *
+ * Tinted like an alert on purpose: on a home screen full of routine requests for twenty more
+ * minutes, this is the one that should not be scrolled past.
+ */
+@Composable
+fun HelpAskCard(pending: SyncManager.PendingAsk, onDone: () -> Unit) {
+    val spacing = Tokens.spacing
+    WalcottCard(color = MaterialTheme.colorScheme.errorContainer) {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Text(
+                stringResource(R.string.assist_ask_help_summary, pending.childName),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(
+                stringResource(R.string.assist_ask_help_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.assist_ask_help_done))
+            }
+        }
     }
 }
 

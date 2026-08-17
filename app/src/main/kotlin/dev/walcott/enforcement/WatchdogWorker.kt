@@ -45,6 +45,16 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     // would pull the tunnel out from under the parent mid-look.
                     settings.hasWebFilter() || dev.walcott.net.DomainMonitor.isActive(),
                 )
+                // Same reasoning for the ringer: the broadcast that normally catches a phone being
+                // silenced arrives while the process is alive, and a process the OS killed missed
+                // every one of them. This is the pass that notices the phone has been on silent
+                // since yesterday (see AudioGuard).
+                if (settings.keepRingerAudible) {
+                    AudioGuard.liftDoNotDisturb(applicationContext)
+                    if (AudioGuard.enforce(applicationContext, settings.minRingVolumePercent)) {
+                        app.syncManager.recordRingerRestore()
+                    }
+                }
             }.onFailure { DebugLog.e(TAG, "restriction reassert failed", it) }
             // Housekeeping: the per-day counters have no natural end, so a device enrolled for
             // years would accumulate a row per category (and per app with its own budget) per

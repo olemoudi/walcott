@@ -150,6 +150,7 @@ class EnforcementService : LifecycleService() {
         lifecycleScope.launch { runLoopResilient() }
         observeWebFilter()
         observeBlocklists()
+        observeAssistance()
         observeDeviceRestrictions()
         scheduleUpdateChecks()
         scheduleLocationSampling()
@@ -165,6 +166,7 @@ class EnforcementService : LifecycleService() {
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(packageReceiver) }
+        ringerGuard?.let { runCatching { unregisterReceiver(it) } }
         super.onDestroy()
     }
 
@@ -304,6 +306,73 @@ class EnforcementService : LifecycleService() {
                     dev.walcott.net.BlocklistWorker.runNow(this@EnforcementService)
                 }
         }
+    }
+
+    /** The ringer-mode receiver while the rules ask for it (see [AudioGuard]); null otherwise. */
+    private var ringerGuard: BroadcastReceiver? = null
+
+    /** The volume floor the receiver reads — it outlives any single policy emission. */
+    @Volatile private var ringerFloor: Int = dev.walcott.data.PolicySettings.DEFAULT_RING_VOLUME_PERCENT
+
+    /**
+     * The three things this device does for a person being helped rather than limited: keep the
+     * ringer audible, keep the lock-screen escape hatch armed, and keep a notification log only
+     * while the rules ask for one.
+     *
+     * All three are driven from the rules and all three are re-derived on every change, because the
+     * one that matters most is the negative: a family switching the notification log OFF has to
+     * mean the rows go away, and a family switching the ringer guard off has to mean this device
+     * stops fighting its owner over the volume.
+     */
+    private fun observeAssistance() {
+        val app = application as WalcottApplication
+        lifecycleScope.launch {
+            app.repository.settingsFlow
+                .map {
+                    Triple(it.keepRingerAudible, it.minRingVolumePercent, it.notificationLogEnabled)
+                }
+                .distinctUntilChanged()
+                .collect { (keepAudible, minPercent, logEnabled) ->
+                    ringerFloor = minPercent
+                    ringerGuard = registerRingerGuard(keepAudible, ringerGuard)
+                    if (keepAudible) {
+                        AudioGuard.liftDoNotDisturb(this@EnforcementService)
+                        if (AudioGuard.enforce(this@EnforcementService, minPercent)) {
+                            app.syncManager.recordRingerRestore()
+                        }
+                    }
+                    // Armed here rather than at enrollment: a device that becomes Device Owner
+                    // later, or one whose token the platform forgot, gets another chance on every
+                    // rule change instead of only ever having had one.
+                    runCatching { app.syncManager.armLockReset() }
+                    if (!logEnabled) {
+                        dev.walcott.notifications.NotificationLog.forget(app.repository.notifications)
+                    }
+                }
+        }
+    }
+
+    /** Registers or drops the ringer-mode receiver, returning what is registered now. */
+    private fun registerRingerGuard(wanted: Boolean, current: BroadcastReceiver?): BroadcastReceiver? {
+        if (wanted == (current != null)) return current
+        if (!wanted) {
+            runCatching { unregisterReceiver(current) }
+            return null
+        }
+        val app = application as WalcottApplication
+        val receiver = AudioGuard.RingerReceiver(
+            minPercent = { ringerFloor },
+            onRestored = { lifecycleScope.launch { app.syncManager.recordRingerRestore() } },
+        )
+        return runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                receiver,
+                AudioGuard.RingerReceiver.FILTER,
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            receiver
+        }.getOrNull()
     }
 
     /** Keeps the Device Owner user restrictions in sync with the policy. */

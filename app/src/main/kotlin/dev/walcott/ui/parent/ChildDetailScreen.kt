@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
@@ -136,6 +137,8 @@ fun ChildDetailScreen(
     /** The family's app list, for the same reason. */
     onOpenFamilyApps: () -> Unit,
     onOpenSpecialDays: () -> Unit,
+    /** What has arrived on that phone (see NotificationLogScreen); the device is the subject. */
+    onOpenNotifications: (deviceId: String) -> Unit,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -148,6 +151,9 @@ fun ChildDetailScreen(
     val lastSeen by viewModel.lastSeen.collectAsStateWithLifecycle()
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
     val ledgers by viewModel.usageLedgers.collectAsStateWithLifecycle()
+    // The unlock PINs this phone has set, so the card can read one back to somebody who cannot get
+    // into their own phone (see SyncState.lastLockPin). Device-local; it never travels.
+    val lastLockPins by viewModel.lastLockPins.collectAsStateWithLifecycle()
 
     // Minute tick so the dashboard and feed ages stay fresh without new data arriving.
     val nowMs by androidx.compose.runtime.produceState(System.currentTimeMillis()) {
@@ -203,6 +209,17 @@ fun ChildDetailScreen(
         )
     }
 
+    // Whether ANY rule could ever bite on this phone. Asked of the resolved config rather than of
+    // the override switches, because a member inheriting the family's bedtime has a bedtime.
+    val hasAnyRule = remember(childConfig) {
+        childConfig.bedtime.isNotEmpty() ||
+            childConfig.blockedWindows.values.any { it.isNotEmpty() } ||
+            childConfig.defaultAppBudget.isNotEmpty() ||
+            childConfig.perAppPolicies.values.any {
+                it.dailyBudget.isNotEmpty() || it.blockedWindows.values.any { w -> w.isNotEmpty() }
+            }
+    }
+
     var showRename by remember { mutableStateOf(false) }
     var showRemove by remember { mutableStateOf(false) }
     // Which app the bonus dialog opens on: the all-apps sentinel from the general button, the
@@ -236,6 +253,47 @@ fun ChildDetailScreen(
         goToRules++
     }
 
+
+    // --- Helping with this phone, rather than limiting it ---
+    // The same three cards for every member (see AssistedCards). What the member's kind decides is
+    // WHERE they go: an adult's phone is here to be looked after, so they lead; a child's phone is
+    // here to be limited, so they sit under "Additional settings" with the rest of the plumbing.
+    val assistedCards: @Composable () -> Unit = {
+        val resolved = settings.resolveForChild(childId)
+        CardGroup {
+            RingerCard(
+                snapshot = snapshot,
+                keepAudible = resolved.keepRingerAudible,
+                position = CardPosition.First,
+                // Written as this member's own value, not the family's: these are per-phone
+                // questions ("is THIS phone reachable"), and a switch here that silently changed
+                // every other phone in the family would be the wrong promise entirely.
+                onToggle = { on ->
+                    viewModel.setChildOverrides(childId, entry.overrides.copy(keepRingerAudible = on))
+                },
+            )
+            LockScreenCard(
+                snapshot = snapshot,
+                // From the collected state, not a one-off read: the PIN this phone just set is
+                // written asynchronously, and a card that read it once at draw time would show
+                // nothing until something else on the screen happened to change.
+                lastPin = snapshot?.deviceId?.let { lastLockPins[it] }.orEmpty(),
+                position = CardPosition.Middle,
+                onSetPin = { pin -> snapshot?.let { viewModel.setChildLockPin(it.deviceId, pin) } },
+                onRemoveLock = { snapshot?.let { viewModel.setChildLockPin(it.deviceId, "") } },
+                onLockNow = { snapshot?.let { viewModel.lockChildNow(it.deviceId) } },
+            )
+            NotificationLogCard(
+                snapshot = snapshot,
+                enabled = resolved.notificationLogEnabled,
+                position = CardPosition.Last,
+                onToggle = { on ->
+                    viewModel.setChildOverrides(childId, entry.overrides.copy(notificationLogEnabled = on))
+                },
+                onOpen = { snapshot?.let { onOpenNotifications(it.deviceId) } },
+            )
+        }
+    }
 
     // Location earns a prominent slot only when it can actually show something: tracking or
     // history on for this child, or a trail already reported. Otherwise the card (which is
@@ -413,6 +471,19 @@ fun ChildDetailScreen(
                 item { WrongPinCard(snapshot.pinWrongTotal, snapshot.lastWrongPinMs) }
             }
 
+            // --- Helping with this phone (adults lead with it; see assistedCards) ---
+            if (entry.isAdult) {
+                item {
+                    SectionHeader(
+                        stringResource(R.string.assist_section_title),
+                        icon = Icons.Outlined.SupportAgent,
+                        accent = SectionAccent.FAMILY,
+                        supporting = stringResource(R.string.assist_section_hint),
+                    )
+                }
+                item { assistedCards() }
+            }
+
             // --- What is shut right now, and the one thing that opens it ---
             // Under the alarms above and over everything else: those say the rules are not being
             // applied as written, and this says what the rules are doing. A parent arrives here
@@ -475,22 +546,30 @@ fun ChildDetailScreen(
             }
 
             // --- Where they stand in the rules, including everything that is NOT running ---
-            // Under "what is stopping them" and always present, because most of the time the
-            // honest answer to "what are the rules doing right now" is "nothing yet, and here
+            // Under "what is stopping them" and normally always present, because most of the time
+            // the honest answer to "what are the rules doing right now" is "nothing yet, and here
             // is when that changes" — which had no home on this screen at all.
-            item {
-                SectionHeader(
-                    stringResource(R.string.now_section_title),
-                    icon = Icons.Outlined.Schedule,
-                    accent = SectionAccent.RULES,
-                    supporting = stringResource(R.string.now_section_hint),
-                )
-            }
-            item {
-                val context = remember(childConfig, childNow.withSecond(0)) {
-                    RuleEngine.ruleContext(childConfig, childNow)
+            //
+            // The exception is a phone with no rules of any kind, which is the ordinary state of
+            // an adult being helped: there, every line of that card is the same non-answer, and a
+            // section whose whole content is "no" teaches people to scroll past this part of the
+            // screen. A child is never hidden from it — "nothing is stopping you yet" is exactly
+            // what a parent came to read.
+            if (!entry.isAdult || hasAnyRule) {
+                item {
+                    SectionHeader(
+                        stringResource(R.string.now_section_title),
+                        icon = Icons.Outlined.Schedule,
+                        accent = SectionAccent.RULES,
+                        supporting = stringResource(R.string.now_section_hint),
+                    )
                 }
-                RuleContextCard(context, childNow)
+                item {
+                    val context = remember(childConfig, childNow.withSecond(0)) {
+                        RuleEngine.ruleContext(childConfig, childNow)
+                    }
+                    RuleContextCard(context, childNow)
+                }
             }
 
             // --- Location, right under the day-at-a-glance while it's in use ---
@@ -741,6 +820,15 @@ fun ChildDetailScreen(
                     if (!locationActive) {
                         locationCard()
                     }
+                    // A child's phone gets the same three support cards, just not at the top: a
+                    // teenager's phone on silent for two days is the same problem as anybody's.
+                    if (!entry.isAdult) {
+                        assistedCards()
+                    }
+                    MemberKindCard(
+                        kind = entry.kind,
+                        onSelect = { picked -> viewModel.setMemberKind(childId, picked) },
+                    )
                     UpdateWifiOverrideCard(
                         override = entry.overrides.updateWifiOnly,
                         familyValue = settings.updateWifiOnly,

@@ -224,6 +224,40 @@ class ChildOverridesTest {
     }
 
     @Test
+    fun `the support switches are per member, and inherit the family value until set`() {
+        // These two are questions about ONE phone ("is this phone reachable", "does this phone keep
+        // a log"), so a member with no answer of their own must take the family's rather than a
+        // hardcoded off — otherwise a family-wide setting would apply to nobody.
+        val fam = PolicySettings(
+            version = 1,
+            keepRingerAudible = true,
+            notificationLogEnabled = false,
+            children = listOf(
+                ChildEntry("t1", "One", ChildOverrides(keepRingerAudible = false, notificationLogEnabled = true)),
+                ChildEntry("t2", "Two"),
+            ),
+        )
+        val own = fam.resolveForChild("t1")
+        assertEquals(false, own.keepRingerAudible, "this member said no; the family's yes must not win")
+        assertEquals(true, own.notificationLogEnabled)
+        val inherited = fam.resolveForChild("t2")
+        assertEquals(true, inherited.keepRingerAudible)
+        assertEquals(false, inherited.notificationLogEnabled)
+    }
+
+    @Test
+    fun `the support switches are not counted as customized rules`() {
+        // They have their own cards, in their own section. Counting them in "N rules customized"
+        // would report a number the rules fold cannot explain — the same mistake location and
+        // updates are already kept out of.
+        val overrides = ChildOverrides(keepRingerAudible = true, notificationLogEnabled = true)
+        assertEquals(0, overrides.customRuleCount)
+        // But they are still SOMETHING, so a member with only these has not "inherited everything"
+        // — otherwise the "use the family's rules for everything" button would silently skip them.
+        assertTrue(!overrides.isEmpty)
+    }
+
+    @Test
     fun `an override set to empty still counts as this child's own`() {
         // Empty is a real answer — "no bedtime for this one" — and the whole reason the fields
         // are nullable. A count that treated it as inherited would hide the laxer sibling.

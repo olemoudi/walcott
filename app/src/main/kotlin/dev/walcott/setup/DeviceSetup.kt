@@ -47,6 +47,20 @@ enum class DeviceRequirement(
         bodyRes = R.string.req_web_filter_body,
     ),
 
+    /**
+     * Child: reading notifications, when the family asked this phone to keep a log of them.
+     *
+     * Critical because the feature is entirely dead without it, and because it is the ONE
+     * permission a Device Owner cannot grant itself — a notification listener is enabled by a
+     * human in Settings, full stop. So the family can switch the log on, see nothing arrive, and
+     * have no way to tell "a quiet day" from "this was never allowed" unless it is asked for here.
+     */
+    NOTIFICATION_ACCESS(
+        critical = true,
+        titleRes = R.string.req_notification_access_title,
+        bodyRes = R.string.req_notification_access_body,
+    ),
+
     /** Child: location permission, when the family asked to be able to find the phone. */
     LOCATION_PERMISSION(
         critical = false,
@@ -103,6 +117,10 @@ data class DeviceFacts(
     val webFilterWanted: Boolean,
     /** The DNS filter tunnel is actually established. */
     val webFilterRunning: Boolean,
+    /** The rules ask this device to keep a notification log (see NotificationLog). */
+    val notificationLogWanted: Boolean = false,
+    /** The phone's owner has let Walcott read notifications. */
+    val notificationAccessGranted: Boolean = true,
 )
 
 /**
@@ -138,6 +156,9 @@ object DeviceSetup {
             applicable += DeviceRequirement.USAGE_ACCESS
             if (!facts.deviceOwner) applicable += DeviceRequirement.ACCESSIBILITY
             if (facts.webFilterWanted) applicable += DeviceRequirement.WEB_FILTER
+            // Only where a log was actually asked for. A family that never turned it on must
+            // never be shown a card offering to let this app read their messages.
+            if (facts.notificationLogWanted) applicable += DeviceRequirement.NOTIFICATION_ACCESS
             if (facts.locationWanted) {
                 // A Device Owner force-grants the permission (see LocationPolicy), so asking the
                 // child for it there would be a card nobody can act on and nobody needs to.
@@ -161,6 +182,7 @@ object DeviceSetup {
         DeviceRequirement.USAGE_ACCESS -> facts.usageAccessGranted
         DeviceRequirement.ACCESSIBILITY -> facts.accessibilityEnabled
         DeviceRequirement.WEB_FILTER -> facts.webFilterRunning
+        DeviceRequirement.NOTIFICATION_ACCESS -> facts.notificationAccessGranted
         DeviceRequirement.LOCATION_PERMISSION -> facts.locationPermissionGranted
         DeviceRequirement.LOCATION_SERVICE -> facts.locationServiceEnabled
         DeviceRequirement.BATTERY_OPTIMIZATION -> facts.ignoringBatteryOptimizations

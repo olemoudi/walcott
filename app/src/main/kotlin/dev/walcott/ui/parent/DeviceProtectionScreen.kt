@@ -23,23 +23,57 @@ import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.components.cardPosition
+import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 
-private data class RestrictionUi(val key: String, val titleRes: Int, val descRes: Int)
-
-private val RESTRICTIONS = listOf(
-    RestrictionUi(DeviceRestrictions.KEY_VPN, R.string.restriction_vpn_title, R.string.restriction_vpn_desc),
-    RestrictionUi(DeviceRestrictions.KEY_LOCATION, R.string.restriction_location_title, R.string.restriction_location_desc),
-    RestrictionUi(DeviceRestrictions.KEY_DATETIME, R.string.restriction_datetime_title, R.string.restriction_datetime_desc),
-    RestrictionUi(DeviceRestrictions.KEY_BIOMETRICS, R.string.restriction_biometrics_title, R.string.restriction_biometrics_desc),
-    RestrictionUi(DeviceRestrictions.KEY_INSTALLS, R.string.restriction_installs_title, R.string.restriction_installs_desc),
-    RestrictionUi(DeviceRestrictions.KEY_ADD_USER, R.string.restriction_add_user_title, R.string.restriction_add_user_desc),
-    RestrictionUi(DeviceRestrictions.KEY_APPS_CONTROL, R.string.restriction_apps_control_title, R.string.restriction_apps_control_desc),
-    RestrictionUi(DeviceRestrictions.KEY_UNKNOWN_SOURCES, R.string.restriction_unknown_sources_title, R.string.restriction_unknown_sources_desc),
+private data class RestrictionUi(
+    val key: String,
+    val titleRes: Int,
+    val descRes: Int,
+    val group: DeviceRestrictions.Group,
 )
+
+/**
+ * Every lock this app offers, in the three groups the screen is read as (see
+ * [DeviceRestrictions.Group]).
+ *
+ * Grouped rather than listed since 0.63, when the list went from eight switches to eighteen: at
+ * that length a flat column is scanned once, given up on, and left at whatever it came with.
+ * "Somebody is trying to get around the rules" and "somebody pressed the wrong thing" are two
+ * different worries, and a parent almost always arrives with exactly one of them.
+ */
+private val RESTRICTIONS = listOf(
+    RestrictionUi(DeviceRestrictions.KEY_VPN, R.string.restriction_vpn_title, R.string.restriction_vpn_desc, DeviceRestrictions.Group.TAMPER),
+    RestrictionUi(DeviceRestrictions.KEY_LOCATION, R.string.restriction_location_title, R.string.restriction_location_desc, DeviceRestrictions.Group.TAMPER),
+    RestrictionUi(DeviceRestrictions.KEY_DATETIME, R.string.restriction_datetime_title, R.string.restriction_datetime_desc, DeviceRestrictions.Group.TAMPER),
+    RestrictionUi(DeviceRestrictions.KEY_BIOMETRICS, R.string.restriction_biometrics_title, R.string.restriction_biometrics_desc, DeviceRestrictions.Group.TAMPER),
+    RestrictionUi(DeviceRestrictions.KEY_ADD_USER, R.string.restriction_add_user_title, R.string.restriction_add_user_desc, DeviceRestrictions.Group.TAMPER),
+
+    RestrictionUi(DeviceRestrictions.KEY_AIRPLANE, R.string.restriction_airplane_title, R.string.restriction_airplane_desc, DeviceRestrictions.Group.SETTINGS),
+    RestrictionUi(DeviceRestrictions.KEY_LOCALE, R.string.restriction_locale_title, R.string.restriction_locale_desc, DeviceRestrictions.Group.SETTINGS),
+    RestrictionUi(DeviceRestrictions.KEY_BRIGHTNESS, R.string.restriction_brightness_title, R.string.restriction_brightness_desc, DeviceRestrictions.Group.SETTINGS),
+    RestrictionUi(DeviceRestrictions.KEY_SCREEN_TIMEOUT, R.string.restriction_screen_timeout_title, R.string.restriction_screen_timeout_desc, DeviceRestrictions.Group.SETTINGS),
+    RestrictionUi(DeviceRestrictions.KEY_MOBILE_NETWORKS, R.string.restriction_mobile_networks_title, R.string.restriction_mobile_networks_desc, DeviceRestrictions.Group.SETTINGS),
+    RestrictionUi(DeviceRestrictions.KEY_WIFI, R.string.restriction_wifi_title, R.string.restriction_wifi_desc, DeviceRestrictions.Group.SETTINGS),
+    RestrictionUi(DeviceRestrictions.KEY_NETWORK_RESET, R.string.restriction_network_reset_title, R.string.restriction_network_reset_desc, DeviceRestrictions.Group.SETTINGS),
+    RestrictionUi(DeviceRestrictions.KEY_ACCOUNTS, R.string.restriction_accounts_title, R.string.restriction_accounts_desc, DeviceRestrictions.Group.SETTINGS),
+
+    RestrictionUi(DeviceRestrictions.KEY_INSTALLS, R.string.restriction_installs_title, R.string.restriction_installs_desc, DeviceRestrictions.Group.APPS),
+    RestrictionUi(DeviceRestrictions.KEY_UNKNOWN_SOURCES, R.string.restriction_unknown_sources_title, R.string.restriction_unknown_sources_desc, DeviceRestrictions.Group.APPS),
+    RestrictionUi(DeviceRestrictions.KEY_UNINSTALL, R.string.restriction_uninstall_title, R.string.restriction_uninstall_desc, DeviceRestrictions.Group.APPS),
+    RestrictionUi(DeviceRestrictions.KEY_APPS_CONTROL, R.string.restriction_apps_control_title, R.string.restriction_apps_control_desc, DeviceRestrictions.Group.APPS),
+    RestrictionUi(DeviceRestrictions.KEY_DEFAULT_APPS, R.string.restriction_default_apps_title, R.string.restriction_default_apps_desc, DeviceRestrictions.Group.APPS),
+)
+
+private fun groupTitle(group: DeviceRestrictions.Group): Int = when (group) {
+    DeviceRestrictions.Group.TAMPER -> R.string.restriction_group_tamper
+    DeviceRestrictions.Group.SETTINGS -> R.string.restriction_group_settings
+    DeviceRestrictions.Group.APPS -> R.string.restriction_group_apps
+}
 
 /**
  * Toggles that stop the child from changing critical device settings (Device Owner).
@@ -80,17 +114,23 @@ fun DeviceProtectionScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item {
-                CardGroup {
-                    RESTRICTIONS.forEachIndexed { index, restriction ->
-                        RestrictionRow(
-                            title = stringResource(restriction.titleRes),
-                            description = stringResource(restriction.descRes),
-                            checked = restriction.key in enabledKeys,
-                            enabled = editable,
-                            position = cardPosition(index, RESTRICTIONS.size),
-                            onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on, childId) },
-                        )
+            for (group in DeviceRestrictions.Group.entries) {
+                val rows = RESTRICTIONS.filter { it.group == group }
+                item(key = "group-${group.name}") {
+                    SectionHeader(stringResource(groupTitle(group)), accent = SectionAccent.DEVICE)
+                }
+                item(key = "rows-${group.name}") {
+                    CardGroup {
+                        rows.forEachIndexed { index, restriction ->
+                            RestrictionRow(
+                                title = stringResource(restriction.titleRes),
+                                description = stringResource(restriction.descRes),
+                                checked = restriction.key in enabledKeys,
+                                enabled = editable,
+                                position = cardPosition(index, rows.size),
+                                onToggle = { on -> viewModel.setDeviceRestriction(restriction.key, on, childId) },
+                            )
+                        }
                     }
                 }
             }

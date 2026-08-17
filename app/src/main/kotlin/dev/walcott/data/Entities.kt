@@ -60,3 +60,26 @@ data class LocationPointEntity(
     val accuracyM: Float,
     @ColumnInfo(defaultValue = "0") val mock: Boolean = false,
 )
+
+/**
+ * One notification this device received, kept only on the device that received it (see
+ * [dev.walcott.notifications.NotificationLog]).
+ *
+ * Recorded solely while the rules ask for it, and the rows are the most sensitive thing this app
+ * stores — titles and text, so "María: llego en 10 minutos" and "Su cargo de 42,10 €". Two
+ * consequences, both enforced in the store rather than trusted to callers: a short retention, and
+ * a hard row cap. A log that grows for years is a breach waiting for a lost phone.
+ *
+ * [key] is the platform's own notification key, so an app that updates a notification in place
+ * (a download, a call in progress) occupies one row rather than fifty.
+ */
+@Entity(tableName = "notification_log")
+data class NotificationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val postedAtMs: Long,
+    val packageName: String,
+    val title: String,
+    val text: String,
+    /** The platform key, for de-duplicating an updated notification. "" when it had none. */
+    @ColumnInfo(defaultValue = "") val key: String = "",
+)

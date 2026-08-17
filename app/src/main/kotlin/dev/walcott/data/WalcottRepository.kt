@@ -39,6 +39,13 @@ class WalcottRepository(
 
     val settingsFlow: Flow<PolicySettings> = settingsStore.settings
 
+    /**
+     * The notification log's table, for the listener that writes it and the publisher that answers
+     * a request for it (see [dev.walcott.notifications.NotificationLog]). Exposed rather than
+     * wrapped: everything worth saying about those rows is said in one place, and it is not here.
+     */
+    val notifications: NotificationDao get() = db.notifications()
+
     val familyConfigFlow: Flow<FamilyConfig> =
         settingsFlow.map { it.toFamilyConfig(essentials) }
 

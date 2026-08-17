@@ -133,6 +133,51 @@ class ChildDevice(
     fun heartbeat() = seed("--es", "heartbeat", "now")
 
     /**
+     * Wakes the screen and keeps it awake.
+     *
+     * Not cosmetic, and not optional: the enforcement loop deliberately PARKS while the screen is
+     * off (it suspends nothing new and burns no wakeups — see EnforcementService), so an emulator
+     * that has dozed off during a long run evaluates no rules at all. Every scenario about a
+     * schedule or a budget then waits out its timeout for a suspension that was never going to be
+     * attempted, and reads exactly like a product that stopped enforcing.
+     */
+    fun keepAwake(timeoutMs: Long = 15_000) {
+        // A long screen timeout AND `stay on while plugged in`, neither of which is enough on its
+        // own: `svc power stayon` reports `mStayOn=false` on an emulator (nothing is plugged into a
+        // virtual phone), and even a 24-hour timeout does not stop this AVD dozing off within a
+        // minute. Hence [nudgeAwake], called from inside every wait rather than once at the start.
+        run("shell", "settings", "put", "system", "screen_off_timeout", "86400000")
+        run("shell", "svc", "power", "stayon", "true")
+        nudgeAwake()
+        // Waking is asynchronous, so a probe on the next line can still read Asleep.
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline && !screenAwake()) {
+            Thread.sleep(500)
+            nudgeAwake()
+        }
+    }
+
+    /**
+     * One wake keypress: cheap, idempotent, and safe to repeat (unlike POWER, which toggles).
+     *
+     * Called from the scenario wait loops. The enforcement loop parks while the screen is off, so a
+     * scenario that waits a minute on a dozing emulator is waiting on a phone that is not deciding
+     * anything — and every assertion about a suspension then fails for a reason that has nothing to
+     * do with the product.
+     */
+    fun nudgeAwake() {
+        run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+    }
+
+    fun screenAwake(): Boolean = run("shell", "dumpsys", "power").contains("mWakefulness=Awake")
+
+    /** Leaves the ringer where a pocket would (see AudioGuard). */
+    fun lowerRinger() = seed("--es", "lower_ringer", "now")
+
+    /** The watchdog's ringer pass on demand — the one that catches a phone silenced offline. */
+    fun assertRinger() = seed("--es", "assert_ringer", "now")
+
+    /**
      * Publishes this device's snapshot now. The heartbeat publish is throttled by design, so
      * after changing something on the device this is the only way to make it say so without
      * waiting the throttle out.
@@ -181,6 +226,50 @@ class ChildDevice(
         run("shell", "dumpsys", "package", pkg).contains("suspended=true")
 
     fun userRestrictions(): String = run("shell", "dumpsys", "user")
+
+    /** Whether the OS has this user restriction in force right now (see DeviceRestrictions). */
+    fun hasRestriction(key: String): Boolean =
+        userRestrictions().substringAfter("Device policy restrictions:", "")
+            .substringBefore("Effective restrictions:")
+            .contains(key)
+
+    // --- The notification log (see NotificationLog) ---
+
+    /**
+     * Grants notification access from the shell, the way a person grants it in Settings.
+     *
+     * There is no Device Owner path to this — a notification listener is enabled by a human, full
+     * stop — so a scenario that could not do this from adb could only ever test the refusal.
+     */
+    fun allowNotificationListener() {
+        run("shell", "cmd", "notification", "allow_listener", NOTIFICATION_LISTENER)
+    }
+
+    fun disallowNotificationListener() {
+        run("shell", "cmd", "notification", "disallow_listener", NOTIFICATION_LISTENER)
+    }
+
+    /**
+     * The OS's own answer to whether the listener is enabled.
+     *
+     * Needed because `allow_listener`/`disallow_listener` return as soon as the command is
+     * dispatched, not when the setting has been written — so a scenario that acts on the next line
+     * can read the state it was trying to change, and then reports the product as wrong.
+     */
+    fun notificationListenerAllowed(): Boolean =
+        run("shell", "settings", "get", "secure", "enabled_notification_listeners")
+            .contains(NOTIFICATION_LISTENER)
+
+    /**
+     * Posts a notification from the shell package, so the listener has something real to record.
+     *
+     * It arrives attributed to `com.android.shell` rather than to a messaging app, which is
+     * exactly right for what is under test: the log stores whatever posted it, and the scenario
+     * asserts on the round trip, not on who sent it.
+     */
+    fun postNotification(tag: String, title: String, text: String) {
+        run("shell", "cmd", "notification", "post", "-t", shellQuote(title), shellQuote(tag), shellQuote(text))
+    }
 
     fun installBlocked(): Boolean =
         userRestrictions().substringAfter("Device policy restrictions:", "")
@@ -265,6 +354,10 @@ class ChildDevice(
     companion object {
         const val PACKAGE = "dev.walcott"
         private const val ADB_TIMEOUT_SEC = 120L
+
+        /** Flattened component of the notification listener declared in the app's manifest. */
+        private const val NOTIFICATION_LISTENER =
+            "$PACKAGE/$PACKAGE.notifications.WalcottNotificationListener"
 
         /** The SDK's adb if it isn't on PATH, which it usually isn't on a dev box. */
         private fun defaultAdb(): String {

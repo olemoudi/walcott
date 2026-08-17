@@ -32,7 +32,6 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
@@ -586,9 +585,9 @@ fun FamiliesScreen(
     if (showAddChild) {
         AddChildDialog(
             onDismiss = { showAddChild = false },
-            onAdd = { name ->
+            onAdd = { name, kind ->
                 showAddChild = false
-                onOpenChild(viewModel.addChild(name))
+                onOpenChild(viewModel.addChild(name, kind))
             },
         )
     }
@@ -629,7 +628,9 @@ private fun ChildRow(
     WalcottCard(onClick = onClick, position = position) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Outlined.Face,
+                // Two kinds of member, told apart before a word is read: a phone being limited
+                // and a phone being looked after belong on the same list and are not the same job.
+                memberIcon(entry.kind),
                 contentDescription = null,
                 // The colour of its own section, like every other row (see SectionHeader) —
                 // unless the child has gone quiet, which outranks knowing where you are.
@@ -1078,28 +1079,45 @@ private fun PendingOpRow(
     }
 }
 
+/**
+ * The name and the one thing that has to be decided before the phone exists: whose it is.
+ *
+ * Asked here rather than offered as a setting afterwards, because the kind is what picks this
+ * member's starting defaults (see [dev.walcott.data.MemberKind]), and defaults only mean anything
+ * at the moment something is created.
+ */
 @Composable
-private fun AddChildDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+private fun AddChildDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf(dev.walcott.data.MemberKind.CHILD) }
+    var explaining by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.add_child)) },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text(stringResource(R.string.child_name_label)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.md)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.child_name_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MemberKindChooser(
+                    kind = kind,
+                    onSelect = { kind = it },
+                    onExplain = { explaining = true },
+                )
+            }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = { onAdd(name.trim()) }) {
+            TextButton(enabled = name.isNotBlank(), onClick = { onAdd(name.trim(), kind) }) {
                 Text(stringResource(R.string.action_add))
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
+    if (explaining) MemberKindSheet(onDismiss = { explaining = false })
 }
 
 /**

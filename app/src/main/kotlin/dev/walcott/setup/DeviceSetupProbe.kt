@@ -44,6 +44,9 @@ object DeviceSetupProbe {
             // settledDown, not tunnelUp: a process that has just started always has the tunnel
             // down for a few seconds while the service brings it up (see VpnStatus.GRACE_MS).
             webFilterRunning = !dev.walcott.net.VpnStatus.settledDown(),
+            notificationLogWanted = settings?.notificationLogEnabled == true,
+            notificationAccessGranted =
+                dev.walcott.notifications.NotificationLog.accessGranted(context),
         )
     }
 
@@ -78,6 +81,9 @@ object DeviceSetupProbe {
                 Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                     .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
             DeviceRequirement.USAGE_ACCESS -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            // The listener list. There is no per-app deep link for this one on any version, so
+            // this is as close as the platform lets anybody get.
+            DeviceRequirement.NOTIFICATION_ACCESS -> dev.walcott.notifications.NotificationLog.settingsIntent()
             DeviceRequirement.ACCESSIBILITY -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             DeviceRequirement.LOCATION_SERVICE -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
             DeviceRequirement.BATTERY_OPTIMIZATION ->
