@@ -405,23 +405,39 @@
 
     <!-- Built-in blocklists -->
     <string name="blocklist_section_title">Ready-made lists</string>
-    <string name="blocklist_section_hint">Kept up to date with the app. Turn one on and its domains are blocked on every child\'s phone.</string>
+    <string name="blocklist_section_hint">Public lists kept up to date by people who do this full time. Turn one on and its domains are blocked on every child\'s phone.</string>
     <string name="blocklist_adult_title">Adult content</string>
     <string name="blocklist_adult_desc">Porn, cam sites and the boards built around them.</string>
     <string name="blocklist_gambling_title">Betting and gambling</string>
     <string name="blocklist_gambling_desc">Sports betting, casinos and skin gambling.</string>
+    <string name="blocklist_social_title">Social networks</string>
+    <string name="blocklist_social_desc">Instagram, TikTok, Snapchat, Reddit, Discord and the rest — in the browser as well as in the app. WhatsApp is not on this list.</string>
+    <string name="blocklist_video_title">Video and streaming</string>
+    <string name="blocklist_video_desc">YouTube, Twitch, Netflix, Prime Video, Disney+ and the Spanish catch-up services.</string>
+    <string name="blocklist_piracy_title">Piracy and torrents</string>
+    <string name="blocklist_piracy_desc">Illegal streaming, download and torrent sites.</string>
+    <string name="blocklist_scam_title">Scams and phishing</string>
+    <string name="blocklist_scam_desc">Fake shops, prize scams and the pages built to steal an account.</string>
+    <string name="blocklist_bypass_title">Getting around the filter</string>
+    <string name="blocklist_bypass_desc">VPNs, web proxies, Tor and encrypted DNS — what a phone uses to stop being filtered at all.</string>
     <string name="blocklist_trackers_title">Trackers and ads</string>
     <string name="blocklist_trackers_desc">Advertising and analytics servers that profile whoever is holding the phone.</string>
-    <string name="blocklist_trackers_warning">Nothing an app needs to work is on this list, but if an app starts misbehaving, this is the first one to turn off.</string>
+    <string name="blocklist_may_break_warning">If an app starts misbehaving, this is the first list to turn off.</string>
     <plurals name="blocklist_domain_count">
-        <item quantity="one">%d domain</item>
-        <item quantity="other">%d domains</item>
+        <item quantity="one">%d domain · list included in the app</item>
+        <item quantity="other">%d domains · list included in the app</item>
     </plurals>
+    <string name="blocklist_domain_count_public">About %1$s domains · public list, refreshed on the phone</string>
+    <string name="blocklist_refresh_title">How often to refresh the lists</string>
+    <string name="blocklist_refresh_hint">The lists are rebuilt as often as hourly. Refreshing more often keeps up with what appeared yesterday; refreshing less often spends less of the child\'s data.</string>
+    <string name="blocklist_refresh_daily">Daily</string>
+    <string name="blocklist_refresh_three_days">Every 3 days</string>
+    <string name="blocklist_refresh_weekly">Weekly</string>
     <string name="blocklist_family_scope_note">Lists are switched on for the whole family. Domains below can be this child\'s own.</string>
     <string name="blocklist_quick_setup">Set up the filter in a minute</string>
     <string name="setup_step_filter">Turn on the web filter</string>
     <string name="preset_filter_title">Quick filter setup</string>
-    <string name="step_blocklists_teach">Pick what this family blocks. The first two are the ones nobody argues about and cannot get in an app\'s way; the third is about privacy rather than content.</string>
+    <string name="step_blocklists_teach">Pick what this family blocks. Adult content and gambling are the ones nobody argues about and cannot get in an app\'s way — a good place to stop if you are not sure. The rest are yours to choose.</string>
     <string name="step_blocklists_own_domains">You can add domains of your own afterwards, in Web filter.</string>
     <plurals name="summary_blocklists">
         <item quantity="one">%d list</item>
@@ -774,6 +790,12 @@
     <!-- What changed, shown once after the app updates itself -->
     <string name="whats_new_title">What\'s new</string>
     <string name="whats_new_dismiss">Got it</string>
+    <string-array name="whats_new_0_62_0">
+        <item>The web filter now offers eight ready-made lists instead of three, and the big ones are the real public lists rather than a handful of domains typed in here: adult content is oisd\'s 494 000-domain list, rebuilt hourly, and there are new lists for social networks, video and streaming, piracy and torrents, scams and phishing, and one for VPNs, proxies and encrypted DNS — the ways a phone stops being filtered at all.</item>
+        <item>Each child\'s phone downloads those lists itself and keeps them current, daily, every three days or weekly — your choice, in Web filter. It costs nothing after the first time: the phone asks whether the list changed and is usually told no. The lists in the app are still enforced from the second you switch one on, so a phone with no signal yet is not a phone with no filter.</item>
+        <item>And the child\'s page reports what that phone is really enforcing — how many domains it has downloaded, and by name any list it has not managed to get. A family switching "Adult content" on was previously told nothing about whether it had arrived.</item>
+        <item>WhatsApp can never be blocked by one of these lists, whatever the list says. One of the public social-media lists does include it, and it is how you reach your own child.</item>
+    </string-array>
     <string-array name="whats_new_0_61_0">
         <item>Each child\'s page now says where they stand in the rules, including everything that is NOT running: whether the rules already count today as the weekend (by your own Friday and Sunday edges), whether today is one of your special days, and that it is not bedtime — with the hour it starts.</item>
         <item>The same for screen-free times: none running, and either the next one today with both its hours, or that there are none left. Most of a child\'s day is the hours when nothing is stopping them, and that was the one thing this app never described.</item>
@@ -1095,7 +1117,7 @@
     <string name="remote_result_not_installed">that app isn\'t installed there</string>
     <string name="remote_result_allowed">the app may stay</string>
     <string name="update_wifi_only_title">Update on Wi-Fi only</string>
-    <string name="update_wifi_only_desc">Child devices download updates only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
+    <string name="update_wifi_only_desc">Child devices download updates and blocklists only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
     <string name="update_wifi_following_family">Following the family setting: %1$s</string>
     <!-- Per-app settings (Apps and limits) -->
     <string name="app_own_limit">This app\'s own daily limit</string>
@@ -1205,6 +1227,9 @@
     <string name="diag_gps">GPS</string>
     <string name="diag_network_location">Wi-Fi/network location</string>
     <string name="diag_web_filter">Web filtering</string>
+    <string name="diag_filter_lists">Blocklists on this phone</string>
+    <string name="diag_filter_lists_value">%1$s domains downloaded</string>
+    <string name="diag_filter_lists_pending">Not downloaded yet: %1$s</string>
     <string name="diag_battery">Battery</string>
     <string name="diag_battery_value">%1$d%%</string>
     <string name="diag_battery_charging">%1$d%% (charging)</string>

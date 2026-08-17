@@ -536,6 +536,17 @@ data class PolicySettings(
      * decision for the household.
      */
     val enabledBlocklists: Set<String> = emptySet(),
+    /**
+     * How often a child re-downloads the public lists behind [enabledBlocklists], in hours.
+     *
+     * A family decision like the lists themselves, and one with a real trade-off: the sources are
+     * rebuilt as often as hourly, so a day-old copy is a day behind whatever appeared yesterday —
+     * against which every refresh is a few MB of the child's data and a wake-up. Daily is the
+     * default; weekly is the right answer on a phone with a small data plan.
+     *
+     * Every install predating this field decodes it as 24, which is what they already did.
+     */
+    val blocklistRefreshHours: Int = dev.walcott.rules.Blocklists.DEFAULT_REFRESH_HOURS,
     /** Advanced per-app domain rules. */
     val domainAppRules: List<DomainAppRuleDto> = emptyList(),
     val pinHash: String? = null,
@@ -557,7 +568,14 @@ data class PolicySettings(
     val locationHistoryEnabled: Boolean = false,
     /** True once recommended anti-tamper defaults were seeded (so we only seed once). */
     val hardeningSeeded: Boolean = false,
-    /** Restrict the child's self-update to unmetered (Wi-Fi) connections. */
+    /**
+     * Restrict the child's background downloads to unmetered (Wi-Fi) connections: its own
+     * self-update, and the public blocklists behind [enabledBlocklists].
+     *
+     * Kept under its original name, which said "update" only: it is the same question either way
+     * ("may we spend the child's data on this?"), and a second setting asking it again would be a
+     * worse answer than one widened one. The user-facing copy says both.
+     */
     val updateWifiOnly: Boolean = false,
     /**
      * Notify the parent when a child installs a new app. Most useful when installs aren't

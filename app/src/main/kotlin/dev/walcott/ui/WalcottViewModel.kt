@@ -582,6 +582,14 @@ class WalcottViewModel(
         }
     }
 
+    /**
+     * How often the children re-download the public lists behind those switches. One household
+     * decision like the lists themselves, and it reaches them through the same policy push.
+     */
+    fun setBlocklistRefreshHours(hours: Int) {
+        viewModelScope.launch { repository.updateSettings { it.copy(blocklistRefreshHours = hours) } }
+    }
+
     fun removeBlockedDomain(domain: String, childId: String? = null) =
         if (childId == null) {
             viewModelScope.launch { repository.updateSettings { it.copy(blockedDomains = it.blockedDomains - domain) } }

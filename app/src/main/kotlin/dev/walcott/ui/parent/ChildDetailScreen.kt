@@ -1915,6 +1915,28 @@ private fun LiveHealthCard(
                     value = stringResource(if (snapshot.webFilterOn) R.string.summary_on else R.string.summary_off),
                     ok = snapshot.webFilterOn,
                 )
+                // What the filter is actually made of on this phone. Only worth a row once the
+                // family uses lists at all: the count is 0 both for a child that downloaded
+                // nothing and for one that was never asked to.
+                if (snapshot.filterListDomains > 0 || snapshot.filterListsPending.isNotEmpty()) {
+                    DiagRow(
+                        label = stringResource(R.string.diag_filter_lists),
+                        value = if (snapshot.filterListsPending.isEmpty()) {
+                            stringResource(
+                                R.string.diag_filter_lists_value,
+                                java.text.NumberFormat.getIntegerInstance().format(snapshot.filterListDomains),
+                            )
+                        } else {
+                            // Named, not counted: "1 pending" leaves the parent guessing which of
+                            // their decisions is not in force on this phone.
+                            val names = snapshot.filterListsPending
+                                .map { stringResource(blocklistTitle(it)) }
+                                .joinToString()
+                            stringResource(R.string.diag_filter_lists_pending, names)
+                        },
+                        ok = snapshot.filterListsPending.isEmpty(),
+                    )
+                }
             }
             if (snapshot.batteryPercent in 0..100) {
                 DiagRow(

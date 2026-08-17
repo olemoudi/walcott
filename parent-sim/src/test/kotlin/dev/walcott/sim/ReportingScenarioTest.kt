@@ -128,5 +128,14 @@ class ReportingScenarioTest : DeviceScenario() {
         // would raise an alarm about a feature the family never turned on.
         val reported = childReports { it.enforcement.isNotBlank() }
         assertEquals(false, reported.webFilterExpected, "no rules ask for a filter here")
+        // Same for what the filter is MADE of: a family using no blocklists must not have a
+        // device telling them a list is missing, or that it downloaded nothing — there was
+        // nothing to download, and the parent's screen would invent a problem out of it.
+        assertEquals(0, reported.filterListDomains, "nothing to download, nothing to report")
+        assertEquals(
+            emptyList<String>(),
+            reported.filterListsPending,
+            "a list nobody switched on cannot be pending",
+        )
     }
 }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -68,10 +69,28 @@ class WalcottVpnService : VpnService() {
         cm = getSystemService(ConnectivityManager::class.java)
         val repo = (application as WalcottApplication).repository
         scope.launch {
-            repo.settingsFlow.collect { settings ->
-                blocked = DomainMatcher.of(settings.blockedDomainsResolved())
-                appRules = settings.toDomainAppRules()
+            // Two inputs, one matcher: the rules (typed domains + the bundled lists) and the
+            // public lists this device has downloaded (see BlocklistStore). Recompiled when
+            // either moves — a list that finishes downloading has to reach the filter without
+            // waiting for the parent to touch a rule. Off the main thread: reading the cache is
+            // disk IO, and it can be a couple of megabytes of it.
+            val store = BlocklistStore.get(this@WalcottVpnService)
+            kotlinx.coroutines.flow.combine(repo.settingsFlow, store.state) { settings, state ->
+                settings to state
             }
+                .collectLatest { (settings, state) ->
+                    // Streamed into the builder rather than collected into a set first: the
+                    // downloaded half can be a million domains, and this way none of them is ever
+                    // a live String beyond the line it was read on (see DomainMatcher.Builder).
+                    val builder = DomainMatcher.builder(
+                        settings.blockedDomainsResolved(),
+                        expectedHashed = state.domainsFor(settings.enabledBlocklists),
+                    )
+                    store.readInto(settings.enabledBlocklists) { builder.addNormalized(it) }
+                    blocked = builder.build()
+                    appRules = settings.toDomainAppRules()
+                    DebugLog.i(TAG, "filter compiled: ${blocked.size} domains")
+                }
         }
         // Seed from the current network, then follow it. registerDefaultNetworkCallback reports
         // the network the device actually uses, which is the one whose resolvers we want.

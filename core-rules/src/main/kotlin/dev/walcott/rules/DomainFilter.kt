@@ -26,7 +26,7 @@ object DomainFilter {
 
     /**
      * The hot-path form: the blocklist arrives already compiled ([DomainMatcher]), because it is
-     * now hundreds of domains long (see [Blocklists]) and this runs per DNS query. The per-app
+     * now up to a million domains long (see [Blocklists]) and this runs per DNS query. The per-app
      * rules stay a plain list — they are written one at a time by a parent, and stay short.
      */
     fun isBlocked(

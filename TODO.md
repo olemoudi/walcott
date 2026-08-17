@@ -36,7 +36,39 @@ the v0.21.0 mechanism. New children never use them, but a v0.21.0 ask can still 
 the update, and one was — it rendered correctly on the emulator during this verification. Delete
 only once no 0.21.0 child remains.
 
+## Known e2e failures that are NOT yours (checked, 2026-08-17)
+
+Four `:parent-sim:e2eTest` scenarios fail on the `walcott-spike` AVD, and they fail **identically on
+v0.61.0-beta** — the release already published — so a session that changes something unrelated and
+finds them red has not broken anything. Verified by installing the previous build's APK on the same
+emulator and running the same class: same three failures, same messages.
+
+- `RuleEventScenarioTest` (all 3): time out at `settleAllowedWithHeadroom`, waiting for the child to
+  report `appliedPolicyVersion >= parent.currentVersion()` (45–60 s). The child publishes — the
+  seed log shows it — but never that field.
+- `GrantScenarioTest > a replayed snapshot does not grant the bonus a second time`: fails with
+  `expected: <8100> but was: <7500>`, i.e. extra time went DOWN by exactly the grant. The invariant
+  it guards (never grant twice) would fail UPWARDS; reading 600 s less is a stale child snapshot
+  being read after `relay.replay`, not a double grant.
+
+Worth fixing, but as its own piece of work, and with the understanding that neither is a product bug
+anyone in a family can see.
+
 ## Emulator notes that cost time
+
+- **`am force-stop` does not kill the app on the Device Owner emulator.** The system brings it
+  straight back (foreground service + device owner), so anything you changed on disk expecting the
+  next process to re-read it is instead ignored by the process that never died — `pidof dev.walcott`
+  still answers. Verifying a cold start (or a hand-edited `files/blocklists/state.json`) needs
+  `adb reboot`, not a force-stop.
+- **`raw.githubusercontent.com` answers `429 Too Many Requests` after a dozen multi-MB downloads,
+  for hours.** It is the host behind five of the eight blocklists, so a testing session that pulls
+  them repeatedly locks itself out of exactly what it was testing. The GitHub *API*
+  (`/repos/.../contents/<dir>`) is a different bucket and still answers with file sizes, which is
+  enough to check a path exists and to estimate an entry count (~17.9 bytes per domain). The 429
+  body is 199 bytes of prose, which is what `BlocklistStore.looksWrong` exists to refuse.
+- There is no `nslookup` on the API 35 image. `ping -c1 <host>` answers `unknown host` for an
+  NXDOMAIN, which is what the filter returns, and shell traffic does go through the tun.
 
 - `walcott-spike` loses its **active device-admin** record across reinstalls: the Device Owner
   package check still passes and `setPackagesSuspended` still works, but anything validating the

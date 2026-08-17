@@ -114,6 +114,18 @@ fun WebFilterScreen(
                     editable = childId == null,
                 )
             }
+            // How often the children re-download the public lists. Only shown once a list that
+            // HAS a public source is on: on a family using only the bundled lists there is
+            // nothing to refresh, and the row would be a question about nothing.
+            if (childId == null && dev.walcott.rules.Blocklists.withSources(settings.enabledBlocklists).isNotEmpty()) {
+                item {
+                    BlocklistRefreshCard(
+                        hours = settings.blocklistRefreshHours,
+                        onPick = { viewModel.setBlocklistRefreshHours(it) },
+                    )
+                }
+            }
+
             if (childId != null) {
                 item {
                     Text(
@@ -237,6 +249,45 @@ fun WebFilterScreen(
             }
         }
     }
+}
+
+/**
+ * How often each child re-downloads the public lists.
+ *
+ * Worded as a trade-off rather than as a setting, because that is what it is: the sources are
+ * rebuilt hourly, and the cost of keeping up with them is the child's mobile data.
+ */
+@Composable
+private fun BlocklistRefreshCard(hours: Int, onPick: (Int) -> Unit) {
+    val spacing = Tokens.spacing
+    WalcottCard {
+        Column(
+            Modifier.padding(spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(stringResource(R.string.blocklist_refresh_title), style = MaterialTheme.typography.titleSmall)
+            Text(
+                stringResource(R.string.blocklist_refresh_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                dev.walcott.rules.Blocklists.REFRESH_HOUR_CHOICES.forEach { choice ->
+                    dev.walcott.ui.components.ChoiceChip(
+                        selected = hours == choice,
+                        onClick = { onPick(choice) },
+                        label = stringResource(refreshLabel(choice)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun refreshLabel(hours: Int): Int = when (hours) {
+    24 -> R.string.blocklist_refresh_daily
+    72 -> R.string.blocklist_refresh_three_days
+    else -> R.string.blocklist_refresh_weekly
 }
 
 @Composable

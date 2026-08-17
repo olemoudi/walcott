@@ -591,6 +591,21 @@ data class ChildSnapshot(
     val webFilterExpected: Boolean = false,
     val webFilterOn: Boolean = true,
     /**
+     * Domains this device has DOWNLOADED for the family's public blocklists, and the lists it has
+     * not managed to download at all.
+     *
+     * The lists travel as ids and are expanded locally, so until now the parent could only see
+     * what they had switched on — never whether the child actually got it. That gap is the one
+     * that matters: a family switching "Adult content" on believes they are filtering half a
+     * million domains, and a phone that has never completed the download is filtering the fifty
+     * in its APK. Both numbers are the child's own, so they are reported rather than assumed.
+     *
+     * 0 and empty on a legacy child, and on a family that uses no lists — neither of which is a
+     * problem to report, because the parent's screen only asks the question when the rules do.
+     */
+    val filterListDomains: Int = 0,
+    val filterListsPending: List<String> = emptyList(),
+    /**
      * Uncaught exceptions this install has died of, and when the last one happened.
      *
      * Cumulative, like [pinWrongTotal], on purpose: the parent alerts on GROWTH between two

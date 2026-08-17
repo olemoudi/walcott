@@ -405,23 +405,39 @@
 
     <!-- Listas incluidas -->
     <string name="blocklist_section_title">Listas ya hechas</string>
-    <string name="blocklist_section_hint">Se actualizan con la app. Enciende una y sus dominios quedan bloqueados en el móvil de todos los hijos.</string>
+    <string name="blocklist_section_hint">Listas públicas que mantiene gente dedicada a esto. Enciende una y sus dominios quedan bloqueados en el móvil de todos los hijos.</string>
     <string name="blocklist_adult_title">Contenido adulto</string>
     <string name="blocklist_adult_desc">Porno, webcams y los foros montados alrededor.</string>
     <string name="blocklist_gambling_title">Apuestas y juego</string>
     <string name="blocklist_gambling_desc">Casas de apuestas, casinos y juego con skins.</string>
+    <string name="blocklist_social_title">Redes sociales</string>
+    <string name="blocklist_social_desc">Instagram, TikTok, Snapchat, Reddit, Discord y compañía — en el navegador además de en la app. WhatsApp no está en esta lista.</string>
+    <string name="blocklist_video_title">Vídeo y streaming</string>
+    <string name="blocklist_video_desc">YouTube, Twitch, Netflix, Prime Video, Disney+ y las plataformas de televisión españolas.</string>
+    <string name="blocklist_piracy_title">Piratería y torrents</string>
+    <string name="blocklist_piracy_desc">Webs de streaming, descarga directa y torrents ilegales.</string>
+    <string name="blocklist_scam_title">Estafas y phishing</string>
+    <string name="blocklist_scam_desc">Tiendas falsas, timos de premios y páginas hechas para robar una cuenta.</string>
+    <string name="blocklist_bypass_title">Saltarse el filtro</string>
+    <string name="blocklist_bypass_desc">VPN, proxies web, Tor y DNS cifrado — lo que usa un móvil para dejar de estar filtrado.</string>
     <string name="blocklist_trackers_title">Rastreadores y publicidad</string>
     <string name="blocklist_trackers_desc">Servidores de publicidad y analítica que perfilan a quien tiene el móvil en la mano.</string>
-    <string name="blocklist_trackers_warning">En esta lista no hay nada que una app necesite para funcionar, pero si una app empieza a fallar, esta es la primera que hay que apagar.</string>
+    <string name="blocklist_may_break_warning">Si una app empieza a fallar, esta es la primera lista que hay que apagar.</string>
     <plurals name="blocklist_domain_count">
-        <item quantity="one">%d dominio</item>
-        <item quantity="other">%d dominios</item>
+        <item quantity="one">%d dominio · lista incluida en la app</item>
+        <item quantity="other">%d dominios · lista incluida en la app</item>
     </plurals>
+    <string name="blocklist_domain_count_public">Unos %1$s dominios · lista pública, se actualiza en el móvil</string>
+    <string name="blocklist_refresh_title">Cada cuánto actualizar las listas</string>
+    <string name="blocklist_refresh_hint">Las listas se rehacen incluso cada hora. Actualizar más a menudo va al día de lo que apareció ayer; actualizar menos gasta menos datos del móvil del hijo.</string>
+    <string name="blocklist_refresh_daily">A diario</string>
+    <string name="blocklist_refresh_three_days">Cada 3 días</string>
+    <string name="blocklist_refresh_weekly">Semanal</string>
     <string name="blocklist_family_scope_note">Las listas se encienden para toda la familia. Los dominios de abajo sí pueden ser propios de este hijo.</string>
     <string name="blocklist_quick_setup">Configurar el filtro en un minuto</string>
     <string name="setup_step_filter">Activar el filtro web</string>
     <string name="preset_filter_title">Configuración rápida del filtro</string>
-    <string name="step_blocklists_teach">Elige qué bloquea esta familia. Las dos primeras son las que nadie discute y no pueden estorbar a ninguna app; la tercera va de privacidad, no de contenido.</string>
+    <string name="step_blocklists_teach">Elige qué bloquea esta familia. Contenido adulto y apuestas son las que nadie discute y no pueden estorbar a ninguna app — buen sitio para pararse si tienes dudas. Las demás las eliges tú.</string>
     <string name="step_blocklists_own_domains">Después puedes añadir dominios tuyos en Filtro web.</string>
     <plurals name="summary_blocklists">
         <item quantity="one">%d lista</item>
@@ -774,6 +790,12 @@
     <!-- Qué ha cambiado, se muestra una vez tras actualizarse la app -->
     <string name="whats_new_title">Novedades</string>
     <string name="whats_new_dismiss">Entendido</string>
+    <string-array name="whats_new_0_62_0">
+        <item>El filtro web ofrece ahora ocho listas ya hechas en vez de tres, y las grandes son las listas públicas de verdad, no un puñado de dominios escritos aquí: contenido adulto es la lista de oisd, 494.000 dominios rehecha cada hora, y hay listas nuevas de redes sociales, vídeo y streaming, piratería y torrents, estafas y phishing, y una de VPN, proxies y DNS cifrado — las formas en que un móvil deja de estar filtrado.</item>
+        <item>El móvil de cada hijo se descarga esas listas y las mantiene al día: a diario, cada tres días o semanal, como quieras, en Filtro web. Después de la primera vez no cuesta nada: el móvil pregunta si la lista ha cambiado y normalmente le dicen que no. Las listas incluidas en la app siguen aplicándose desde el segundo en que enciendes una, así que un móvil sin cobertura todavía no es un móvil sin filtro.</item>
+        <item>Y la ficha del hijo cuenta lo que ese móvil está aplicando de verdad: cuántos dominios lleva descargados, y con su nombre cualquier lista que no haya conseguido bajar. Una familia que encendía «Contenido adulto» antes no se enteraba de si había llegado.</item>
+        <item>WhatsApp no lo puede bloquear ninguna de estas listas, diga lo que diga la lista. Una de las listas públicas de redes sociales sí lo incluye, y es por donde hablas con tu propio hijo.</item>
+    </string-array>
     <string-array name="whats_new_0_61_0">
         <item>La ficha de cada hijo dice ahora en qué punto de las reglas está, incluido todo lo que NO está activo: si las reglas ya cuentan hoy como finde (según tus propios bordes del viernes y del domingo), si hoy es uno de tus días especiales, y que no es hora de dormir — con la hora a la que empieza.</item>
         <item>Igual con los horarios sin pantalla: ninguno corriendo, y o bien el siguiente de hoy con sus dos horas, o que ya no queda ninguno. La mayor parte del día de un hijo son las horas en las que nada le está parando, y eso era justo lo que esta app no contaba en ningún sitio.</item>
@@ -1095,7 +1117,7 @@
     <string name="remote_result_not_installed">esa app no está instalada allí</string>
     <string name="remote_result_allowed">la app puede quedarse</string>
     <string name="update_wifi_only_title">Actualizar solo con Wi-Fi</string>
-    <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
+    <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones y listas de bloqueo solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
     <string name="update_wifi_following_family">Sigue el ajuste de la familia: %1$s</string>
     <!-- Ajustes por app (Apps y límites) -->
     <string name="app_own_limit">Límite diario propio de esta app</string>
@@ -1205,6 +1227,9 @@
     <string name="diag_gps">GPS</string>
     <string name="diag_network_location">Ubicación por Wi-Fi/red</string>
     <string name="diag_web_filter">Filtro web</string>
+    <string name="diag_filter_lists">Listas en este móvil</string>
+    <string name="diag_filter_lists_value">%1$s dominios descargados</string>
+    <string name="diag_filter_lists_pending">Sin descargar todavía: %1$s</string>
     <string name="diag_battery">Batería</string>
     <string name="diag_battery_value">%1$d%%</string>
     <string name="diag_battery_charging">%1$d%% (cargando)</string>

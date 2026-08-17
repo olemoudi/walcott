@@ -149,6 +149,7 @@ class EnforcementService : LifecycleService() {
         observeCounters()
         lifecycleScope.launch { runLoopResilient() }
         observeWebFilter()
+        observeBlocklists()
         observeDeviceRestrictions()
         scheduleUpdateChecks()
         scheduleLocationSampling()
@@ -277,6 +278,31 @@ class EnforcementService : LifecycleService() {
             ) { hasRules, monitor -> hasRules || monitor.isActive(System.currentTimeMillis()) }
                 .distinctUntilChanged()
                 .collect { enabled -> VpnController.apply(this@EnforcementService, enabled) }
+        }
+    }
+
+    /**
+     * Keeps this device's copy of the public blocklists in step with the rules.
+     *
+     * Fires on the rules changing rather than on a timer, because a parent who has just switched
+     * "Adult content" on is standing there looking at the phone: a filter whose 494 000 domains
+     * arrive tomorrow reads as a filter that does not work. The periodic pass behind it exists for
+     * the other 99% of the time, on the interval the family chose.
+     */
+    private fun observeBlocklists() {
+        val repo = (application as WalcottApplication).repository
+        lifecycleScope.launch {
+            repo.settingsFlow
+                .map { Triple(it.enabledBlocklists, it.blocklistRefreshHours, it.updateWifiOnly) }
+                .distinctUntilChanged()
+                .collect { (_, hours, wifiOnly) ->
+                    dev.walcott.net.BlocklistWorker.schedule(this@EnforcementService, hours, wifiOnly)
+                    // Unconditionally, including when the family has just switched their last
+                    // list off: the filter stops enforcing it immediately either way (it is read
+                    // from the rules, not from the cache), but this is also what deletes the
+                    // cached file and stops the child reporting domains it no longer uses.
+                    dev.walcott.net.BlocklistWorker.runNow(this@EnforcementService)
+                }
         }
     }
 

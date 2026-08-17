@@ -1996,6 +1996,10 @@ class SyncManager(
                 // trail is decimated so it can't push the snapshot past ntfy's message cap.
                 val historyOn = settings.resolveForChild(id.childId).locationHistoryEnabled
                 val crashes = dev.walcott.debug.CrashCounter.current()
+                // Counts and timestamps only — reading it does not touch the cached lists.
+                val blocklistState = withContext(Dispatchers.IO) {
+                    dev.walcott.net.BlocklistStore.get(context).state.value
+                }
                 val locations = if (historyOn) {
                     LocationTrail.compress(repository.recentLocations(), System.currentTimeMillis())
                 } else {
@@ -2047,6 +2051,11 @@ class SyncManager(
                     // while the service establishes it, and reporting that would alert the parent
                     // after every reboot and every self-update (see VpnStatus.GRACE_MS).
                     webFilterOn = !dev.walcott.net.VpnStatus.settledDown(),
+                    // And what the filter is made of: the public lists this device has actually
+                    // downloaded, plus any it never has (see BlocklistStore). Read from the
+                    // store's own state file, so it costs no disk read of the lists themselves.
+                    filterListDomains = blocklistState.domainsFor(settings.enabledBlocklists),
+                    filterListsPending = blocklistState.pending(settings.enabledBlocklists),
                     crashTotal = crashes.total,
                     lastCrashMs = crashes.lastAtMs,
                     unauthorized = s.unauthorizedApps,
