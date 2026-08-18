@@ -434,6 +434,9 @@
     <string name="blocklist_refresh_three_days">Every 3 days</string>
     <string name="blocklist_refresh_weekly">Weekly</string>
     <string name="blocklist_family_scope_note">Lists are switched on for the whole family. Domains below can be this child\'s own.</string>
+    <string name="blocklist_exempt_title">Apps the lists leave alone</string>
+    <string name="blocklist_exempt_hint">If a list breaks an app, name the app here instead of hunting for the domain. The lists stop applying to it; the domains you blocked by hand still do.</string>
+    <string name="blocklist_exempt_add">Add an app</string>
     <string name="blocklist_quick_setup">Set up the filter in a minute</string>
     <string name="setup_step_filter">Turn on the web filter</string>
     <string name="preset_filter_title">Quick filter setup</string>

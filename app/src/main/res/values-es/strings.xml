@@ -434,6 +434,9 @@
     <string name="blocklist_refresh_three_days">Cada 3 días</string>
     <string name="blocklist_refresh_weekly">Semanal</string>
     <string name="blocklist_family_scope_note">Las listas se encienden para toda la familia. Los dominios de abajo sí pueden ser propios de este hijo.</string>
+    <string name="blocklist_exempt_title">Apps a las que no se aplican las listas</string>
+    <string name="blocklist_exempt_hint">Si una lista rompe una app, nombra la app aquí en vez de buscar el dominio culpable. Las listas dejan de aplicársele; los dominios que bloqueaste a mano siguen aplicándose.</string>
+    <string name="blocklist_exempt_add">Añadir una app</string>
     <string name="blocklist_quick_setup">Configurar el filtro en un minuto</string>
     <string name="setup_step_filter">Activar el filtro web</string>
     <string name="preset_filter_title">Configuración rápida del filtro</string>

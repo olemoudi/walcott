@@ -25,15 +25,33 @@ data class DomainAppRule(
 object DomainFilter {
 
     /**
-     * The hot-path form: the blocklist arrives already compiled ([DomainMatcher]), because it is
-     * now up to a million domains long (see [Blocklists]) and this runs per DNS query. The per-app
-     * rules stay a plain list — they are written one at a time by a parent, and stay short.
+     * The hot-path form: the blocklists arrive already compiled ([DomainMatcher]), because they
+     * are up to a million domains long (see [Blocklists]) and this runs per DNS query. The
+     * per-app rules stay a plain list — they are written one at a time by a parent, and stay
+     * short.
+     *
+     * **Two matchers, because they answer to different people.** [familyDomains] is what this
+     * family decided: domains the parent typed, and this device is asked about them whatever app
+     * is asking. [lists] is what a published blocklist decided — hundreds of thousands of entries
+     * nobody in the family has read — and an app in [listExemptApps] is not judged by them.
+     *
+     * That asymmetry is the whole feature. A public list occasionally takes down an app that
+     * needs some CDN it happens to carry, and the family cannot find which of 494 000 domains it
+     * was; letting them say "the lists do not apply to the bank app" is the fix that does not
+     * require knowing. Letting the same switch also waive the domains the parent typed by hand
+     * would be a different thing entirely — a rule somebody chose, silently not applying.
+     *
+     * An exemption needs the lookup attributed to an app, and attribution is best-effort (see
+     * `WalcottVpnService.ownerPackage`). An unattributed query is therefore NOT exempt: the same
+     * fail-closed rule the allow-only-from-app case follows, and for the same reason.
      */
     fun isBlocked(
         host: String,
         packageName: String?,
-        blocked: DomainMatcher,
+        familyDomains: DomainMatcher,
+        lists: DomainMatcher,
         appRules: List<DomainAppRule>,
+        listExemptApps: Set<String> = emptySet(),
     ): Boolean {
         val h = DomainMatcher.normalize(host)
 
@@ -48,8 +66,24 @@ object DomainFilter {
         }
         if (blockedInThisApp) return true
 
-        return blocked.matches(h)
+        if (familyDomains.matches(h)) return true
+
+        // Exemptions apply to the lists and to nothing above this line.
+        if (packageName != null && packageName in listExemptApps) return false
+        return lists.matches(h)
     }
+
+    /**
+     * The single-matcher form, for callers with nothing to exempt from: everything in [blocked]
+     * applies to every app. Kept because "is this host on this list" is a question several
+     * screens and tests ask without a filter's worth of context around it.
+     */
+    fun isBlocked(
+        host: String,
+        packageName: String?,
+        blocked: DomainMatcher,
+        appRules: List<DomainAppRule>,
+    ): Boolean = isBlocked(host, packageName, blocked, DomainMatcher.EMPTY, appRules)
 
     /**
      * Convenience for callers holding a plain set (tests, and anything asking a one-off

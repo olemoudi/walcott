@@ -39,8 +39,16 @@ class WalcottVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeLock = Any()
 
-    /** Compiled once per policy change, matched per query (see [DomainMatcher]). */
-    @Volatile private var blocked: DomainMatcher = DomainMatcher.EMPTY
+    /**
+     * Compiled once per policy change, matched per query (see [DomainMatcher]).
+     *
+     * Kept apart because they are waived apart: [familyDomains] is what this family typed and
+     * applies to every app, [lists] is what a blocklist decided and does not apply to the apps in
+     * [listExemptApps] (see `DomainFilter`).
+     */
+    @Volatile private var familyDomains: DomainMatcher = DomainMatcher.EMPTY
+    @Volatile private var lists: DomainMatcher = DomainMatcher.EMPTY
+    @Volatile private var listExemptApps: Set<String> = emptySet()
     @Volatile private var appRules: List<DomainAppRule> = emptyList()
     @Volatile private var running = false
     private var tunnel: ParcelFileDescriptor? = null
@@ -82,14 +90,23 @@ class WalcottVpnService : VpnService() {
                     // Streamed into the builder rather than collected into a set first: the
                     // downloaded half can be a million domains, and this way none of them is ever
                     // a live String beyond the line it was read on (see DomainMatcher.Builder).
+                    // TWO matchers, not one: an app can be exempted from the lists and never from
+                    // the domains the family typed (see PolicySettings.blocklistExemptApps), so
+                    // the two have to stay answerable apart in the packet loop.
                     val builder = DomainMatcher.builder(
-                        settings.blockedDomainsResolved(),
+                        settings.blocklistDomains(),
                         expectedHashed = state.domainsFor(settings.enabledBlocklists),
                     )
                     store.readInto(settings.enabledBlocklists) { builder.addNormalized(it) }
-                    blocked = builder.build()
+                    lists = builder.build()
+                    familyDomains = DomainMatcher.of(settings.blockedDomains)
                     appRules = settings.toDomainAppRules()
-                    DebugLog.i(TAG, "filter compiled: ${blocked.size} domains")
+                    listExemptApps = settings.blocklistExemptApps
+                    DebugLog.i(
+                        TAG,
+                        "filter compiled: ${familyDomains.size} of this family's own + ${lists.size} from lists" +
+                            if (listExemptApps.isEmpty()) "" else " (lists waived for ${listExemptApps.size} app(s))",
+                    )
                 }
         }
         // Seed from the current network, then follow it. registerDefaultNetworkCallback reports
@@ -189,7 +206,7 @@ class WalcottVpnService : VpnService() {
         // app keeps trying X" is worth seeing even when X is already blocked. No-op otherwise.
         DomainMonitor.record(host, pkg)
 
-        if (DomainFilter.isBlocked(host, pkg, blocked, appRules)) {
+        if (DomainFilter.isBlocked(host, pkg, familyDomains, lists, appRules, listExemptApps)) {
             // Counted in memory and flushed elsewhere: this is the packet loop (see BlockCounters).
             dev.walcott.data.BlockCounters.recordNetworkBlock(host, pkg)
             writePacket(output, buildResponse(packet, dnsStart, nxDomain(packet, dnsStart)))

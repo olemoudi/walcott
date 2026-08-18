@@ -588,6 +588,23 @@ data class PolicySettings(
      */
     val enabledBlocklists: Set<String> = emptySet(),
     /**
+     * Apps the blocklists do NOT apply to.
+     *
+     * The escape hatch for the failure this feature has and cannot design away: a list of half a
+     * million domains occasionally carries one that an app needs, the app then breaks in a way
+     * that looks nothing like a filter, and nobody can find which of the entries did it. Naming
+     * the app is the fix that does not require finding the domain.
+     *
+     * Deliberately NOT a waiver of the whole filter: the domains the family typed still apply to
+     * an exempt app, because those are rules somebody chose on purpose and a switch that silently
+     * dropped them would be a way to lose a rule without noticing. Family-wide for the same
+     * reason [enabledBlocklists] is — an app that breaks, breaks on every phone that has it.
+     *
+     * An exemption only works on a lookup the filter could attribute to an app, which is
+     * best-effort; an unattributed one is judged by the lists as usual (see `DomainFilter`).
+     */
+    val blocklistExemptApps: Set<String> = emptySet(),
+    /**
      * How often a child re-downloads the public lists behind [enabledBlocklists], in hours.
      *
      * A family decision like the lists themselves, and one with a real trade-off: the sources are
@@ -753,6 +770,15 @@ data class PolicySettings(
     /** Everything the DNS filter blocks by name: the family's own domains plus its lists. */
     fun blockedDomainsResolved(): Set<String> =
         blockedDomains + dev.walcott.rules.Blocklists.domains(enabledBlocklists)
+
+    /**
+     * The domains that come from the LISTS alone, kept apart from the ones a person typed.
+     *
+     * Matched separately because an app can be exempted from the lists and never from the
+     * family's own rules (see [blocklistExemptApps]). This is the bundled half of them; the
+     * downloaded half the filter streams straight off disk.
+     */
+    fun blocklistDomains(): Set<String> = dev.walcott.rules.Blocklists.domains(enabledBlocklists)
 
     /** Builds the engine's [FamilyConfig] from these rules. */
     fun toFamilyConfig(essentials: Set<String>): FamilyConfig {

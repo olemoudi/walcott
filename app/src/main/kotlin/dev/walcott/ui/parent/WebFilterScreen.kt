@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Rule
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Language
@@ -77,6 +78,8 @@ fun WebFilterScreen(
     var selectedPkg by remember { mutableStateOf<String?>(null) }
     var allowOnly by remember { mutableStateOf(true) }
     var pickingApp by remember { mutableStateOf(false) }
+    // The same picker sheet serves two sections; this says which one asked for it.
+    var pickingExempt by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_webfilter_title), onBack)
@@ -139,6 +142,37 @@ fun WebFilterScreen(
                     OutlinedButton(onClick = onQuickSetup, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.blocklist_quick_setup))
                     }
+                }
+            }
+
+            // Directly under the lists, because it is only ever read when one of them has just
+            // broken something. Family scope only: the lists are one decision for the household,
+            // and so is an app that cannot live with them.
+            if (childId == null && settings.enabledBlocklists.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        stringResource(R.string.blocklist_exempt_title),
+                        icon = Icons.AutoMirrored.Outlined.Rule,
+                        accent = SectionAccent.RULES,
+                        supporting = stringResource(R.string.blocklist_exempt_hint),
+                    )
+                }
+                item {
+                    val exempt = settings.blocklistExemptApps.sortedBy { labelOf[it] ?: it }
+                    CardGroup {
+                        exempt.forEachIndexed { index, pkg ->
+                            DeletableRow(
+                                labelOf[pkg] ?: pkg,
+                                position = cardPosition(index, exempt.size),
+                            ) { viewModel.setBlocklistExempt(pkg, false) }
+                        }
+                    }
+                }
+                item {
+                    OutlinedButton(
+                        onClick = { pickingExempt = true; pickingApp = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.blocklist_exempt_add)) }
                 }
             }
 
@@ -237,13 +271,21 @@ fun WebFilterScreen(
     }
 
     if (pickingApp) {
-        ModalBottomSheet(onDismissRequest = { pickingApp = false }) {
+        ModalBottomSheet(onDismissRequest = { pickingApp = false; pickingExempt = false }) {
             LazyColumn(Modifier.fillMaxWidth().padding(bottom = spacing.xxl)) {
                 items(apps, key = { it.app.packageName }) { row ->
                     ListItem(
                         headlineContent = { Text(row.app.label) },
                         leadingContent = { AppIcon(row.app.packageName, viewModel.repository.inventory, size = 36.dp) },
-                        modifier = Modifier.clickable { selectedPkg = row.app.packageName; pickingApp = false },
+                        modifier = Modifier.clickable {
+                            if (pickingExempt) {
+                                viewModel.setBlocklistExempt(row.app.packageName, true)
+                                pickingExempt = false
+                            } else {
+                                selectedPkg = row.app.packageName
+                            }
+                            pickingApp = false
+                        },
                     )
                 }
             }

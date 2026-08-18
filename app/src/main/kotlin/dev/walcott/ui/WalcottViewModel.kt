@@ -721,6 +721,28 @@ class WalcottViewModel(
     }
 
     /**
+     * Waives the blocklists for one app, or puts it back under them (see
+     * [dev.walcott.data.PolicySettings.blocklistExemptApps]).
+     *
+     * The family's own typed domains keep applying either way — this only ever waives the lists,
+     * which is what the screen says and the only thing that makes the switch safe to offer.
+     */
+    fun setBlocklistExempt(packageName: String, exempt: Boolean) {
+        if (packageName.isBlank()) return
+        viewModelScope.launch {
+            repository.updateSettings {
+                it.copy(
+                    blocklistExemptApps = if (exempt) {
+                        it.blocklistExemptApps + packageName
+                    } else {
+                        it.blocklistExemptApps - packageName
+                    },
+                )
+            }
+        }
+    }
+
+    /**
      * How often the children re-download the public lists behind those switches. One household
      * decision like the lists themselves, and it reaches them through the same policy push.
      */
