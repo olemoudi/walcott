@@ -2833,12 +2833,23 @@ class SyncManager(
         // from the hourly worker because this is the moment it happens, and a recovery reported an
         // hour late is one the parent has already gone looking for (see Staleness.recoveryKeys).
         val recoveryKeys = Staleness.recoveryKeys(snapshot.deviceId, snapshot.childId, before.staleNotifiedLastSeen)
+        // Null when this child had never reported at all: there is no silence to measure, only a
+        // first arrival.
+        val silence = before.lastSeen[snapshot.deviceId]
+            ?.let { java.time.Duration.ofMillis((System.currentTimeMillis() - it).coerceAtLeast(0)) }
+        // A short gap is not news in either direction, so the return of one is not either — the
+        // alert is retired quietly and nothing is posted (see Staleness.worthAnnouncingReturn).
+        val announceReturn = recoveryKeys.isNotEmpty() && Staleness.worthAnnouncingReturn(silence?.toMillis())
         if (recoveryKeys.isNotEmpty()) {
-            // Null when this child had never reported at all: there is no silence to measure,
-            // only a first arrival.
-            val silence = before.lastSeen[snapshot.deviceId]
-                ?.let { java.time.Duration.ofMillis((System.currentTimeMillis() - it).coerceAtLeast(0)) }
-            dev.walcott.debug.DebugLog.i(TAG, "${snapshot.deviceId} is back after ${silence ?: "never reporting"}")
+            dev.walcott.debug.DebugLog.i(
+                TAG,
+                "${snapshot.deviceId} is back after ${silence ?: "never reporting"}" +
+                    if (announceReturn) "" else " (too short to be worth saying)",
+            )
+            // Whether or not it is announced, the alarm it answers goes: the phone is here.
+            SyncNotifications.cancelStale(context, snapshot.deviceId)
+        }
+        if (announceReturn) {
             SyncNotifications.notifyChildBack(
                 context, who, silence?.humanize(), snapshot.deviceId, snapshot.childId,
             )
@@ -2870,7 +2881,9 @@ class SyncManager(
                 // against an alert the parent has already been told is over.
                 staleNotifiedLastSeen = it.staleNotifiedLastSeen - recoveryKeys,
             ).let { s ->
-                if (recoveryKeys.isEmpty()) s else s.plusEvent(event(ParentEvent.TYPE_BACK, snapshot))
+                // The wall is the durable record behind an alert; an unannounced return has none
+                // to be the record of.
+                if (announceReturn) s.plusEvent(event(ParentEvent.TYPE_BACK, snapshot)) else s
             }.let { s ->
                 if (ackCompleted == null) {
                     s

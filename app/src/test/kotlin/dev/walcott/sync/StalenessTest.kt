@@ -84,6 +84,31 @@ class StalenessTest {
     }
 
     @Test
+    fun `a short outage earns no word when it ends`() {
+        // The rule ole asked for, as a floor rather than as a consequence of the alert threshold:
+        // a phone that dips under a bridge and comes back must not ping about it, whatever the
+        // alert numbers happen to be.
+        assertFalse(Staleness.worthAnnouncingReturn(0))
+        assertFalse(Staleness.worthAnnouncingReturn(90 * 60_000L))
+        assertFalse(Staleness.worthAnnouncingReturn(Staleness.BACK_ONLINE_MIN_SILENCE_MS - 1))
+    }
+
+    @Test
+    fun `a real absence does`() {
+        assertTrue(Staleness.worthAnnouncingReturn(Staleness.BACK_ONLINE_MIN_SILENCE_MS))
+        assertTrue(Staleness.worthAnnouncingReturn(Staleness.ALERT_AFTER_MS))
+        // Null is not a short gap, it is no gap: a child that had never reported at all until now.
+        assertTrue(Staleness.worthAnnouncingReturn(null))
+    }
+
+    @Test
+    fun `the floor sits well under what an alert costs`() {
+        // If these ever crossed, a return could be announced for an outage that was never
+        // reported — a "back online" for something the parent was never told had gone.
+        assertTrue(Staleness.BACK_ONLINE_MIN_SILENCE_MS < Staleness.ALERT_AFTER_MS)
+    }
+
+    @Test
     fun `a child registered long ago that never reported is alerted once`() {
         val addedLongAgo = now - Staleness.ALERT_AFTER_MS - 1
         val registered = mapOf("child-a" to addedLongAgo, "child-b" to now - 60_000)

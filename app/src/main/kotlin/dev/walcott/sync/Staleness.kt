@@ -38,6 +38,28 @@ object Staleness {
     const val NEVER = 0L
 
     /**
+     * How long a phone has to have been gone for its RETURN to be worth a notification.
+     *
+     * Today a return can only follow an alert, and an alert needs [ALERT_AFTER_MS] of silence, so
+     * this never bites. It is here because that is an argument about the current numbers, not a
+     * property of the code: the alert threshold is one constant away from being lowered, and a
+     * `lastSeen` refreshed between the alert and the return would produce the same short gap. The
+     * failure it prevents is the one that makes people stop reading notifications — a phone that
+     * dips under a bridge and pings twice about it.
+     */
+    const val BACK_ONLINE_MIN_SILENCE_MS = 2 * 60 * 60 * 1000L
+
+    /**
+     * Whether coming back is worth telling the parent about, given how long [silenceMs] lasted.
+     *
+     * Null means the device had never reported at all before now, which is not a reconnection and
+     * has no gap to measure: it is the answer to an enrollment that looked abandoned, and it is
+     * said whatever the clock says.
+     */
+    fun worthAnnouncingReturn(silenceMs: Long?): Boolean =
+        silenceMs == null || silenceMs >= BACK_ONLINE_MIN_SILENCE_MS
+
+    /**
      * Devices needing a stale alert now: silent for [ALERT_AFTER_MS] and not already
      * alerted for this same lastSeen value (one alert per outage; a device that comes
      * back and goes silent again alerts again).

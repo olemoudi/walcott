@@ -95,6 +95,9 @@ object SyncNotifications {
      * [silence] is how long it was gone, or null when this child had never reported at all until
      * now (a botched enrollment that finally finished). On the status channel and never on the
      * urgent one: it is good news, and good news at 3 a.m. is still 3 a.m.
+     *
+     * Retiring the alarm it answers is the CALLER's job ([cancelStale]), because that happens on
+     * every return and this only on the ones worth mentioning (see Staleness.worthAnnouncingReturn).
      */
     fun notifyChildBack(
         context: Context,
@@ -103,9 +106,6 @@ object SyncNotifications {
         deviceId: String,
         childId: String = "",
     ) {
-        // The alarm it answers goes with it: leaving "not heard from in 14 h" in the shade under
-        // "back online" is two notifications disagreeing about the same phone.
-        cancelStale(context, deviceId)
         post(
             context, STATUS_CHANNEL, R.string.status_channel_name,
             title = context.getString(R.string.back_online_title, childName),
