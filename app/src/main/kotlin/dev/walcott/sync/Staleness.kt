@@ -51,6 +51,25 @@ object Staleness {
     }
 
     /**
+     * The dedup keys to drop when a device checks in again, empty when there is nothing to say.
+     *
+     * The other half of [devicesToAlert], and the half that was missing: a parent who was told at
+     * 3 a.m. that a phone had gone quiet was never told it came back, so the only way to find out
+     * was to open the app and go looking — which is exactly what an alert is supposed to save you.
+     *
+     * Deliberately keyed on having ALERTED rather than on how long the silence was. Phones sleep
+     * for hours and that is not news in either direction; "it is back" is only worth a
+     * notification when "it is gone" earned one. Both keys are checked because the two alerts are
+     * stored in the same map under different keys: an outage by [deviceId], a child that had never
+     * reported at all by [childId] (see [childrenNeverReported]).
+     */
+    fun recoveryKeys(deviceId: String, childId: String, alreadyNotified: Map<String, Long>): Set<String> =
+        buildSet {
+            if (deviceId in alreadyNotified) add(deviceId)
+            if (childId.isNotBlank() && alreadyNotified[childId] == NEVER) add(childId)
+        }
+
+    /**
      * Registered children that were enrolled over [ALERT_AFTER_MS] ago but have *never* reported
      * (a botched enrollment used to be invisible). [registeredSince] is childId -> add time;
      * [reportedChildIds] are the childIds that have sent at least one snapshot. Keyed by childId,

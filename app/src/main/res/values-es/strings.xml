@@ -584,6 +584,10 @@
     <string name="chip_outdated">Desactualizada</string>
     <string name="budget_apply_all">Aplicar a todos los días:</string>
     <string name="override_customized_hint">Personalizado — no seguirá los cambios de la familia</string>
+    <string name="back_online_title">%1$s vuelve a dar señales</string>
+    <string name="back_online_text">Estuvo %1$s sin conexión. No hay nada que hacer: es solo para que lo sepas.</string>
+    <string name="back_online_first_text">Su teléfono ha dado señales por primera vez.</string>
+    <string name="event_back_online">%1$s vuelve a dar señales</string>
     <string name="never_reported_title">%1$s no se ha conectado</string>
     <string name="never_reported_text">Este dispositivo hijo nunca hizo check-in — quizá no se completó el enrolamiento</string>
     <string name="hero_pending_setup">Hoy no hay límites de tiempo configurados</string>

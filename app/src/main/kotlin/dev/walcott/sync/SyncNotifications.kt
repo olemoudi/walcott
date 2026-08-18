@@ -89,6 +89,41 @@ object SyncNotifications {
             dest = childDest(childId),
         )
 
+    /**
+     * The other side of [notifyStaleChild]: a phone that had gone quiet has just checked in.
+     *
+     * [silence] is how long it was gone, or null when this child had never reported at all until
+     * now (a botched enrollment that finally finished). On the status channel and never on the
+     * urgent one: it is good news, and good news at 3 a.m. is still 3 a.m.
+     */
+    fun notifyChildBack(
+        context: Context,
+        childName: String,
+        silence: String?,
+        deviceId: String,
+        childId: String = "",
+    ) {
+        // The alarm it answers goes with it: leaving "not heard from in 14 h" in the shade under
+        // "back online" is two notifications disagreeing about the same phone.
+        cancelStale(context, deviceId)
+        post(
+            context, STATUS_CHANNEL, R.string.status_channel_name,
+            title = context.getString(R.string.back_online_title, childName),
+            text = if (silence == null) {
+                context.getString(R.string.back_online_first_text)
+            } else {
+                context.getString(R.string.back_online_text, silence)
+            },
+            notifId = ("back$deviceId").hashCode(),
+            dest = childDest(childId),
+        )
+    }
+
+    /** Retires the "gone quiet" alert for [deviceId] (it is back, or it has been let go). */
+    fun cancelStale(context: Context, deviceId: String) {
+        runCatching { NotificationManagerCompat.from(context).cancel(deviceId.hashCode()) }
+    }
+
     /** Alert when a child device reports that blocking is no longer active (tamper/lapse). */
     fun notifyEnforcementInactive(context: Context, childName: String, deviceId: String, childId: String = "") = post(
         context, URGENT_CHANNEL, R.string.urgent_channel_name,

@@ -50,6 +50,40 @@ class StalenessTest {
     }
 
     @Test
+    fun `a device that was reported gone earns a word when it comes back`() {
+        // Only after an alert: a phone that merely slept for two hours is not news in either
+        // direction, and "it is back" from a phone nobody said was missing is noise.
+        assertTrue(Staleness.recoveryKeys("dev-1", "child-a", emptyMap()).isEmpty())
+
+        val alerted = mapOf("dev-1" to now - Staleness.ALERT_AFTER_MS)
+        assertEquals(setOf("dev-1"), Staleness.recoveryKeys("dev-1", "child-a", alerted))
+        // Another device's outage says nothing about this one.
+        assertTrue(Staleness.recoveryKeys("dev-2", "child-b", alerted).isEmpty())
+    }
+
+    @Test
+    fun `a child that had never reported at all earns one too, under its own key`() {
+        // The never-reported alert is stored by childId with NEVER, not by deviceId (see
+        // childrenNeverReported), so a recovery has to look under both.
+        val alerted = mapOf("child-a" to Staleness.NEVER)
+        assertEquals(setOf("child-a"), Staleness.recoveryKeys("dev-1", "child-a", alerted))
+        // A legacy device has no childId to match, and must not match the blank one either.
+        assertTrue(Staleness.recoveryKeys("dev-1", "", mapOf("" to Staleness.NEVER)).isEmpty())
+    }
+
+    @Test
+    fun `dropping the recovery keys is what lets the NEXT outage alert again`() {
+        val alerted = mapOf("dev-1" to now - Staleness.ALERT_AFTER_MS, "child-a" to Staleness.NEVER)
+        val cleared = alerted - Staleness.recoveryKeys("dev-1", "child-a", alerted)
+        assertTrue(cleared.isEmpty())
+
+        // Silent again after coming back: alerts, because nothing is deduping it any more.
+        val silentAgain = mapOf("dev-1" to now)
+        val muchLater = now + Staleness.ALERT_AFTER_MS + 1
+        assertEquals(mapOf("dev-1" to now), Staleness.devicesToAlert(silentAgain, cleared, muchLater))
+    }
+
+    @Test
     fun `a child registered long ago that never reported is alerted once`() {
         val addedLongAgo = now - Staleness.ALERT_AFTER_MS - 1
         val registered = mapOf("child-a" to addedLongAgo, "child-b" to now - 60_000)

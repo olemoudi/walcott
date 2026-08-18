@@ -60,6 +60,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_MOCK_LOCATION, ParentEvent.TYPE_LOW_BATTERY, ParentEvent.TYPE_ENFORCEMENT_GAP,
     ParentEvent.TYPE_ENFORCEMENT_GAP_CLEARED, ParentEvent.TYPE_CLOCK_TAMPER, ParentEvent.TYPE_INDOOR_LOCATION_OFF,
     ParentEvent.TYPE_NEW_APP, ParentEvent.TYPE_WRONG_PIN, ParentEvent.TYPE_STALE, ParentEvent.TYPE_NEVER_REPORTED,
+    ParentEvent.TYPE_BACK,
     ParentEvent.TYPE_TIME_REQUEST, ParentEvent.TYPE_ASK, ParentEvent.TYPE_REQUEST_APPROVED,
     ParentEvent.TYPE_REQUEST_DENIED, ParentEvent.TYPE_BONUS, ParentEvent.TYPE_REMOTE_DONE,
     ParentEvent.TYPE_PANIC_REQUEST, ParentEvent.TYPE_PANIC_RELEASED, ParentEvent.TYPE_PANIC_DENIED,
@@ -157,6 +158,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_WRONG_PIN -> Icons.Outlined.Key to warn
         ParentEvent.TYPE_STALE -> Icons.Outlined.CloudOff to error
         ParentEvent.TYPE_NEVER_REPORTED -> Icons.Outlined.CloudOff to warn
+        ParentEvent.TYPE_BACK -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_TIME_REQUEST -> Icons.Outlined.Timer to neutral
         ParentEvent.TYPE_ASK -> Icons.AutoMirrored.Outlined.Chat to neutral
         ParentEvent.TYPE_REQUEST_APPROVED -> Icons.Filled.CheckCircle to good
@@ -214,6 +216,7 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
         R.string.event_stale, name, Duration.ofMillis(event.detail.toLongOrNull() ?: 0L).humanize(),
     )
     ParentEvent.TYPE_NEVER_REPORTED -> stringResource(R.string.never_reported_title, name)
+    ParentEvent.TYPE_BACK -> stringResource(R.string.event_back_online, name)
     ParentEvent.TYPE_TIME_REQUEST -> stringResource(R.string.event_time_request, name, event.count)
     ParentEvent.TYPE_ASK -> stringResource(R.string.event_ask, name, event.detail)
     ParentEvent.TYPE_REQUEST_APPROVED ->

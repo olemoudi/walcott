@@ -67,6 +67,13 @@ data class ParentEvent(
         const val TYPE_WRONG_PIN = "wrong_pin"
         const val TYPE_STALE = "stale"
         const val TYPE_NEVER_REPORTED = "never_reported"
+
+        /**
+         * A device the parent was told had gone quiet has checked in again. Only ever recorded
+         * after a [TYPE_STALE] or [TYPE_NEVER_REPORTED], so the wall reads as a pair of lines
+         * rather than as news about every phone that ever slept (see [Staleness.recoveryKeys]).
+         */
+        const val TYPE_BACK = "back_online"
         const val TYPE_TIME_REQUEST = "time_request"
         const val TYPE_ASK = "ask"
         const val TYPE_REQUEST_APPROVED = "request_approved"
