@@ -236,6 +236,23 @@ class ChildDevice(
     // --- The notification log (see NotificationLog) ---
 
     /**
+     * Grants usage access from the shell, the way a person grants it in Settings.
+     *
+     * Not a convenience: without it the child fails CLOSED on any family that has a budget (see
+     * `RuleEngine.requiresUsageCounting`), so budgets and the rule events that come with them stop
+     * being observable at all — and the suite reads as a product that no longer reports what its
+     * rules did. It is an AppOp, so no Device Owner can grant it and nothing in the app can
+     * either; a fresh or re-imaged AVD simply does not have it, and it cost an hour on 2026-08-18.
+     */
+    fun ensureUsageAccess() {
+        run("shell", "appops", "set", PACKAGE, "GET_USAGE_STATS", "allow")
+    }
+
+    /** Whether this device can count screen time at all (see [ensureUsageAccess]). */
+    fun usageAccessGranted(): Boolean =
+        run("shell", "appops", "get", PACKAGE, "GET_USAGE_STATS").contains("allow")
+
+    /**
      * Grants notification access from the shell, the way a person grants it in Settings.
      *
      * There is no Device Owner path to this — a notification listener is enabled by a human, full

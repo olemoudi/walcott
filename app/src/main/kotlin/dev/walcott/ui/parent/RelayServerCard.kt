@@ -47,6 +47,7 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
     val scope = rememberCoroutineScope()
     val server by viewModel.relayServer.collectAsStateWithLifecycle()
     val health by viewModel.publishHealth.collectAsStateWithLifecycle()
+    val tooLarge by viewModel.policyTooLarge.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf(false) }
 
     WalcottCard(onClick = { editing = true }) {
@@ -64,7 +65,10 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = spacing.sm),
             )
-            if (health.failing) {
+            // The rules being too big to send is reported HERE, next to the relay, because that is
+            // what it looks like from the outside: a channel that refuses everything. It is also
+            // the one cause the parent cannot fix by waiting, so it gets said first.
+            if (tooLarge || health.failing) {
                 val color = MaterialTheme.colorScheme.error
                 Row(
                     Modifier.fillMaxWidth().padding(top = spacing.md),
@@ -74,7 +78,11 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
                     Spacer(Modifier.width(spacing.sm))
                     Text(
                         stringResource(
-                            if (health.rateLimited) R.string.relay_rate_limited else R.string.relay_failing,
+                            when {
+                                tooLarge -> R.string.relay_policy_too_large
+                                health.rateLimited -> R.string.relay_rate_limited
+                                else -> R.string.relay_failing
+                            },
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = color,

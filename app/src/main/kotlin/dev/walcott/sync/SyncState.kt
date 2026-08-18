@@ -180,6 +180,12 @@ data class SyncState(
     val childVersion: Long = 0,
     val pendingRequests: List<ExtraTimeRequest> = emptyList(),
     val pendingAsks: List<ChildRequest> = emptyList(),
+    /**
+     * Ids of answers already applied, so a re-emitted parent snapshot cannot grant the same
+     * minutes twice. Bounded (see [SyncState.rememberApplied]): the parent retires an answer long
+     * before it could fall out of a list this long, and an unbounded set on a phone enrolled for
+     * years is a DataStore blob that grows for ever and is rewritten on every check-in.
+     */
     val appliedResolutionIds: Set<String> = emptySet(),
     val appliedBonusIds: Set<String> = emptySet(),
     /** Until when app installs are temporarily allowed on this device (PIN gate or approval). */
@@ -222,7 +228,11 @@ data class SyncState(
     /** Monotonic tally of wrong PINs (never reset), reported to the parent, and the last one's time. */
     val pinWrongTotal: Int = 0,
     val lastWrongPinMs: Long = 0,
-    /** Ids of remote commands this device already ran, so a replayed snapshot can't re-run them. */
+    /**
+     * Ids of remote commands this device already ran, so a replayed snapshot can't re-run them.
+     * Bounded like the other two applied sets ([SyncState.rememberApplied]); the parent drops a
+     * command from its queue after [SyncEngine.COMMAND_TTL_MS], well inside the cap.
+     */
     val appliedCommandIds: Set<String> = emptySet(),
     /** Banked idle seconds not yet converted into earned extra time (idle-earn model). */
     val idleEarnBankSeconds: Long = 0,
@@ -318,6 +328,12 @@ data class SyncState(
     val policyHoldStartedAtMs: Long = 0,
     /** The policy as last put on the wire, so the screens can say which settings are still local. */
     val deployedPolicyJson: String = "",
+    /**
+     * True when this family's rules no longer fit in one relay message even stripped of
+     * everything else (see [ParentFit]). Every publish is then refused, so no child hears any
+     * rule change again — a failure that must be said out loud rather than left to a debug log.
+     */
+    val policyTooLarge: Boolean = false,
     /** deviceId -> the parent version that child has confirmed, and when it did. */
     val policyConfirmedVersion: Map<String, Long> = emptyMap(),
     val policyConfirmedAtMs: Map<String, Long> = emptyMap(),
@@ -470,6 +486,29 @@ data class SyncState(
     companion object {
         /** Feed cap: bounded so DataStore stays small however busy the family is. */
         const val EVENT_LOG_MAX = 120
+
+        /**
+         * How many applied ids a child remembers per kind.
+         *
+         * Idempotence only has to outlive the sender: the parent retires resolutions and bonuses
+         * within days ([dev.walcott.sync.ParentFit]) and commands after a week, so an id that
+         * falls off the end here can no longer arrive to be re-applied. What it buys is a set
+         * that stops growing — on a phone enrolled for years the alternative was thousands of
+         * UUIDs re-serialized into DataStore on every single check-in.
+         */
+        const val APPLIED_IDS_MAX = 200
+
+        /**
+         * [current] plus [fresh], newest last, capped at [APPLIED_IDS_MAX].
+         *
+         * Insertion order is the whole mechanism, so the set must stay a LinkedHashSet — which is
+         * what `+` on a Set produces, and what kotlinx.serialization reads back.
+         */
+        fun rememberApplied(current: Set<String>, fresh: Collection<String>): Set<String> {
+            val merged = current + fresh
+            if (merged.size <= APPLIED_IDS_MAX) return merged
+            return merged.toList().takeLast(APPLIED_IDS_MAX).toSet()
+        }
 
         /**
          * How far back the feed goes. "Recent activity" that shows something from three weeks

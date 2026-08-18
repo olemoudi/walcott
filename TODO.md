@@ -3,6 +3,82 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.64.0 — the reliability sweep, and the phone nobody was telling
+
+A pass over "can this app leave a managed phone in a state nobody can get out of", plus the two
+questions that started it: does removing a child ask first, and does it free their phone.
+
+**The parent's message had no ceiling, and two of its fields never stopped growing.** Every
+resolution the parent had ever sent and every bonus it had ever granted rode in *every* snapshot
+for the life of the install. The child half has had `SnapshotFit` since v0.22.0 for exactly this;
+the parent half had nothing. The failure is worse there and completely silent: past ntfy's 4 kB the
+publish is refused with HTTP 413 on every attempt and every re-emit, so **no rule change reaches any
+child again, ever**, and every child goes on enforcing whatever it last received. New `ParentFit`:
+answers stop travelling once nothing can apply them (a bonus is credited to the day it ARRIVES, so
+an old one landing on a phone that was off is minutes nobody granted), the message is measured and
+degrades in a fixed order — icons, acks, locates, answers, commands last — and when even the bare
+rules do not fit, `SyncState.policyTooLarge` says so on the relay card instead of a debug line
+nobody reads. A demanding family (4 members, 30 apps with their own limits, 40 blocked domains,
+per-child overrides) measures **2304 of 3800 bytes**; `ParentSnapshotSizeTest` fails at 3000 so the
+next feature that grows the policy is caught in CI rather than in somebody's house.
+
+The parent keeps answers for a month locally even though they stop travelling after three days —
+its own screens read that list to tell "you answered this" from "nobody ever did".
+
+**Other ways a phone could be left stuck, all fixed:**
+
+- **DataStore corruption was terminal.** No `corruptionHandler` meant every read and write threw
+  for ever: on a child the enforcement loop's config read fails on every tick, so whatever was
+  suspended when it broke stays suspended and nothing re-evaluates it. Now the file is started
+  over, and a *replaced policy file* raises the same flag a bad blob does, so the next parent
+  snapshot is adopted whatever its version (a re-emit would have been refused by the replay gate).
+- **Standing down left everything armed.** Taking a phone out of child mode stopped the service and
+  left every suspended app suspended and every restriction on, with no loop left to undo either.
+  `WalcottApplication.standDown()` now gives the apps and the settings back; Device Owner is
+  deliberately kept, so re-pairing restores everything without a factory reset.
+- **An app that LEFT the managed set stayed suspended.** The reconciliation only ever looked at
+  what is managed now, and nothing else unsuspends anything.
+- **The child's applied-id ledgers grew for ever** (`appliedResolutionIds`, `appliedBonusIds`,
+  `appliedCommandIds`) — thousands of UUIDs re-serialized on every check-in. Bounded to 200, which
+  outlives everything the parent can still be carrying.
+- **A released phone kept its cached blocklists.** Half a million domains under `files/` is not
+  personal data, but "nothing left to suggest the phone was ever enrolled" was not true.
+
+**Removing a child asked first, and then told the phone nothing.** It kept applying the family's
+rules for ever, appeared under "Other linked devices" described as an *old app version*, could not
+be re-linked from its own screen (the pairing scanner only exists while UNPAIRED), and there was no
+remote release at all — the only way out was the parent PIN typed on the device itself. Now:
+
+- `RemoteAction.RELEASE_DEVICE`, signed and TTL'd like the lock-screen PIN, running the same
+  `PanicRelease` the two existing doors run. The child **acknowledges before tearing itself down** —
+  a moment later there is no channel to answer on — and the parent drops the device row when that
+  ack lands, so a freed phone never ages into a "not heard from" alert.
+- The remove dialog offers it as a choice rather than a default: a phone left limited can be freed
+  tomorrow, a phone freed by accident needs a factory reset to re-enrol. Also offered on its own
+  (*Free this phone*, beside the other remote fixes) and on an orphaned device.
+- An orphan can be **taken back into the family** under the childId it is already enrolled with —
+  the recovery from a mis-tap that used to cost a factory reset.
+- Gated on `RELEASE_MIN_CHILD_VERSION`: a child too old to understand the command is said so up
+  front, not through an "unsupported" ack afterwards.
+
+**Backup recovery, tested end to end rather than by construction.** `RestoreRecoveryTest` plays the
+whole story at protocol level for both shapes of family (software key + version leap; legacy
+Keystore key + `RotationCert`), including the two silent failure modes — a restored parent whose
+snapshots do not verify, and one whose rules lose the version comparison. `RestoredParentScenarioTest`
+proves the same against a **real child device**: rules flow again, a key the phone has never seen is
+adopted on the strength of the certificate at a LOWER version than it has already applied, and the
+restored parent hears the child. `ReleaseScenarioTest` (its own `:parent-sim:e2eReleaseTest` task —
+it gives up Device Owner) proves the OS actually lets go.
+
+### The AVD's usage access was denied, and it read as a product bug
+
+`RuleEventScenarioTest` failed twice with "the child never reported the expected state" — on the
+0.63.0 build too, so not a regression. `appops get dev.walcott GET_USAGE_STATS` said **deny**: with
+any budget in the policy the child correctly fails CLOSED, which means no budget ever runs out and
+no rule event is ever emitted. `DeviceScenario` now grants it at pairing time (`ensureUsageAccess`)
+and checks it, next to the screen-awake fix from 0.63.0 and for the same reason: a red suite must
+mean the product is wrong.
+
 ## Shipped in v0.22.0 — the domain viewer's send path
 
 - **Fixed send bar.** `DomainMonitorScreen` pins one bar outside the `LazyColumn`, aggregating the

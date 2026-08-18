@@ -150,8 +150,14 @@ anything on a phone nobody was limiting.
 ## Getting a phone back
 
 Walcott is deliberately hard to remove, which raises a fair question: what if the parent's
-phone dies and the backup is gone with it? There are two ways out, both from the child's
-phone:
+phone dies and the backup is gone with it?
+
+From your own phone, freeing one you look after is one tap: *Free this phone* on their page, or
+the same offer when you remove them from the family. Every restriction comes off, every app comes
+back, and the phone drops out of management — if it is switched off, the moment it comes back. It
+cannot be undone: enrolling it again means setting it up from scratch, so the app asks first.
+
+And if your phone is the one that is gone, there are two ways out from the child's phone:
 
 - **With the parent PIN** — settings → *Remove Walcott from this device*. Unblocks every app,
   gives back every setting, erases the rules and history and drops out of management. Nothing

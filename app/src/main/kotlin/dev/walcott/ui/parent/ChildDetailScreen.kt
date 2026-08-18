@@ -9,6 +9,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -853,18 +855,16 @@ fun ChildDetailScreen(
         )
     }
     if (showRemove) {
-        AlertDialog(
-            onDismissRequest = { showRemove = false },
-            title = { Text(stringResource(R.string.remove_child)) },
-            text = { Text(stringResource(R.string.remove_child_confirm, entry.name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showRemove = false
-                    onBack()
-                    viewModel.removeChild(childId)
-                }) { Text(stringResource(R.string.action_delete)) }
+        RemoveChildDialog(
+            name = entry.name,
+            hasDevice = snapshot != null,
+            canRelease = snapshot != null && RemoteAction.canRelease(snapshot.appVersionCode),
+            onDismiss = { showRemove = false },
+            onRemove = { release ->
+                showRemove = false
+                onBack()
+                viewModel.removeChild(childId, releaseDevices = release)
             },
-            dismissButton = { TextButton(onClick = { showRemove = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
     bonusTarget?.let { target ->
@@ -1785,6 +1785,7 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = Card
     // so re-running an action shows "sent" rather than the previous run's stale result.
     var sentAtMs by remember(snapshot.deviceId) { mutableStateOf(0L) }
     var awaitingAck by remember(snapshot.deviceId) { mutableStateOf(false) }
+    var confirmRelease by remember(snapshot.deviceId) { mutableStateOf(false) }
     val outdated = snapshot.appVersionCode in 1 until BuildConfig.VERSION_CODE
     val needsPermissionNudge = !snapshot.usageAccessOn || !snapshot.networkLocationOn
     // Deliberately waiting for the canary (this phone) is not a failure — don't paint it red.
@@ -1847,6 +1848,19 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = Card
                     awaitingAck = true
                 },
             )
+            // The way out, from the parent's end. It belongs beside the other things they can do
+            // to a phone from a distance, and it is the only one of them a family cannot undo —
+            // hence the confirmation, and the wording that leads with the consequence.
+            // Hidden rather than shown-and-refused on a child too old to understand it: an
+            // action that can only answer "unsupported" is not an action.
+            if (RemoteAction.canRelease(snapshot.appVersionCode)) {
+                RemoteFixRow(
+                    title = stringResource(R.string.orphan_release),
+                    description = stringResource(R.string.release_child_desc),
+                    emphasized = false,
+                    onClick = { confirmRelease = true },
+                )
+            }
 
             // An acknowledgement only counts for the command we just sent if the child
             // completed it after we sent it; otherwise we are still waiting.
@@ -1878,6 +1892,25 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = Card
                 )
             }
         }
+    }
+
+    if (confirmRelease) {
+        AlertDialog(
+            onDismissRequest = { confirmRelease = false },
+            title = { Text(stringResource(R.string.orphan_release)) },
+            text = { Text(stringResource(R.string.orphan_release_confirm, snapshot.displayName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRelease = false
+                    onCommand(RemoteAction.RELEASE_DEVICE)
+                    sentAtMs = System.currentTimeMillis()
+                    awaitingAck = true
+                }) { Text(stringResource(R.string.orphan_release_confirm_button)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRelease = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
     }
 }
 
@@ -2292,6 +2325,75 @@ private fun OverrideSwitchRow(
             Switch(checked = checked, onCheckedChange = onToggle)
         }
     }
+}
+
+/**
+ * Removing a member, with the question that decides what becomes of their phone.
+ *
+ * Removing used to be purely local bookkeeping, and the phone was the thing nobody told: it went
+ * on applying the family's rules for ever, could not be re-linked from its own screen, and had no
+ * way out but the parent PIN typed on the device itself. So the choice is made here, in words —
+ * and it is a choice rather than a default, because the two mistakes are not the same size. A
+ * phone left limited can be freed tomorrow; a phone freed by accident cannot be re-enrolled
+ * without factory-resetting it (see [dev.walcott.sync.RemoteAction.RELEASE_DEVICE]).
+ */
+@Composable
+private fun RemoveChildDialog(
+    name: String,
+    hasDevice: Boolean,
+    /** False when their phone runs a build that cannot be freed remotely (see [RemoteAction.canRelease]). */
+    canRelease: Boolean,
+    onDismiss: () -> Unit,
+    onRemove: (release: Boolean) -> Unit,
+) {
+    var release by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.remove_child)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.sm)) {
+                Text(stringResource(R.string.remove_child_confirm, name))
+                if (hasDevice) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(enabled = canRelease) { release = !release },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = release,
+                            enabled = canRelease,
+                            onCheckedChange = { release = it },
+                        )
+                        Text(
+                            stringResource(R.string.remove_child_release),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // What each answer actually does to the phone, in the words of the consequence
+                    // rather than of the mechanism.
+                    Text(
+                        stringResource(
+                            when {
+                                !canRelease -> R.string.release_needs_update
+                                release -> R.string.remove_child_release_warn
+                                else -> R.string.remove_child_keep_note
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (release) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onRemove(release) }) { Text(stringResource(R.string.action_delete)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 @Composable

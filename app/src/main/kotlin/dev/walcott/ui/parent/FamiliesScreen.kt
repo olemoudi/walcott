@@ -25,13 +25,13 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Rule
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
@@ -152,6 +152,10 @@ fun FamiliesScreen(
     var showAddChild by remember { mutableStateOf(false) }
     var showSetPin by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
+    // The three answers to an unmanaged device, one dialog each (see OrphanDeviceDialog).
+    var orphanDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
+    var adoptingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
+    var releasingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
     val needsBackupPin by viewModel.localBackupNeedsPin.collectAsStateWithLifecycle()
     var showBackupPin by remember { mutableStateOf(false) }
     val families by viewModel.familySummaries.collectAsStateWithLifecycle()
@@ -548,7 +552,7 @@ fun FamiliesScreen(
                         LegacyDeviceRow(
                             device,
                             position = cardPosition(index, legacyDevices.size),
-                            onRemove = { removingDevice = device },
+                            onClick = { orphanDevice = device },
                         )
                     }
                 }
@@ -556,6 +560,44 @@ fun FamiliesScreen(
         }
 
         item { Spacer(Modifier.height(spacing.xl)) }
+    }
+
+    orphanDevice?.let { device ->
+        OrphanDeviceDialog(
+            device = device,
+            onDismiss = { orphanDevice = null },
+            onAdopt = { orphanDevice = null; adoptingDevice = device },
+            onRelease = { orphanDevice = null; releasingDevice = device },
+            onForget = { orphanDevice = null; removingDevice = device },
+        )
+    }
+
+    adoptingDevice?.let { device ->
+        AdoptDeviceDialog(
+            initialName = device.displayName,
+            onDismiss = { adoptingDevice = null },
+            onAdopt = { name ->
+                viewModel.adoptOrphanDevice(device.childId, name)
+                adoptingDevice = null
+            },
+        )
+    }
+
+    releasingDevice?.let { device ->
+        AlertDialog(
+            onDismissRequest = { releasingDevice = null },
+            title = { Text(stringResource(R.string.orphan_release)) },
+            text = { Text(stringResource(R.string.orphan_release_confirm, device.displayName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.releaseChildDevice(device.deviceId)
+                    releasingDevice = null
+                }) { Text(stringResource(R.string.orphan_release_confirm_button)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { releasingDevice = null }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
     }
 
     removingDevice?.let { device ->
@@ -968,10 +1010,23 @@ private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
     }
 }
 
+/**
+ * A device that reports in but has no entry in the registry.
+ *
+ * Two different phones look identical from here and must not be described identically: one paired
+ * with a pre-registry build and never had a childId, the other belonged to a member somebody
+ * removed. The second is the one that used to be quietly abandoned — still enforcing the family's
+ * rules, still Device Owner, unmanageable — so it is the one that gets the two ways out
+ * ([onAdopt] takes it back, [onRelease] frees the phone for good).
+ */
 @Composable
-private fun LegacyDeviceRow(device: ChildSnapshot, position: CardPosition = CardPosition.Single, onRemove: () -> Unit) {
+private fun LegacyDeviceRow(
+    device: ChildSnapshot,
+    position: CardPosition = CardPosition.Single,
+    onClick: () -> Unit,
+) {
     val spacing = Tokens.spacing
-    WalcottCard(position = position) {
+    WalcottCard(position = position, onClick = onClick) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Outlined.PhoneAndroid,
@@ -983,20 +1038,98 @@ private fun LegacyDeviceRow(device: ChildSnapshot, position: CardPosition = Card
             Column(Modifier.weight(1f)) {
                 Text(device.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    stringResource(R.string.legacy_device_hint),
+                    stringResource(
+                        if (device.childId.isBlank()) R.string.legacy_device_hint else R.string.orphan_device_hint,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Outlined.Delete,
-                    contentDescription = stringResource(R.string.legacy_remove_title),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
+}
+
+/**
+ * What can be done about an unmanaged device: take it back, free it, or forget it here.
+ *
+ * "Forget" is deliberately last and deliberately described as doing nothing to the phone — it is
+ * the one that reads like the answer and is not.
+ */
+@Composable
+private fun OrphanDeviceDialog(
+    device: ChildSnapshot,
+    onDismiss: () -> Unit,
+    onAdopt: () -> Unit,
+    onRelease: () -> Unit,
+    onForget: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(device.displayName) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.md)) {
+                Text(stringResource(R.string.orphan_device_body))
+                if (device.childId.isNotBlank()) {
+                    OutlinedButton(onClick = onAdopt, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.orphan_adopt))
+                    }
+                }
+                if (dev.walcott.sync.RemoteAction.canRelease(device.appVersionCode)) {
+                    OutlinedButton(onClick = onRelease, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.orphan_release))
+                    }
+                } else {
+                    // Say why the way out is missing, rather than offering one that answers
+                    // "unsupported": this device's build predates the remote release.
+                    Text(
+                        stringResource(R.string.release_needs_update),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(onClick = onForget, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.orphan_forget))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+/** Names the member an orphaned device is coming back as. */
+@Composable
+private fun AdoptDeviceDialog(initialName: String, onDismiss: () -> Unit, onAdopt: (String) -> Unit) {
+    var name by remember { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.orphan_adopt)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.sm)) {
+                Text(stringResource(R.string.orphan_adopt_body))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.child_name_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = { onAdopt(name.trim()) }) {
+                Text(stringResource(R.string.orphan_adopt_confirm))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 /** How many wall entries the home shows (the full capped feed stays in the store). */

@@ -445,6 +445,53 @@ object RemoteAction {
      */
     const val NOTIFICATION_LOG = "notification_log"
 
+    /**
+     * Hand this device back for good: unsuspend every app, give back every setting and stop being
+     * Device Owner (see `PanicRelease`). The parent's side of the door the child already has under
+     * the parent PIN — for the phone that is no longer supervised, or the child being removed.
+     *
+     * Irreversible on the device: re-enrolling a released phone means factory-resetting it, which
+     * is why the parent app asks before sending it. The child acknowledges BEFORE tearing itself
+     * down, since a moment later there is no channel left to answer on.
+     *
+     * TTL'd like [SET_LOCK_PIN] and for the same reason: every other action is harmless when it
+     * lands late, and this one would free a phone days after the family changed their mind.
+     */
+    const val RELEASE_DEVICE = "release_device"
+
+    /** How long a [RELEASE_DEVICE] stays valid after the parent issued it. */
+    const val RELEASE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
+
+    /**
+     * The first child build that understands [RELEASE_DEVICE]. Older ones answer "unsupported"
+     * and stay exactly as enrolled as they were, so the parent is told BEFORE they offer to free
+     * a phone rather than after — the same shape of gate the emergency release already uses in
+     * the other direction (`SyncManager.PANIC_MIN_PARENT_VERSION`).
+     */
+    const val RELEASE_MIN_CHILD_VERSION = 117
+
+    /** Whether a child reporting [childAppVersionCode] can be freed remotely at all. */
+    fun canRelease(childAppVersionCode: Int): Boolean = childAppVersionCode >= RELEASE_MIN_CHILD_VERSION
+
+    /** [RELEASE_DEVICE] outcomes: the teardown starts right after this ack goes out. */
+    const val DETAIL_RELEASING = "releasing"
+
+    /**
+     * Whether a command that changes something irreversible has waited too long to still be meant.
+     *
+     * Only two actions have a life at all, and both for the same reason: they act on the phone
+     * itself rather than on the app. A lock-screen PIN landing next week locks somebody out with a
+     * number nobody remembers being told; a release landing next week frees a phone the family
+     * thought better of, and re-enrolling it means a factory reset. Everything else here is
+     * harmless when it arrives late, and pretending otherwise would only lose commands that a
+     * child was right to run after a fortnight offline.
+     */
+    fun expired(action: String, issuedAtMs: Long, nowMs: Long): Boolean = when (action) {
+        SET_LOCK_PIN -> nowMs - issuedAtMs > LOCK_PIN_TTL_MS
+        RELEASE_DEVICE -> nowMs - issuedAtMs > RELEASE_TTL_MS
+        else -> false
+    }
+
     /** How long a [SET_LOCK_PIN] stays valid after the parent issued it. */
     const val LOCK_PIN_TTL_MS = 30 * 60 * 1000L
 

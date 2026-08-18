@@ -325,6 +325,14 @@ class WalcottViewModel(
     /** Whether messages are currently being rejected by the relay (see [dev.walcott.sync.PublishHealth]). */
     val publishHealth: StateFlow<dev.walcott.sync.PublishHealth.Status> = dev.walcott.sync.PublishHealth.status
 
+    /**
+     * Whether this family's rules have outgrown one relay message (see [dev.walcott.sync.ParentFit]).
+     * Every publish is then refused, so nothing reaches any child — the one failure this app must
+     * never leave to a debug log.
+     */
+    val policyTooLarge: StateFlow<Boolean> =
+        sync.state.map { it.policyTooLarge }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     suspend fun setRelayServer(server: String): dev.walcott.sync.SyncManager.RelayChangeResult =
         sync.setRelayServer(server)
 
@@ -415,8 +423,50 @@ class WalcottViewModel(
         }
     }
 
-    fun removeChild(childId: String) = viewModelScope.launch {
+    /**
+     * Removes a member from the family, and — when [releaseDevices] — asks the phone(s) they are
+     * enrolled on to hand themselves back first (see [dev.walcott.sync.RemoteAction.RELEASE_DEVICE]).
+     *
+     * The release is queued BEFORE the registry entry goes, because the entry is how the screens
+     * find those devices; the command itself is addressed to the device and survives the removal,
+     * so a phone that is off is still freed when it comes back. Without it, removing a child left
+     * a phone enforcing the family's rules with nobody left to change them.
+     */
+    fun removeChild(childId: String, releaseDevices: Boolean = false) = hub.launchDurable {
+        if (releaseDevices) {
+            sync.devicesOfChild(childId).forEach { deviceId ->
+                runCatching { sync.releaseChildDevice(deviceId) }
+            }
+        }
         repository.updateSettings { s -> s.copy(children = s.children.filterNot { it.childId == childId }) }
+    }
+
+    /** Frees one supervised phone without touching the family registry (see [removeChild]). */
+    fun releaseChildDevice(deviceId: String) = hub.launchDurable { sync.releaseChildDevice(deviceId) }
+
+    /**
+     * Takes an orphaned device back into the family under [name], by giving it a registry entry
+     * with the childId it is already enrolled under.
+     *
+     * The recovery from a removal somebody regrets. Re-pairing is not available from the child's
+     * own screen once it is enrolled, so without this the only way back was releasing the phone
+     * and setting it up from scratch — which is a factory reset for a mis-tap.
+     */
+    fun adoptOrphanDevice(childId: String, name: String) = viewModelScope.launch {
+        if (childId.isBlank()) return@launch
+        repository.updateSettings { s ->
+            if (s.children.any { it.childId == childId }) {
+                s
+            } else {
+                s.copy(
+                    children = s.children + dev.walcott.data.ChildEntry(
+                        childId = childId,
+                        name = name,
+                        addedAtMs = System.currentTimeMillis(),
+                    ),
+                )
+            }
+        }
     }
 
     /** Rename the family (shown on the parent home and on every enrolled child). */

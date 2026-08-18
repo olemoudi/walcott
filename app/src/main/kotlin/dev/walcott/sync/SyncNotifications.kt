@@ -468,6 +468,22 @@ object SyncNotifications {
         dest = childDest(childId),
     )
 
+    /**
+     * Drops the alerts about a device that has just been freed (see [RemoteAction.RELEASE_DEVICE]).
+     *
+     * Only the two that outlive the device itself: the "not heard from" alert — which is exactly
+     * what a released phone looks like from here — and the open-install-window nag. Everything
+     * else is a moment, not a standing state, and a released phone posts no new ones.
+     */
+    fun cancelForDevice(context: Context, deviceId: String) {
+        runCatching {
+            val manager = NotificationManagerCompat.from(context)
+            manager.cancel(deviceId.hashCode())
+            manager.cancel("enf".hashCode() + deviceId.hashCode())
+        }
+        cancelInstallWindowOpen(context, deviceId)
+    }
+
     /** Cancels the open-window nag once the window is closed (re-blocked or expired). */
     fun cancelInstallWindowOpen(context: Context, deviceId: String) {
         runCatching {

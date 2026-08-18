@@ -256,5 +256,6 @@ private fun remoteActionLabel(action: String): String = when (action) {
     RemoteAction.REQUEST_PERMISSIONS -> stringResource(R.string.remote_ask_permissions)
     RemoteAction.INSTALL_APP -> stringResource(R.string.install_share_title)
     RemoteAction.DIAGNOSE -> stringResource(R.string.diag_section)
+    RemoteAction.RELEASE_DEVICE -> stringResource(R.string.release_remote_action)
     else -> action
 }

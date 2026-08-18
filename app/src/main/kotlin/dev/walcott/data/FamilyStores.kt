@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
+import dev.walcott.debug.DebugLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,12 +45,35 @@ object WalcottDataStores {
     private val stores = ConcurrentHashMap<String, DataStore<Preferences>>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    /** Files whose contents could not be read and were started over (see [get]). */
+    private val replaced = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     fun get(context: Context, name: String): DataStore<Preferences> {
         val app = context.applicationContext
         return stores.computeIfAbsent(name) {
-            PreferenceDataStoreFactory.create(scope = scope) { app.preferencesDataStoreFile(name) }
+            PreferenceDataStoreFactory.create(
+                // Without a handler, a file DataStore cannot parse throws from every read and
+                // every write, for ever. On a child device that is the worst state this app can
+                // be in: the enforcement loop's config read fails on every tick, so whatever was
+                // suspended when it broke stays suspended, nothing re-evaluates it, and the only
+                // way out is a factory reset. Starting the file over loses settings that are
+                // re-synced from the parent within seconds — see SettingsStore, which treats a
+                // replaced policy as corruption precisely so that re-sync cannot be blocked by
+                // the replay gate.
+                corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler {
+                    replaced += name
+                    DebugLog.e(TAG, "$name was unreadable and has been started over", it)
+                    androidx.datastore.preferences.core.emptyPreferences()
+                },
+                scope = scope,
+            ) { app.preferencesDataStoreFile(name) }
         }
     }
+
+    /** Whether [name] had to be started over in this process (see [get]). */
+    fun wasReplaced(name: String): Boolean = name in replaced
+
+    private const val TAG = "WalcottStores"
 
     /** The file backing [base] for [familyId]; the first family keeps the pre-multi-family name. */
     fun fileName(base: String, familyId: String): String =

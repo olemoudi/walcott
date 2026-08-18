@@ -172,6 +172,18 @@ class FamilyHub(
      */
     private suspend fun <T> onHubScope(block: suspend () -> T): T = scope.async { block() }.await()
 
+    /**
+     * Runs [block] on the hub's own scope, which lives as long as the process.
+     *
+     * For the actions that must finish once started even though the screen that asked for them is
+     * already gone — the same reason [onHubScope] exists, for callers that have nothing to await.
+     * Freeing a phone is the one that matters: it is a queued command followed by a registry edit,
+     * and stopping in between is how a device ends up removed from the family and never told.
+     */
+    fun launchDurable(block: suspend () -> Unit) {
+        scope.launch { runCatching { block() }.onFailure { DebugLog.e(TAG, "durable action failed", it) } }
+    }
+
     suspend fun setActive(id: String) = onHubScope { store.update { it.withActive(id) } }
 
     /**

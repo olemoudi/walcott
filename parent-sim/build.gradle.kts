@@ -55,7 +55,10 @@ tasks.register<Test>("e2eTest") {
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
-    useJUnitPlatform { includeTags("e2e") }
+    // "destructive" is excluded here rather than untagged, so it is impossible to run it by
+    // accident: it ends with the device no longer being Device Owner, which every other scenario
+    // needs. See e2eReleaseTest.
+    useJUnitPlatform { includeTags("e2e"); excludeTags("destructive") }
     // Each scenario pairs a device and waits on real round trips; the default 'up-to-date'
     // shortcut would silently skip a suite whose whole point is that the device changed.
     outputs.upToDateWhen { false }
@@ -79,5 +82,23 @@ tasks.register<Test>("e2eTest") {
                     "debug build installed? network up?). A skipped suite is not a passing suite.",
             )
         }
+    }
+}
+
+/**
+ * The scenarios that leave the device changed: today, the parent freeing a phone for good, which
+ * gives up Device Owner. Run it LAST, on its own — it re-provisions afterwards and fails loudly
+ * if it cannot, because a device that is no longer managed makes every other scenario skip.
+ */
+tasks.register<Test>("e2eReleaseTest") {
+    description = "Device-changing parent-sim scenarios (gives up Device Owner; run last)."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("destructive") }
+    outputs.upToDateWhen { false }
+    testLogging {
+        events("passed", "failed", "skipped")
+        showStandardStreams = true
     }
 }

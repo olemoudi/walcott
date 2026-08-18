@@ -288,6 +288,18 @@ class BlocklistStore private constructor(private val context: Context) {
         return domains < maxOf(MIN_DOMAINS, expected / 4)
     }
 
+    /**
+     * Forgets every cached list, for a device that has just been handed back (see
+     * [dev.walcott.enforcement.PanicRelease]). Half a million domains in `files/` is not personal
+     * data, but the promise a release makes is that nothing is left to suggest the phone was ever
+     * enrolled — and a folder of blocklists is exactly such a trace.
+     */
+    fun clear() {
+        runCatching { File(context.filesDir, DIR).deleteRecursively() }
+            .onFailure { DebugLog.w(TAG, "could not delete the cached lists", it) }
+        _state.value = State()
+    }
+
     /** Forgets the lists the family has switched off, on disk and in [state]. */
     private fun prune(keep: Set<String>) {
         val gone = _state.value.lists.keys - keep

@@ -718,6 +718,17 @@ class EnforcementService : LifecycleService() {
             if (blocked != lastAppliedBlocked || managed != lastAppliedManaged ||
                 quarantined != lastAppliedQuarantine || nowClock - lastApplyAt > REASSERT_MILLIS
             ) {
+                // An app that LEAVES the managed set while suspended would stay suspended for
+                // ever: the reconciliation only ever looks at what is managed now, and nothing
+                // else on the device unsuspends anything. It is a narrow case — an update that
+                // drops an app's launcher activity, a package the system stops listing — but its
+                // failure mode is an app blocked with no rule to explain it and no way back.
+                val leftManaged = (lastAppliedManaged.orEmpty() + lastAppliedQuarantine.orEmpty()) -
+                    managed - quarantined
+                if (leftManaged.isNotEmpty()) {
+                    DebugLog.i(TAG, "no longer managed, giving back: ${leftManaged.joinToString()}")
+                    enforcer.release(leftManaged.toList())
+                }
                 enforcer.apply(managed + quarantined, blocked + quarantined)
                 lastAppliedBlocked = blocked
                 lastAppliedManaged = managed

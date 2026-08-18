@@ -164,6 +164,32 @@ class WalcottApplication : Application() {
     }
 
     /**
+     * Gives back everything enforcement was holding, when this device stops enforcing.
+     *
+     * Stopping the service used to be the whole of it, and that left the phone in the one state
+     * this app must never leave behind: apps suspended by a loop that no longer runs and settings
+     * locked by a policy nobody applies any more. Nothing would ever undo either — Device Owner
+     * suspension survives reboots, and the only code that unsuspends is the loop that was just
+     * stopped. A phone taken out of child mode (parent PIN, deliberately) came out of it with its
+     * apps still blocked.
+     *
+     * Not the same thing as the emergency release: Device Owner is deliberately kept, so pairing
+     * the device again restores everything without a factory reset. A release that is meant to be
+     * total goes through [dev.walcott.enforcement.PanicRelease] instead, which does this and then
+     * hands back Device Owner too — and is itself the reason this is safe to run unconditionally:
+     * by the time it flips the flag it has already done all of this.
+     */
+    private suspend fun standDown() {
+        DebugLog.w(TAG, "this device no longer enforces: giving back apps and settings")
+        runCatching {
+            val managed = repository.managedPackagesNow() + syncManager.quarantined.value
+            dev.walcott.enforcement.Enforcer(this).releaseAll(managed)
+        }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }
+        runCatching { dev.walcott.enforcement.DeviceRestrictions.clearAll(this) }
+            .onFailure { DebugLog.e(TAG, "clearing device restrictions failed", it) }
+    }
+
+    /**
      * Writes the crash to the persisted debug log before the process dies, then lets Android
      * take its normal course (which is what actually kills it — swallowing the throw would leave
      * a half-dead process behind, and this app is not the right place to guess at recovery).
@@ -272,9 +298,20 @@ class WalcottApplication : Application() {
                 .collect { enforcing ->
                     if (enforcing) {
                         runCatching { EnforcementService.start(this@WalcottApplication) }
+                        // Everything that keeps enforcement honest between ticks, re-armed here
+                        // rather than only at process start. A device that was released and then
+                        // paired again — the obvious thing to do after a release nobody meant —
+                        // came back with the alarm cancelled and the workers dropped (the release
+                        // cancels all work), and this process does not restart on a child: the
+                        // foreground service is what keeps it alive. It would have looked
+                        // perfectly healthy while checking in never.
+                        runCatching { dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication) }
+                        WatchdogWorker.schedule(this@WalcottApplication)
+                        UpdateWorker.schedule(this@WalcottApplication)
                     } else {
                         EnforcementService.stop(this@WalcottApplication)
                         VpnController.apply(this@WalcottApplication, false)
+                        standDown()
                     }
                 }
         }

@@ -1462,6 +1462,24 @@ class SyncManager(
         }
     }
 
+    /**
+     * Parent frees a supervised phone for good (see [RemoteAction.RELEASE_DEVICE]).
+     *
+     * Queued like any other command, so a phone that is off or out of coverage is freed when it
+     * next comes back rather than never — which matters, because until it does that phone is
+     * still enforcing rules nobody is managing any more. The device row is deliberately kept
+     * until the child acknowledges: the parent has to be able to see that it is still pending,
+     * and the acknowledgement is what removes it (see [applyChildSnapshotLocked]).
+     */
+    suspend fun releaseChildDevice(targetDeviceId: String) {
+        dev.walcott.debug.DebugLog.w(TAG, "asking $targetDeviceId to release itself")
+        sendCommand(targetDeviceId, RemoteAction.RELEASE_DEVICE)
+    }
+
+    /** The devices this family has heard from for [childId] — who a release has to be sent to. */
+    suspend fun devicesOfChild(childId: String): List<String> =
+        syncStore.current().children.filter { it.childId == childId }.map { it.deviceId }
+
     /** Parent grants an unsolicited bonus (chores, good behaviour) to a child device. */
     suspend fun giveBonus(targetDeviceId: String, categoryId: String, minutes: Int) {
         val target = syncStore.current().children.firstOrNull { it.deviceId == targetDeviceId }
@@ -1912,12 +1930,38 @@ class SyncManager(
         }
     }
 
+    /**
+     * Drops the resolutions and bonuses that have stopped meaning anything (see [ParentFit]).
+     *
+     * Runs on every parent publish, which is the only place that needs them to be small and the
+     * only moment guaranteed to happen. Writes only when something actually goes, so a quiet
+     * family never touches DataStore for it.
+     */
+    private suspend fun pruneAnswers() {
+        val state = syncStore.current()
+        if (state.resolutions.isEmpty() && state.bonuses.isEmpty()) return
+        val keptResolutions = ParentFit.keptResolutions(state.resolutions, System.currentTimeMillis())
+        val liveBonuses = ParentFit.liveBonuses(state.bonuses, LocalDate.now().toEpochDay())
+        if (keptResolutions.size == state.resolutions.size && liveBonuses.size == state.bonuses.size) return
+        dev.walcott.debug.DebugLog.i(
+            TAG,
+            "forgot ${state.resolutions.size - keptResolutions.size} old answer(s) and " +
+                "${state.bonuses.size - liveBonuses.size} bonus(es) nobody can still apply",
+        )
+        syncStore.update { it.copy(resolutions = keptResolutions, bonuses = liveBonuses) }
+    }
+
     private suspend fun publishSelfOrThrow() {
         val id = identityStore.current()
         val transport = transport ?: return
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         when (id.role) {
             Role.PARENT -> {
+                // Retire the answers that can no longer do anything BEFORE reading the state to
+                // publish, so the message and the store shrink together (see ParentFit). Without
+                // this both grew for the lifetime of the install, and the message hit the relay's
+                // cap — which is not a degraded family, it is a family whose rules stop moving.
+                pruneAnswers()
                 val state = syncStore.current()
                 // The PIN hash/salt travel with the policy so the parent's PIN also guards
                 // enrolled child devices (gate + leaving child mode).
@@ -1935,7 +1979,10 @@ class SyncManager(
                 val snapshot = ParentSnapshot(
                     version = state.parentVersion,
                     policyJson = json.encodeToString(PolicySettings.serializer(), settings),
-                    resolutions = state.resolutions,
+                    // What travels is only what a child could still apply; the parent goes on
+                    // REMEMBERING answers for much longer, so its own screens can still say who
+                    // answered what (see ParentFit.RESOLUTION_KEEP_MS).
+                    resolutions = ParentFit.liveResolutions(state.resolutions, nowMs),
                     bonuses = state.bonuses,
                     locationRequests = state.locationRequests,
                     commands = state.commands,
@@ -1945,7 +1992,23 @@ class SyncManager(
                     parentVersionCode = BuildConfig.VERSION_CODE,
                 )
                 val rotation = id.rotationCertB64.takeIf { it.isNotBlank() }?.let { KeyRotation.decode(it) }
-                transport.publish(SyncProtocol.encodeParent(snapshot, familyKey, signingKey(id), rotation))
+                // Measured rather than hoped: an oversized parent message is refused by the relay
+                // every single time, so the rules would stop reaching every child at once and
+                // nothing would ever say why (see ParentFit).
+                val fitted = ParentFit.encode(snapshot, familyKey, signingKey(id), rotation)
+                fitted.degraded?.let {
+                    dev.walcott.debug.DebugLog.w(TAG, "parent snapshot did not fit; dropped $it")
+                }
+                if (fitted.oversize != state.policyTooLarge) {
+                    syncStore.update { st -> st.copy(policyTooLarge = fitted.oversize) }
+                }
+                if (fitted.oversize) {
+                    dev.walcott.debug.DebugLog.e(
+                        TAG,
+                        "these rules are too large for one relay message (${fitted.encoded.length} bytes)",
+                    )
+                }
+                transport.publish(fitted.encoded)
                 // What is now on the wire, so the screens can tell an edit that has gone out from
                 // one still sitting on this phone (see PolicyDiff). Recorded at publish, not at
                 // confirmation: "not yet sent" and "sent but not yet confirmed" are different
@@ -2594,7 +2657,9 @@ class SyncManager(
         // Remote fixes from the parent (update now, re-apply policy, nudge for permissions).
         // Run before the grants below so a device whose enforcement had lapsed is repaired
         // first; each command publishes its own acknowledgement.
-        applyCommands(snapshot, deviceId)
+        // Nothing may follow a release: the stores it just wiped would be written back into
+        // existence by the bookkeeping below, on a device that is no longer part of any family.
+        if (applyCommands(snapshot, deviceId)) return
 
         // Answer the parent's app-icon requests for apps this child has (a bounded trickle).
         if (snapshot.iconRequests.isNotEmpty()) runCatching { answerIconRequests(snapshot.iconRequests, id) }
@@ -2658,8 +2723,8 @@ class SyncManager(
             it.copy(
                 pendingRequests = it.pendingRequests.filterNot { r -> r.requestId in resolvedIds },
                 pendingAsks = it.pendingAsks.filterNot { a -> a.requestId in resolvedIds },
-                appliedResolutionIds = it.appliedResolutionIds + resolvedIds,
-                appliedBonusIds = it.appliedBonusIds + bonusIds,
+                appliedResolutionIds = SyncState.rememberApplied(it.appliedResolutionIds, resolvedIds),
+                appliedBonusIds = SyncState.rememberApplied(it.appliedBonusIds, bonusIds),
                 lastNotice = noticeFromResolution ?: noticeFromBonus ?: it.lastNotice,
             )
         }
@@ -2677,7 +2742,8 @@ class SyncManager(
      * reconnect, the same parent snapshot can be in flight twice, and a check-then-act on a
      * stale set would run an APK install concurrently with itself.
      */
-    private suspend fun applyCommands(snapshot: ParentSnapshot, deviceId: String) = commandMutex.withLock {
+    /** Returns true when the last thing it did was hand this device back (nothing may follow). */
+    private suspend fun applyCommands(snapshot: ParentSnapshot, deviceId: String): Boolean = commandMutex.withLock {
         val runner by lazy {
             RemoteCommandRunner(
                 context,
@@ -2694,11 +2760,22 @@ class SyncManager(
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
             // Re-check under the lock: a concurrent handler may have claimed it since.
             if (command.id in syncStore.current().appliedCommandIds) continue
-            syncStore.update { it.copy(appliedCommandIds = it.appliedCommandIds + command.id) }
+            syncStore.update {
+                it.copy(appliedCommandIds = SyncState.rememberApplied(it.appliedCommandIds, listOf(command.id)))
+            }
             val ack = runner.run(command)
             syncStore.update { it.copy(lastCommandAck = ack, childVersion = it.childVersion + 1) }
             publishSelf()
+            // The release is run HERE, after its acknowledgement is on the wire, and it is the
+            // last thing this device ever does on this channel: the teardown wipes the sync
+            // state and closes the transport, so an ack published afterwards would go nowhere
+            // and the parent would be left unable to tell a freed phone from a dead one.
+            if (command.action == RemoteAction.RELEASE_DEVICE && ack.ok) {
+                dev.walcott.enforcement.PanicRelease.releaseDevice(context)
+                return@withLock true
+            }
         }
+        false
     }
 
     /** A feed entry for [snapshot]'s child (see [ParentEvent]); recorded beside each alert. */
@@ -2790,6 +2867,18 @@ class SyncManager(
         // The open-window nag is stateful on screen too: drop it the moment the window closes.
         if (!installWindowOpen && snapshot.deviceId in before.installWindowSeen) {
             SyncNotifications.cancelInstallWindowOpen(context, snapshot.deviceId)
+        }
+
+        // A device that acknowledged its release is already tearing itself down and will never
+        // publish again (see RemoteAction.RELEASE_DEVICE). Let it go here, or the parent keeps a
+        // row for a phone that was freed on purpose — and starts alerting, days later, that it
+        // has not been heard from. The feed entry recorded above is what remains of it.
+        val releaseAck = snapshot.lastCommand?.takeIf { it.action == RemoteAction.RELEASE_DEVICE && it.ok }
+        if (releaseAck != null) {
+            dev.walcott.debug.DebugLog.w(TAG, "${snapshot.deviceId} confirmed its release; letting it go")
+            SyncNotifications.cancelForDevice(context, snapshot.deviceId)
+            removeChildDevice(snapshot.deviceId)
+            return
         }
 
         // Alert once when a child reports enforcement is inactive (not Device Owner and no

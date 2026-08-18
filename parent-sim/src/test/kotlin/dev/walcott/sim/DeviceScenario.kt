@@ -39,6 +39,12 @@ abstract class DeviceScenario {
         // scenario about a schedule or a budget times out waiting for a suspension nothing was even
         // going to attempt. It reads as a product that stopped enforcing, and it cost an hour once.
         device.keepAwake()
+        // And able to count screen time. Without it every budget fails closed, so a suite of
+        // scenarios about limits would be measuring a device that cannot measure anything (see
+        // ChildDevice.ensureUsageAccess). Granted rather than asserted: it is one adb call, and a
+        // precondition that only ever skips leaves the same hole it names.
+        device.ensureUsageAccess()
+        precondition("usage access is granted", device.usageAccessGranted())
         relay = MockRelay().start()
         // The device reaches the relay over `adb reverse`, on its own loopback, so none of this
         // depends on the emulator's network stack — the part that vanishes under a long run.

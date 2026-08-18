@@ -60,6 +60,7 @@ class RemoteCommandRunner(
                 RemoteAction.SET_LOCK_PIN -> setLock(command)
                 RemoteAction.LOCK_NOW -> lockNow()
                 RemoteAction.NOTIFICATION_LOG -> notificationLog(command.arg)
+                RemoteAction.RELEASE_DEVICE -> release(command)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -179,7 +180,7 @@ class RemoteCommandRunner(
      * because those are different things for the parent to do next.
      */
     private suspend fun setLock(command: RemoteCommand): Pair<Boolean, String> {
-        if (System.currentTimeMillis() - command.issuedAtMs > RemoteAction.LOCK_PIN_TTL_MS) {
+        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
             DebugLog.w(TAG, "ignoring a lock-screen command that is too old to still be meant")
             return false to RemoteAction.DETAIL_EXPIRED
         }
@@ -195,6 +196,25 @@ class RemoteCommandRunner(
             dev.walcott.enforcement.LockScreen.Result.REFUSED ->
                 false to RemoteAction.DETAIL_LOCK_REFUSED
         }
+    }
+
+    /**
+     * Accepts (or refuses) the parent's release. The teardown itself is deliberately NOT run here:
+     * it wipes this device's sync state and closes the channel, so the acknowledgement has to be
+     * published first or the parent would never learn that the phone it freed was actually freed.
+     * [SyncManager.applyCommands] runs it immediately after publishing this ack.
+     *
+     * Refuses an expired command like the lock-screen one, and for a sharper version of the same
+     * reason: freeing a phone a week after the family thought better of it cannot be undone
+     * without factory-resetting it.
+     */
+    private fun release(command: RemoteCommand): Pair<Boolean, String> {
+        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
+            DebugLog.w(TAG, "ignoring a release that is too old to still be meant")
+            return false to RemoteAction.DETAIL_EXPIRED
+        }
+        DebugLog.w(TAG, "the parent asked this device to be released")
+        return true to RemoteAction.DETAIL_RELEASING
     }
 
     private fun lockNow(): Pair<Boolean, String> {

@@ -62,7 +62,14 @@ class ParentSim(
 ) {
 
     private val familyKey = FamilyCrypto.generateFamilyKey()
-    private val signingPair = FamilyCrypto.generateSigningKeyPair()
+
+    /**
+     * The key this parent signs with, and the hand-over it presents when that is no longer the key
+     * children were paired with. Both are `var` for one reason: [restoreFromBackup], which is the
+     * only thing that ever changes them.
+     */
+    private var signingPair = FamilyCrypto.generateSigningKeyPair()
+    private var rotationCert: dev.walcott.sync.RotationCert? = null
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -216,12 +223,43 @@ class ParentSim(
             iconRequests = iconRequests.toList(),
             parentVersionCode = PARENT_VERSION_CODE,
         )
-        publishRaw(SyncProtocol.encodeParent(snapshot, familyKey, signingPair.private))
+        publishRaw(SyncProtocol.encodeParent(snapshot, familyKey, signingPair.private, rotationCert))
         return snapshot
     }
 
     /** The version the next [pushPolicy] will use — for scenarios that need to aim at it. */
     fun currentVersion(): Long = version.get()
+
+    /**
+     * Becomes the parent a family gets back after the original phone is lost: same family, same
+     * key material out of the backup file, a version counter that restarts, and — for a family
+     * whose signing key could never be exported — a brand new key vouched for by the old one.
+     *
+     * This is the half of disaster recovery that has to be proved against a REAL child: the file
+     * format and the rotation maths are unit-tested, but whether a phone that has been enforcing
+     * rules for days actually accepts a parent it has never heard from is a question about the
+     * device, not about the arithmetic.
+     *
+     * @param rotate true for a legacy family (new key + [RotationCert]), false for one whose
+     *   software key the backup carries verbatim.
+     * @param versionLeap what `SyncManager.restoreBackup` adds on top of the backup's counter, so
+     *   the restored parent outranks anything the lost phone published after the file was written.
+     */
+    fun restoreFromBackup(rotate: Boolean, versionLeap: Long = RESTORE_VERSION_LEAP): ParentSim {
+        if (rotate) {
+            val recovery = FamilyCrypto.generateSigningKeyPair()
+            rotationCert = dev.walcott.sync.KeyRotation.create(recovery.public, signingPair.private)
+            signingPair = recovery
+            // A restored legacy parent starts its counter from the backup, which is BELOW what the
+            // children have applied — the case the rotation exists to rebase. Zero, so the very
+            // next push is version 1: anything higher could pass the replay gate on its own and
+            // the scenario would prove nothing about the rotation.
+            version.set(0)
+        } else {
+            version.set(version.get() + versionLeap)
+        }
+        return this
+    }
 
     private fun publishSnapshot(bumpVersion: Boolean = true): ParentSnapshot {
         val snapshot = ParentSnapshot(
@@ -234,7 +272,7 @@ class ParentSim(
             iconRequests = iconRequests.toList(),
             parentVersionCode = PARENT_VERSION_CODE,
         )
-        publishRaw(SyncProtocol.encodeParent(snapshot, familyKey, signingPair.private))
+        publishRaw(SyncProtocol.encodeParent(snapshot, familyKey, signingPair.private, rotationCert))
         return snapshot
     }
 
@@ -375,5 +413,13 @@ class ParentSim(
 
         /** How long [start] waits for its subscription before calling the relay unreachable. */
         const val SOCKET_OPEN_TIMEOUT_SEC = 15L
+
+        /**
+         * What a restored parent adds to the backup's version counter, mirroring
+         * `SyncManager.RESTORE_VERSION_LEAP`. Kept in step by [restoreFromBackup]'s scenario,
+         * which is the point: if the app ever stopped leaping, the child would refuse the
+         * restored parent's rules and this is where that shows up.
+         */
+        const val RESTORE_VERSION_LEAP = 1_000_000L
     }
 }

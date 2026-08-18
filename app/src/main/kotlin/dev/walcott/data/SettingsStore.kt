@@ -14,7 +14,8 @@ import kotlinx.serialization.json.Json
  */
 class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
 
-    private val dataStore = WalcottDataStores.get(context, WalcottDataStores.fileName(FILE, familyId))
+    private val fileName = WalcottDataStores.fileName(FILE, familyId)
+    private val dataStore = WalcottDataStores.get(context, fileName)
     private val key = stringPreferencesKey("policy_json")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = PolicySettings.serializer()
@@ -62,7 +63,16 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
     @Volatile private var cache: Decoded? = null
 
     private fun decode(raw: String?): PolicySettings {
-        if (raw == null) return PolicySettings() // fresh install, nothing stored yet
+        if (raw == null) {
+            // Nothing stored is normally a fresh install. It is something else entirely when the
+            // FILE itself was unreadable and had to be started over (see WalcottDataStores): this
+            // device just lost the rules it was enforcing, and the parent's re-emits reuse a
+            // version the replay gate would reject — so it would sit on an empty policy until
+            // somebody happened to edit a rule. Raising the same flag a bad blob raises is what
+            // makes the next parent snapshot adopted whatever its version.
+            if (WalcottDataStores.wasReplaced(fileName)) corruptionSeen = true
+            return PolicySettings()
+        }
         cache?.let { hit -> if (raw === hit.raw || raw == hit.raw) return hit.settings }
         val decoded = runCatching { json.decodeFromString(serializer, raw) }
             // Anything written when limits were per category arrives in the shape the rest of

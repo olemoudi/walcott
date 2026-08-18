@@ -75,6 +75,9 @@ object PanicRelease {
         runCatching { app.syncManager.wipeSyncState() }
             .onFailure { DebugLog.e(TAG, "wiping sync state failed", it) }
         runCatching { withContext(Dispatchers.IO) { dev.walcott.sync.IconStore(context).clear() } }
+        runCatching {
+            withContext(Dispatchers.IO) { dev.walcott.net.BlocklistStore.get(context).clear() }
+        }
         runCatching { NotificationManagerCompat.from(context).cancelAll() }
 
         // 6. Last: stop being Device Owner. After this the app has no privileges left — the
