@@ -50,6 +50,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -708,6 +709,18 @@ private fun RequestTimeSheet(
     val spacing = Tokens.spacing
     val allApps = stringResource(R.string.request_all_apps)
     val limitByPackage = remember(limits) { limits.associateBy { it.packageName } }
+    // The same rule the parent's pickers use (see AppPickerSheet): a search box once the list is
+    // long enough to be scrolled rather than read. A child's phone is exactly where that bites —
+    // forty apps, and the one they want is the one they were just using.
+    var query by remember { mutableStateOf("") }
+    val matches = remember(apps, query) {
+        dev.walcott.ui.components.matching(
+            apps,
+            query,
+            label = { it.label },
+            packageName = { it.packageName },
+        )
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding()) {
             item {
@@ -717,15 +730,43 @@ private fun RequestTimeSheet(
                     modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
                 )
             }
-            item {
-                RequestTargetRow(
-                    label = allApps,
-                    icon = { Icon(Icons.Filled.Apps, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp)) },
-                    asked = dev.walcott.rules.ExtraTime.ALL_APPS in alreadyAsked,
-                    onClick = { onPick(RequestTarget(dev.walcott.rules.ExtraTime.ALL_APPS, allApps)) },
-                )
+            if (apps.size > dev.walcott.ui.components.SEARCH_ABOVE) {
+                item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Search, contentDescription = null)
+                        },
+                        placeholder = { Text(stringResource(R.string.search_app)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.lg, vertical = spacing.xs),
+                    )
+                }
             }
-            items(apps, key = { it.packageName }) { app ->
+            // Hidden while searching: "every app" is not a result, and leaving it pinned above a
+            // filtered list is the one row a child could tap by accident having meant the other.
+            if (query.isBlank()) {
+                item {
+                    RequestTargetRow(
+                        label = allApps,
+                        icon = { Icon(Icons.Filled.Apps, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp)) },
+                        asked = dev.walcott.rules.ExtraTime.ALL_APPS in alreadyAsked,
+                        onClick = { onPick(RequestTarget(dev.walcott.rules.ExtraTime.ALL_APPS, allApps)) },
+                    )
+                }
+            }
+            if (matches.isEmpty()) {
+                item {
+                    Text(
+                        stringResource(R.string.app_picker_no_match),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.md),
+                    )
+                }
+            }
+            items(matches, key = { it.packageName }) { app ->
                 RequestTargetRow(
                     label = app.label,
                     icon = { AppIcon(app.packageName, inventory, size = 40.dp) },

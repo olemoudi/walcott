@@ -212,6 +212,8 @@
     <string name="nav_limits_subtitle">Bedtime, screen-free times and the default limit</string>
     <!-- App assignment -->
     <string name="apps_no_remote">No apps reported yet. They\'ll appear here once your children\'s devices sync.</string>
+    <string name="app_picker_no_match">No app matches that.</string>
+    <string name="app_picker_none">This phone has not reported any apps yet.</string>
     <string name="search_app">Search app</string>
 
     <!-- Budgets & schedules -->

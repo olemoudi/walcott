@@ -54,6 +54,7 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val spacing = Tokens.spacing
     val monitor by viewModel.domainMonitor.collectAsStateWithLifecycle()
     val labels by viewModel.installedLabels.collectAsStateWithLifecycle()
+    val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
     val tunnelUp by viewModel.dnsTunnelUp.collectAsStateWithLifecycle()
     val selected = remember { mutableStateMapOf<Pair<String?, String>, Boolean>() }
     val delivery by viewModel.domainDelivery.collectAsStateWithLifecycle()
@@ -162,11 +163,19 @@ fun DomainMonitorScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 
             groups.forEach { (packageName, sightings) ->
                 item(key = "header-${packageName ?: "unknown"}") {
-                    SectionHeader(
-                        labels[packageName]
-                        ?: packageName
-                        ?: stringResource(R.string.domain_monitor_unattributed),
-                    )
+                    if (packageName == null) {
+                        // Nothing to put an icon on: these are the lookups nobody could attribute.
+                        SectionHeader(stringResource(R.string.domain_monitor_unattributed))
+                    } else {
+                        dev.walcott.ui.components.AppHeading(
+                            packageName = packageName,
+                            label = labels[packageName] ?: packageName,
+                            inventory = viewModel.repository.inventory,
+                            iconBytes = { viewModel.childAppIcon(it) },
+                            iconRefresh = iconRefresh,
+                            modifier = Modifier.padding(top = spacing.lg, start = spacing.xs),
+                        )
+                    }
                 }
                 item(key = "card-${packageName ?: "unknown"}") {
                     WalcottCard {

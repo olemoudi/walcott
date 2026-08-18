@@ -1,6 +1,5 @@
 package dev.walcott.ui.parent
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,11 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,6 +59,8 @@ fun NotificationLogScreen(
         syncState.children.firstOrNull { it.deviceId == deviceId }?.apps.orEmpty()
     }
     val labels = remember(apps) { apps.associate { it.packageName to it.label } }
+
+    val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
 
     /** "" = every app. Which pages count, what the buttons ask for, and what the counts mean. */
     var filter by remember { mutableStateOf("") }
@@ -171,6 +169,9 @@ fun NotificationLogScreen(
                             NotificationRow(
                                 entry = entry,
                                 appLabel = labels[entry.pkg] ?: entry.pkg,
+                                inventory = viewModel.repository.inventory,
+                                iconBytes = { viewModel.childAppIcon(it) },
+                                iconRefresh = iconRefresh,
                                 position = cardPosition(index, entries.size),
                             )
                         }
@@ -194,19 +195,20 @@ fun NotificationLogScreen(
 
     if (picking) {
         // The apps that device reports having. Anything it has never had cannot have notified.
-        ModalBottomSheet(onDismissRequest = { picking = false }) {
-            LazyColumn(Modifier.fillMaxWidth().padding(bottom = spacing.xxl)) {
-                items(apps, key = { it.packageName }) { app ->
-                    ListItem(
-                        headlineContent = { Text(app.label.ifBlank { app.packageName }) },
-                        modifier = Modifier.clickable {
-                            filter = app.packageName
-                            picking = false
-                        },
-                    )
-                }
-            }
-        }
+        val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
+        dev.walcott.ui.components.AppPickerSheet(
+            apps = remember(apps) {
+                apps.map { dev.walcott.ui.components.PickableApp(it.packageName, it.label) }
+            },
+            inventory = viewModel.repository.inventory,
+            iconBytes = { viewModel.childAppIcon(it) },
+            iconRefresh = iconRefresh,
+            onDismiss = { picking = false },
+            onPick = { app ->
+                filter = app.packageName
+                picking = false
+            },
+        )
     }
 }
 
@@ -226,13 +228,23 @@ private fun Notice(text: String) {
 private fun NotificationRow(
     entry: NotificationEntry,
     appLabel: String,
+    inventory: dev.walcott.data.AppInventory,
+    iconBytes: (String) -> ByteArray?,
+    iconRefresh: Any?,
     position: dev.walcott.ui.components.CardPosition,
 ) {
     val spacing = Tokens.spacing
     WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
-            Row(Modifier.fillMaxWidth()) {
-                Text(appLabel, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                dev.walcott.ui.components.AppHeading(
+                    packageName = entry.pkg,
+                    label = appLabel,
+                    inventory = inventory,
+                    iconBytes = iconBytes,
+                    iconRefresh = iconRefresh,
+                    modifier = Modifier.weight(1f),
+                )
                 Text(
                     remember(entry.atMs) { timeOf(entry.atMs) },
                     style = MaterialTheme.typography.labelSmall,

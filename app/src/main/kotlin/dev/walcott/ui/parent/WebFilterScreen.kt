@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Rule
 import androidx.compose.material.icons.filled.Add
@@ -19,9 +18,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -37,7 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.ui.WalcottViewModel
-import dev.walcott.ui.components.AppIcon
+import dev.walcott.ui.components.AppPickerSheet
+import dev.walcott.ui.components.PickableApp
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.SectionHeader
@@ -271,25 +269,25 @@ fun WebFilterScreen(
     }
 
     if (pickingApp) {
-        ModalBottomSheet(onDismissRequest = { pickingApp = false; pickingExempt = false }) {
-            LazyColumn(Modifier.fillMaxWidth().padding(bottom = spacing.xxl)) {
-                items(apps, key = { it.app.packageName }) { row ->
-                    ListItem(
-                        headlineContent = { Text(row.app.label) },
-                        leadingContent = { AppIcon(row.app.packageName, viewModel.repository.inventory, size = 36.dp) },
-                        modifier = Modifier.clickable {
-                            if (pickingExempt) {
-                                viewModel.setBlocklistExempt(row.app.packageName, true)
-                                pickingExempt = false
-                            } else {
-                                selectedPkg = row.app.packageName
-                            }
-                            pickingApp = false
-                        },
-                    )
+        val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
+        AppPickerSheet(
+            apps = remember(apps) { apps.map { PickableApp(it.app.packageName, it.app.label) } },
+            inventory = viewModel.repository.inventory,
+            // The apps belong to the children, not to this phone: their icons come from the sync
+            // cache or the row is a monogram (see AppIcon).
+            iconBytes = { viewModel.childAppIcon(it) },
+            iconRefresh = iconRefresh,
+            onDismiss = { pickingApp = false; pickingExempt = false },
+            onPick = { app ->
+                if (pickingExempt) {
+                    viewModel.setBlocklistExempt(app.packageName, true)
+                    pickingExempt = false
+                } else {
+                    selectedPkg = app.packageName
                 }
-            }
-        }
+                pickingApp = false
+            },
+        )
     }
 }
 

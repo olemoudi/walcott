@@ -50,8 +50,8 @@ internal data class BonusApp(val packageName: String, val label: String)
 /** The all-apps row is a sentinel, not a package. */
 private const val ALL_APPS = dev.walcott.rules.ExtraTime.ALL_APPS
 
-/** Above this many apps the list gets a search box; below it, scrolling is faster than typing. */
-private const val SEARCH_THRESHOLD = 7
+/** Above this many apps the list gets a search box; one rule for every picker in the app. */
+private const val SEARCH_THRESHOLD = dev.walcott.ui.components.SEARCH_ABOVE
 
 /**
  * The picker for the child's apps, ordered the way the grant is usually meant: what they have
@@ -98,9 +98,10 @@ internal fun BonusDialog(
     var query by remember { mutableStateOf("") }
     // Icons arriving from a child mid-dialog redraw the rows instead of leaving letter tiles.
     val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
+    // The shared rule, so this picker and the others agree on what a search finds — including
+    // that typing a package name works, which is what a parent does after reading one in a rule.
     val matches = remember(apps, query) {
-        val needle = query.trim()
-        if (needle.isBlank()) apps else apps.filter { it.label.contains(needle, ignoreCase = true) }
+        dev.walcott.ui.components.matching(apps, query, label = { it.label }, packageName = { it.packageName })
     }
 
     AlertDialog(

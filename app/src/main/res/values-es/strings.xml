@@ -213,6 +213,8 @@
     <string name="nav_limits_subtitle">Hora de dormir, horarios sin pantalla y el límite por defecto</string>
     <!-- Asignación de apps -->
     <string name="apps_no_remote">Aún no hay apps reportadas. Aparecerán aquí cuando los dispositivos de los hijos se sincronicen.</string>
+    <string name="app_picker_no_match">Ninguna app coincide.</string>
+    <string name="app_picker_none">Este teléfono todavía no ha informado de sus apps.</string>
     <string name="search_app">Buscar app</string>
 
     <!-- Presupuestos y horarios -->
