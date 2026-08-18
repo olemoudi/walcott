@@ -325,7 +325,21 @@ class ChildDevice(
      * one that spends its time diagnosing that.
      */
     fun reversePort(port: Int) {
-        run("reverse", "tcp:$port", "tcp:$port")
+        reversePort(devicePort = port, hostPort = port)
+    }
+
+    /**
+     * The asymmetric form: the device keeps knocking on [devicePort] while the host answers on
+     * [hostPort].
+     *
+     * What it buys is a relay that can be taken away and brought back WITHOUT the child being told
+     * anything — the address it holds never changes, only what is behind it. Re-binding the same
+     * host port instead does not work: a listener whose connections have just been cut cannot be
+     * re-created for as long as those linger, which is exactly the moment a scenario about an
+     * outage needs it (see OutageScenarioTest).
+     */
+    fun reversePort(devicePort: Int, hostPort: Int) {
+        run("reverse", "tcp:$devicePort", "tcp:$hostPort")
     }
 
     fun clearReverse(port: Int) {

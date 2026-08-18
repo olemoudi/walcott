@@ -2987,24 +2987,46 @@ class SyncManager(
         val ackedId = snapshot.lastCommand?.id
         // The ack of a command still in the queue is its completion — feed-worthy exactly once.
         val ackCompleted = snapshot.lastCommand?.takeIf { ack -> before.commands.any { it.id == ack.id } }
+        // Whose day is being filed under, and whether this device can believe it. A child's clock
+        // can be wrong — or moved deliberately, which is a thing this app blocks apps over — and
+        // the reported day is the ANCHOR the ledgers' windows are measured from: believing 2099
+        // would drop a month of accumulated history in one write (see UsageLedger.believableDay).
+        val parentToday = LocalDate.now().toEpochDay()
+        val ledgerDay = UsageLedger.believableDay(snapshot.epochDay, parentToday)
+        if (ledgerDay == null) {
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "${snapshot.deviceId} reports day ${snapshot.epochDay} against our $parentToday; " +
+                    "not filing its counters until its clock agrees with a calendar",
+            )
+        }
+
         // Fold this snapshot's usage into the per-child daily ledger (see UsageLedger).
         val ledgerKey = UsageLedger.keyOf(snapshot.childId, snapshot.deviceId)
-        val ledger = UsageLedger.merge(
-            before.usageHistory[ledgerKey].orEmpty(),
-            snapshot.history,
-            snapshot.epochDay,
-            snapshot.usage.sumOf { it.seconds },
-        )
-        val byApp = UsageLedger.mergeByApp(
-            before.usageByApp[ledgerKey].orEmpty(),
-            snapshot.history,
-            snapshot.epochDay,
-            snapshot.usage,
-        )
+        // Untouched rather than merged when the day is not believable: what is already on file is
+        // a month of real history, and the alternative to leaving it alone is losing it.
+        val ledger = ledgerDay?.let {
+            UsageLedger.merge(
+                before.usageHistory[ledgerKey].orEmpty(),
+                snapshot.history,
+                it,
+                snapshot.usage.sumOf { entry -> entry.seconds },
+            )
+        }
+        val byApp = ledgerDay?.let {
+            UsageLedger.mergeByApp(
+                before.usageByApp[ledgerKey].orEmpty(),
+                snapshot.history,
+                it,
+                snapshot.usage,
+            )
+        }
         // The same for what was blocked. Pruning is part of the merge, so the ledger is trimmed
         // by the act of being written to rather than by a job somebody has to remember to run.
-        val blocks = snapshot.blocks?.let {
-            BlockLedger.merge(before.blockLedgers[ledgerKey] ?: BlockLedger.Ledger(), it, snapshot.epochDay)
+        val blocks = ledgerDay?.let { day ->
+            snapshot.blocks?.let {
+                BlockLedger.merge(before.blockLedgers[ledgerKey] ?: BlockLedger.Ledger(), it, day)
+            }
         }
         // A phone the parent was told had gone quiet has just spoken. Announced here rather than
         // from the hourly worker because this is the moment it happens, and a recovery reported an
@@ -3040,8 +3062,8 @@ class SyncManager(
                 children = merged,
                 lastSeen = it.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
                 commands = if (ackedId != null) it.commands.filterNot { c -> c.id == ackedId } else it.commands,
-                usageHistory = it.usageHistory + (ledgerKey to ledger),
-                usageByApp = it.usageByApp + (ledgerKey to byApp),
+                usageHistory = if (ledger != null) it.usageHistory + (ledgerKey to ledger) else it.usageHistory,
+                usageByApp = if (byApp != null) it.usageByApp + (ledgerKey to byApp) else it.usageByApp,
                 blockLedgers = if (blocks != null) it.blockLedgers + (ledgerKey to blocks) else it.blockLedgers,
                 installWindowSeen = when {
                     installWindowOpen && snapshot.deviceId !in it.installWindowSeen ->

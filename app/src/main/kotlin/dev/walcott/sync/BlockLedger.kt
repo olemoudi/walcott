@@ -108,7 +108,11 @@ object BlockLedger {
         // Totals only: the breakdown of a day nobody was listening for is gone, and saying so
         // by leaving the maps empty beats inventing one.
         for (past in report.recentDays) {
+            // Bounded on BOTH sides. A "recent day" cannot be in the reporting device's own
+            // future, and a day that is never pruned is a row that lives for ever — pruning asks
+            // how old a day is, and a day in 2099 is never old (see UsageLedger.window).
             if (past.epochDay == report.epochDay || past.epochDay <= cutoff) continue
+            if (past.epochDay > report.epochDay) continue
             val day = days[past.epochDay] ?: Day()
             days[past.epochDay] = day.copy(
                 net = maxOf(day.net, past.net),

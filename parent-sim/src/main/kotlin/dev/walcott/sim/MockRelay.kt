@@ -72,12 +72,42 @@ class MockRelay(
 
     @Volatile private var started = false
 
-    fun start(): MockRelay {
+    /** How often a port that is not free yet is re-probed (see [start]). */
+    private val PORT_RETRY_MS = 500L
+
+    /** Blocks until [port] can be bound, or throws what the last attempt threw. */
+    private fun awaitFreePort(port: Int, waitMs: Long) {
+        val deadline = System.currentTimeMillis() + waitMs
+        while (true) {
+            val failure = runCatching { java.net.ServerSocket(port).close() }.exceptionOrNull() ?: return
+            if (System.currentTimeMillis() >= deadline) throw failure
+            Thread.sleep(PORT_RETRY_MS)
+        }
+    }
+
+    /**
+     * Starts listening, optionally on a CHOSEN [port].
+     *
+     * The port matters for one thing and it is worth the parameter: a relay that goes away and
+     * comes back has to come back at the same address, or what is being tested is a family being
+     * told where to go rather than a phone reconnecting on its own (see OutageScenarioTest).
+     */
+    fun start(port: Int = 0, waitForPortMs: Long = 0): MockRelay {
         if (started) return this
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = route(request)
         }
-        server.start()
+        if (port <= 0) {
+            server.start()
+        } else {
+            // A port a server has just released is not free the instant it says so: the kernel
+            // holds it for a moment and the bind comes back "address already in use". The wait
+            // has to happen BEFORE the server is started, not around it — MockWebServer refuses a
+            // second start() even when the first one failed to bind, so a retry loop turns one
+            // clear error into a confusing one.
+            awaitFreePort(port, waitForPortMs)
+            server.start(port)
+        }
         started = true
         return this
     }
