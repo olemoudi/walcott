@@ -448,7 +448,16 @@ private fun WindowsForDay(
             TimeButton(stringResource(R.string.from), start.hhmm()) { editing = WindowEdit.Start(index) }
             TimeButton(stringResource(R.string.to), end.hhmm()) { editing = WindowEdit.End(index) }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { onChange(windows.filterIndexed { i, _ -> i != index }) }) {
+            val snackbar = dev.walcott.ui.components.LocalSnackbar.current
+            val undo = stringResource(R.string.action_undo)
+            // Named as the editor names it ("Rule 2", "17:00–19:00"), so the sentence matches the
+            // row that was just there.
+            val removed = stringResource(R.string.snack_removed, ruleName(windows, index))
+            IconButton(onClick = {
+                val before = windows
+                onChange(windows.filterIndexed { i, _ -> i != index })
+                snackbar.show(removed, undo) { onChange(before) }
+            }) {
                 Icon(
                     Icons.Outlined.Delete,
                     contentDescription = stringResource(R.string.window_delete),

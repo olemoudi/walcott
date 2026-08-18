@@ -25,6 +25,22 @@ object SyncEngine {
         if (current == null || incoming.version >= current.version) incoming else current
 
     /**
+     * The first child build that understands a one-off change to today — a pause, or tonight's
+     * bedtime moved (`PolicySettings.todayException`).
+     *
+     * An older child decodes the policy with `ignoreUnknownKeys` and simply does not pause, with
+     * nothing on either phone to say so. The rules it applies stay correct, which is why this is a
+     * note beside the button rather than a refusal: the parent is told BEFORE tapping that this
+     * phone needs its update first, the same gate `RemoteAction.canRelease` puts in front of an
+     * action an old child would silently ignore.
+     */
+    const val TODAY_EXCEPTION_MIN_CHILD_VERSION = 124
+
+    /** Whether a child reporting [childAppVersionCode] applies today's exceptions at all. */
+    fun appliesTodayException(childAppVersionCode: Int): Boolean =
+        childAppVersionCode >= TODAY_EXCEPTION_MIN_CHILD_VERSION
+
+    /**
      * Replay gate for the parent's rules: a child adopts them only from a snapshot strictly
      * newer than the last one it applied, so a captured old envelope — validly signed, e.g.
      * replayed by a removed child still holding the topic + family key — can't roll rules

@@ -16,10 +16,17 @@ class BlockOriginTest {
     @Test
     fun `nothing customized means every rule is the family's`() {
         val overrides = ChildOverrides()
-        for (kind in ActiveBlock.Kind.entries) {
+        // Every rule, that is. A pause is not one: it was started for this phone from its own
+        // row a few minutes ago, so there is no family copy of it to inherit.
+        for (kind in ActiveBlock.Kind.entries - ActiveBlock.Kind.PAUSED) {
             assertEquals(RuleOwner.FAMILY, BlockOrigin.of(block(kind), overrides), "$kind")
             assertEquals(RuleOwner.FAMILY, BlockOrigin.of(block(kind, fromDefault = true), overrides), "$kind")
         }
+    }
+
+    @Test
+    fun `a pause always belongs to the phone it was started on`() {
+        assertEquals(RuleOwner.CHILD, BlockOrigin.of(block(ActiveBlock.Kind.PAUSED), ChildOverrides()))
     }
 
     @Test

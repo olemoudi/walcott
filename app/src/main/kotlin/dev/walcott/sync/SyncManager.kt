@@ -1671,6 +1671,24 @@ class SyncManager(
     private var policyPushJob: kotlinx.coroutines.Job? = null
 
     /**
+     * Set by the caller of an edit that is an ACTION rather than a setting — pausing a phone,
+     * moving tonight's bedtime — and consumed by the very next [onPolicyEdited], which is the
+     * one the edit itself triggers.
+     *
+     * The hold exists because editing rules is a sitting (see [dev.walcott.data.PolicyPush]).
+     * Pausing a phone is not: the parent has just said "put it down" and is watching to see
+     * whether it worked, and ten seconds of nothing is the whole difference between a feature
+     * and a bug report. A stray flag can only ever publish some other edit sooner, which costs
+     * one message and breaks nothing.
+     */
+    @Volatile private var urgentPolicyEdit = false
+
+    /** See [urgentPolicyEdit]: the next rule edit goes out immediately. */
+    fun markUrgentPolicyEdit() {
+        urgentPolicyEdit = true
+    }
+
+    /**
      * A rule was edited: mark it pending and (re)start the hold (see [dev.walcott.data.PolicyPush]).
      *
      * The edit is already saved locally — the screens show it, and the child's copy is what lags.
@@ -1695,8 +1713,9 @@ class SyncManager(
                 lastPolicyEditAtMs = now,
             )
         }
-        val hold = dev.walcott.data.PolicyPush.remainingMs(startedAt, now, now)
-        dev.walcott.debug.DebugLog.i(TAG, "rule edit held for ${hold / 1000}s")
+        val urgent = urgentPolicyEdit.also { urgentPolicyEdit = false }
+        val hold = if (urgent) 0L else dev.walcott.data.PolicyPush.remainingMs(startedAt, now, now)
+        dev.walcott.debug.DebugLog.i(TAG, if (urgent) "rule edit published now" else "rule edit held for ${hold / 1000}s")
         policyPushJob?.cancel()
         policyPushJob = scope.launch {
             delay(hold)

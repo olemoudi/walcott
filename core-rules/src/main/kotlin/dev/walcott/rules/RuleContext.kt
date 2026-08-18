@@ -60,7 +60,9 @@ fun RuleEngine.ruleContext(config: FamilyConfig, now: LocalDateTime): RuleContex
         dayType = dayType,
         specialDay = specialDay,
         nextDayType = nextDayTypeChange(config.calendar, now),
-        bedtime = statusOf(listOfNotNull(config.bedtime[dayType]), now, specialDay, dayFiltered = false),
+        // Tonight's bedtime, not the rule's: a night the parent moved or lifted has to read as
+        // moved or lifted here too, since this card is where they check that it took.
+        bedtime = statusOf(listOfNotNull(config.bedtimeAt(now)), now, specialDay, dayFiltered = false),
         screenFree = statusOf(config.blockedWindows[dayType].orEmpty(), now, specialDay, dayFiltered = true),
     )
 }

@@ -24,6 +24,8 @@ object BlockOrigin {
 
     fun of(block: ActiveBlock, overrides: ChildOverrides): RuleOwner {
         val own = when (block.kind) {
+            // A pause is never inherited: it was started for this phone, from its own row.
+            ActiveBlock.Kind.PAUSED -> true
             ActiveBlock.Kind.BEDTIME -> overrides.bedtime != null
             ActiveBlock.Kind.SCREEN_FREE -> overrides.allAppsBlockedWindows != null
             ActiveBlock.Kind.APP_WINDOW -> overrides.appPolicies != null

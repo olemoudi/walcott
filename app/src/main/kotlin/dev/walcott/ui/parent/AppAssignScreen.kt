@@ -53,6 +53,7 @@ import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppIcon
 import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,7 +71,12 @@ fun AppAssignScreen(
     val allRows by viewModel.appRows.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
+    val ledgers by viewModel.usageByApp.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
+    // Alphabetical is how you FIND an app you already have in mind; by use is how you find the
+    // one that needs a limit, which is the reason a parent opens this screen at all and was the
+    // one order it did not offer. The numbers are already on this phone (see UsageLedger).
+    var byUsage by rememberSaveable { mutableStateOf(false) }
     val rows = remember(allRows, childId) {
         if (childId == null) allRows else allRows.filter { row -> row.owners.any { it.id == childId } }
     }
@@ -86,10 +92,31 @@ fun AppAssignScreen(
     }
     val showOwners = childId == null && allOwners.size > 1
 
-    val filtered = remember(rows, query, ownerFilter) {
+    // Seconds per app over the last week, for whoever the list is currently about: this child in
+    // child scope, the filtered child if one is picked, otherwise everybody.
+    val usageWeek = remember(ledgers, childId, ownerFilter) {
+        val scope = childId ?: ownerFilter
+        dev.walcott.sync.UsageLedger.totalsByApp(
+            dev.walcott.sync.UsageLedger.mergeAcross(
+                ledgers.filterKeys { scope == null || it == scope }.values,
+            ),
+            java.time.LocalDate.now().toEpochDay(),
+            days = 7,
+        )
+    }
+
+    val filtered = remember(rows, query, ownerFilter, byUsage, usageWeek) {
         rows.filter { row ->
             (query.isBlank() || row.app.label.contains(query, ignoreCase = true)) &&
                 (ownerFilter == null || row.owners.any { it.id == ownerFilter })
+        }.let { list ->
+            // Ties fall back to the alphabet rather than to whatever order they arrived in: half
+            // this list has no time on it at all, and a block of apps that reshuffles between two
+            // glances is one nobody can use.
+            if (byUsage) list.sortedWith(
+                compareByDescending<AppRow> { usageWeek[it.app.packageName] ?: 0L }
+                    .thenBy { it.app.label.lowercase() },
+            ) else list
         }
     }
 
@@ -121,6 +148,21 @@ fun AppAssignScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.screen),
             )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = spacing.screen, vertical = spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                ChoiceChip(
+                    selected = !byUsage,
+                    onClick = { byUsage = false },
+                    label = stringResource(R.string.apps_sort_alpha),
+                )
+                ChoiceChip(
+                    selected = byUsage,
+                    onClick = { byUsage = true },
+                    label = stringResource(R.string.apps_sort_usage),
+                )
+            }
             if (showOwners) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
@@ -152,6 +194,7 @@ fun AppAssignScreen(
                         row,
                         restrictions = appRestrictions(effective, row.app.packageName),
                         limitLabel = appLimitLabel(effective, row.app.packageName),
+                        usedThisWeek = usageWeek[row.app.packageName] ?: 0L,
                         showOwners = showOwners,
                         iconRefresh = iconRefresh,
                         onClick = { onOpenApp(row.app.packageName) },
@@ -171,6 +214,8 @@ private fun AppAssignRow(
     restrictions: List<AppRestriction>,
     /** "45 min a day", "No limit", "Blocked" — the one thing there is to say about an app. */
     limitLabel: String,
+    /** Seconds spent on it over the last week; 0 hides the line rather than printing a zero. */
+    usedThisWeek: Long,
     showOwners: Boolean,
     iconRefresh: Int,
     onClick: () -> Unit,
@@ -182,7 +227,19 @@ private fun AppAssignRow(
                 // What this app's day looks like — its own limit, the family default, or
                 // nothing — then a badge per rule it carries of its own.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(limitLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // The limit, then what the week actually did with it. The second half is what
+                    // makes the first half a decision rather than a guess.
+                    Text(
+                        if (usedThisWeek > 0) {
+                            limitLabel + "  ·  " + stringResource(
+                                R.string.apps_used_week,
+                                java.time.Duration.ofSeconds(usedThisWeek).humanize(),
+                            )
+                        } else {
+                            limitLabel
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     AppRestrictionBadges(restrictions, Modifier.padding(start = Tokens.spacing.sm))
                 }
                 // Who has it: one small tag per child (only in multi-child families).

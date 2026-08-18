@@ -23,6 +23,8 @@ import dev.walcott.location.LocationPolicy
 import dev.walcott.location.LocationSampler
 import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
+import dev.walcott.ui.format.hhmm
+import dev.walcott.ui.format.humanize
 import dev.walcott.update.UpdateCheckOutcome
 import dev.walcott.update.Updater
 import kotlinx.coroutines.currentCoroutineContext
@@ -745,39 +747,90 @@ class EnforcementService : LifecycleService() {
                 lastEarnFlushAt = nowClock
             }
 
+            // The permanent notification, kept honest. Everything it needs was computed above,
+            // so this costs a string comparison per tick — and it is re-posted only when what it
+            // SAYS changes, which for a countdown printed in minutes is once a minute.
+            runCatching {
+                val status = StatusLine.of(
+                    config, foreground, managed, now, usage, extra,
+                    failClosed = failingClosed,
+                )
+                updateStatusNotification(status) { repo.inventory.label(it) }
+            }.onFailure { DebugLog.w(TAG, "status notification failed", it) }
+
             // Tight cadence only while a managed app is actually in use (budget countdown
             // needs it); blocked apps are already suspended, so idling can tick slowly.
             delay(if (foreground != null && foreground in managed) TICK_ACTIVE_MILLIS else TICK_IDLE_MILLIS)
         }
     }
 
-    private fun startForegroundCompat() {
-        // IMPORTANCE_MIN: the mandatory FGS notification stays out of the status bar and sits
-        // collapsed in the silent section, instead of a permanent "Walcott is protecting your
-        // device" row on the child's phone. A new channel id because channel importance is
-        // immutable once created; the old LOW channel is deleted so installs that upgrade
-        // actually quiet down.
-        val channelId = "walcott_enforcement_quiet"
-        val nm = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.deleteNotificationChannel("walcott_enforcement")
-            nm.createNotificationChannel(
-                NotificationChannel(channelId, getString(R.string.service_channel_name), NotificationManager.IMPORTANCE_MIN).apply {
-                    description = getString(R.string.service_channel_desc)
-                },
-            )
-        }
+    /** What the ongoing notification currently says, so it is only re-posted when that changes. */
+    private var statusText: String? = null
+
+    /**
+     * Re-posts the ongoing notification when [status] reads differently from what is on screen.
+     *
+     * Same id, same channel, same builder as [startForegroundCompat]: this is the service's own
+     * notification being edited, not a second one. IMPORTANCE_MIN means an edit is silent and
+     * does not re-surface the row.
+     */
+    private fun updateStatusNotification(status: PhoneStatus, appLabel: (String) -> String?) {
+        val text = statusTextOf(status, appLabel)
+        if (text == statusText) return
+        statusText = text
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIF_ID, buildStatusNotification(text))
+    }
+
+    /** The sentence for [status], in the phone's own language. */
+    private fun statusTextOf(status: PhoneStatus, appLabel: (String) -> String?): String = when (status) {
+        is PhoneStatus.Paused -> getString(R.string.status_paused, status.until.hhmm())
+        is PhoneStatus.Bedtime -> getString(R.string.status_bedtime, status.until.hhmm())
+        is PhoneStatus.ScreenFree -> getString(R.string.status_screen_free, status.until.hhmm())
+        is PhoneStatus.AppRemaining -> getString(
+            R.string.status_app_left,
+            appLabel(status.packageName) ?: status.packageName,
+            status.left.humanize(),
+        )
+        PhoneStatus.FailClosed -> getString(R.string.status_fail_closed)
+        PhoneStatus.Quiet -> getString(R.string.service_notif_text)
+    }
+
+    private fun buildStatusNotification(text: String): Notification {
         val tapIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification: Notification = Notification.Builder(this, channelId)
+        return Notification.Builder(this, STATUS_CHANNEL_ID)
             .setContentTitle(getString(R.string.service_notif_title))
-            .setContentText(getString(R.string.service_notif_text))
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_shield)
             .setOngoing(true)
             .setContentIntent(tapIntent)
             .build()
+    }
+
+    private fun startForegroundCompat() {
+        // IMPORTANCE_MIN: the mandatory FGS notification stays out of the status bar and sits
+        // collapsed in the silent section, rather than a permanent row at the top of the child's
+        // phone — which matters more now that it carries a line that changes (see StatusLine).
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.deleteNotificationChannel("walcott_enforcement")
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    STATUS_CHANNEL_ID,
+                    getString(R.string.service_channel_name),
+                    NotificationManager.IMPORTANCE_MIN,
+                ).apply {
+                    description = getString(R.string.service_channel_desc)
+                },
+            )
+        }
+        // Whatever the loop last said, so a service restarted mid-evening does not flash the
+        // generic line before its first tick.
+        val notification: Notification =
+            buildStatusNotification(statusText ?: getString(R.string.service_notif_text))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             // Claim the location type only when the permission is held. Degrade to special-use
@@ -796,6 +849,12 @@ class EnforcementService : LifecycleService() {
 
     companion object {
         private const val NOTIF_ID = 1
+
+        /**
+         * Its own channel id because channel importance is immutable once created: the original
+         * LOW channel is deleted at start-up so installs that upgrade actually quiet down.
+         */
+        private const val STATUS_CHANNEL_ID = "walcott_enforcement_quiet"
         private const val TICK_ACTIVE_MILLIS = 2000L
         private const val TICK_IDLE_MILLIS = 15_000L
         private const val MAX_CREDIT_SECONDS = 15L

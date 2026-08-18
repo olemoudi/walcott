@@ -1669,4 +1669,53 @@
     <string name="restriction_default_apps_desc">Which app opens a link, a call or a photo</string>
     <string name="restriction_uninstall_title">Block uninstalling apps</string>
     <string name="restriction_uninstall_desc">An app deleted by accident, including the ones the phone came with</string>
+
+    <!-- Today's one-off changes: a pause, and tonight's bedtime (see TodayException) -->
+    <string name="quick_actions">Quick actions</string>
+    <string name="quick_give_time">Give time</string>
+    <string name="quick_plus_minutes">+%1$d min</string>
+    <string name="quick_minutes">%1$d min</string>
+    <string name="quick_gave_time">%2$s got %1$d more minutes</string>
+    <string name="quick_pause">Pause the phone</string>
+    <string name="quick_paused_until">until %1$s</string>
+    <string name="quick_paused">%1$s\'s phone is paused for %2$d min</string>
+    <string name="quick_resume">Give it back</string>
+    <string name="quick_resumed">%1$s has their phone back</string>
+    <string name="quick_bedtime_tonight">Bedtime tonight</string>
+    <string name="quick_bedtime_lifted">none tonight</string>
+    <string name="quick_bedtime_off">None tonight</string>
+    <string name="quick_bedtime_off_done">No bedtime for %1$s tonight</string>
+    <string name="quick_bedtime_delayed">%1$s can stay up %2$d min longer tonight</string>
+    <string name="quick_bedtime_restore">Back to normal</string>
+    <string name="quick_bedtime_restored">%1$s\'s bedtime is back to normal</string>
+    <string name="quick_needs_update">Their phone has to update before a pause or a change to bedtime can reach it.</string>
+    <string name="quick_open_detail">Open their page</string>
+    <string name="paused_title">Paused</string>
+    <string name="blocking_origin_paused">You paused this phone</string>
+    <string name="reason_paused">Paused by your family</string>
+    <string name="action_undo">Undo</string>
+    <string name="snack_removed">Removed: %1$s</string>
+    <!-- The permanent notification on the child's phone, saying what the rules are doing -->
+    <string name="status_paused">Paused until %1$s</string>
+    <string name="status_bedtime">Bedtime until %1$s</string>
+    <string name="status_screen_free">Screen-free until %1$s</string>
+    <string name="status_app_left">%1$s · %2$s left</string>
+    <string name="status_fail_closed">Locked until this phone is fixed</string>
+    <!-- What staying off the phone earned today (see IdleEarnEngine) -->
+    <string name="child_earned_today">+%1$d min earned by leaving the phone alone</string>
+    <!-- The app list: which order, and what the week did with each app -->
+    <string name="apps_sort_alpha">A–Z</string>
+    <string name="apps_sort_usage">Most used</string>
+    <string name="apps_used_week">%1$s this week</string>
+    <string-array name="whats_new_0_71_0">
+        <item>Every member now has a lightning button on the home screen: give 15, 30 or 60 minutes, pause their phone, move tonight\'s bedtime, or find them — without opening anything. The home leads with the people now, and the family\'s rules sit underneath them.</item>
+        <item>Pause a phone. Dinner is ready, homework is not done, that is enough for now: everything closes for 15, 30 or 60 minutes and opens again by itself, with nothing to remember to undo. Calls and contacts are never touched, and the phone says it is paused and until when.</item>
+        <item>Tonight\'s bedtime, for tonight only — half an hour later, an hour later, or none at all. It puts itself back tomorrow, so a birthday no longer means editing a rule and hoping you remember to change it back.</item>
+        <item>The notification Walcott has to keep on a child\'s phone finally says something: how long is left of what they are using, or when the phone opens again. Knowing costs them nothing now, and there is a number on the phone itself to point at.</item>
+        <item>Earned time is visible at last. If time off the phone converts into screen time, the child\'s home says how much they earned today — minutes that appeared from nowhere were not a reward.</item>
+        <item>The report can be read one child at a time, and tapping any app goes straight to its limit: "where did the time go" and "then give it a limit" are the same gesture now.</item>
+        <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
+        <item>The activity wall filters by member and is grouped by day.</item>
+        <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
 </resources>

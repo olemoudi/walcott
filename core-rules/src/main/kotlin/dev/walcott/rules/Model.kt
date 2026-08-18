@@ -125,6 +125,62 @@ data class TimeWindow(
 }
 
 /**
+ * The date the bedtime window covering [now] starts on — "which night is this".
+ *
+ * A bedtime normally crosses midnight, so 23:00 on Friday and 06:00 on Saturday are the same
+ * night and a one-off change to it has to reach both halves. Anything else (including a window
+ * that does not cross) belongs to the day it is read on.
+ */
+fun TimeWindow.nightOf(now: LocalDateTime): LocalDate =
+    if (start > end && now.toLocalTime() < end) now.toLocalDate().minusDays(1) else now.toLocalDate()
+
+/** How long this window lasts, wrapping past midnight when it crosses. */
+fun TimeWindow.lengthMinutes(): Long {
+    val from = start.toSecondOfDay() / 60L
+    val to = end.toSecondOfDay() / 60L
+    return if (to >= from) to - from else 24 * 60L - from + to
+}
+
+/**
+ * A one-off change to today, on top of the rules — the thing a family needs constantly and the
+ * rules cannot express, because a rule is a statement about every day of its kind.
+ *
+ * Two shapes, and both exist because the alternative was editing a standing rule and remembering
+ * to put it back: **a pause** ("dinner is ready", "put it down and come here") that closes the
+ * phone until a moment, and **tonight's bedtime** moved back or lifted, for the birthday, the
+ * film, the night the grandparents are staying.
+ *
+ * Everything here dies on its own — a pause when its moment passes, a bedtime change when its
+ * night does — so nothing has to be undone by hand and no exception can be forgotten into a
+ * permanent rule. Essential apps are untouched by both: a paused phone still calls its parents.
+ *
+ * A pause is measured against the device's own clock, which a child could move. That is
+ * deliberately not defended here: any family with a rule of any kind already fails closed on a
+ * clock the sync server disagrees with (see [RuleEngine.requiresTrustedClock]), and a family with
+ * no rules at all is not one where minutes are being fought over.
+ */
+data class TodayException(
+    /** Everything non-essential is closed until this moment; null = no pause running. */
+    val pauseUntil: LocalDateTime? = null,
+    /**
+     * The night the bedtime change below applies to (see [nightOf]); null = tonight's bedtime is
+     * whatever the rules say. Dated rather than a flag so an exception cannot outlive its night:
+     * a phone that was off all evening reads yesterday's exception as spent, not as tonight's.
+     */
+    val bedtimeNight: LocalDate? = null,
+    /** Minutes tonight's bedtime starts later than usual. */
+    val bedtimeDelayMinutes: Int = 0,
+    /** No bedtime at all on [bedtimeNight]. */
+    val bedtimeOff: Boolean = false,
+) {
+    /** Whether the phone is closed by a pause at [now]. */
+    fun pausedAt(now: LocalDateTime): Boolean = pauseUntil != null && now.isBefore(pauseUntil)
+
+    /** Nothing set at all — the ordinary state of a day. */
+    val isEmpty: Boolean get() = pauseUntil == null && bedtimeNight == null
+}
+
+/**
  * What one app is allowed, whether it was set for that app or inherited from the family's
  * default. Every limit in this engine is now per app: sorting apps into categories asked the
  * parent to do a filing job before they could set a single rule, and the rules they actually
@@ -172,7 +228,41 @@ data class FamilyConfig(
     /** Never blocked: phone, contacts, the app itself… */
     val essentialPackages: Set<String> = emptySet(),
     val calendar: SchoolCalendar = SchoolCalendar(),
+    /** Today's one-off change to the two rules above, if the parent made one. */
+    val todayException: TodayException = TodayException(),
 ) {
+    /**
+     * Tonight's bedtime at [now]: the configured window, after whatever [todayException] says
+     * about this night. Null when there is no bedtime — configured or left.
+     *
+     * Every reader of a bedtime goes through here, for the reason [allowanceFor] exists: the
+     * engine, the child's screen and the parent's "what is stopping them" list all draw the same
+     * window, and a one-off change that reached only one of them would be a screen disagreeing
+     * with the phone it describes.
+     */
+    /**
+     * Tonight's bedtime as the RULES have it, before any exception — which is how you ask "which
+     * night is this?" of a night whose bedtime has just been lifted.
+     *
+     * The distinction is not academic. [bedtimeAt] answers null for a lifted night, and a caller
+     * deriving the night from that answer falls back to today's date — so at half past midnight
+     * it looks at the night that has not started yet, decides the exception it is holding belongs
+     * to some other night, and offers the parent no way to put back what they just lifted.
+     */
+    fun scheduledBedtimeAt(now: LocalDateTime): TimeWindow? = bedtime[calendar.dayTypeOf(now)]
+
+    fun bedtimeAt(now: LocalDateTime): TimeWindow? {
+        val window = scheduledBedtimeAt(now) ?: return null
+        if (todayException.bedtimeNight != window.nightOf(now)) return window
+        if (todayException.bedtimeOff) return null
+        val delay = todayException.bedtimeDelayMinutes
+        if (delay <= 0) return window
+        // A delay longer than the night itself leaves no bedtime at all, rather than a window
+        // that has crawled past its own end and blocks the whole of the next day.
+        if (delay >= window.lengthMinutes()) return null
+        return window.copy(start = window.start.plusMinutes(delay.toLong()))
+    }
+
     /**
      * The budget [packageName] answers to on [dayType], or null when it has none: its own if it
      * was given one, otherwise the family default — unless it was explicitly set free.
@@ -232,6 +322,15 @@ enum class BlockReason {
     BEDTIME,
     BLOCKED_WINDOW,
     BUDGET_EXHAUSTED,
+
+    /**
+     * A parent paused this phone until a moment they picked (see [TodayException]).
+     *
+     * Its own reason rather than a screen-free window, because the child is owed the true
+     * sentence: a window is a standing rule they can learn, and this is a person, just now,
+     * asking for the phone to be put down. It also ends by itself, at a time worth printing.
+     */
+    PAUSED,
 
     /**
      * Blocked because the device can't be trusted to apply the rules right now — the usage

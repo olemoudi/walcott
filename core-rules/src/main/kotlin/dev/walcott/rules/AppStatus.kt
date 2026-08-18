@@ -45,8 +45,9 @@ fun RuleEngine.appStatus(
     fun blocked(reason: BlockReason) = AppStatus(packageName, AppState.BLOCKED, used, budget, null, reason)
 
     if (failClosed) return blocked(BlockReason.FAIL_CLOSED)
+    if (config.todayException.pausedAt(now)) return blocked(BlockReason.PAUSED)
 
-    config.bedtime[dayType]?.let { window -> if (time in window) return blocked(BlockReason.BEDTIME) }
+    config.bedtimeAt(now)?.let { window -> if (time in window) return blocked(BlockReason.BEDTIME) }
 
     val specialDay = dayType == DayType.HOLIDAY
     if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {

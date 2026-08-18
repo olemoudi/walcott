@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.PhonelinkSetup
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Schedule
@@ -165,7 +166,7 @@ fun ChildStatusScreen(
     }
 
     // Whatever is closing the whole phone right now. The hero says it once, up top.
-    val deviceWideWindow = state.bedtimeActive || state.screenFreeNow != null
+    val deviceWideWindow = state.bedtimeActive || state.screenFreeNow != null || state.pausedUntil != null
 
     // The apps worth showing: the ones with minutes left, not every limited app on the phone.
     val lowApps = remember(state.apps, deviceWideWindow) {
@@ -1106,6 +1107,9 @@ private fun HeroCard(
     // just stop", and without it this card went on reporting the day's app limits — which are
     // not what stopped anything — over a screen where nothing would open.
     val closed: Pair<Int, java.time.LocalTime>? = when {
+        // A pause outranks both: it is the newest thing to have happened, it ends soonest, and
+        // it is the only one of the three that a person decided a minute ago.
+        state.pausedUntil != null -> R.string.paused_title to state.pausedUntil.toLocalTime()
         state.bedtimeActive -> state.bedtimeTonight?.let { R.string.bedtime_title to it.end }
         state.screenFreeNow != null -> R.string.screen_free_title to state.screenFreeNow.end
         else -> null
@@ -1136,7 +1140,11 @@ private fun HeroCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        if (titleRes == R.string.bedtime_title) Icons.Filled.Bedtime else Icons.Outlined.DoNotDisturbOn,
+                        when (titleRes) {
+                            R.string.bedtime_title -> Icons.Filled.Bedtime
+                            R.string.paused_title -> Icons.Outlined.PauseCircle
+                            else -> Icons.Outlined.DoNotDisturbOn
+                        },
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(40.dp),
@@ -1196,6 +1204,17 @@ private fun HeroCard(
                     if (screenTimeToday >= Duration.ofMinutes(1)) {
                         Text(
                             stringResource(R.string.child_today_screen_time, screenTimeToday.humanize()),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(top = spacing.xs),
+                        )
+                    }
+                    // What staying off the phone bought them. The engine has been granting these
+                    // minutes for releases and telling nobody, which is the whole feature: time
+                    // that appears from nowhere is not a reward, it is a rounding error.
+                    if (state.earnedMinutes > 0) {
+                        Text(
+                            stringResource(R.string.child_earned_today, state.earnedMinutes),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.padding(top = spacing.xs),
@@ -1422,6 +1441,7 @@ private fun fractionUsed(app: AppStatusUi): Float {
 
 @Composable
 private fun blockedReasonText(app: AppStatusUi): String = when (app.blockReason) {
+    BlockReason.PAUSED -> stringResource(R.string.reason_paused)
     BlockReason.BEDTIME -> stringResource(R.string.reason_bedtime)
     BlockReason.BLOCKED_WINDOW -> stringResource(R.string.reason_blocked_window)
     // An app whose limit is zero never had time to run out of, and telling the child it did is

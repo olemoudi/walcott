@@ -3,6 +3,8 @@ package dev.walcott.ui.parent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,27 +69,31 @@ private enum class Range(val days: Int, val labelRes: Int) {
  * exists nowhere else (see [UsageLedger.mergeByApp]).
  */
 @Composable
-fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
+fun WeeklyReportScreen(
+    viewModel: WalcottViewModel,
+    onBack: () -> Unit,
+    /** Straight from "where the time went" to "then give it a limit" (see AppDetailScreen). */
+    onOpenApp: (String) -> Unit,
+) {
     val spacing = Tokens.spacing
     val ledgers by viewModel.usageByApp.collectAsStateWithLifecycle()
     val childSnapshots by viewModel.children.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
     // Packages are what the counters are keyed by; the children's own app lists name them.
     val apps = remember(childSnapshots) { childSnapshots.flatMap { it.apps }.distinctBy { it.packageName } }
 
     var range by rememberSaveable { mutableStateOf(Range.WEEK) }
+    // Null = the whole family. Worth asking only where the answer can differ: with one child,
+    // "the family" and "that child" are the same column of numbers.
+    var childFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    val children = settings.children
     val today = LocalDate.now().toEpochDay()
 
-    // Every child's ledger, added together: the report is about the family's screen time, and
-    // each child's detail page is where one child's own is.
-    val family = remember(ledgers) {
-        val byDay = mutableMapOf<Long, MutableMap<String, Long>>()
-        ledgers.values.forEach { ledger ->
-            ledger.forEach { (day, byApp) ->
-                val into = byDay.getOrPut(day) { mutableMapOf() }
-                byApp.forEach { (pkg, seconds) -> into[pkg] = (into[pkg] ?: 0L) + seconds }
-            }
-        }
-        byDay
+    // The selected ledgers, added together. Keyed by childId (see UsageLedger.keyOf), so the
+    // filter is a lookup rather than a join — and a child with no ledger yet reads as an empty
+    // report rather than as the family's.
+    val family = remember(ledgers, childFilter) {
+        UsageLedger.mergeAcross(ledgers.filterKeys { childFilter == null || it == childFilter }.values)
     }
     val totals = remember(family, range, today) { UsageLedger.totalsByApp(family, today, range.days) }
     val covered = remember(family, range, today) { UsageLedger.daysCovered(family, today, range.days) }
@@ -109,6 +115,32 @@ fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                             onClick = { range = option },
                             label = stringResource(option.labelRes),
                         )
+                    }
+                }
+            }
+            // Whose time this is. The family's total is the honest default — it is what the
+            // screen is titled — but "which of them?" is the next question anybody asks of it,
+            // and until now the only answer was the per-child page, which cannot go back a month.
+            if (children.size >= 2) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    ) {
+                        dev.walcott.ui.components.ChoiceChip(
+                            selected = childFilter == null,
+                            onClick = { childFilter = null },
+                            label = stringResource(R.string.blocks_all_children),
+                        )
+                        children.forEach { child ->
+                            dev.walcott.ui.components.ChoiceChip(
+                                selected = childFilter == child.childId,
+                                onClick = {
+                                    childFilter = child.childId.takeIf { it != childFilter }
+                                },
+                                label = child.name,
+                            )
+                        }
                     }
                 }
             }
@@ -141,7 +173,15 @@ fun WeeklyReportScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             item {
                 Column {
                     rows.forEachIndexed { index, (pkg, seconds) ->
-                        WalcottCard(position = cardPosition(index, rows.size)) {
+                        // Tappable, because the row is half an answer: a parent reading "YouTube,
+                        // 6h" is already deciding what to do about YouTube, and the limit for it
+                        // was four screens away — through a hub, a list and a search field.
+                        // The OTHER bucket is not an app and leads nowhere.
+                        val openable = pkg != dev.walcott.sync.UsageReport.OTHER
+                        WalcottCard(
+                            position = cardPosition(index, rows.size),
+                            onClick = if (openable) ({ onOpenApp(pkg) }) else null,
+                        ) {
                             Box(Modifier.padding(horizontal = spacing.lg, vertical = spacing.xs)) {
                                 UsageRow(UsageEntry(pkg, seconds), apps, viewModel)
                             }

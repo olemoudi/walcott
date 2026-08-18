@@ -118,6 +118,59 @@ data class EarnRuleDto(
 data class VacationDto(val startEpochDay: Long, val endEpochDay: Long)
 
 /**
+ * Today's one-off change to a phone's rules (see [dev.walcott.rules.TodayException]): the pause
+ * a parent starts from their own phone, and tonight's bedtime moved back or lifted.
+ *
+ * Everything here expires by itself, so it is written once and never cleaned up: a pause when its
+ * instant passes, a bedtime change when its night does. That is why it can ride in the policy at
+ * all — a field that had to be undone by hand would eventually be a rule nobody meant.
+ *
+ * [pauseUntilMs] is an instant, not a time of day, so a child in another timezone is paused for
+ * the thirty minutes their parent meant rather than until some hour on their own clock.
+ */
+@Serializable
+data class TodayExceptionDto(
+    /** Everything non-essential closed until this epoch-ms instant; 0 = no pause. */
+    val pauseUntilMs: Long = 0,
+    /** The night (epoch day) the bedtime change belongs to; 0 = tonight's bedtime is the rule's. */
+    val bedtimeNightEpochDay: Long = 0,
+    /** Minutes bedtime starts later on that night. */
+    val bedtimeDelayMinutes: Int = 0,
+    /** No bedtime at all on that night. */
+    val bedtimeOff: Boolean = false,
+) {
+    val isEmpty: Boolean get() = pauseUntilMs <= 0 && bedtimeNightEpochDay <= 0
+
+    /**
+     * The same exception with everything already spent dropped, so the policy stops carrying it
+     * and the parent's screens stop drawing it. [todayEpochDay] is the parent's own day.
+     *
+     * A night survives into the day AFTER it: bedtime runs past midnight, so an exception dropped
+     * at 00:00 would hand the small hours back to the rule it was lifting — which is the one hour
+     * of the night the child would notice. The engine ignores a night that is not the one being
+     * read ([dev.walcott.rules.FamilyConfig.bedtimeAt]), so the extra day costs nothing but bytes.
+     */
+    fun prunedAt(nowMs: Long, todayEpochDay: Long): TodayExceptionDto {
+        val nightLives = bedtimeNightEpochDay >= todayEpochDay - 1
+        return copy(
+            pauseUntilMs = pauseUntilMs.takeIf { it > nowMs } ?: 0,
+            bedtimeNightEpochDay = if (nightLives) bedtimeNightEpochDay else 0,
+            bedtimeDelayMinutes = if (nightLives) bedtimeDelayMinutes else 0,
+            bedtimeOff = bedtimeOff && nightLives,
+        )
+    }
+
+    fun toDomain(): dev.walcott.rules.TodayException = dev.walcott.rules.TodayException(
+        pauseUntil = pauseUntilMs.takeIf { it > 0 }?.let {
+            java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+        },
+        bedtimeNight = bedtimeNightEpochDay.takeIf { it > 0 }?.let(LocalDate::ofEpochDay),
+        bedtimeDelayMinutes = bedtimeDelayMinutes,
+        bedtimeOff = bedtimeOff,
+    )
+}
+
+/**
  * Idle-earn configuration (see [dev.walcott.rules.IdleEarnConfig]): banking idle time into
  * extra minutes for every app, with a rolling-window and a weekly cap, earning only inside
  * [earnWindows] (dayType name -> windows; empty = all day). Null = feature off.
@@ -439,6 +492,16 @@ data class ChildOverrides(
      * thing this app can do, and it only makes sense where the phone's owner knows about it.
      */
     val notificationLogEnabled: Boolean? = null,
+    /**
+     * Today's one-off change to THIS phone: a pause, or tonight's bedtime moved (see
+     * [TodayExceptionDto]). Null — the ordinary state — inherits the family's, which is empty.
+     *
+     * Deliberately outside [isEmpty] and [customRuleCount]: those describe how far this child's
+     * RULES have been pulled away from the family's, and an exception is not a rule. Counting a
+     * pause as a customized rule would tell a parent they had personalised something, an hour
+     * before the thing counted expired on its own.
+     */
+    val todayException: TodayExceptionDto? = null,
 ) {
     val isEmpty: Boolean
         get() = defaultAppBudget == null && bedtime == null &&
@@ -625,6 +688,19 @@ data class PolicySettings(
     val familyName: String = "",
     /** Children registered by the parent, each with optional per-child overrides. */
     val children: List<ChildEntry> = emptyList(),
+    /**
+     * Today's one-off change, as the device reading this policy should apply it.
+     *
+     * A pause and a moved bedtime are decisions about ONE phone ("come to the table", "you can
+     * watch the end of the film"), so they are written per member in
+     * [ChildOverrides.todayException] and folded in here by [resolveForChild] — this field is
+     * where the engine finds them, and stays null family-wide.
+     *
+     * Nullable rather than an empty object because this policy is serialized with
+     * `encodeDefaults = true` and has to fit inside one relay message (see `ParentFit`): a null
+     * costs a quarter of what four zeroed fields cost, on every publish, for ever.
+     */
+    val todayException: TodayExceptionDto? = null,
     /** Pre-0.35 app -> categoryId assignments. Migration input only, like [budgets]. */
     val assignments: Map<String, String> = emptyMap(),
     /** Family-default periodic location-tracking interval in minutes (0 = off). */
@@ -697,6 +773,7 @@ data class PolicySettings(
             allAppsBlockedWindows = overrides.allAppsBlockedWindows ?: allAppsBlockedWindows,
             keepRingerAudible = overrides.keepRingerAudible ?: keepRingerAudible,
             notificationLogEnabled = overrides.notificationLogEnabled ?: notificationLogEnabled,
+            todayException = overrides.todayException ?: todayException,
             // This child's own special days on top of the family's; the others' never travel here.
             holidays = holidays + childHolidays[childId].orEmpty(),
             vacations = vacations + childVacations[childId].orEmpty(),
@@ -811,6 +888,7 @@ data class PolicySettings(
                 weekendStartsFriday = weekendStartsFridayAtMinute.toTimeOfDayOrNull(),
                 weekendEndsSunday = weekendEndsSundayAtMinute.toTimeOfDayOrNull(),
             ),
+            todayException = todayException?.toDomain() ?: dev.walcott.rules.TodayException(),
         )
     }
 

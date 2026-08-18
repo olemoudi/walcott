@@ -3,6 +3,74 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.71.0 — the answers that are not rules, and a notification that says something
+
+A quality-of-life sweep over the two screens a family actually lives in.
+
+**Today's exception (`TodayException`, in `:core-rules`).** The gap was the same in both
+directions: a family constantly needs to say "not now" and "just tonight", and the only vocabulary
+the app had was a standing rule — edit it, then remember to put it back. Two shapes, both dated so
+they cannot outlive themselves:
+
+- **A pause**: everything non-essential closed until an instant the parent picked. Above every
+  rule in `RuleEngine.evaluate` (no granted minute answers "come to the table"), its own
+  `BlockReason.PAUSED` so the child is told the truth rather than shown a window that does not
+  exist, and its own `ActiveBlock.Kind.PAUSED` whose action on the parent's side is the phone back.
+- **Tonight's bedtime**, later by N minutes or lifted, keyed to the NIGHT rather than the day
+  (`nightOf`): a bedtime crosses midnight, so an exception dropped at 00:00 would hand the small
+  hours back to the rule it was lifting — the one hour of the night a child would notice. Kept a
+  day past its night for the same reason. Every reader of a bedtime now goes through
+  `FamilyConfig.bedtimeAt`, so the engine, the child's home and the parent's "what is stopping
+  them" cannot disagree about tonight.
+
+Written per member (`ChildOverrides.todayException`) and deliberately outside `customRuleCount`
+and `isEmpty` — an exception is not a customized rule, and counting it would tell a parent they
+had personalised something an hour before it expired on its own. Published WITHOUT the coalescing
+hold (`SyncManager.markUrgentPolicyEdit`): ten seconds is right for a sitting of rule edits and
+wrong for a parent watching to see whether the phone went quiet. Gated on
+`SyncEngine.TODAY_EXCEPTION_MIN_CHILD_VERSION` (124) — an older child ignores the unknown field
+in silence, so the sheet says so before the tap rather than after.
+
+**The permanent notification now says something** (`StatusLine`/`PhoneStatus`). It is the only
+sentence this app shows without being opened, and for four versions it read "Usage rules are
+active". It now carries what is left of the app in use, or when the phone opens again — from
+values the enforcement loop already computes, re-posted only when the text changes (once a minute
+for a countdown printed in minutes). It never announces a limit for an app outside the managed
+set: screen time is counted for a wider set than can be suspended, and a countdown to a wall that
+never arrives is worse than silence.
+
+**Earned time was invisible.** `ChildUiState.earnedMinutes` had been computed, plumbed through
+the view model and rendered nowhere since idle-earn shipped: minutes appeared from nowhere, which
+is not a reward. One line on the child's home now says what putting the phone down was worth.
+
+**Everything else in the sweep**, all of it about the two screens people actually use:
+
+- The parent's home leads with the members (each row with a lightning button opening
+  `QuickActionsSheet`: minutes, pause, tonight's bedtime, locate) and puts the family's rule
+  hub *under* them, where it belongs on a screen read top-down.
+- The report filters per child and its app rows open that app's limit — "where did the time go"
+  and "give it a limit" are one gesture now.
+- The app list sorts by most used, with the week's time beside each limit (`UsageLedger.mergeAcross`,
+  shared with the report so the two cannot drift).
+- The activity wall filters by member and carries day separators.
+- `SnackbarController` + `LocalSnackbar`: deleting a special day, a domain or a schedule is
+  undoable from the message that reports it. The app had no snackbar at all before this — every
+  action answered with a toast, which has no handle and no memory.
+
+**A bug the unit tests could not have found, caught on the emulator.** Lifting tonight's bedtime
+AFTER midnight made the row for putting it back disappear: the sheet asked `bedtimeAt` which night
+it was in, that answers null on a night already lifted, and the fallback is today's date — so it
+compared the exception it was holding against tomorrow night and concluded it belonged to neither.
+`FamilyConfig.scheduledBedtimeAt` is the fix, and the reason it exists: "which night is this" is a
+question for the RULE, never for what is left of it.
+
+Tests: 1175 JVM across the four modules (0 failures), of which 31 are new — `TodayExceptionTest`
+(15, the regression above among them), `PhoneStatusTest` (9), `TodayExceptionDtoTest` (7) — plus
+`PauseScenarioTest` on a real device: a pause applied, given back **by the device's own clock with
+nothing else sent**, lifted early by the parent, and a bedtime lifted for one night. The rest of
+`:parent-sim:e2eTest` stayed green (83/83 after re-running three scenarios that had timed out while
+a second emulator was competing for the machine).
+
 ## Shipped in v0.64.0 — the reliability sweep, and the phone nobody was telling
 
 A pass over "can this app leave a managed phone in a state nobody can get out of", plus the two

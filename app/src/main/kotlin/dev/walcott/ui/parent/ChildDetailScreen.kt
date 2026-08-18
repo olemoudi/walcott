@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BatteryStd
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InsertChart
+import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Schedule
@@ -224,6 +226,7 @@ fun ChildDetailScreen(
 
     var showRename by remember { mutableStateOf(false) }
     var showRemove by remember { mutableStateOf(false) }
+    var showQuickActions by remember { mutableStateOf(false) }
     // Which app the bonus dialog opens on: the all-apps sentinel from the general button, the
     // package itself when it was opened from the app that has just run out. Null = closed.
     var bonusTarget by remember { mutableStateOf<String?>(null) }
@@ -338,6 +341,9 @@ fun ChildDetailScreen(
             onRename = { showRename = true },
             onRemove = { showRemove = true },
             onShowCode = if (snapshot != null) ({ showCode = !showCode }) else null,
+            // The same sheet the home offers, because the parent who opened this page to "do
+            // something about it now" is the one who came here from a phone call, not a rule.
+            onQuickActions = if (entry.isAdult) null else ({ showQuickActions = true }),
         )
         LazyColumn(
             state = listState,
@@ -518,6 +524,9 @@ fun ChildDetailScreen(
                                 position = cardPosition(index, blockingNow.size),
                                 onAct = {
                                     when (block.kind) {
+                                        // The parent started this one and is the only thing that
+                                        // can end it early: give the phone back.
+                                        ActiveBlock.Kind.PAUSED -> viewModel.resumeChild(childId)
                                         // More minutes is the only thing that ends a spent
                                         // budget, and it is what the child's own screen asks
                                         // for — the same grant, from the side that can give it.
@@ -844,6 +853,14 @@ fun ChildDetailScreen(
         }
     }
 
+    if (showQuickActions) {
+        QuickActionsSheet(
+            viewModel = viewModel,
+            childId = childId,
+            onDismiss = { showQuickActions = false },
+        )
+    }
+
     if (showRename) {
         RenameDialog(
             initial = entry.name,
@@ -943,6 +960,7 @@ private fun BlockingRow(
     val spacing = Tokens.spacing
     val ownRule = owner == dev.walcott.data.RuleOwner.CHILD
     val (icon, title) = when (block.kind) {
+        ActiveBlock.Kind.PAUSED -> Icons.Outlined.PauseCircle to stringResource(R.string.paused_title)
         ActiveBlock.Kind.BEDTIME -> Icons.Filled.Bedtime to stringResource(R.string.bedtime_title)
         ActiveBlock.Kind.SCREEN_FREE -> Icons.Outlined.DoNotDisturbOn to stringResource(R.string.screen_free_title)
         ActiveBlock.Kind.APP_WINDOW -> Icons.Outlined.Schedule to appLabel
@@ -982,6 +1000,9 @@ private fun BlockingRow(
     // And whose rule it is. Never omitted, not even for the family's own: "unstated" is what
     // the row said before, and it was read as "the family's" exactly as often as it was true.
     val origin = when (block.kind) {
+        // The one row here that is not a rule at all: nobody needs telling whose it is, they
+        // started it themselves a few minutes ago.
+        ActiveBlock.Kind.PAUSED -> stringResource(R.string.blocking_origin_paused)
         ActiveBlock.Kind.BUDGET, ActiveBlock.Kind.APP_BLOCKED -> when {
             block.fromDefaultBudget && ownRule -> stringResource(R.string.blocking_origin_child_default, childName)
             block.fromDefaultBudget -> stringResource(R.string.blocking_origin_family_default)
@@ -993,7 +1014,13 @@ private fun BlockingRow(
             else stringResource(R.string.blocking_origin_family)
     }
     val action = stringResource(
-        if (block.kind == ActiveBlock.Kind.BUDGET) R.string.blocking_give_time else R.string.action_edit,
+        when (block.kind) {
+            // Each row offers the thing that ENDS it: minutes for a spent budget, the phone back
+            // for a pause, and the rule itself for everything that is one.
+            ActiveBlock.Kind.BUDGET -> R.string.blocking_give_time
+            ActiveBlock.Kind.PAUSED -> R.string.quick_resume
+            else -> R.string.action_edit
+        },
     )
     WalcottCard(position = position) {
         Row(
@@ -1042,6 +1069,8 @@ private fun DetailTopBar(
     onRemove: () -> Unit,
     /** Toggles the enrollment code back on. Null before a device has ever linked (it is already shown). */
     onShowCode: (() -> Unit)?,
+    /** The small sheet of same-minute actions; null for an adult, who has no limits to bend. */
+    onQuickActions: (() -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     Row(
@@ -1053,6 +1082,15 @@ private fun DetailTopBar(
         }
         Spacer(Modifier.width(spacing.xs))
         Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        onQuickActions?.let { open ->
+            IconButton(onClick = open) {
+                Icon(
+                    Icons.Outlined.Bolt,
+                    contentDescription = stringResource(R.string.quick_actions),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
         // Re-enrolling a child happens about once ever, so the code lives here rather than in a
         // card of its own at the top of the screen: the same door, out of the way of the things
         // this screen is opened for.

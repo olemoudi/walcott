@@ -1661,4 +1661,53 @@
     <string name="restriction_default_apps_desc">Qué app abre un enlace, una llamada o una foto</string>
     <string name="restriction_uninstall_title">Bloquear la desinstalación de apps</string>
     <string name="restriction_uninstall_desc">Una app borrada sin querer, incluidas las que venían con el móvil</string>
+
+    <!-- Cambios de hoy: la pausa y la hora de dormir de esta noche (ver TodayException) -->
+    <string name="quick_actions">Acciones rápidas</string>
+    <string name="quick_give_time">Dar tiempo</string>
+    <string name="quick_plus_minutes">+%1$d min</string>
+    <string name="quick_minutes">%1$d min</string>
+    <string name="quick_gave_time">%2$s tiene %1$d minutos más</string>
+    <string name="quick_pause">Pausar el móvil</string>
+    <string name="quick_paused_until">hasta las %1$s</string>
+    <string name="quick_paused">El móvil de %1$s queda en pausa %2$d min</string>
+    <string name="quick_resume">Devolverlo</string>
+    <string name="quick_resumed">%1$s recupera el móvil</string>
+    <string name="quick_bedtime_tonight">Hora de dormir de hoy</string>
+    <string name="quick_bedtime_lifted">esta noche no hay</string>
+    <string name="quick_bedtime_off">Esta noche no</string>
+    <string name="quick_bedtime_off_done">Esta noche %1$s no tiene hora de dormir</string>
+    <string name="quick_bedtime_delayed">%1$s se puede quedar %2$d min más esta noche</string>
+    <string name="quick_bedtime_restore">Volver a la normal</string>
+    <string name="quick_bedtime_restored">La hora de dormir de %1$s vuelve a la normal</string>
+    <string name="quick_needs_update">Su móvil tiene que actualizarse para que le lleguen las pausas y los cambios de hora de dormir.</string>
+    <string name="quick_open_detail">Ver su ficha</string>
+    <string name="paused_title">En pausa</string>
+    <string name="blocking_origin_paused">Has pausado este móvil</string>
+    <string name="reason_paused">En pausa por tu familia</string>
+    <string name="action_undo">Deshacer</string>
+    <string name="snack_removed">Se ha quitado: %1$s</string>
+    <!-- La notificación permanente del móvil del hijo: qué están haciendo las reglas -->
+    <string name="status_paused">En pausa hasta las %1$s</string>
+    <string name="status_bedtime">Hora de dormir hasta las %1$s</string>
+    <string name="status_screen_free">Sin pantalla hasta las %1$s</string>
+    <string name="status_app_left">%1$s · quedan %2$s</string>
+    <string name="status_fail_closed">Bloqueado hasta arreglar este móvil</string>
+    <!-- Lo que ha ganado hoy por dejar el móvil (ver IdleEarnEngine) -->
+    <string name="child_earned_today">+%1$d min ganados por dejar el móvil</string>
+    <!-- La lista de apps: en qué orden, y qué ha hecho la semana con cada una -->
+    <string name="apps_sort_alpha">A–Z</string>
+    <string name="apps_sort_usage">Más usadas</string>
+    <string name="apps_used_week">%1$s esta semana</string>
+    <string-array name="whats_new_0_71_0">
+        <item>Cada miembro tiene ahora un botón de rayo en la pantalla de inicio: dar 15, 30 o 60 minutos, pausar su móvil, mover la hora de dormir de esta noche o localizarlo — sin entrar en nada. El inicio empieza por las personas, y las reglas de la familia van debajo.</item>
+        <item>Pausar un móvil. Que la cena está lista, que los deberes no están hechos, que ya está bien por ahora: todo se cierra durante 15, 30 o 60 minutos y se vuelve a abrir solo, sin nada que acordarse de deshacer. El teléfono y los contactos no se tocan nunca, y el móvil dice que está en pausa y hasta cuándo.</item>
+        <item>La hora de dormir de esta noche, solo por esta noche — media hora más tarde, una hora más tarde, o ninguna. Mañana vuelve sola a su sitio, así que un cumpleaños ya no significa editar una regla y confiar en acordarse de devolverla.</item>
+        <item>La notificación que Walcott tiene que mantener en el móvil de un hijo por fin dice algo: cuánto queda de lo que está usando, o a qué hora se vuelve a abrir el móvil. Saberlo ya no cuesta nada, y hay un número en el propio móvil al que señalar.</item>
+        <item>El tiempo ganado por fin se ve. Si el tiempo fuera del móvil se convierte en tiempo de pantalla, el inicio del hijo dice cuánto ha ganado hoy — unos minutos aparecidos de la nada no eran un premio.</item>
+        <item>El informe se puede leer hijo por hijo, y tocar cualquier app lleva directo a su límite: «dónde se fue el tiempo» y «ponle un límite» son ya el mismo gesto.</item>
+        <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
+        <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
+        <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
 </resources>

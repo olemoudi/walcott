@@ -31,7 +31,11 @@ object RuleEngine {
         // days; bedtime is per day type and reads the clock alone.
         val specialDay = dayType == DayType.HOLIDAY
 
-        config.bedtime[dayType]?.let { window ->
+        // Above every rule, because it is not one: a parent said "put it down, now", and no
+        // standing rule and no granted minute is an answer to that.
+        if (config.todayException.pausedAt(now)) return Verdict.Blocked(BlockReason.PAUSED)
+
+        config.bedtimeAt(now)?.let { window ->
             if (time in window) return Verdict.Blocked(BlockReason.BEDTIME)
         }
         // Family-wide screen-free windows: like bedtime, a hard block on every non-essential
@@ -71,7 +75,8 @@ object RuleEngine {
      */
     fun deviceWideBlock(config: FamilyConfig, now: LocalDateTime): BlockReason? {
         val dayType = config.calendar.dayTypeOf(now)
-        config.bedtime[dayType]?.let { if (now.toLocalTime() in it) return BlockReason.BEDTIME }
+        if (config.todayException.pausedAt(now)) return BlockReason.PAUSED
+        config.bedtimeAt(now)?.let { if (now.toLocalTime() in it) return BlockReason.BEDTIME }
         val specialDay = dayType == DayType.HOLIDAY
         return if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
             BlockReason.BLOCKED_WINDOW

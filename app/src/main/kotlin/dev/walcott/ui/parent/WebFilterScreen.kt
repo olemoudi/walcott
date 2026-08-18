@@ -58,6 +58,9 @@ fun WebFilterScreen(
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val snackbar = dev.walcott.ui.components.LocalSnackbar.current
+    val undo = stringResource(R.string.action_undo)
+    val removedFmt = stringResource(R.string.snack_removed)
     val overrides = settings.children.firstOrNull { it.childId == childId }?.overrides
     // In child scope this shows what the child ACTUALLY gets: its own list once customized,
     // the family's while it still inherits — read-only in that case, never an empty list that
@@ -207,7 +210,16 @@ fun WebFilterScreen(
                         DeletableRow(
                             domain,
                             position = cardPosition(index, sorted.size),
-                            onDelete = if (editable) ({ viewModel.removeBlockedDomain(domain, childId) }) else null,
+                            onDelete = if (editable) {
+                                {
+                                    viewModel.removeBlockedDomain(domain, childId)
+                                    snackbar.show(removedFmt.format(domain), undo) {
+                                        viewModel.addBlockedDomain(domain, childId)
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
@@ -245,7 +257,12 @@ fun WebFilterScreen(
                             DeletableRow(
                                 text,
                                 position = cardPosition(index, settings.domainAppRules.size),
-                            ) { viewModel.removeDomainAppRule(index) }
+                            ) {
+                                viewModel.removeDomainAppRule(index)
+                                snackbar.show(removedFmt.format(rule.domain), undo) {
+                                    viewModel.addDomainAppRule(rule.domain, rule.packageName, rule.allowOnlyFromApp)
+                                }
+                            }
                         }
                     }
                 }

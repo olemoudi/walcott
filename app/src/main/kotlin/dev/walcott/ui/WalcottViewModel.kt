@@ -12,6 +12,7 @@ import dev.walcott.data.withSpecialDaysOwnRules
 import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
 import dev.walcott.rules.appStatus
+import dev.walcott.rules.nightOf
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
@@ -80,6 +81,12 @@ data class ChildUiState(
      * everything just stop", and the only one the screen never said out loud.
      */
     val screenFreeNow: dev.walcott.rules.TimeWindow? = null,
+    /**
+     * When a pause the parent started lets go, if one is running (see
+     * [dev.walcott.rules.TodayException]). The child is owed the hour: a phone that has closed
+     * with no end on the screen is the same phone as one that is broken.
+     */
+    val pausedUntil: LocalDateTime? = null,
 )
 
 /** One app in the parent's list, with whatever was set for it (null = the family default). */
@@ -507,6 +514,77 @@ class WalcottViewModel(
     fun setChildOverrides(childId: String, overrides: dev.walcott.data.ChildOverrides) = viewModelScope.launch {
         repository.updateSettings { s ->
             s.copy(children = s.children.map { if (it.childId == childId) it.copy(overrides = overrides) else it })
+        }
+    }
+
+    // --- Today's one-off changes (see dev.walcott.data.TodayExceptionDto) ---
+
+    /**
+     * Rewrites one member's exception for today and sends it straight out.
+     *
+     * Urgent by construction: every caller here is a parent doing something to a phone in front
+     * of them, or in someone's hand across the table, and the ten-second coalescing window that
+     * is right for editing rules is exactly wrong for this (see `SyncManager.markUrgentPolicyEdit`).
+     *
+     * The result is pruned and dropped entirely when nothing is left of it, so an expired pause
+     * never travels and the child's entry goes back to holding nothing.
+     */
+    private fun editTodayException(
+        childId: String,
+        edit: (dev.walcott.data.TodayExceptionDto) -> dev.walcott.data.TodayExceptionDto,
+    ) = viewModelScope.launch {
+        sync.markUrgentPolicyEdit()
+        val nowMs = System.currentTimeMillis()
+        val today = java.time.LocalDate.now().toEpochDay()
+        repository.updateSettings { s ->
+            s.copy(
+                children = s.children.map { child ->
+                    if (child.childId != childId) {
+                        child
+                    } else {
+                        val next = edit(child.overrides.todayException ?: dev.walcott.data.TodayExceptionDto())
+                            .prunedAt(nowMs, today)
+                        child.copy(
+                            overrides = child.overrides.copy(todayException = next.takeUnless { it.isEmpty }),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /** Close this member's phone (everything but the essentials) for [minutes] from now. */
+    fun pauseChild(childId: String, minutes: Int) = editTodayException(childId) {
+        it.copy(pauseUntilMs = System.currentTimeMillis() + minutes * 60_000L)
+    }
+
+    /** Give the phone back before the pause was due to end. */
+    fun resumeChild(childId: String) = editTodayException(childId) { it.copy(pauseUntilMs = 0) }
+
+    /**
+     * Tonight only: bedtime starts [delayMinutes] later, or ([off]) not at all. Both zero and
+     * false put tonight back the way the rules have it.
+     *
+     * The night is worked out from the member's own bedtime rather than from the date, so a
+     * parent answering "can I stay up?" at half past midnight moves the night they are in and
+     * not the one that has not started yet (see [dev.walcott.rules.nightOf]).
+     */
+    fun setBedtimeTonight(childId: String, delayMinutes: Int, off: Boolean) {
+        val now = java.time.LocalDateTime.now()
+        val config = settings.value.resolveForChild(childId).toFamilyConfig(emptySet())
+        // From the rule, not from tonight's remains: a bedtime already lifted answers null, and
+        // the night would then be tomorrow's (see FamilyConfig.scheduledBedtimeAt).
+        val night = config.scheduledBedtimeAt(now)?.nightOf(now) ?: now.toLocalDate()
+        editTodayException(childId) {
+            if (delayMinutes <= 0 && !off) {
+                it.copy(bedtimeNightEpochDay = 0, bedtimeDelayMinutes = 0, bedtimeOff = false)
+            } else {
+                it.copy(
+                    bedtimeNightEpochDay = night.toEpochDay(),
+                    bedtimeDelayMinutes = if (off) 0 else delayMinutes,
+                    bedtimeOff = off,
+                )
+            }
         }
     }
 
@@ -957,7 +1035,9 @@ class WalcottViewModel(
         val now = clockPair.first
         val clockTampered = clockPair.second
         val dayType = config.calendar.dayTypeOf(now)
-        val bedtimeTonight = config.bedtime[dayType]
+        // Tonight's, not the rule's: a bedtime the parent moved or lifted for tonight has to
+        // read as moved here too, or the child is looking at an hour that is not going to happen.
+        val bedtimeTonight = config.bedtimeAt(now)
         val bedtimeActive = bedtimeTonight?.let { now.toLocalTime() in it } ?: false
 
         val failClosed = clockTampered && RuleEngine.requiresTrustedClock(config)
@@ -994,6 +1074,7 @@ class WalcottViewModel(
             screenFreeToday = config.blockedWindows[dayType].orEmpty(),
             screenFreeNow = config.blockedWindows[dayType].orEmpty()
                 .firstOrNull { it.appliesAt(now, dayType == DayType.HOLIDAY) },
+            pausedUntil = config.todayException.pauseUntil?.takeIf { now.isBefore(it) },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 

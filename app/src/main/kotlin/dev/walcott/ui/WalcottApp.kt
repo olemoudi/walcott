@@ -132,6 +132,9 @@ fun WalcottApp(
     var overrideChildId by remember { mutableStateOf<String?>(null) }
     // Selected package for the per-app detail screen (Apps & categories).
     var appDetailPkg by remember { mutableStateOf<String?>(null) }
+    // Where the per-app editor was opened from: the app list, or the report a parent was reading
+    // when they decided this app needed a limit. Null = the list, which is the historical origin.
+    var appDetailReturnTo by remember { mutableStateOf<Screen?>(null) }
     // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
     var gateAllowCreate by remember { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
@@ -265,7 +268,7 @@ fun WalcottApp(
             // Reached from the home gear on the parent, from the device hub on a child.
             Screen.APP_SETTINGS -> if (parentMode) Screen.FAMILIES else Screen.FAMILY
             Screen.DEBUG_LOGS, Screen.DEVICE_SETUP -> Screen.APP_SETTINGS
-            Screen.APP_DETAIL -> Screen.APPS
+            Screen.APP_DETAIL -> appDetailReturnTo?.also { appDetailReturnTo = null } ?: Screen.APPS
             Screen.FAMILY_CHOOSER -> Screen.FAMILIES
             Screen.SETUP_PRESETS -> Screen.FAMILIES
             Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
@@ -287,7 +290,15 @@ fun WalcottApp(
     val isHome = screen == Screen.MODE_SELECT || screen == Screen.CHILD || screen == Screen.FAMILIES
     BackHandler(enabled = !isHome) { back() }
 
+    // One host for every screen: several actions are taken from a sheet or a dialog that closes
+    // itself, so the confirmation (and its undo) has to outlive whatever started it.
+    val snackbarHost = remember { androidx.compose.material3.SnackbarHostState() }
+    val snackbar = dev.walcott.ui.components.rememberSnackbarController(snackbarHost)
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            dev.walcott.ui.components.LocalSnackbar provides snackbar,
+        ) {
         Box(Modifier.fillMaxSize().systemBarsPadding()) {
             AnimatedContent(
                 targetState = screen,
@@ -524,7 +535,18 @@ fun WalcottApp(
                         onOpenSpecialDays = { calendarReturnTo = Screen.EARN; screen = Screen.CALENDAR },
                     )
                     Screen.CALENDAR -> CalendarScreen(viewModel, onBack = ::back)
-                    Screen.REPORT -> WeeklyReportScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.REPORT -> WeeklyReportScreen(
+                        viewModel,
+                        onBack = { screen = Screen.FAMILY },
+                        onOpenApp = { pkg ->
+                            appDetailPkg = pkg
+                            // The family's own rule for it: the report is the family's, and the
+                            // per-child copy has its own way in from that child's page.
+                            overrideChildId = null
+                            appDetailReturnTo = Screen.REPORT
+                            screen = Screen.APP_DETAIL
+                        },
+                    )
                     Screen.BLOCKS -> BlockStatsScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.WEBFILTER -> WebFilterScreen(
                         viewModel, onBack = ::back,
@@ -570,6 +592,11 @@ fun WalcottApp(
                     )
                 }
             }
+            androidx.compose.material3.SnackbarHost(
+                hostState = snackbarHost,
+                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+            )
+        }
         }
     }
 }

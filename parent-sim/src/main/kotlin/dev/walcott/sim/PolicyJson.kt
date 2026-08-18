@@ -42,6 +42,8 @@ object PolicyJson {
      * @param unlimited packages explicitly never limited
      * @param bedtime start/end minute-of-day of the family's bedtime, on every day type
      * @param screenFree family-wide screen-free windows (start/end minute-of-day), every day type
+     * @param children the family's member entries (see [childEntry]) — the only place the
+     *   per-member fields live, today's pause among them
      * @param extra further raw keys, for exercising fields this helper doesn't model
      *
      * `appPolicies` entries are shaped as the child's `AppPolicyDto` — budgets keyed by day
@@ -56,6 +58,7 @@ object PolicyJson {
         unlimited: Set<String> = emptySet(),
         bedtime: Pair<Int, Int>? = null,
         screenFree: List<Pair<Int, Int>> = emptyList(),
+        children: List<JsonObject> = emptyList(),
         newAppAlerts: Boolean = true,
         // Any JSON value, not only objects: the fields worth reaching for by hand are as often a
         // bare flag ("keepRingerAudible") as a nested structure.
@@ -93,9 +96,51 @@ object PolicyJson {
                 val windows = JsonArray(screenFree.map { (start, end) -> window(start, end) })
                 put("allAppsBlockedWindows", JsonObject(dayTypes.associateWith { windows }))
             }
+            if (children.isNotEmpty()) put("children", JsonArray(children))
             extra.forEach { (key, value) -> put(key, value) }
         }
         return json.encodeToString(JsonObject.serializer(), root)
+    }
+
+    /**
+     * One member of the family, as the child decodes it (`ChildEntry`).
+     *
+     * A child resolves the policy against its OWN entry (`resolveForChild`), so anything written
+     * here reaches that device and no other — which is the whole point of the fields it carries:
+     * a pause is about one phone, not about a household.
+     */
+    fun childEntry(
+        childId: String,
+        name: String = "Sim Child",
+        overrides: JsonObject = JsonObject(emptyMap()),
+    ): JsonObject = buildJsonObject {
+        put("childId", childId)
+        put("name", name)
+        put("overrides", overrides)
+    }
+
+    /**
+     * Today's one-off change for one member (`TodayExceptionDto`): everything closed until
+     * [pauseUntilMs], and tonight's bedtime moved back or lifted.
+     *
+     * [bedtimeNightEpochDay] dates the bedtime half, because a night is not a day: an exception
+     * for the night that began yesterday still has to reach 02:00 this morning.
+     */
+    fun todayException(
+        pauseUntilMs: Long = 0,
+        bedtimeNightEpochDay: Long = 0,
+        bedtimeDelayMinutes: Int = 0,
+        bedtimeOff: Boolean = false,
+    ): JsonObject = buildJsonObject {
+        put(
+            "todayException",
+            buildJsonObject {
+                put("pauseUntilMs", pauseUntilMs)
+                put("bedtimeNightEpochDay", bedtimeNightEpochDay)
+                put("bedtimeDelayMinutes", bedtimeDelayMinutes)
+                put("bedtimeOff", bedtimeOff)
+            },
+        )
     }
 
     private val dayTypes = listOf(SCHOOL, WEEKEND, HOLIDAY)

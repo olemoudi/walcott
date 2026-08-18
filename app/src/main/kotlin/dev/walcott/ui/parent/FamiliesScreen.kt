@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Close
@@ -150,6 +151,8 @@ fun FamiliesScreen(
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
     val ledgers by viewModel.usageLedgers.collectAsStateWithLifecycle()
     var showAddChild by remember { mutableStateOf(false) }
+    // Which member's quick actions are open (see QuickActionsSheet).
+    var quickActionsFor by remember { mutableStateOf<String?>(null) }
     var showSetPin by remember { mutableStateOf(false) }
     var removingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
     // The three answers to an unmanaged device, one dialog each (see OrphanDeviceDialog).
@@ -370,55 +373,6 @@ fun FamiliesScreen(
             }
         }
 
-        // This family's general settings, one row, before the children: the home reads
-        // top-down as "the family → its rules → its kids".
-        item {
-            SectionHeader(
-                stringResource(R.string.home_section_manage),
-                icon = Icons.AutoMirrored.Outlined.Rule,
-                accent = SectionAccent.RULES,
-            )
-        }
-        item {
-            CardGroup {
-                // Each row says whether what it leads to is waiting to be sent, so a parent can
-                // see from here that a change of theirs is still on this phone.
-                NavCard(
-                    Icons.Outlined.Schedule,
-                    stringResource(R.string.nav_limits_title),
-                    stringResource(R.string.nav_limits_subtitle),
-                    onOpenBudgets,
-                    position = CardPosition.First,
-                    pending = pendingKeys.any {
-                        it == PolicyDiff.DEFAULT_BUDGET || it == PolicyDiff.BEDTIME ||
-                            it == PolicyDiff.SCREEN_FREE || it.startsWith("app:")
-                    },
-                )
-                NavCard(
-                    Icons.Outlined.CalendarMonth,
-                    stringResource(R.string.nav_calendar_title),
-                    stringResource(R.string.nav_calendar_subtitle),
-                    onOpenCalendar,
-                    position = CardPosition.Middle,
-                    pending = PolicyDiff.CALENDAR in pendingKeys,
-                )
-                NavCard(
-                    Icons.Outlined.Groups,
-                    stringResource(R.string.nav_family_settings_title),
-                    stringResource(R.string.nav_family_settings_subtitle),
-                    onOpenFamily,
-                    position = CardPosition.Last,
-                    // The family hub is everything that isn't the two rows above.
-                    pending = pendingKeys.any {
-                        it in setOf(
-                            PolicyDiff.WEB_FILTER, PolicyDiff.RESTRICTIONS, PolicyDiff.EARN,
-                            PolicyDiff.LOCATION, PolicyDiff.NEW_APP_ALERTS, PolicyDiff.FAMILY_NAME,
-                        )
-                    },
-                )
-            }
-        }
-
         // The children of THIS family, with the day's numbers at a glance.
         item {
             SectionHeader(
@@ -466,6 +420,9 @@ fun FamiliesScreen(
                         position = cardPosition(index, settings.children.size),
                         onClick = { onOpenChild(entry.childId) },
                         onOpenMap = { onOpenMap(entry.childId) },
+                        // Limits, minutes and bedtime are what these do; an adult being helped
+                        // has none of them, so the button would open a sheet with nothing in it.
+                        onQuickActions = if (entry.isAdult) null else ({ quickActionsFor = entry.childId }),
                     )
                 }
             }
@@ -475,6 +432,55 @@ fun FamiliesScreen(
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(spacing.xs))
                 Text(stringResource(R.string.add_child))
+            }
+        }
+
+        // This family's general settings, under the children: the home reads top-down as
+        // "who is on the phone right now" first, and "how the family's rules are set" after.
+        item {
+            SectionHeader(
+                stringResource(R.string.home_section_manage),
+                icon = Icons.AutoMirrored.Outlined.Rule,
+                accent = SectionAccent.RULES,
+            )
+        }
+        item {
+            CardGroup {
+                // Each row says whether what it leads to is waiting to be sent, so a parent can
+                // see from here that a change of theirs is still on this phone.
+                NavCard(
+                    Icons.Outlined.Schedule,
+                    stringResource(R.string.nav_limits_title),
+                    stringResource(R.string.nav_limits_subtitle),
+                    onOpenBudgets,
+                    position = CardPosition.First,
+                    pending = pendingKeys.any {
+                        it == PolicyDiff.DEFAULT_BUDGET || it == PolicyDiff.BEDTIME ||
+                            it == PolicyDiff.SCREEN_FREE || it.startsWith("app:")
+                    },
+                )
+                NavCard(
+                    Icons.Outlined.CalendarMonth,
+                    stringResource(R.string.nav_calendar_title),
+                    stringResource(R.string.nav_calendar_subtitle),
+                    onOpenCalendar,
+                    position = CardPosition.Middle,
+                    pending = PolicyDiff.CALENDAR in pendingKeys,
+                )
+                NavCard(
+                    Icons.Outlined.Groups,
+                    stringResource(R.string.nav_family_settings_title),
+                    stringResource(R.string.nav_family_settings_subtitle),
+                    onOpenFamily,
+                    position = CardPosition.Last,
+                    // The family hub is everything that isn't the two rows above.
+                    pending = pendingKeys.any {
+                        it in setOf(
+                            PolicyDiff.WEB_FILTER, PolicyDiff.RESTRICTIONS, PolicyDiff.EARN,
+                            PolicyDiff.LOCATION, PolicyDiff.NEW_APP_ALERTS, PolicyDiff.FAMILY_NAME,
+                        )
+                    },
+                )
             }
         }
 
@@ -624,6 +630,15 @@ fun FamiliesScreen(
         )
     }
 
+    quickActionsFor?.let { childId ->
+        QuickActionsSheet(
+            viewModel = viewModel,
+            childId = childId,
+            onDismiss = { quickActionsFor = null },
+            onOpenDetail = { onOpenChild(childId) },
+        )
+    }
+
     if (showAddChild) {
         AddChildDialog(
             onDismiss = { showAddChild = false },
@@ -654,6 +669,8 @@ private fun ChildRow(
     position: CardPosition = CardPosition.Single,
     onClick: () -> Unit,
     onOpenMap: () -> Unit,
+    /** The small sheet of things done in seconds (see [QuickActionsSheet]); null for an adult. */
+    onQuickActions: (() -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     // Dated by the child's clock, not the parent's: a child in another timezone is on another
@@ -730,6 +747,18 @@ private fun ChildRow(
                 // in the order they happen.
                 if (pending) PendingChip(Modifier.padding(top = Tokens.spacing.xs))
                 if (snapshot != null) StatusChips(snapshot, parentVersion)
+            }
+            // The day-to-day actions, on the row they are about: minutes, a pause, tonight's
+            // bedtime. A tap here must not also open the page underneath, which is why it is a
+            // button and not a gesture on the card.
+            onQuickActions?.let { open ->
+                IconButton(onClick = open) {
+                    Icon(
+                        Icons.Outlined.Bolt,
+                        contentDescription = stringResource(R.string.quick_actions),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
             if (showMap) {
                 IconButton(onClick = onOpenMap) {

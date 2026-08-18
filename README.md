@@ -55,8 +55,16 @@ app, on the days you choose.
 **Asking for more.** The child can request extra time from their phone; you get a
 notification and approve or deny with one tap. You can also hand out bonus time unprompted.
 
+**"Not now", and "just tonight".** Some answers are not rules. Every member's row on your home
+screen opens a small sheet: give them 15, 30 or 60 minutes, **pause their phone** (dinner is
+ready, homework is not done) or **move tonight's bedtime** back — or lift it altogether, for
+tonight. Both undo themselves when their time is up, so nothing has to be remembered and no
+standing rule is quietly left changed. Calls and contacts keep working throughout a pause, and
+the phone says it is paused and until when.
+
 **Earned time.** Optionally, time spent off the phone during set hours converts into extra
-screen time for every app — putting it down is worth something.
+screen time for every app — putting it down is worth something, and their own screen says how
+much it was worth today.
 
 **Per-app rules.** Any single app can have its own blocked hours as well as its own limit —
 and one app can be marked "never limit this", so a bus timetable or a chat with you is always

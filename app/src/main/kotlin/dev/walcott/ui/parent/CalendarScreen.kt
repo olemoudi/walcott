@@ -57,6 +57,10 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
+    val snackbar = dev.walcott.ui.components.LocalSnackbar.current
+    val undo = stringResource(R.string.action_undo)
+    // Resolved here, where there is a composition to resolve it in; the taps below fill the blank.
+    val removedFmt = stringResource(R.string.snack_removed)
     var mode by remember { mutableStateOf<PickMode?>(null) }
     var vacationStart by remember { mutableStateOf<Long?>(null) }
     // Which entry's "who does this apply to" is being edited, if any.
@@ -96,7 +100,15 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                             scope = scopeLabel(settings.holidayScope(day), settings.children),
                             position = cardPosition(index, holidays.size),
                             onEditScope = { scoping = Scoping.Holiday(day) }.takeIf { manyChildren },
-                            onDelete = { viewModel.removeHoliday(day) },
+                            onDelete = {
+                                // The scope goes with it: a day that belonged to one child must
+                                // not come back belonging to everybody.
+                                val scope = settings.holidayScope(day)
+                                viewModel.removeHoliday(day)
+                                snackbar.show(removedFmt.format(fmt(day)), undo) {
+                                    viewModel.addHoliday(day, scope)
+                                }
+                            },
                         )
                     }
                 }
@@ -124,7 +136,14 @@ fun CalendarScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                             scope = scopeLabel(settings.vacationScope(vac), settings.children),
                             position = cardPosition(index, vacations.size),
                             onEditScope = { scoping = Scoping.Period(vac) }.takeIf { manyChildren },
-                            onDelete = { viewModel.removeVacation(vac) },
+                            onDelete = {
+                                val scope = settings.vacationScope(vac)
+                                viewModel.removeVacation(vac)
+                                snackbar.show(
+                                    removedFmt.format("${fmt(vac.startEpochDay)} – ${fmt(vac.endEpochDay)}"),
+                                    undo,
+                                ) { viewModel.addVacation(vac.startEpochDay, vac.endEpochDay, scope) }
+                            },
                         )
                     }
                 }

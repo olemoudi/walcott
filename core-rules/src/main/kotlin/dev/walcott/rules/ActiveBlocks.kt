@@ -33,6 +33,9 @@ data class ActiveBlock(
     val fromDefaultBudget: Boolean = false,
 ) {
     enum class Kind {
+        /** The parent paused this phone; it opens again at [until] (see [TodayException]). */
+        PAUSED,
+
         /** The family's bedtime is running. */
         BEDTIME,
 
@@ -86,7 +89,12 @@ fun RuleEngine.activeBlocks(
     val specialDay = dayType == DayType.HOLIDAY
     val blocks = mutableListOf<ActiveBlock>()
 
-    config.bedtime[dayType]?.takeIf { time in it }?.let {
+    // First, because it is the one thing here the parent did on purpose a minute ago — and the
+    // only one they end by changing their mind rather than by changing a rule.
+    config.todayException.pauseUntil?.takeIf { now.isBefore(it) }?.let {
+        blocks += ActiveBlock(ActiveBlock.Kind.PAUSED, until = it.toLocalTime())
+    }
+    config.bedtimeAt(now)?.takeIf { time in it }?.let {
         blocks += ActiveBlock(ActiveBlock.Kind.BEDTIME, from = it.start, until = it.end)
     }
     config.blockedWindows[dayType].orEmpty()

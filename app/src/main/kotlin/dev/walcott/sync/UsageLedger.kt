@@ -106,6 +106,24 @@ object UsageLedger {
     }
 
     /**
+     * Several members' per-app ledgers added into one, day by day.
+     *
+     * Written once because two screens ask the same question of the same shape of data — where
+     * the family's time went, and which apps are worth putting a limit on — and a second copy of
+     * this fold is a second place for the two of them to start disagreeing.
+     */
+    fun mergeAcross(ledgers: Collection<Map<Long, Map<String, Long>>>): Map<Long, Map<String, Long>> {
+        val byDay = mutableMapOf<Long, MutableMap<String, Long>>()
+        ledgers.forEach { ledger ->
+            ledger.forEach { (day, byApp) ->
+                val into = byDay.getOrPut(day) { mutableMapOf() }
+                byApp.forEach { (pkg, seconds) -> into[pkg] = (into[pkg] ?: 0L) + seconds }
+            }
+        }
+        return byDay
+    }
+
+    /**
      * Seconds per app over the [days] days ending today, today included — "where did the last
      * month go", which is a question about a period that is still running.
      */
