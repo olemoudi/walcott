@@ -61,6 +61,7 @@ class RemoteCommandRunner(
                 RemoteAction.LOCK_NOW -> lockNow()
                 RemoteAction.NOTIFICATION_LOG -> notificationLog(command.arg)
                 RemoteAction.RELEASE_DEVICE -> release(command)
+                RemoteAction.SET_RELAY -> setRelay(command.arg)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -215,6 +216,23 @@ class RemoteCommandRunner(
         }
         DebugLog.w(TAG, "the parent asked this device to be released")
         return true to RemoteAction.DETAIL_RELEASING
+    }
+
+    /**
+     * Accepts the parent's move to another relay. Like the release, the switch itself is NOT done
+     * here: this acknowledgement has to go out on the relay the parent is still listening to, and
+     * only then can this device change where it is listening (see [SyncManager.applyCommands]).
+     *
+     * Validated rather than trusted: the address arrives inside a signed envelope, so it is the
+     * parent's, but a typo would point this phone at nothing and it would have no way back.
+     */
+    private fun setRelay(server: String): Pair<Boolean, String> {
+        val normalized = dev.walcott.sync.RelayServer.normalize(server)
+        if (normalized == null) {
+            DebugLog.w(TAG, "refusing to move to an address that is not a relay: $server")
+            return false to RemoteAction.DETAIL_RELAY_REFUSED
+        }
+        return true to RemoteAction.DETAIL_RELAY_MOVED
     }
 
     private fun lockNow(): Pair<Boolean, String> {

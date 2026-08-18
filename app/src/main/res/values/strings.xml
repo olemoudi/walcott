@@ -1060,6 +1060,11 @@
     <string name="relay_field_label">Server address</string>
     <string name="relay_use_default">Use the default server</string>
     <string name="relay_error_invalid">That doesn\'t look like a server address. Use something like ntfy.example.com.</string>
+    <string name="relay_migrate_title">Move the whole family?</string>
+    <string name="relay_migrate_body">Every phone you look after will be told to move to %1$s. The old relay stays connected until each of them has, so a phone that is off right now still finds the instruction when it comes back.</string>
+    <string name="relay_migrate_confirm">Move everyone</string>
+    <string name="relay_migrating">Moving to %1$s — %2$d of %3$d phones have followed. The old relay stays up until they all have.</string>
+    <string name="relay_error_migrating">A move is already under way. Wait for the phones to follow before starting another.</string>
     <string name="relay_error_locked">The server can only be changed before the first child phone is set up — a paired phone would be left listening to the old one.</string>
     <string name="relay_policy_too_large">Your rules have grown too large to send in one message, so nothing is reaching the phones you look after. Removing some blocked domains or per-app rules should fix it.</string>
     <string name="relay_failing">Messages aren\'t getting through to this server right now.</string>

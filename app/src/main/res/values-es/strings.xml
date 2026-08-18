@@ -1058,6 +1058,11 @@
     <string name="relay_field_label">Dirección del servidor</string>
     <string name="relay_use_default">Usar el servidor predeterminado</string>
     <string name="relay_error_invalid">Eso no parece la dirección de un servidor. Usa algo como ntfy.ejemplo.com.</string>
+    <string name="relay_migrate_title">¿Mover a toda la familia?</string>
+    <string name="relay_migrate_body">Se avisará a todos los teléfonos que cuidas para que se muden a %1$s. El relay antiguo sigue conectado hasta que lo hayan hecho todos, así que un teléfono que ahora esté apagado encontrará el aviso cuando vuelva.</string>
+    <string name="relay_migrate_confirm">Mover a todos</string>
+    <string name="relay_migrating">Mudándose a %1$s: %2$d de %3$d teléfonos han seguido. El relay antiguo sigue en pie hasta que estén todos.</string>
+    <string name="relay_error_migrating">Ya hay una mudanza en marcha. Espera a que los teléfonos la sigan antes de empezar otra.</string>
     <string name="relay_error_locked">El servidor solo se puede cambiar antes de configurar el primer móvil de un hijo — un móvil ya emparejado se quedaría escuchando al anterior.</string>
     <string name="relay_policy_too_large">Tus reglas han crecido tanto que ya no caben en un mensaje, así que no están llegando a los teléfonos que cuidas. Quitar dominios bloqueados o reglas por aplicación debería arreglarlo.</string>
     <string name="relay_failing">Ahora mismo los mensajes no están llegando a este servidor.</string>

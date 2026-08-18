@@ -336,6 +336,18 @@ class WalcottViewModel(
     suspend fun setRelayServer(server: String): dev.walcott.sync.SyncManager.RelayChangeResult =
         sync.setRelayServer(server)
 
+    /**
+     * Moves the whole family — the children included — to another relay (see
+     * [dev.walcott.sync.SyncManager.migrateRelay]). What [setRelayServer] refuses to do once a
+     * child is enrolled, done properly: every device is told first, and the old relay stays up
+     * until the last one has moved.
+     */
+    suspend fun migrateRelay(server: String): dev.walcott.sync.SyncManager.RelayChangeResult =
+        sync.migrateRelay(server)
+
+    /** The move in flight, and how many phones have followed it (null = none running). */
+    val relayMigration: StateFlow<dev.walcott.sync.SyncManager.RelayMigration?> = sync.relayMigration
+
     suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)
     fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }
     fun resetDeviceMode() = viewModelScope.launch { sync.resetDeviceMode() }

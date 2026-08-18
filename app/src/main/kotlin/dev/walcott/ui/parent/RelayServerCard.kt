@@ -48,6 +48,7 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
     val server by viewModel.relayServer.collectAsStateWithLifecycle()
     val health by viewModel.publishHealth.collectAsStateWithLifecycle()
     val tooLarge by viewModel.policyTooLarge.collectAsStateWithLifecycle()
+    val migration by viewModel.relayMigration.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf(false) }
 
     WalcottCard(onClick = { editing = true }) {
@@ -68,6 +69,17 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
             // The rules being too big to send is reported HERE, next to the relay, because that is
             // what it looks like from the outside: a channel that refuses everything. It is also
             // the one cause the parent cannot fix by waiting, so it gets said first.
+            // A move in flight, and who has not followed yet. The one thing worth saying on this
+            // card while it lasts: until every phone has moved, the old relay is still carrying
+            // this family, and a phone that never moves has to be noticed rather than assumed.
+            migration?.let {
+                Text(
+                    stringResource(R.string.relay_migrating, it.to, it.moved, it.total),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
             if (tooLarge || health.failing) {
                 val color = MaterialTheme.colorScheme.error
                 Row(
@@ -97,6 +109,7 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
             current = server,
             onDismiss = { editing = false },
             onSave = { typed -> viewModel.setRelayServer(typed) },
+            onMigrate = { typed -> viewModel.migrateRelay(typed) },
             scopeLaunch = { block -> scope.launch { block() } },
         )
     }
@@ -107,11 +120,15 @@ private fun RelayServerDialog(
     current: String,
     onDismiss: () -> Unit,
     onSave: suspend (String) -> SyncManager.RelayChangeResult,
+    onMigrate: suspend (String) -> SyncManager.RelayChangeResult,
     scopeLaunch: (suspend () -> Unit) -> Unit,
 ) {
     var typed by remember { mutableStateOf(current) }
     var error by remember { mutableStateOf<Int?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Set when the plain change is refused because children are enrolled: the move is possible,
+    // but it is a migration of the whole family and it is asked for in those words.
+    var offerMigration by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -152,7 +169,11 @@ private fun RelayServerDialog(
                         when (onSave(typed)) {
                             SyncManager.RelayChangeResult.OK -> onDismiss()
                             SyncManager.RelayChangeResult.INVALID -> error = R.string.relay_error_invalid
-                            SyncManager.RelayChangeResult.HAS_CHILDREN -> error = R.string.relay_error_locked
+                            // Not a dead end any more: the family CAN move, it just has to take
+                            // its children with it, which is a different button.
+                            SyncManager.RelayChangeResult.HAS_CHILDREN -> offerMigration = true
+                            SyncManager.RelayChangeResult.MIGRATION_RUNNING ->
+                                error = R.string.relay_error_migrating
                         }
                         busy = false
                     }
@@ -163,4 +184,37 @@ private fun RelayServerDialog(
             TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.action_cancel)) }
         },
     )
+
+    if (offerMigration) {
+        AlertDialog(
+            onDismissRequest = { offerMigration = false },
+            title = { Text(stringResource(R.string.relay_migrate_title)) },
+            text = { Text(stringResource(R.string.relay_migrate_body, typed)) },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        busy = true
+                        scopeLaunch {
+                            when (onMigrate(typed)) {
+                                SyncManager.RelayChangeResult.OK -> {
+                                    offerMigration = false
+                                    onDismiss()
+                                }
+                                SyncManager.RelayChangeResult.INVALID -> error = R.string.relay_error_invalid
+                                SyncManager.RelayChangeResult.MIGRATION_RUNNING ->
+                                    error = R.string.relay_error_migrating
+                                SyncManager.RelayChangeResult.HAS_CHILDREN -> error = R.string.relay_error_locked
+                            }
+                            if (error != null) offerMigration = false
+                            busy = false
+                        }
+                    },
+                ) { Text(stringResource(R.string.relay_migrate_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { offerMigration = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
 }

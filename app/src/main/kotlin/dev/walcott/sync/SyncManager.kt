@@ -65,6 +65,16 @@ class SyncManager(
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var transport: SyncTransport? = null
+
+    /**
+     * The relay the family is moving AWAY from, kept connected during a migration.
+     *
+     * The parent publishes to both while any device might still be listening to the old one, and
+     * listens on both so a straggler's acknowledgement arrives wherever it is sent from. Closed as
+     * soon as every known device has confirmed the move, or when the window runs out (see
+     * [RemoteAction.RELAY_MIGRATION_WINDOW_MS]).
+     */
+    private var legacyTransport: SyncTransport? = null
     private var reEmitJob: Job? = null
     /** Parent-only republish-on-edit collector; tracked so reconnects don't stack duplicates. */
     private var settingsWatchJob: Job? = null
@@ -237,6 +247,7 @@ class SyncManager(
                 }
             }
         }
+        connectLegacy(id)
         // Parent republishes whenever the rules change. Cancel any previous collector
         // first: connect() runs again on re-pairing, and a leaked collector would double
         // every publish for the rest of the process's life.
@@ -348,6 +359,143 @@ class SyncManager(
         // The new socket replays from the cursor; this says "we are here" to anyone who missed us.
         runCatching { publishSelf() }
     }
+
+    /**
+     * Opens (or closes) the connection to the relay the family is moving away from.
+     *
+     * Idempotent and called from [connect], so a process restart mid-migration puts the second
+     * socket back rather than silently finishing the migration early for the phones that have not
+     * moved yet.
+     */
+    private suspend fun connectLegacy(id: FamilyIdentity) {
+        legacyTransport?.close()
+        legacyTransport = null
+        if (!migrationOpen(id)) return
+        dev.walcott.debug.DebugLog.i(TAG, "keeping ${id.previousNtfyServer} alive for phones still on it")
+        legacyTransport = NtfyTransport(
+            id.previousNtfyServer,
+            id.topic,
+            client = dev.walcott.net.Http.webSocketClient,
+            // Its own cursor would need its own storage; a migration is short and the messages
+            // that matter on this socket are acknowledgements, which arrive live.
+            sinceProvider = { 0 },
+        ).also { t ->
+            t.connect { raw, timeSec ->
+                scope.launch {
+                    runCatching { handleIncoming(raw, id, timeSec) }
+                        .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handleIncoming (legacy) failed", it) }
+                }
+            }
+        }
+    }
+
+    /** Whether a migration is still running: a previous relay, inside its window. */
+    private fun migrationOpen(id: FamilyIdentity): Boolean =
+        id.role == Role.PARENT && id.previousNtfyServer.isNotBlank() &&
+            System.currentTimeMillis() - id.relayMigratedAtMs < RemoteAction.RELAY_MIGRATION_WINDOW_MS
+
+    /**
+     * Ends the migration once nobody is left behind — every device the parent knows about has
+     * acknowledged the move — or once the window has run out.
+     *
+     * Called wherever a device's acknowledgement lands. Closing early matters: until it happens
+     * every message this family sends is sent twice.
+     */
+    private suspend fun closeMigrationIfDone() {
+        val id = identityStore.current()
+        if (id.previousNtfyServer.isBlank()) return
+        val devices = syncStore.current().children
+        val allMoved = devices.isNotEmpty() && devices.all {
+            it.lastCommand?.action == RemoteAction.SET_RELAY && it.lastCommand?.ok == true
+        }
+        val expired = System.currentTimeMillis() - id.relayMigratedAtMs >= RemoteAction.RELAY_MIGRATION_WINDOW_MS
+        if (!allMoved && !expired) return
+        dev.walcott.debug.DebugLog.w(
+            TAG,
+            if (allMoved) "every phone has moved relay; letting the old one go" else "relay migration window closed",
+        )
+        legacyTransport?.close()
+        legacyTransport = null
+        identityStore.save(identityStore.current().copy(previousNtfyServer = "", relayMigratedAtMs = 0))
+    }
+
+    /**
+     * Moves this family — parent AND children — to a different relay.
+     *
+     * The order is the whole of it. The instruction is queued and published while the parent is
+     * still on the OLD relay, because that is where every child is listening; only then does the
+     * parent move, and it keeps the old relay connected until the last device has said it moved
+     * too. A child that is off for a week comes back to the address it knows and finds the
+     * instruction waiting.
+     *
+     * Refused while another migration is still in flight: two overlapping moves would leave the
+     * fleet spread across three relays with only one of them being listened to.
+     */
+    suspend fun migrateRelay(server: String): RelayChangeResult {
+        val id = identityStore.current()
+        if (id.role != Role.PARENT) return RelayChangeResult.HAS_CHILDREN
+        val normalized = RelayServer.normalize(server) ?: return RelayChangeResult.INVALID
+        if (normalized == id.ntfyServer) return RelayChangeResult.OK
+        if (migrationOpen(id)) return RelayChangeResult.MIGRATION_RUNNING
+
+        val devices = syncStore.current().children.map { it.deviceId }
+        dev.walcott.debug.DebugLog.w(TAG, "moving this family to $normalized (${devices.size} device(s) to tell)")
+        // Told first, on the relay they are listening to. sendCommand publishes as it queues.
+        for (deviceId in devices) {
+            runCatching { sendCommand(deviceId, RemoteAction.SET_RELAY, arg = normalized) }
+                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "could not queue the move for $deviceId", it) }
+        }
+        identityStore.save(
+            id.copy(
+                ntfyServer = normalized,
+                previousNtfyServer = id.ntfyServer,
+                relayMigratedAtMs = System.currentTimeMillis(),
+            ),
+        )
+        // The cursor belongs to the old server's stream; it means nothing on the new one.
+        syncStore.update { it.copy(ntfySinceSec = 0) }
+        sinceCache = 0
+        connect(identityStore.current())
+        publishSelf()
+        // A family with no devices yet has nobody to wait for.
+        closeMigrationIfDone()
+        return RelayChangeResult.OK
+    }
+
+    /** Child: adopts the relay the parent named, and reconnects there. */
+    private suspend fun adoptRelay(server: String) {
+        val normalized = RelayServer.normalize(server) ?: return
+        val id = identityStore.current()
+        if (normalized == id.ntfyServer) return
+        dev.walcott.debug.DebugLog.w(TAG, "the parent moved this family to $normalized")
+        identityStore.save(id.copy(ntfyServer = normalized))
+        syncStore.update { it.copy(ntfySinceSec = 0) }
+        sinceCache = 0
+        connect(identityStore.current())
+        publishSelf()
+    }
+
+    /**
+     * What the parent's screen shows while a migration runs: where the family is going, and which
+     * phones have not been heard from since. Null when nothing is in flight.
+     */
+    data class RelayMigration(val from: String, val to: String, val moved: Int, val total: Int)
+
+    val relayMigration: StateFlow<RelayMigration?> =
+        kotlinx.coroutines.flow.combine(identityStore.identity, syncStore.state) { id, sync ->
+            if (id.previousNtfyServer.isBlank()) {
+                null
+            } else {
+                RelayMigration(
+                    from = id.previousNtfyServer,
+                    to = id.ntfyServer,
+                    moved = sync.children.count {
+                        it.lastCommand?.action == RemoteAction.SET_RELAY && it.lastCommand?.ok == true
+                    },
+                    total = sync.children.size,
+                )
+            }
+        }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
     private fun periodicReEmit() {
         if (reEmitJob?.isActive == true) return
@@ -473,7 +621,7 @@ class SyncManager(
     suspend fun becomeParent(familyName: String) {
         val signingPair = FamilyCrypto.generateSigningKeyPair()
         val familyKey = FamilyCrypto.generateFamilyKey()
-        val topic = "walcott-" + FamilyCrypto.toB64(UUID.randomUUID().toString().toByteArray()).take(24)
+        val topic = newTopic()
         val identity = FamilyIdentity(
             role = Role.PARENT,
             mode = DeviceMode.PARENT,
@@ -497,8 +645,27 @@ class SyncManager(
         publishSelf()
     }
 
+    /**
+     * A fresh family topic: 128 random bits, base64url, and nothing that says what wrote it.
+     *
+     * Two things it must be. **Unguessable**, because the topic IS the family's address on a
+     * public relay and anyone who knows it can read the (encrypted) traffic and publish noise into
+     * it — this is 128 bits where the old form carried about 60, taken from the printed form of a
+     * UUID. And **anonymous**: it used to start with "walcott-", which made every family's traffic
+     * identifiable as this app's at a glance, and a relay operator's only means of acting on all
+     * of it at once. There is no reason for a topic to say anything at all.
+     *
+     * Existing families keep the topic they were created with — it is written into every child's
+     * pairing and every backup file — and can shed it by migrating (see [migrateRelay]).
+     */
+    private fun newTopic(): String {
+        val bytes = ByteArray(16)
+        java.security.SecureRandom().nextBytes(bytes)
+        return FamilyCrypto.toB64(bytes)
+    }
+
     /** Outcome of trying to move a family to a different relay (see [setRelayServer]). */
-    enum class RelayChangeResult { OK, INVALID, HAS_CHILDREN }
+    enum class RelayChangeResult { OK, INVALID, HAS_CHILDREN, MIGRATION_RUNNING }
 
     /**
      * Moves this family to a different relay.
@@ -2010,6 +2177,10 @@ class SyncManager(
                     )
                 }
                 transport.publish(fitted.encoded)
+                // And to the relay the family is leaving, while anyone might still be listening
+                // there: a phone that was off during the move comes back to the old address and
+                // has to find the rules — and the instruction to move — waiting for it.
+                legacyTransport?.publish(fitted.encoded)
                 // What is now on the wire, so the screens can tell an edit that has gone out from
                 // one still sitting on this phone (see PolicyDiff). Recorded at publish, not at
                 // confirmation: "not yet sent" and "sent but not yet confirmed" are different
@@ -2775,6 +2946,12 @@ class SyncManager(
                 dev.walcott.enforcement.PanicRelease.releaseDevice(context)
                 return@withLock true
             }
+            // Same ordering discipline, milder consequence: the acknowledgement above went out on
+            // the relay the parent is still listening to, and only now does this device stop
+            // listening to it.
+            if (command.action == RemoteAction.SET_RELAY && ack.ok) {
+                adoptRelay(command.arg)
+            }
         }
         false
     }
@@ -2901,6 +3078,12 @@ class SyncManager(
         // The open-window nag is stateful on screen too: drop it the moment the window closes.
         if (!installWindowOpen && snapshot.deviceId in before.installWindowSeen) {
             SyncNotifications.cancelInstallWindowOpen(context, snapshot.deviceId)
+        }
+
+        // A device saying it has moved relay may have been the last one the parent was waiting for.
+        if (snapshot.lastCommand?.action == RemoteAction.SET_RELAY && snapshot.lastCommand?.ok == true) {
+            runCatching { closeMigrationIfDone() }
+                .onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not close the migration", it) }
         }
 
         // A device that acknowledged its release is already tearing itself down and will never

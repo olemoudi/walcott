@@ -78,6 +78,17 @@ data class FamilyIdentity(
      * until someone deliberately pairs the device again.
      */
     val released: Boolean = false,
+    /**
+     * The relay this family used before a migration, and when the move was ordered.
+     *
+     * Parent only, and only while a migration is in flight: the parent keeps publishing to the old
+     * relay as well until every device has confirmed the move (see
+     * [RemoteAction.RELAY_MIGRATION_WINDOW_MS]). A phone that was off when the family moved comes
+     * back to the only address it knows and finds the instruction waiting there — without this it
+     * would come back to silence, for ever, with no way to be told where everyone went.
+     */
+    val previousNtfyServer: String = "",
+    val relayMigratedAtMs: Long = 0,
 ) {
     val isPaired: Boolean get() = role != Role.UNPAIRED
 

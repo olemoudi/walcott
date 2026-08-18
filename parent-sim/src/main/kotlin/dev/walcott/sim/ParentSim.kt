@@ -61,7 +61,7 @@ class ParentSim(
     val familyName: String = "Sim Family",
 ) {
 
-    private val familyKey = FamilyCrypto.generateFamilyKey()
+    private var familyKey = FamilyCrypto.generateFamilyKey()
 
     /**
      * The key this parent signs with, and the hand-over it presents when that is no longer the key
@@ -229,6 +229,28 @@ class ParentSim(
 
     /** The version the next [pushPolicy] will use — for scenarios that need to aim at it. */
     fun currentVersion(): Long = version.get()
+
+    /**
+     * The same parent, reached on a DIFFERENT relay: same topic, same keys, same version counter.
+     *
+     * What a family looks like after a migration (see `RemoteAction.SET_RELAY`). A scenario needs
+     * both halves at once — the old relay to send the instruction on and to hear the
+     * acknowledgement, the new one to prove the child actually went there — and they are the same
+     * parent, so they cannot be two independently generated sims.
+     */
+    fun sameFamilyOn(relayBase: String, advertisedRelay: String = relayBase): ParentSim {
+        val moved = ParentSim(relayBase, advertisedRelay, topic, familyName)
+        moved.adoptIdentityOf(this)
+        return moved
+    }
+
+    /** Copies the family's identity into [this] (see [sameFamilyOn]); keys are what make it one family. */
+    private fun adoptIdentityOf(other: ParentSim) {
+        familyKey = other.familyKey
+        signingPair = other.signingPair
+        rotationCert = other.rotationCert
+        version.set(other.version.get())
+    }
 
     /**
      * Becomes the parent a family gets back after the original phone is lost: same family, same

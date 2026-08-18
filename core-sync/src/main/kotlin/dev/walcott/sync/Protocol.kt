@@ -459,6 +459,46 @@ object RemoteAction {
      */
     const val RELEASE_DEVICE = "release_device"
 
+    /**
+     * Move this device to another relay ([RemoteCommand.arg] = its base URL, see `RelayServer`).
+     *
+     * The escape hatch from a relay that has stopped working for a family — blocked on their
+     * network, gone, or refusing their traffic. Without it the relay is decided once, in the
+     * pairing QR, and can never be changed again: the parent would move and every child would be
+     * left listening to a server nobody publishes on, with no way to be told where everyone went.
+     * On a Device Owner child, recovering from that is a factory reset.
+     *
+     * Deliberately NOT expiring (see [expired]). Every other dangerous command is refused when it
+     * lands late; this one is the opposite — a phone that was in a drawer for a fortnight is
+     * exactly the phone that still needs to be told, and the parent's own queue already retires it
+     * after [SyncEngine.COMMAND_TTL_MS].
+     */
+    const val SET_RELAY = "set_relay"
+
+    /** [SET_RELAY] outcomes. "moved" is acknowledged on the OLD relay, before the switch. */
+    const val DETAIL_RELAY_MOVED = "relay_moved"
+    const val DETAIL_RELAY_REFUSED = "relay_refused"
+    const val DETAIL_RELAY_SAME = "relay_same"
+
+    /**
+     * How long the parent keeps the OLD relay alive after a migration.
+     *
+     * A migration is not an instant: a phone that is off, abroad or in a drawer has to be able to
+     * come back to where it last knew to look and find the instruction waiting. The parent
+     * therefore publishes to both relays for this long, or until every device it knows about has
+     * confirmed the move — whichever comes first. Matched to [SyncEngine.COMMAND_TTL_MS], since a
+     * command the parent has already dropped from its queue cannot be delivered by keeping a
+     * socket open for it.
+     */
+    const val RELAY_MIGRATION_WINDOW_MS = SyncEngine.COMMAND_TTL_MS
+
+    /** The first child build that understands [SET_RELAY]; older ones cannot be migrated. */
+    const val RELAY_MIN_CHILD_VERSION = 122
+
+    /** Whether a child reporting [childAppVersionCode] can be moved to another relay at all. */
+    fun canMigrateRelay(childAppVersionCode: Int): Boolean =
+        childAppVersionCode >= RELAY_MIN_CHILD_VERSION
+
     /** How long a [RELEASE_DEVICE] stays valid after the parent issued it. */
     const val RELEASE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
 
