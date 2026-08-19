@@ -3,6 +3,25 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.72.0 — the member's card, rebuilt
+
+ole's own phone, on his real family: "el diseño es algo apretado… los botones del rayo, del mapa y
+de abrir detalle son pequeños y no está claro que sean pulsables". Both halves were true and both
+came from the same cause — name, three figures and three bare icons all competing for one row.
+
+The card is now three blocks answering three questions in the order they are asked: **who is this**
+(avatar, name, the one line that matters — no phone yet, or a phone gone quiet — and the chevron
+that says the card opens their page), **how is their day going** (the three numbers in equal
+columns, so they line up between siblings and a long label in the long locale can no longer push
+the last one onto a line of its own: "Media 30 días" was wrapping under the icons), and **what can
+I do about it** (a rule, then real buttons with words on them: Acciones and Mapa).
+
+Two smaller decisions in it: the status chips are indented to the NAME rather than to the card, so
+they read as facts about that person; and a member with no phone yet gets no action bar at all —
+the sheet would only have said "not linked", and their card leads to the page with the pairing
+code. Checked on the emulator in both themes, with one and two buttons, and with the chips
+wrapping.
+
 ## Shipped in v0.71.0 — the answers that are not rules, and a notification that says something
 
 A quality-of-life sweep over the two screens a family actually lives in.

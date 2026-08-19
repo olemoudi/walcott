@@ -1671,6 +1671,8 @@
     <string name="restriction_uninstall_desc">An app deleted by accident, including the ones the phone came with</string>
 
     <!-- Today's one-off changes: a pause, and tonight's bedtime (see TodayException) -->
+    <string name="child_card_actions">Actions</string>
+    <string name="child_card_map">Map</string>
     <string name="quick_actions">Quick actions</string>
     <string name="quick_give_time">Give time</string>
     <string name="quick_plus_minutes">+%1$d min</string>
@@ -1717,5 +1719,8 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_72_0">
+        <item>Each member\'s card on the home screen has been rebuilt. The day\'s three numbers now line up in their own columns instead of wrapping mid-phrase, and the things you can actually press are buttons with words on them — Actions and Map — rather than three small icons that looked like decoration.</item>
     </string-array>
 </resources>

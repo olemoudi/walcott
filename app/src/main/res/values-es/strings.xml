@@ -1663,6 +1663,8 @@
     <string name="restriction_uninstall_desc">Una app borrada sin querer, incluidas las que venían con el móvil</string>
 
     <!-- Cambios de hoy: la pausa y la hora de dormir de esta noche (ver TodayException) -->
+    <string name="child_card_actions">Acciones</string>
+    <string name="child_card_map">Mapa</string>
     <string name="quick_actions">Acciones rápidas</string>
     <string name="quick_give_time">Dar tiempo</string>
     <string name="quick_plus_minutes">+%1$d min</string>
@@ -1709,5 +1711,8 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_72_0">
+        <item>La tarjeta de cada miembro en la pantalla de inicio está rehecha. Los tres números del día se alinean en columnas propias en vez de partirse a media frase, y lo que de verdad se puede pulsar son botones con su palabra — Acciones y Mapa — y no tres iconos pequeños con aspecto de adorno.</item>
     </string-array>
 </resources>

@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -49,6 +52,8 @@ import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,7 +72,9 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.pluralStringResource
@@ -420,9 +427,14 @@ fun FamiliesScreen(
                         position = cardPosition(index, settings.children.size),
                         onClick = { onOpenChild(entry.childId) },
                         onOpenMap = { onOpenMap(entry.childId) },
-                        // Limits, minutes and bedtime are what these do; an adult being helped
-                        // has none of them, so the button would open a sheet with nothing in it.
-                        onQuickActions = if (entry.isAdult) null else ({ quickActionsFor = entry.childId }),
+                        // Limits, minutes and bedtime are what these do: an adult being helped
+                        // has none of them, and a member with no phone yet has nothing to act on
+                        // — their card leads to the page with the pairing code instead.
+                        onQuickActions = if (entry.isAdult || snapshot == null) {
+                            null
+                        } else {
+                            ({ quickActionsFor = entry.childId })
+                        },
                     )
                 }
             }
@@ -684,110 +696,167 @@ private fun ChildRow(
     // save the red for silences longer than any benign gap (see Staleness).
     val tier = if (snapshot == null) Staleness.Tier.FRESH else Staleness.tierOf(lastSeenMs, nowMs)
 
+    val accent = if (tier == Staleness.Tier.SILENT) {
+        MaterialTheme.colorScheme.error
+    } else {
+        Tokens.accent(SectionAccent.FAMILY)
+    }
+    // The one line under the name, when there is something to say: no phone yet, or a phone that
+    // has gone quiet. Everything else about this member is a number or a chip below.
+    val silence = Duration.ofMillis(Staleness.silenceMs(lastSeenMs, nowMs) ?: 0).humanize()
+    val subtitle: Pair<String, Color>? = when {
+        snapshot == null ->
+            stringResource(R.string.device_not_linked) to MaterialTheme.colorScheme.onSurfaceVariant
+        tier == Staleness.Tier.SILENT ->
+            stringResource(R.string.child_stale_line, silence) to MaterialTheme.colorScheme.error
+        tier != Staleness.Tier.FRESH ->
+            stringResource(R.string.child_resting_line, silence) to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> null
+    }
+
     WalcottCard(onClick = onClick, position = position) {
-        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                // Two kinds of member, told apart before a word is read: a phone being limited
-                // and a phone being looked after belong on the same list and are not the same job.
-                memberIcon(entry.kind),
-                contentDescription = null,
-                // The colour of its own section, like every other row (see SectionHeader) —
-                // unless the child has gone quiet, which outranks knowing where you are.
-                tint = if (tier == Staleness.Tier.SILENT) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    Tokens.accent(SectionAccent.FAMILY)
-                },
-                modifier = Modifier.size(28.dp),
-            )
-            Spacer(Modifier.width(spacing.md))
-            Column(Modifier.weight(1f)) {
-                Text(entry.name, style = MaterialTheme.typography.titleMedium)
-                if (snapshot == null) {
-                    Text(
-                        stringResource(R.string.device_not_linked),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // Three blocks, top to bottom, answering three questions in the order they are asked:
+        // who is this, how is their day going, and what can I do about it. They used to be one
+        // row — name, three numbers and three bare icons competing for the same line — which put
+        // the day's figures in a column so narrow they wrapped mid-phrase, and left the only
+        // things on the card you can actually press looking like decoration.
+        Column(Modifier.padding(spacing.lg)) {
+            // --- Who ---
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(AVATAR_SIZE).clip(CircleShape).background(accent.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        // Two kinds of member, told apart before a word is read: a phone being
+                        // limited and a phone being looked after are not the same job.
+                        memberIcon(entry.kind),
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(24.dp),
                     )
-                } else {
-                    // Today plus the week/month averages: the home answers "how much?" at a
-                    // glance, without opening the detail. FlowRow for the same reason as the
-                    // chips: long values in the long locale must wrap, never crush a column.
-                    FlowRow(
-                        Modifier.padding(top = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.lg),
-                    ) {
-                        MiniStat(stringResource(R.string.stat_today), Duration.ofSeconds(usageToday).humanize())
-                        MiniStat(
-                            stringResource(R.string.stat_avg7),
-                            avg7?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+                }
+                Spacer(Modifier.width(spacing.md))
+                Column(Modifier.weight(1f)) {
+                    Text(entry.name, style = MaterialTheme.typography.titleMedium)
+                    subtitle?.let { (text, color) ->
+                        Text(text, style = MaterialTheme.typography.bodySmall, color = color)
+                    }
+                }
+                // The card opens their page; this says so. It is not a button — the whole card
+                // is the target, which is why it is comfortably large enough to hit.
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // Edited here and not sent yet, then sent and not confirmed yet: two states, in the
+            // order they happen. Indented to the name rather than to the card, because they are
+            // facts about this person; and with the card's whole width to wrap into, so several
+            // warnings at once are lines instead of a tower.
+            Column(Modifier.padding(start = AVATAR_SIZE + spacing.md)) {
+                if (pending) PendingChip(Modifier.padding(top = spacing.sm))
+                if (snapshot != null) StatusChips(snapshot, parentVersion)
+            }
+
+            // --- How their day is going ---
+            // Three equal columns rather than a flowing row: the numbers line up between
+            // siblings, and a long label in the long locale can no longer push the last one onto
+            // a line of its own.
+            if (snapshot != null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    ChildStat(
+                        Duration.ofSeconds(usageToday).humanize(),
+                        stringResource(R.string.stat_today),
+                        Modifier.weight(1f),
+                    )
+                    ChildStat(
+                        avg7?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+                        stringResource(R.string.stat_avg7),
+                        Modifier.weight(1f),
+                    )
+                    ChildStat(
+                        avg30?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+                        stringResource(R.string.stat_avg30),
+                        Modifier.weight(1f),
+                    )
+                }
+            }
+
+            // --- What you can do about it ---
+            // Buttons with words on them, on their own line under a rule. As icons they were
+            // three small glyphs in a row that also held a chevron, and nothing said which of
+            // them did something and which was decoration.
+            if (onQuickActions != null || showMap) {
+                HorizontalDivider(
+                    Modifier.padding(top = spacing.md),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    onQuickActions?.let { open ->
+                        CardAction(
+                            icon = Icons.Outlined.Bolt,
+                            label = stringResource(R.string.child_card_actions),
+                            onClick = open,
+                            modifier = Modifier.weight(1f),
                         )
-                        MiniStat(
-                            stringResource(R.string.stat_avg30),
-                            avg30?.let { Duration.ofSeconds(it.seconds).humanize() } ?: "—",
+                    }
+                    if (showMap) {
+                        CardAction(
+                            icon = Icons.Outlined.Map,
+                            label = stringResource(R.string.child_card_map),
+                            onClick = onOpenMap,
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
-                if (tier != Staleness.Tier.FRESH) {
-                    val silence = Duration.ofMillis(Staleness.silenceMs(lastSeenMs, nowMs) ?: 0).humanize()
-                    Text(
-                        stringResource(
-                            if (tier == Staleness.Tier.SILENT) R.string.child_stale_line else R.string.child_resting_line,
-                            silence,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (tier == Staleness.Tier.SILENT) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-                // Edited here and not sent yet, then sent and not confirmed yet: two states,
-                // in the order they happen.
-                if (pending) PendingChip(Modifier.padding(top = Tokens.spacing.xs))
-                if (snapshot != null) StatusChips(snapshot, parentVersion)
             }
-            // The day-to-day actions, on the row they are about: minutes, a pause, tonight's
-            // bedtime. A tap here must not also open the page underneath, which is why it is a
-            // button and not a gesture on the card.
-            onQuickActions?.let { open ->
-                IconButton(onClick = open) {
-                    Icon(
-                        Icons.Outlined.Bolt,
-                        contentDescription = stringResource(R.string.quick_actions),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            if (showMap) {
-                IconButton(onClick = onOpenMap) {
-                    Icon(
-                        Icons.Outlined.Map,
-                        contentDescription = stringResource(R.string.view_on_map),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
 
-/** One number with its label under it, sized to sit three-in-a-row inside a child row. */
+/** The member's avatar, and therefore the indent everything else about them lines up with. */
+private val AVATAR_SIZE = 44.dp
+
+/** One of the card's own actions: a real button, thumb-sized, with the word on it. */
 @Composable
-private fun MiniStat(label: String, value: String) {
-    Column {
-        Text(value, style = MaterialTheme.typography.titleSmall, softWrap = false)
+private fun CardAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = Tokens.spacing.md),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(Tokens.spacing.sm))
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** One of the day's three numbers, with what it measures under it. */
+@Composable
+private fun ChildStat(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(value, style = MaterialTheme.typography.titleLarge, softWrap = false)
         Text(
+            // labelMedium, like the tiles on the member's own page: the same number in the same
+            // words has to look the same in both places.
             label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            softWrap = false,
+            maxLines = 2,
         )
     }
 }
