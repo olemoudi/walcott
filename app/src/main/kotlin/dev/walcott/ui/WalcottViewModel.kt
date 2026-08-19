@@ -617,6 +617,10 @@ class WalcottViewModel(
     fun setLiveTracking(targetDeviceId: String, minutes: Int) =
         viewModelScope.launch { sync.requestLiveTracking(targetDeviceId, minutes) }
 
+    /** Make a child device re-adopt the current rules and check for a new build now. */
+    fun forceCatchUp(targetDeviceId: String) =
+        viewModelScope.launch { sync.forceCatchUp(targetDeviceId) }
+
     /** Queue a remote fix for a child device (see [dev.walcott.sync.RemoteAction]). */
     fun sendRemoteCommand(targetDeviceId: String, action: String, arg: String = "") =
         viewModelScope.launch { sync.sendCommand(targetDeviceId, action, arg) }

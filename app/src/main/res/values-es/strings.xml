@@ -1737,4 +1737,11 @@
     <string name="map_accuracy_unknown">precisión desconocida</string>
     <string name="map_fix_age">hace %1$s</string>
     <string name="location_locate_failed">Este teléfono no pudo obtener una posición la última vez que la pediste. Lo que ves es anterior.</string>
+    <string name="quick_catch_up_title">Poner al día</string>
+    <string name="quick_catch_up">Actualizar ya</string>
+    <string name="quick_catch_up_current">reglas y app al día</string>
+    <string name="quick_catch_up_rules">reglas aún sin confirmar</string>
+    <string name="quick_catch_up_build">versión de app anterior</string>
+    <string name="quick_catch_up_both">reglas y versión de app atrasadas</string>
+    <string name="quick_catch_up_asked">Se ha pedido a %1$s que se actualice ya</string>
 </resources>

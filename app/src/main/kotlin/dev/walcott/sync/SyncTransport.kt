@@ -10,4 +10,14 @@ interface SyncTransport {
     /** [onMessage] gets the body plus the server-side receive time in unix seconds (0 if unknown). */
     fun connect(onMessage: (body: String, timeSec: Long) -> Unit)
     fun close()
+
+    /**
+     * The device just got a usable network back.
+     *
+     * A transport that is sitting out a reconnect backoff should stop waiting and try now: the
+     * backoff exists to stop a phone with no signal hammering the radio, and the moment the
+     * signal returns it is pure latency. Default no-op, since a transport with no reconnect of
+     * its own has nothing to bring forward.
+     */
+    fun onNetworkAvailable() {}
 }

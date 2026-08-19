@@ -22,6 +22,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Declared here rather than inherited through manifest merge: the sync socket depends on
+         it to reconnect the moment coverage returns (see SyncManager.watchNetwork), and a
+         permission that arrives by accident from a dependency can leave by accident too. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Lets the emergency release (PanicRelease) offer the system uninstall prompt for

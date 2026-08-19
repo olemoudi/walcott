@@ -35,6 +35,18 @@ class NtfyTransport(
 
     private val closed = AtomicBoolean(false)
     private val reconnectAttempts = AtomicInteger(0)
+
+    /**
+     * Whether a reconnect is currently being waited out, so [onNetworkAvailable] knows whether
+     * there is anything to bring forward and a healthy socket is left alone.
+     */
+    private val awaitingReconnect = AtomicBoolean(false)
+
+    /**
+     * Which reconnect attempt is the live one. A sleeping retry checks this before opening, so
+     * bringing one forward cannot leave the superseded thread to open a second socket behind it.
+     */
+    private val reconnectGeneration = AtomicInteger(0)
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var onMessage: ((String, Long) -> Unit)? = null
 
@@ -117,6 +129,7 @@ class NtfyTransport(
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 reconnectAttempts.set(0)
+                awaitingReconnect.set(false)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -143,16 +156,42 @@ class NtfyTransport(
         if (closed.get()) return
         // Exponential backoff (3s, 6s, 12s… capped at 5 min) so an offline or dozing
         // device doesn't hammer the radio; a successful connection resets it.
+        awaitingReconnect.set(true)
         val attempt = reconnectAttempts.getAndIncrement().coerceAtMost(10)
         val delayMillis = (3_000L shl attempt).coerceAtMost(5 * 60 * 1000L)
+        val generation = reconnectGeneration.incrementAndGet()
         Thread {
             Thread.sleep(delayMillis)
-            if (!closed.get()) openSocket()
+            // Superseded while asleep — by [onNetworkAvailable], or by a later failure — so this
+            // thread's job has already been done by someone else.
+            if (!closed.get() && reconnectGeneration.get() == generation) openSocket()
         }.apply { isDaemon = true }.start()
+    }
+
+    /**
+     * Reconnects at once instead of sitting out the rest of the backoff.
+     *
+     * The backoff is right when there is nothing to connect TO: a phone in a tunnel or a dead
+     * zone would otherwise hammer the radio for five minutes to be refused five hundred times.
+     * It is exactly wrong the moment coverage comes back — the wait was calibrated against how
+     * long the outage had already lasted, so the longest outages ended with the longest silences
+     * after they were over. A child walking out of the underground could sit there for five more
+     * minutes, connected to the internet, with the parent's message already waiting on the relay.
+     *
+     * Only when a reconnect is actually pending: a healthy socket is left alone, so the ordinary
+     * Wi-Fi/cellular handovers a phone does all day cost nothing.
+     */
+    override fun onNetworkAvailable() {
+        if (closed.get() || !awaitingReconnect.get()) return
+        DebugLog.i(TAG, "network is back; reconnecting now instead of waiting out the backoff")
+        reconnectGeneration.incrementAndGet()
+        reconnectAttempts.set(0)
+        openSocket()
     }
 
     override fun close() {
         closed.set(true)
+        awaitingReconnect.set(false)
         webSocket?.cancel()
         webSocket = null
     }

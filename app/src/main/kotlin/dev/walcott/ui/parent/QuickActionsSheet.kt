@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.PauseCircle
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -255,6 +256,30 @@ fun QuickActionsSheet(
                                 done(liftedSaid, undo) { viewModel.setBedtimeTonight(childId, 0, off = false) }
                             }
                         }
+                    }
+                }
+
+                // --- Catch up: re-adopt the rules, and take a new build if there is one. ---
+                val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
+                val rulesBehind = snapshot.appliedPolicyVersion in 1 until parentVersion
+                val buildBehind = snapshot.appVersionCode in 1 until dev.walcott.BuildConfig.VERSION_CODE
+                QuickRow(
+                    Icons.Outlined.Sync,
+                    stringResource(R.string.quick_catch_up_title),
+                    // Says what is actually behind rather than implying something is. Most of the
+                    // time nothing is: rules arrive by push in about a second, and the phone
+                    // checks for a build on its own every half hour.
+                    detail = when {
+                        rulesBehind && buildBehind -> stringResource(R.string.quick_catch_up_both)
+                        rulesBehind -> stringResource(R.string.quick_catch_up_rules)
+                        buildBehind -> stringResource(R.string.quick_catch_up_build)
+                        else -> stringResource(R.string.quick_catch_up_current)
+                    },
+                ) {
+                    val asked = stringResource(R.string.quick_catch_up_asked, entry.name)
+                    ActionChip(stringResource(R.string.quick_catch_up)) {
+                        viewModel.forceCatchUp(snapshot.deviceId)
+                        done(asked)
                     }
                 }
 

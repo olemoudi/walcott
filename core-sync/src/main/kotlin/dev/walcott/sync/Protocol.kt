@@ -355,9 +355,17 @@ data class LocationPoint(
 data class LocationRequest(val deviceId: String, val requestedAtMs: Long)
 
 /**
- * A one-shot instruction the parent sends to a specific child device, applied on the next
- * check-in and acknowledged in [ChildSnapshot.lastCommand]. Applied idempotently by [id],
- * like bonuses and resolutions, so a replayed parent snapshot can't run it twice.
+ * A one-shot instruction the parent sends to a specific child device, acknowledged in
+ * [ChildSnapshot.lastCommand]. Applied idempotently by [id], like bonuses and resolutions, so a
+ * replayed parent snapshot can't run it twice.
+ *
+ * Applied when the child RECEIVES the parent's snapshot, which over its open relay socket is
+ * about a second after the parent taps — not at some later check-in of the child's own. (This
+ * said "on the next check-in" for a long time, which is the wrong mental model and the source of
+ * a reasonable but mistaken belief that the parent's actions sit in a queue waiting for a poll.
+ * The child does not poll. What is periodic on the child is what the child ORIGINATES: its
+ * ~30-minute heartbeat and its update check.) A command only waits when the socket is down, and
+ * then it is replayed from the `since=` cursor the moment the socket is back.
  */
 @Serializable
 data class RemoteCommand(

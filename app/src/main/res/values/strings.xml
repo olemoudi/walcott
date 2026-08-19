@@ -1745,4 +1745,11 @@
     <string name="map_accuracy_unknown">accuracy unknown</string>
     <string name="map_fix_age">%1$s ago</string>
     <string name="location_locate_failed">This phone could not get a fix the last time you asked. What you see is older.</string>
+    <string name="quick_catch_up_title">Catch up</string>
+    <string name="quick_catch_up">Update now</string>
+    <string name="quick_catch_up_current">rules and app are current</string>
+    <string name="quick_catch_up_rules">rules not confirmed yet</string>
+    <string name="quick_catch_up_build">an older app version</string>
+    <string name="quick_catch_up_both">rules and app version behind</string>
+    <string name="quick_catch_up_asked">%1$s was asked to update now</string>
 </resources>

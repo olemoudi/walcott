@@ -219,7 +219,41 @@ class SyncManager(
             connect(id)
             if (id.isPaired) publishSelf()
         }
+        watchNetwork()
     }
+
+    /**
+     * Brings a pending reconnect forward the moment the device has a usable network again.
+     *
+     * The socket's backoff grows with how long the outage has already lasted, which is right
+     * while there is nothing to connect to and exactly wrong the instant there is: the longest
+     * outages ended in the longest silences AFTER they were over. A child coming up from the
+     * underground could sit for five more minutes, on a working network, with the parent's
+     * message already waiting on the relay for it.
+     *
+     * Registered once for the process and never unregistered — it outlives every pairing, and a
+     * healthy socket ignores the callback anyway, so there is nothing to leak but the callback
+     * itself.
+     */
+    private fun watchNetwork() {
+        if (!networkCallbackRegistered.compareAndSet(false, true)) return
+        val manager = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        runCatching {
+            manager.registerDefaultNetworkCallback(
+                object : android.net.ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: android.net.Network) {
+                        transport?.onNetworkAvailable()
+                        legacyTransport?.onNetworkAvailable()
+                    }
+                },
+            )
+        }.onFailure {
+            networkCallbackRegistered.set(false)
+            dev.walcott.debug.DebugLog.w(TAG, "could not follow the network: ${it.javaClass.simpleName}")
+        }
+    }
+
+    private val networkCallbackRegistered = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private suspend fun connect(id: FamilyIdentity) {
         transport?.close()
@@ -1488,8 +1522,49 @@ class SyncManager(
     }
 
     /**
-     * Parent queues a remote fix for a child device (see [RemoteAction]). Applied on the
-     * child's next check-in and acknowledged back in its snapshot.
+     * Parent: make this device catch up NOW — re-adopt the current rules, and check for a new
+     * app build without waiting for its own timer.
+     *
+     * Worth being precise about what this does and does not buy, because most of it is already
+     * fast and offering a button that changes nothing would be theatre:
+     *
+     *  - **Rules are pushed, not polled.** They reach a child with a live socket in about a
+     *    second, so forcing them is normally a no-op. What is NOT a no-op is the version bump:
+     *    a child refuses a policy whose version has not moved ([SyncEngine.adoptsPolicy]), so a
+     *    device whose copy went stale — a publish missed while it was off — would reject every
+     *    identical re-emit for ever. Bumping is the only way to make it adoptable again, and
+     *    nothing else in the app does it without an actual edit.
+     *  - **The app update check is the child's own timer** (~30 min via the heartbeat, 12 h via
+     *    WorkManager), so this saves at most half an hour of waiting. It does something the
+     *    timer cannot, though: [RemoteAction.UPDATE_NOW] forces past the family's Wi-Fi-only
+     *    setting and past the canary gate that holds children at the parent's own build.
+     *
+     * One store write and one message for both, rather than two of each.
+     */
+    suspend fun forceCatchUp(targetDeviceId: String) {
+        val now = System.currentTimeMillis()
+        syncStore.update { s ->
+            val withReapply = SyncEngine.withCommand(
+                s.commands,
+                RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, RemoteAction.REAPPLY_POLICY, now),
+                now,
+            )
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                commands = SyncEngine.withCommand(
+                    withReapply,
+                    RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, RemoteAction.UPDATE_NOW, now),
+                    now,
+                ),
+            )
+        }
+        dev.walcott.debug.DebugLog.i(TAG, "asking $targetDeviceId to catch up on rules and build")
+        publishSelf()
+    }
+
+    /**
+     * Parent queues a remote fix for a child device (see [RemoteAction]). Applied when the child
+     * receives the snapshot carrying it, and acknowledged back in the child's own.
      */
     suspend fun sendCommand(targetDeviceId: String, action: String, arg: String = "", label: String = "") {
         val now = System.currentTimeMillis()
