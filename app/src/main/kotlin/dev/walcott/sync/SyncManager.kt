@@ -1528,12 +1528,16 @@ class SyncManager(
      * Worth being precise about what this does and does not buy, because most of it is already
      * fast and offering a button that changes nothing would be theatre:
      *
-     *  - **Rules are pushed, not polled.** They reach a child with a live socket in about a
-     *    second, so forcing them is normally a no-op. What is NOT a no-op is the version bump:
-     *    a child refuses a policy whose version has not moved ([SyncEngine.adoptsPolicy]), so a
-     *    device whose copy went stale — a publish missed while it was off — would reject every
-     *    identical re-emit for ever. Bumping is the only way to make it adoptable again, and
-     *    nothing else in the app does it without an actual edit.
+     *  - **Rules are pushed, not polled**, and a child that missed a publish HEALS BY ITSELF.
+     *    They reach a live socket in about a second; a phone that was off replays from the
+     *    `since=` cursor when its socket returns, and any later re-emit is adopted as well —
+     *    [SyncEngine.adoptsPolicy] compares the snapshot's version against what this child has
+     *    applied, so a device sitting on version 49 takes the next re-emit of 50 like any other.
+     *    Nothing here rescues a stale child, because nothing needs to. What the version bump
+     *    buys is RE-ASSERTION: without it, sending the rules to a child already on this version
+     *    is a genuine no-op, so "make sure this phone is running exactly what I am looking at"
+     *    would have no way to be answered. It pairs with the [RemoteAction.REAPPLY_POLICY]
+     *    below, which re-applies the copy the child already has.
      *  - **The app update check is the child's own timer** (~30 min via the heartbeat, 12 h via
      *    WorkManager), so this saves at most half an hour of waiting. It does something the
      *    timer cannot, though: [RemoteAction.UPDATE_NOW] forces past the family's Wi-Fi-only
