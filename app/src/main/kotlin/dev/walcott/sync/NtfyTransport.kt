@@ -37,10 +37,13 @@ class NtfyTransport(
     private val reconnectAttempts = AtomicInteger(0)
 
     /**
-     * Whether a reconnect is currently being waited out, so [onNetworkAvailable] knows whether
-     * there is anything to bring forward and a healthy socket is left alone.
+     * Whether a reconnect is already scheduled and still waiting.
+     *
+     * Two jobs. It stops a single dead socket from scheduling several — OkHttp can report the
+     * same death twice, through `onFailure` and `onClosed` — and it tells [onNetworkAvailable]
+     * whether there is anything to bring forward, so a healthy socket is left alone.
      */
-    private val awaitingReconnect = AtomicBoolean(false)
+    private val reconnectPending = AtomicBoolean(false)
 
     /**
      * Which reconnect attempt is the live one. A sleeping retry checks this before opening, so
@@ -128,8 +131,8 @@ class NtfyTransport(
         val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                reconnectAttempts.set(0)
-                awaitingReconnect.set(false)
+                val after = reconnectAttempts.getAndSet(0)
+                DebugLog.i(TAG, if (after > 0) "relay socket is back after $after attempt(s)" else "relay socket open")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -143,10 +146,28 @@ class NtfyTransport(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                // Worth a line: a relay that vanishes without a word is only discovered at the
+                // next keepalive ping, and until this was said out loud "the socket died minutes
+                // ago" and "the relay has nothing to say" looked identical from the outside.
+                DebugLog.w(TAG, "relay socket failed: ${t.javaClass.simpleName}: ${t.message}")
                 reconnectSoon()
             }
 
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                // Answered, not merely noted, and that is the whole point: OkHttp does NOT send
+                // the reply for you. The peer has said it will send nothing more, and until this
+                // side closes too the socket stays half-shut with no further callback coming —
+                // [onClosed] never fires, so the reconnect below never starts. A relay that shuts
+                // down politely (an ntfy restart, a proxy retiring a socket) then costs the phone
+                // a whole keepalive interval instead of three seconds: up to eight minutes with no
+                // rules arriving, on a socket that looks alive from here (see Http.webSocketClient
+                // and OutageScenarioTest, which spent four releases looking flaky because of it).
+                DebugLog.i(TAG, "relay is closing the socket ($code); answering")
+                webSocket.close(1000, null)
+            }
+
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                DebugLog.i(TAG, "relay closed the socket ($code)")
                 reconnectSoon()
             }
         })
@@ -154,17 +175,28 @@ class NtfyTransport(
 
     private fun reconnectSoon() {
         if (closed.get()) return
+        // One pending reconnect at a time, and one step of backoff per real failure.
+        //
+        // A dying socket can call back twice — `onFailure` and then `onClosed` — and each call
+        // used to take its own step up the ladder. On its own that merely wasted a thread, since
+        // both of them opened a socket. Paired with the generation guard below it stopped being
+        // harmless: only the last thread survives, so a single failure advanced the backoff twice
+        // and the wait doubled — 3s, 12s, 48s instead of 3s, 6s, 12s. A phone that lost the relay
+        // then took minutes to look again when the schedule says seconds.
+        if (!reconnectPending.compareAndSet(false, true)) return
         // Exponential backoff (3s, 6s, 12s… capped at 5 min) so an offline or dozing
         // device doesn't hammer the radio; a successful connection resets it.
-        awaitingReconnect.set(true)
-        val attempt = reconnectAttempts.getAndIncrement().coerceAtMost(10)
-        val delayMillis = (3_000L shl attempt).coerceAtMost(5 * 60 * 1000L)
+        val attempt = reconnectAttempts.getAndIncrement().coerceAtMost(MAX_BACKOFF_SHIFT)
+        val delayMillis = (RECONNECT_BASE_MS shl attempt).coerceAtMost(RECONNECT_MAX_MS)
         val generation = reconnectGeneration.incrementAndGet()
+        DebugLog.i(TAG, "reopening the relay socket in $delayMillis ms (attempt ${attempt + 1})")
         Thread {
             Thread.sleep(delayMillis)
-            // Superseded while asleep — by [onNetworkAvailable], or by a later failure — so this
-            // thread's job has already been done by someone else.
-            if (!closed.get() && reconnectGeneration.get() == generation) openSocket()
+            if (closed.get()) return@Thread
+            // Superseded while asleep by [onNetworkAvailable], which has already opened one.
+            if (reconnectGeneration.get() != generation) return@Thread
+            reconnectPending.set(false)
+            openSocket()
         }.apply { isDaemon = true }.start()
     }
 
@@ -182,7 +214,10 @@ class NtfyTransport(
      * Wi-Fi/cellular handovers a phone does all day cost nothing.
      */
     override fun onNetworkAvailable() {
-        if (closed.get() || !awaitingReconnect.get()) return
+        if (closed.get()) return
+        // Claims the pending reconnect, so the thread sleeping on it stands down rather than
+        // opening a second socket behind this one. Nothing pending means a healthy socket.
+        if (!reconnectPending.compareAndSet(true, false)) return
         DebugLog.i(TAG, "network is back; reconnecting now instead of waiting out the backoff")
         reconnectGeneration.incrementAndGet()
         reconnectAttempts.set(0)
@@ -191,7 +226,7 @@ class NtfyTransport(
 
     override fun close() {
         closed.set(true)
-        awaitingReconnect.set(false)
+        reconnectPending.set(false)
         webSocket?.cancel()
         webSocket = null
     }
@@ -204,5 +239,14 @@ class NtfyTransport(
 
         /** First retry delay; doubles per attempt (1 s, then 2 s). */
         private const val PUBLISH_RETRY_BASE_MS = 1_000L
+
+        /** First wait before reopening a dropped socket; doubles per consecutive failure. */
+        private const val RECONNECT_BASE_MS = 3_000L
+
+        /** Caps the doubling at 2^10, well past where [RECONNECT_MAX_MS] takes over. */
+        private const val MAX_BACKOFF_SHIFT = 10
+
+        /** Longest wait between attempts: a phone with no signal must not hammer the radio. */
+        private const val RECONNECT_MAX_MS = 5 * 60 * 1000L
     }
 }

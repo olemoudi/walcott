@@ -48,6 +48,22 @@ class MockRelayTest {
          * last, after the subscription is live, so waiting for it is exact.
          */
         val subscribed = CountDownLatch(1)
+
+        /**
+         * Counted down when the relay says it is going away, which is what every outage scenario
+         * rests on — see `stopping tells its subscribers`.
+         */
+        val closed = CountDownLatch(1)
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            closed.countDown()
+            // Answered, as the app's own transport does. OkHttp does not reply for you, and a
+            // client that stays quiet leaves the close half-done: the relay never learns the
+            // subscriber heard it, and the subscriber never gets onClosed. That is exactly the
+            // bug this pair of tests exists to keep out of NtfyTransport.
+            webSocket.close(1000, null)
+        }
+
         override fun onMessage(webSocket: WebSocket, text: String) {
             frames += text
             if (NtfyEvent.messageBody(text) == null) subscribed.countDown()
@@ -129,6 +145,20 @@ line2"}"""
         relay.replay("t5", 0)
         waitFor(collector, 2)
         assertEquals(listOf("once", "once"), collector.bodies())
+    }
+
+    @Test
+    fun `stopping tells its subscribers`() {
+        // The property OutageScenarioTest rests on, asserted here where it is cheap. A relay that
+        // goes away without its close reaching the subscriber leaves it holding a socket that has
+        // merely gone quiet, and OkHttp only calls that dead at the next keepalive ping — four
+        // minutes on the child, eight in the worst case (see dev.walcott.net.Http.webSocketClient).
+        // A scenario that waits less than that would then fail for a reason that has nothing to do
+        // with the product, which is exactly what happened.
+        val collector = subscribe("t7")
+        val stranded = relay.stop()
+        assertTrue(collector.closed.await(5, TimeUnit.SECONDS), "the subscriber was never told")
+        assertEquals(0, stranded, "the relay gave up on a subscriber that was still listening")
     }
 
     @Test

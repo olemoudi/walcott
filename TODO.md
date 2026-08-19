@@ -3,6 +3,55 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.76.0 — the close nobody answered
+
+`OutageScenarioTest` had been failing on and off for four releases and every note it accumulated
+blamed the harness. It was the product, and the bug is one every phone in the family was living
+with.
+
+**OkHttp does not answer a close frame for you.** `NtfyTransport` implemented `onFailure` and
+`onClosed` and left `onClosing` at its default no-op. So when a relay shut down *politely* — an
+ntfy restart, a proxy retiring an idle socket, anything that says goodbye rather than vanishing —
+the child took the frame, said nothing back, and the handshake stopped there: `onClosed` never
+fired, and `onClosed` is the only place the reconnect starts. The socket then sat half-shut,
+indistinguishable from a healthy one, until the keepalive gave up: **four minutes to the next
+ping, four more for the pong that never comes**. Up to eight minutes of a phone receiving no
+rules, with nothing on either screen suggesting anything is wrong. The fix is to answer the
+close.
+
+**Why it read as flakiness rather than as a bug.** The scenario's window was 240 000 ms —
+exactly `Http.IDLE_PING_MINUTES`, a window with nothing in it — and then seven minutes; both sit
+UNDER the eight-minute worst case, so whether it passed depended on where in the ping's cycle the
+outage happened to fall. Four full runs put the failure on the first scenario, then on neither,
+then on both, then on the second, which reads exactly like contention and was not. The window is
+now **90 seconds** and the tightness is the assertion: a generous one would pass just as happily
+on a child that never noticed anything.
+
+Two things keep it from going quiet again: `MockRelay.stop` answers how many subscribers never
+acknowledged the close and the outage helper refuses to go on if any did not, and
+`MockRelayTest.stopping tells its subscribers` pins the same property hermetically — one second,
+no emulator.
+
+**The backoff advanced twice per failure.** A dying socket calls back through `onFailure` and
+then `onClosed`, and each call took its own step up the ladder, so a single death ran 3 s, 12 s,
+48 s instead of 3 s, 6 s, 12 s. Harmless until the generation guard landed and only the last
+thread survived; after it, a phone that lost the relay took minutes to look again. One pending
+reconnect at a time now.
+
+**`childVersion` is a publish counter, not a change counter.** `SyncEngine.mergeChild` keeps the
+incoming snapshot when its version is >= the one on file, so two publishes sharing a version are
+interchangeable to the parent and whichever lands LAST wins — and the relay replays its backlog
+from the `since=` cursor on every reconnect, so the last to land is regularly the older of the
+two. The counter used to move only when particular fields changed, and the payload had outgrown
+that list: usage, battery and the location trail differ on nearly every publish, and a bonus
+landing changed the reported extra minutes without touching it at all. The visible symptom was a
+parent's view of a child rewinding — usage going down, a marker jumping back to where the phone
+was twenty minutes ago — until the next publish put it right.
+
+**The transport now says what it is doing**: socket open, closing, closed, failed, and how long
+until the next attempt. Every conclusion above came out of those five lines; before them the
+child's log said nothing at all between pairing and the ping timeout.
+
 ## Shipped in v0.72.0 — the member's card, rebuilt
 
 ole's own phone, on his real family: "el diseño es algo apretado… los botones del rayo, del mapa y

@@ -134,9 +134,9 @@ fun QuickActionsSheet(
     // undoable, which is why none of it confirms; close tracking is neither — it holds the
     // child's phone awake and drinks its battery, so the parent is told the price first.
     var askLive by remember { mutableStateOf(false) }
-    // Held rather than announced inside the tap: the confirmation sentence needs a composition,
-    // and the one that raised it is about to be torn down with the sheet.
-    var liveStarted by remember { mutableIntStateOf(0) }
+    // The template rather than the finished sentence, because the duration is only known at the
+    // tap — resolved up here like `undo` and `locating` for the same reason they are.
+    val liveStartedFmt = stringResource(R.string.quick_live_started)
     if (askLive && snapshot != null) {
         val interval = remember(settings, childId) {
             settings.resolveForChild(childId).trackingIntervalMinutes
@@ -148,20 +148,15 @@ fun QuickActionsSheet(
             onConfirm = { minutes ->
                 askLive = false
                 viewModel.setLiveTracking(snapshot.deviceId, minutes)
-                liveStarted = minutes
+                done(
+                    String.format(
+                        liveStartedFmt,
+                        entry.name,
+                        java.time.Duration.ofMinutes(minutes.toLong()).humanize(),
+                    ),
+                )
             },
         )
-    }
-    if (liveStarted > 0) {
-        val said = stringResource(
-            R.string.quick_live_started,
-            entry.name,
-            java.time.Duration.ofMinutes(liveStarted.toLong()).humanize(),
-        )
-        androidx.compose.runtime.LaunchedEffect(liveStarted) {
-            liveStarted = 0
-            done(said)
-        }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {

@@ -75,6 +75,14 @@ class MockRelay(
     /** How often a port that is not free yet is re-probed (see [start]). */
     private val PORT_RETRY_MS = 500L
 
+    /**
+     * How long [stop] waits for subscribers to answer the close frame.
+     *
+     * A live subscriber answers in milliseconds; the budget is only there for one that has
+     * already gone away without saying so, which cannot be told apart from a slow one.
+     */
+    private val CLOSE_HANDSHAKE_MS = 1_000L
+
     /** Blocks until [port] can be bound, or throws what the last attempt threw. */
     private fun awaitFreePort(port: Int, waitMs: Long) {
         val deadline = System.currentTimeMillis() + waitMs
@@ -112,11 +120,42 @@ class MockRelay(
         return this
     }
 
-    fun stop() {
-        if (!started) return
+    /**
+     * Stops listening, after telling every subscriber that it is going.
+     *
+     * Answers how many of them never acknowledged that, which is a number worth having rather
+     * than assuming: closing a WebSocket only ENQUEUES the frame, and shutting the server down
+     * in the same breath closes the socket underneath it. A peer that is never told is left
+     * holding a connection that merely stopped — not what a relay going down looks like to it,
+     * and something it only discovers a whole keepalive interval later (see OutageScenarioTest).
+     */
+    fun stop(waitMs: Long = CLOSE_HANDSHAKE_MS): Int {
+        if (!started) return 0
+        val subscribers = topics.values.sumOf { it.sockets.size }
         topics.values.forEach { topic -> topic.sockets.forEach { it.close(1000, "bye") } }
-        server.shutdown()
+        val stranded = awaitSocketsClosed(waitMs)
+        println("relay ${server.port}: stopping; $subscribers subscriber(s) told, $stranded never answered")
+        // Throws "Gave up waiting for queue to shut down" when a subscriber's writer never went
+        // idle — which is the same stranded socket [stranded] already reports, said less clearly
+        // and at the cost of failing the caller mid-scenario.
+        runCatching { server.shutdown() }
+
         started = false
+        return stranded
+    }
+
+    /**
+     * Blocks until every subscriber has answered its close frame, or [waitMs] runs out.
+     * Answers how many never did — the server-side listener drops a socket from the topic when
+     * the other end answers, so an empty list is the acknowledgement.
+     */
+    private fun awaitSocketsClosed(waitMs: Long): Int {
+        val deadline = System.currentTimeMillis() + waitMs
+        while (true) {
+            val left = topics.values.sumOf { it.sockets.size }
+            if (left == 0 || System.currentTimeMillis() >= deadline) return left
+            Thread.sleep(20)
+        }
     }
 
     /** Base URL as seen from this machine (the parent sim's side). */
@@ -236,15 +275,18 @@ class MockRelay(
                 // straight after it without racing its own subscription. The client's own onOpen
                 // fires on the handshake, which is strictly earlier and proves nothing.
                 webSocket.send("""{"event":"open","topic":"$topicName"}""")
+                println("relay ${server.port}: subscriber joined $topicName (${state.sockets.size} now)")
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 state.sockets -= webSocket
+                println("relay ${server.port}: subscriber left $topicName (${state.sockets.size} now)")
                 webSocket.close(1000, null)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
                 state.sockets -= webSocket
+                println("relay ${server.port}: subscriber lost on $topicName: ${t.javaClass.simpleName}")
             }
         })
     }

@@ -188,6 +188,21 @@ data class StoredDiag(val report: DiagPayload, val seenAtVersionCode: Int = 0)
 @Serializable
 data class SyncState(
     // Child side
+    /**
+     * Which publish this is, incremented on every one (see `SyncManager.publishSelfOrThrow`).
+     *
+     * A PUBLISH counter, not a change counter, and the difference matters:
+     * [dev.walcott.sync.SyncEngine.mergeChild] keeps the incoming snapshot when its version is >=
+     * the one the parent holds, so two publishes sharing a version are interchangeable over there
+     * and whichever lands last wins. The relay replays its backlog from the `since=` cursor on
+     * every reconnect, so the last to land is regularly the older of the two.
+     *
+     * It used to move only when particular pieces of state changed, on the reasoning that the
+     * counter should mark when the child has something to say. The payload outgrew that —
+     * usage, battery and the location trail differ on nearly every publish, and a bonus landing
+     * changed the reported extra minutes without touching this at all — so the parent's view of
+     * a child could rewind to an older snapshot until the next publish put it right.
+     */
     val childVersion: Long = 0,
     val pendingRequests: List<ExtraTimeRequest> = emptyList(),
     val pendingAsks: List<ChildRequest> = emptyList(),

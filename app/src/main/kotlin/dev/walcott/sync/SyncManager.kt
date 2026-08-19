@@ -2382,6 +2382,25 @@ class SyncManager(
                 }
             }
             Role.CHILD -> {
+                // Every publish gets its own version, and that is not bookkeeping — it is the
+                // invariant the parent's merge rule assumes.
+                //
+                // [SyncEngine.mergeChild] keeps the incoming snapshot when its version is >= the
+                // one on file, so two publishes sharing a version are interchangeable to the
+                // parent: whichever arrives LAST wins. The counter used to move only when certain
+                // pieces of state changed, and plenty of what travels here is not among them —
+                // extra minutes granted, usage, battery, the location trail. So a child could
+                // publish "18 600 seconds", have a bonus land, and publish "19 200 seconds" under
+                // the same version. The relay replays its backlog from the `since=` cursor on
+                // every reconnect, and the moment the older of those two came back around the
+                // parent's view of the child rewound — usage going down, a marker jumping to
+                // where the phone was twenty minutes ago — until the next publish put it right.
+                // Several guards further down deliberately mirror that >= rule to keep replayed
+                // snapshots from re-raising alerts; all of them rest on this.
+                //
+                // The parent's side stays >= rather than >, because a child on an older build
+                // still does not do this and its genuine updates must keep landing.
+                syncStore.update { it.copy(childVersion = it.childVersion + 1) }
                 val s = syncStore.current()
                 val today = LocalDate.now().toEpochDay()
                 // Stamped now and remembered with the local clock as it reads at this instant:

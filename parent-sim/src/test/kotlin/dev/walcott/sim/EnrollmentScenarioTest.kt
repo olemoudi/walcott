@@ -1,5 +1,6 @@
 package dev.walcott.sim
 
+import dev.walcott.sync.RemoteAction
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -20,10 +21,27 @@ class EnrollmentScenarioTest : DeviceScenario() {
         val snapshot = parent.children.values.single()
         assertEquals(CHILD_ID, snapshot.childId, "the childId from the QR should come back")
         assertEquals(CHILD_NAME, snapshot.displayName, "the name from the QR should come back")
-        // Version 0 is correct here and worth pinning: the counter only moves when the child has
-        // something to say, so a freshly paired device checks in at zero. A test asserting
-        // otherwise would be asserting a bug.
-        assertEquals(0L, snapshot.version, "a first check-in should not have bumped the counter")
+    }
+
+    @Test
+    fun `each check-in outranks the one before it`() {
+        // The counter is a PUBLISH counter, not a change counter, and that distinction is the
+        // whole reason this is pinned. SyncEngine.mergeChild keeps the incoming snapshot when its
+        // version is >= the one on file, so two publishes sharing a version are interchangeable
+        // to the parent and whichever arrives last wins — and since the relay replays its backlog
+        // from the `since=` cursor on every reconnect, the last to arrive can be the older of the
+        // two. That is how a parent's view of a child rewound: usage going down, a marker jumping
+        // back to where the phone was twenty minutes ago.
+        //
+        // This used to assert a first check-in was version 0, on the reasoning that the counter
+        // only moves when the child has something to say. The payload outgrew that: usage,
+        // battery and the location trail change on every publish, and extra minutes granted by a
+        // bonus changed without moving the counter at all.
+        val first = parent.children.values.single().version
+        val commandId = parent.sendCommand(deviceId, RemoteAction.DIAGNOSE)
+        parent.awaitAck(commandId)
+        val later = parent.awaitChild { it.version > first }
+        assertTrue(later.version > first, "a later publish must outrank the one before it")
     }
 
     @Test
