@@ -10,13 +10,37 @@ import org.junit.jupiter.api.Test
 /**
  * Close tracking: the bounded window in which a child reports where it is every minute.
  *
- * The properties worth proving on a real device are the ones about STOPPING, not about starting.
- * This is the only mode that holds the CPU awake, so a session that could be left running by
- * accident is a phone that dies in somebody's bag — and none of the ways it ends (the parent's
- * deadline, the parent's own tap, the battery floor, a restart) can be shown against anything
- * but a device that actually persists the session.
+ * Two kinds of property, and both need a real device. The ones about STOPPING, because this is
+ * the only mode that holds the CPU awake and a session left running by accident is a phone that
+ * dies in somebody's bag — and none of the ways it ends (the parent's deadline, the parent's own
+ * tap, the battery floor, a restart) can be shown against anything but a device that persists
+ * the session. And the one about REPORTING, because everything else here would pass on a child
+ * that acknowledged the command and then published the same fix for an hour.
  */
 class LiveTrackingScenarioTest : DeviceScenario() {
+
+    private companion object {
+        /**
+         * How long a moved phone gets to reach the parent.
+         *
+         * A session samples every minute and publishes every two (see [LiveTracking]), so a move
+         * lands within about three. Five leaves room for a fix the emulator is slow to hand over,
+         * and none at all for a mode that has stopped reporting — which is what this is for.
+         */
+        private const val REPORTS_WITHIN_MS = 5 * 60 * 1000L
+
+        /** Where this scenario's phone starts, used by nothing else here. */
+        private const val START_LAT = 40.3900
+        private const val START_LNG = -3.6600
+
+        /** Where it goes: ~5 km, far past any accuracy blur. */
+        private const val MOVED_LAT = 40.4350
+        private const val MOVED_LNG = -3.7250
+
+        /** Whether a reported point is the position the device was moved to. */
+        private fun at(point: dev.walcott.sync.LocationPoint, lat: Double, lng: Double): Boolean =
+            kotlin.math.abs(point.lat - lat) < 0.005 && kotlin.math.abs(point.lng - lng) < 0.005
+    }
 
     @Test
     fun `a close-tracking request is acknowledged and the device says a session is running`() {
@@ -31,6 +55,37 @@ class LiveTrackingScenarioTest : DeviceScenario() {
         val running = parent.awaitChild { it.liveTrackingUntilMs > System.currentTimeMillis() }
         val leftMs = running.liveTrackingUntilMs - System.currentTimeMillis()
         assertTrue(leftMs <= 15 * 60_000L) { "reported $leftMs ms left of a 15 minute session" }
+    }
+
+    @Test
+    fun `a running session keeps reporting as the phone moves`() {
+        // The gap every other scenario here leaves, and the one a family actually notices. The
+        // rest prove the SESSION — acknowledged, running, stopped, extended — and a child that
+        // acked the command, took one fix and then went quiet for an hour would pass all of them.
+        // That is exactly what "nothing moves" looks like from the other phone.
+        //
+        // Its own coordinates, unlike every other test here, and that is load-bearing: the
+        // device carries a trail from whatever ran before it, so a position any earlier scenario
+        // also uses would be satisfied by a point that predates this session entirely.
+        device.setLocation(latitude = START_LAT, longitude = START_LNG)
+        parent.sendCommand(deviceId, RemoteAction.LIVE_TRACKING, arg = "15")
+        parent.awaitChild(timeoutMs = REPORTS_WITHIN_MS) { snapshot ->
+            snapshot.liveTrackingUntilMs > System.currentTimeMillis() &&
+                snapshot.locations.any { at(it, START_LAT, START_LNG) }
+        }
+
+        // Two kilometres away, and then nothing else at all: no locate request, no re-emit, no
+        // nudge, no second command. Only the session's own loop can carry this — and it has to
+        // come round again to do it, which is the whole point. The first fix proves a session
+        // started; this one proves it is still running.
+        device.setLocation(latitude = MOVED_LAT, longitude = MOVED_LNG)
+        val moved = parent.awaitChild(timeoutMs = REPORTS_WITHIN_MS) { snapshot ->
+            snapshot.locations.any { at(it, MOVED_LAT, MOVED_LNG) }
+        }
+        val fix = moved.locations.last { at(it, MOVED_LAT, MOVED_LNG) }
+        assertTrue(fix.epochMs > 0, "a point with no timestamp cannot be placed on a timeline")
+
+        parent.sendCommand(deviceId, RemoteAction.LIVE_TRACKING, arg = "0")
     }
 
     @Test

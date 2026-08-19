@@ -409,7 +409,8 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * `--ez child_feed true` (a handful of activity-feed entries for the wall),
      * `--ei child_tz_offset_min N` (a child in another timezone, reporting its own day),
      * `--ei child_battery N` + `--ez child_charging true` (what the tracking controls show),
-     * `--ei child_live_min N` (a close-tracking session with N minutes left).
+     * `--ei child_live_min N` (a close-tracking session with N minutes left),
+     * `--es child_locations "lat,lng;lat,lng"` (a trail for the map, newest first).
      */
     private suspend fun seedChild(target: dev.walcott.FamilyScope, spec: String, intent: Intent) {
         val (childId, name, appsPart) = spec.split(":", limit = 3).let {
@@ -449,6 +450,22 @@ class PolicySeedReceiver : BroadcastReceiver() {
             // quick-actions sheet show about tracking, neither of which a single emulator can
             // produce on its own.
             charging = intent.getBooleanExtra("child_charging", false),
+            // `--es child_locations "lat,lng;lat,lng"`, oldest first: a trail for the map, which
+            // is otherwise the one parent screen a single emulator cannot show anything on.
+            // Re-seeding with a further point is how the camera's behaviour while a session runs
+            // gets looked at without a second phone walking down a street.
+            locations = intent.getStringExtra("child_locations")
+                ?.split(";")?.filter { it.isNotBlank() }
+                ?.mapIndexed { index, pair ->
+                    val (lat, lng) = pair.split(",", limit = 2)
+                        .let { it[0].trim().toDouble() to it.getOrElse(1) { "0" }.trim().toDouble() }
+                    dev.walcott.sync.LocationPoint(
+                        lat = lat,
+                        lng = lng,
+                        epochMs = System.currentTimeMillis() - (index * 60_000L),
+                        accuracyM = 12f,
+                    )
+                }?.sortedBy { it.epochMs } ?: emptyList(),
             liveTrackingUntilMs = intent.getIntExtra("child_live_min", 0)
                 .takeIf { it > 0 }
                 ?.let { System.currentTimeMillis() + it * 60_000L } ?: 0L,

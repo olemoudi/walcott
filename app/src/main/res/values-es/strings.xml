@@ -1715,6 +1715,7 @@
     <string-array name="whats_new_0_77_0">
         <item>El seguimiento estrecho está ahora también en la tarjeta de localización de cada miembro, además de bajo el botón del rayo: se activa, se prorroga media hora más o se detiene sin tener que buscar dónde vive.</item>
         <item>Allí donde se ofrece, la batería del móvil aparece junto al botón — en rojo por debajo del 40%, que es donde una sesión en marcha empieza a ralentizarse sola para que la carga dure.</item>
+        <item>El mapa ahora sigue al móvil mientras el seguimiento estrecho está activo, en vez de quedarse en la primera posición que le mostraron. Las posiciones llegaban desde el principio; lo que pasaba es que el marcador se salía de la pantalla.</item>
     </string-array>
     <string-array name="whats_new_0_72_0">
         <item>La tarjeta de cada miembro en la pantalla de inicio está rehecha. Los tres números del día se alinean en columnas propias en vez de partirse a media frase, y lo que de verdad se puede pulsar son botones con su palabra — Acciones y Mapa — y no tres iconos pequeños con aspecto de adorno.</item>

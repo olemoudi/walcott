@@ -111,7 +111,14 @@ fun MapScreen(viewModel: WalcottViewModel, childId: String, onBack: () -> Unit) 
                 )
             }
         } else {
-            TrailMap(points, historyOn, snapshot?.locationsTotal ?: 0, Modifier.weight(1f))
+            TrailMap(
+                points,
+                historyOn,
+                snapshot?.locationsTotal ?: 0,
+                // Follow the child while the session the parent paid for is running.
+                followNewest = snapshot != null && snapshot.liveTrackingUntilMs > System.currentTimeMillis(),
+                modifier = Modifier.weight(1f),
+            )
         }
 
         if (snapshot != null) {
@@ -147,6 +154,7 @@ private fun TrailMap(
     points: List<LocationPoint>,
     historyOn: Boolean,
     totalPoints: Int,
+    followNewest: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val spacing = Tokens.spacing
@@ -206,9 +214,27 @@ private fun TrailMap(
     // Centre on the first fix we get, then leave the camera alone so scrubbing never
     // yanks a map the parent has panned. "Re-centre" is the explicit way back — driven by
     // effects rather than the AndroidView update block, which must stay side-effect free.
+    //
+    // WHILE CLOSE TRACKING RUNS, follow instead. That mode means "I am watching this phone move
+    // right now", and it is the one case where a camera that stays put is wrong: fixes kept
+    // arriving, the marker walked off the edge of the screen, and the parent — quite reasonably —
+    // read a still picture as nothing happening. Only while the scrubber is at the newest fix,
+    // because a parent replaying the past has said where they want to be looking. This used to
+    // be keyed on `points.isNotEmpty()`, a boolean that flips once and never again, so the map
+    // centred on the first position it ever saw and stayed there for the whole session.
     var recenterRequest by remember { mutableIntStateOf(0) }
-    LaunchedEffect(points.isNotEmpty()) {
-        points.lastOrNull()?.let { mapView.controller.setCenter(GeoPoint(it.lat, it.lng)) }
+    var centred by remember { mutableStateOf(false) }
+    val newest = points.lastOrNull()
+    LaunchedEffect(newest, followNewest, selected) {
+        val point = newest ?: return@LaunchedEffect
+        val geo = GeoPoint(point.lat, point.lng)
+        when {
+            !centred -> {
+                centred = true
+                mapView.controller.setCenter(geo)
+            }
+            followNewest && selected == points.lastIndex -> mapView.controller.animateTo(geo)
+        }
     }
     LaunchedEffect(recenterRequest) {
         if (recenterRequest == 0) return@LaunchedEffect

@@ -1723,6 +1723,7 @@
     <string-array name="whats_new_0_77_0">
         <item>Close tracking is now on each member\'s location card as well as under the lightning button: start it, add half an hour to a running session, or stop it, without hunting for where it lives.</item>
         <item>Wherever it is offered, the phone\'s battery is shown next to the button — flagged in red below 40%, which is where a running session starts slowing itself down to make the charge last.</item>
+        <item>The map now follows the phone while close tracking is running, instead of staying on the first position it was shown. Fixes were arriving all along; the marker was simply walking off the edge of the screen.</item>
     </string-array>
     <string-array name="whats_new_0_72_0">
         <item>Each member\'s card on the home screen has been rebuilt. The day\'s three numbers now line up in their own columns instead of wrapping mid-phrase, and the things you can actually press are buttons with words on them — Actions and Map — rather than three small icons that looked like decoration.</item>
