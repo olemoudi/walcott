@@ -88,6 +88,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.BuildConfig
 import dev.walcott.Distribution
 import dev.walcott.R
+import dev.walcott.enforcement.AppUpdates
 import dev.walcott.data.ChildEntry
 import dev.walcott.data.withBudget
 import dev.walcott.provisioning.DeviceOwnerProvisioning
@@ -1214,6 +1215,20 @@ private fun EnrollmentSection(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 EnrollPrepareStatus(setupUnmet = setupUnmet, linked = linked)
+                // The other thing the parent is about to do on that phone: put its apps on it.
+                // With new apps watched — which is how a family is set up now — every one of
+                // those installs is suspended and reported back to the phone they are holding.
+                // Said here, at the exact moment, rather than left to be discovered by doing it.
+                val settings by viewModel.settings.collectAsStateWithLifecycle()
+                if (dev.walcott.enforcement.DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions &&
+                    AppUpdates.modeOf(settings.installMode) == AppUpdates.MODE_GUARDED
+                ) {
+                    Text(
+                        stringResource(R.string.pause_watch_setup_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 TextButton(onClick = { step = 1 }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     Spacer(Modifier.width(spacing.xs))
@@ -1396,6 +1411,16 @@ private fun DeviceStatusStrip(snapshot: ChildSnapshot, rulesSyncing: Boolean, ru
                     snapshot.batteryPercent,
                 ),
                 color = if (low) MaterialTheme.colorScheme.error else null,
+            )
+        }
+        // The nightly hour in which Play may update what is installed (see AppUpdates). Worth a
+        // line of its own: it is the one time this phone's install block is deliberately down,
+        // and until now the only phone that knew it was happening was the child's.
+        val updatesLeftMs = snapshot.updatesOpenUntilMs - System.currentTimeMillis()
+        if (updatesLeftMs > 0) {
+            StatusItem(
+                icon = Icons.Outlined.SystemUpdate,
+                text = stringResource(R.string.update_window_open_fmt, Duration.ofMillis(updatesLeftMs).humanize()),
             )
         }
         // The fleet is sideloaded + self-updating; a child stuck behind our own build

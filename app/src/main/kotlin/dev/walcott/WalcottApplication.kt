@@ -101,7 +101,7 @@ class WalcottApplication : Application() {
             val id = identityStore.current()
             if (id.enforcesLocally) {
                 dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
-                dev.walcott.enforcement.AppUpdateWindowAlarm.schedule(this@WalcottApplication)
+                dev.walcott.enforcement.AppUpdateWindowAlarm.sync(this@WalcottApplication)
             }
             if (id.effectiveMode == dev.walcott.sync.DeviceMode.PARENT) {
                 dev.walcott.sync.ParentCheckAlarm.schedule(this@WalcottApplication)
@@ -310,7 +310,7 @@ class WalcottApplication : Application() {
                         // perfectly healthy while checking in never.
                         runCatching { dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication) }
                         runCatching {
-                            dev.walcott.enforcement.AppUpdateWindowAlarm.schedule(this@WalcottApplication)
+                            dev.walcott.enforcement.AppUpdateWindowAlarm.sync(this@WalcottApplication)
                         }
                         WatchdogWorker.schedule(this@WalcottApplication)
                         UpdateWorker.schedule(this@WalcottApplication)

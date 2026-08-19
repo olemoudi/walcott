@@ -5,6 +5,7 @@ import dev.walcott.rules.DayType
 import dev.walcott.rules.DomainAppRule
 import dev.walcott.rules.FamilyConfig
 import dev.walcott.rules.IdleEarnConfig
+import dev.walcott.rules.lengthMinutes
 import dev.walcott.rules.SchoolCalendar
 import dev.walcott.rules.SpecialDays
 import dev.walcott.rules.TimeWindow
@@ -685,15 +686,22 @@ data class PolicySettings(
     /** Enabled device-protection features (keys from DeviceRestrictions; Device Owner only). */
     val deviceRestrictions: Set<String> = emptySet(),
     /**
-     * How the "no new apps" rule is enforced (see [dev.walcott.enforcement.AppUpdates]).
+     * How the "no unapproved apps" rule is enforced (see [dev.walcott.enforcement.AppUpdates]).
      *
      * A string rather than an enum because it travels: a child on an older build decodes an
      * unknown value as the strict mode it already implements, which is the safe direction, and a
      * mode added later cannot make an old phone drop its restriction.
+     *
+     * The DEFAULT here is deliberately the strict one even though a new family is set up guarded
+     * (see [seedRestrictions]), and for the same reason: this default is what a policy WITHOUT
+     * the field decodes to, and such a policy comes from a parent on a build older than the
+     * field. Defaulting that to guarded would let an old parent's phone quietly drop a
+     * restriction its owner believes is set.
      */
     val installMode: String = dev.walcott.enforcement.AppUpdates.MODE_STRICT,
     /**
-     * The nightly window in which the install block lifts so Play can update what is installed.
+     * The window in which the install block lifts so Play can update what is installed, for the
+     * families that block installs at all.
      *
      * ON by default, and deliberately: to Android an update IS an install, so every family that
      * had ever armed the block was quietly running phones that could no longer take security
@@ -701,6 +709,19 @@ data class PolicySettings(
      * they had no reason to suspect existed.
      */
     val updateWindowEnabled: Boolean = true,
+    /**
+     * Whether that window is the family's own sleeping hours (see [bedtime]) rather than the
+     * hour below.
+     *
+     * The default, because the hour below is a guess at when Play will do its work and the
+     * night is not: nobody outside Google can make Play update inside a window of our choosing —
+     * it runs its daily pass when it finds the phone charging, idle and on Wi-Fi — so a
+     * one-hour window is a bet that costs the phone a whole night whenever it loses. The cost of
+     * the wider window is small in a way that is worth writing down: during their sleeping hours
+     * the child's own bedtime rules are already closing Play's screen.
+     */
+    val updateWindowFollowsBedtime: Boolean = true,
+    /** Where the window starts when it does NOT follow bedtime — or when the family has none. */
     val updateWindowHour: Int = dev.walcott.enforcement.AppUpdates.DEFAULT_HOUR,
     val updateWindowMinutes: Int = dev.walcott.enforcement.AppUpdates.DEFAULT_MINUTES,
     /** Family display name, shown on parent and enrolled child devices. */
@@ -769,10 +790,20 @@ data class PolicySettings(
     /**
      * One-time seeding of recommended anti-tamper [defaults] into [deviceRestrictions]. Idempotent
      * and respects a parent later removing any of them (only runs while [hardeningSeeded] is false).
+     *
+     * The install mode is seeded here rather than defaulted in the field above, and the
+     * difference matters: this runs once, for a family being set up now, while the field's
+     * default is also what a policy from an OLDER PARENT decodes to. A new family starts
+     * guarded — Play open, everything that appears judged — and a family that already exists
+     * keeps whatever it chose, including a strict block nobody has asked to loosen.
      */
     fun seedRestrictions(defaults: Set<String>): PolicySettings =
         if (hardeningSeeded) this
-        else copy(deviceRestrictions = deviceRestrictions + defaults, hardeningSeeded = true)
+        else copy(
+            deviceRestrictions = deviceRestrictions + defaults,
+            installMode = dev.walcott.enforcement.AppUpdates.MODE_GUARDED,
+            hardeningSeeded = true,
+        )
     /**
      * Family policy with [childId]'s overrides applied (null override field = inherit).
      * Blank/unknown ids return the family policy unchanged, so legacy children degrade cleanly.
@@ -875,6 +906,32 @@ data class PolicySettings(
      * downloaded half the filter streams straight off disk.
      */
     fun blocklistDomains(): Set<String> = dev.walcott.rules.Blocklists.domains(enabledBlocklists)
+
+    /**
+     * The window in which this family lets Play update what is already installed, at [now].
+     *
+     * One function so the phone that opens the window and the screen that describes it can never
+     * disagree — the parent reading "from 21:30 to 07:30" is reading the same arithmetic the
+     * child's alarm will run tonight (see [dev.walcott.enforcement.AppUpdateWindowAlarm]).
+     *
+     * The bedtime taken is the one the RULES have for [now], not tonight's after any one-off
+     * change: a bedtime pushed back half an hour for one evening is a decision about that
+     * evening, not about when the phone may patch itself.
+     */
+    fun updateWindowAt(now: java.time.LocalDateTime): dev.walcott.enforcement.AppUpdates.Window {
+        val bedtime = if (updateWindowFollowsBedtime) {
+            runCatching { toFamilyConfig(emptySet()).scheduledBedtimeAt(now) }.getOrNull()
+        } else {
+            null
+        }
+        return dev.walcott.enforcement.AppUpdates.window(
+            bedtime?.let {
+                dev.walcott.enforcement.AppUpdates.Window(it.start.toSecondOfDay() / 60, it.lengthMinutes().toInt())
+            },
+            updateWindowHour,
+            updateWindowMinutes,
+        )
+    }
 
     /**
      * The restriction keys to hand the platform, which are NOT always the ones the family set.

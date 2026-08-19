@@ -434,6 +434,8 @@ object SyncNotifications {
         remaining: String,
         deviceId: String,
         childId: String = "",
+        /** True in the guarded mode, where what is open is the guard's eyes and not a block. */
+        watching: Boolean = false,
     ) {
         val reblock = PendingIntent.getBroadcast(
             context, "reblock$deviceId".hashCode(),
@@ -444,12 +446,27 @@ object SyncNotifications {
         )
         post(
             context, STATUS_CHANNEL, R.string.status_channel_name,
-            title = context.getString(R.string.install_window_open_title, childName),
-            text = context.getString(R.string.install_window_open_text, remaining),
+            // The same window, and not the same sentence. Told "installs are still allowed" by
+            // a phone where installs are ALWAYS allowed, a parent in the guarded mode learns
+            // nothing; what they left open is the judging of what turns up.
+            title = context.getString(
+                if (watching) R.string.pause_watch_open_title else R.string.install_window_open_title,
+                childName,
+            ),
+            text = context.getString(
+                if (watching) R.string.pause_watch_open_text else R.string.install_window_open_text,
+                remaining,
+            ),
             notifId = "installwin".hashCode() + deviceId.hashCode(),
             dest = childDest(childId),
             actions = listOf(
-                NotificationCompat.Action(0, context.getString(R.string.install_window_reblock), reblock),
+                NotificationCompat.Action(
+                    0,
+                    context.getString(
+                        if (watching) R.string.pause_watch_resume else R.string.install_window_reblock,
+                    ),
+                    reblock,
+                ),
             ),
         )
     }

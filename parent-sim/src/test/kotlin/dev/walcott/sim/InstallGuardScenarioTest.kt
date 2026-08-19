@@ -1,6 +1,7 @@
 package dev.walcott.sim
 
 import dev.walcott.sync.RemoteAction
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -223,6 +224,48 @@ class InstallGuardScenarioTest : DeviceScenario() {
         assertDeviceNever("the approved app removed by a stale case") { !device.isInstalled(unapproved) }
         assertFalse(device.isSuspended(unapproved), "the approved app was suspended by a stale case")
         parent.assertNoChild(windowMs = 4_000) { it.unauthorized.any { e -> e.pkg == unapproved } }
+    }
+
+    @Test
+    fun `the nightly window lifts the block, still judges what lands, and gives it back`() {
+        // The whole feature, measured where it actually happens. Play cannot update anything
+        // while DISALLOW_INSTALL_APPS is set — to Android an update IS an install — so the
+        // restriction has to really come off the platform for the hour.
+        //
+        // The window used here is the CURRENT hour, which the device is by definition inside:
+        // this is also the catch-up path (a policy that arrives at 04:10 must open the window it
+        // is already inside), and the one whose old implementation armed an alarm for a past
+        // instant and spun the receiver for the rest of the hour.
+        fun policy(version: Long, windowOn: Boolean) = PolicyJson.build(
+            version = version,
+            restrictions = installBlock,
+            extra = mapOf(
+                "installMode" to JsonPrimitive("strict"),
+                "updateWindowEnabled" to JsonPrimitive(windowOn),
+                // Not the family's sleeping hours, which is the default: this scenario needs a
+                // window it can put around THIS minute, and the sim family has no bedtime.
+                "updateWindowFollowsBedtime" to JsonPrimitive(false),
+                "updateWindowHour" to JsonPrimitive(java.time.LocalTime.now().hour),
+                "updateWindowMinutes" to JsonPrimitive(60),
+            ),
+        )
+        parent.pushPolicy(policy(version = 2, windowOn = false))
+        awaitDevice("the install block armed") { device.installBlocked() }
+
+        parent.pushPolicy(policy(version = 3, windowOn = true))
+        awaitDevice("the update window lifted the block") { !device.installBlocked() }
+
+        // And nothing is forgiven inside it, which is the only reason an open hour is safe to
+        // have: an update never changes the set of installed packages, so it is invisible to the
+        // guard, while a package that is genuinely new is caught exactly as it would be at noon.
+        assertTrue(device.install(fixture("unapproved-app.apk")).contains("Success"), "the sneak-in should install")
+        parent.awaitChild { snapshot -> snapshot.unauthorized.any { it.pkg == unapproved } }
+        awaitDevice("the unapproved app removed") { !device.isInstalled(unapproved) }
+
+        // Withdrawn mid-hour: the block comes back now, not at the end of an hour the family has
+        // already changed its mind about.
+        parent.pushPolicy(policy(version = 4, windowOn = false))
+        awaitDevice("the block back once the family withdraws the window") { device.installBlocked() }
     }
 
     @Test

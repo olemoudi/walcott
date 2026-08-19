@@ -70,6 +70,12 @@ object PolicyJson {
             put("newAppAlerts", newAppAlerts)
             put("deviceRestrictions", JsonArray(restrictions.map { JsonPrimitive(it) }))
             put("hardeningSeeded", true)
+            // The nightly update window off unless a scenario asks for it. It is ON in the app
+            // by default, and deliberately (see AppUpdates) — but a suite that happens to run
+            // between 04:00 and 05:00 would find the install block lifted for the hour, and
+            // every "nothing installs while the block is armed" assertion would become a story
+            // about what time it was.
+            put("updateWindowEnabled", false)
             if (dailyMinutes.isNotEmpty() || unlimited.isNotEmpty()) {
                 put(
                     "appPolicies",

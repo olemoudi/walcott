@@ -620,8 +620,8 @@
     <string name="step_screen_time_teach">A daily limit each app gets unless you give it its own — each on its own clock, so an hour of one doesn\'t eat another\'s. The phone itself always works. Leave it off if you would rather limit apps one by one.</string>
     <string name="step_protection_teach">We also switch on the recommended anti-tamper protections: clock changes, VPNs, force-closing Walcott and sideloading.</string>
     <string name="step_protection_installs">Ask permission for new apps</string>
-    <string name="step_protection_installs_desc">Installing from Play needs your approval; you can also send apps from your phone.</string>
-    <string name="install_mode_title">How the block works</string>
+    <string name="step_protection_installs_desc">Play keeps working — so the phone’s apps stay patched — and anything that appears without your approval is suspended within seconds and put in front of you.</string>
+    <string name="install_mode_title">How new apps are handled</string>
     <string name="install_mode_note">Android has no way to allow updates and refuse new apps: to it, an update is an install. So the block has to be lifted for a while, or replaced by watching what turns up.</string>
     <string name="install_mode_strict">Blocked, with a nightly window</string>
     <string name="install_mode_strict_desc">Nothing installs at all except during the window below. Anything new that appears in it is suspended and you are asked about it, exactly as at any other hour.</string>
@@ -632,7 +632,18 @@
     <string name="update_window_at">Starting at</string>
     <string name="update_window_hour_fmt">%1$02d:00</string>
     <string name="update_window_length">For</string>
-    <string name="update_window_minutes_fmt">%1$d min</string>
+    <string name="update_window_range_fmt">From %1$s to %2$s</string>
+    <string name="update_window_bedtime">While they sleep</string>
+    <string name="update_window_custom">A set time</string>
+    <string name="update_window_no_bedtime">This family has no sleeping hours set, so the window below is used.</string>
+    <string name="pause_watch_title">Pause the watching</string>
+    <string name="pause_watch_desc">Install several apps at once without each of them being suspended</string>
+    <string name="pause_watch_active">Not watching — %1$s left. Tap to change or start again</string>
+    <string name="pause_watch_q_temporary">Are you setting this phone up right now?</string>
+    <string name="pause_watch_permanent_hint">To stop watching for good, turn “Ask permission for new apps” off under Device protection on the parent phone. A change made here would be overwritten by the next sync.</string>
+    <string name="pause_watch_unsure_hint">Watching stays off for 8 hours. Your phone reminds you every hour, and it comes back on its own.</string>
+    <string name="pause_watch_resume">Start watching now</string>
+    <string name="pause_watch_setup_hint">Setting the phone up? Pause the watching from the child’s own phone (Settings → Pause the watching) and install everything in one go — it comes back by itself, and we remind you.</string>
     <string name="update_window_open_fmt">Updating now · %1$s left</string>
     <string name="unauthorized_app_installer_play">Installed by the Play Store</string>
     <string name="unauthorized_app_installer_other">Installed by %1$s</string>
@@ -680,8 +691,8 @@
     <string name="restriction_datetime_desc">Automatic clock, so time limits can\'t be cheated by changing the hour</string>
     <string name="restriction_biometrics_title">Disable biometric unlock</string>
     <string name="restriction_biometrics_desc">Fingerprint and face unlock stop working; only the PIN or pattern unlocks</string>
-    <string name="restriction_installs_title">Block installing apps</string>
-    <string name="restriction_installs_desc">The child can\'t install apps; approve their request or use your PIN on their phone to allow it for a while</string>
+    <string name="restriction_installs_title">Ask permission for new apps</string>
+    <string name="restriction_installs_desc">New apps need your say-so. How that is enforced — Play left working and what appears suspended, or Play refused at the door — is the choice below.</string>
     <string name="restriction_add_user_title">Block new users</string>
     <string name="restriction_add_user_desc">A second user profile would escape the rules</string>
     <string name="restriction_apps_control_title">Block app tampering</string>
@@ -982,6 +993,8 @@
     <string name="install_window_open_title">Installs are still allowed on %1$s\'s phone</string>
     <string name="install_window_open_text">%1$s left before the block comes back on its own.</string>
     <string name="install_window_reblock">Re-block now</string>
+    <string name="pause_watch_open_title">New apps are not being watched on %1$s’s phone</string>
+    <string name="pause_watch_open_text">%1$s left before watching starts again on its own.</string>
     <string name="event_install_window">Installs are still allowed on %1$s\'s phone</string>
     <!-- Child home: the two things worth a card of their own, and the one that isn't. -->
     <!-- Tapping a request notification that no longer has a card behind it. -->
@@ -1735,6 +1748,12 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_80_0">
+        <item>A phone set up from today WATCHES new apps instead of refusing them. The Play Store keeps working — which is what keeps the apps already on the phone getting their security fixes — and anything that appears without your approval is suspended within seconds and put in front of you. Families who already chose to block installs keep exactly what they chose; the two options, with what each one costs, are in Protection.</item>
+        <item>If you do block installs, the window in which apps may update is now your family\'s own sleeping hours rather than one hour at four in the morning (1:00 to 6:00 when no bedtime is set). Nobody outside Google can make Play update inside an hour of our choosing — it runs its own pass when it finds the phone charging, idle and on Wi-Fi — so a single hour was a bet that cost the phone a whole night whenever it lost. During those hours their bedtime is already closing Play\'s screen anyway.</item>
+        <item>Setting a phone up, with a list of apps to put on it? Pause the watching from the child\'s own phone (Settings) and install everything in one go, instead of answering an alert for every app you install yourself. It comes back by itself and your phone reminds you every hour until it does.</item>
+        <item>And the window now really ends when it says it does: on a sleeping phone the install block could come back hours late, because the countdown that put it back does not run in deep sleep. It is an alarm now, it no longer wakes the phone over and over for the whole window, the phone no longer tells whoever is holding it that they can install apps while it runs, and you can see it from here — a child whose apps are updating says so on their card.</item>
     </string-array>
     <string-array name="whats_new_0_79_0">
         <item>A phone with installs blocked can update its apps again. To Android an update IS an install, so blocking installs had quietly stopped security fixes from arriving. There is now a nightly window — 4am for an hour, and you can change or switch it off in Protection — in which Play may update what is already installed. Anything NEW that appears in it is still suspended and you are still asked about it.</item>

@@ -1,5 +1,7 @@
 package dev.walcott.data
 
+import dev.walcott.enforcement.AppUpdates
+import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.rules.DayType
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -260,6 +262,36 @@ class PolicySettingsTest {
         // Once seeded, a parent removing one of them is not undone by a later seed call.
         val afterRemoval = seeded.copy(deviceRestrictions = setOf("vpn"))
         assertEquals(setOf("vpn"), afterRemoval.seedRestrictions(defaults).deviceRestrictions)
+    }
+
+    @Test
+    fun `a family set up today watches new apps rather than refusing them`() {
+        // What a new phone actually does: the guard judges everything that appears, and the
+        // platform is never told to refuse installs — which is what keeps Play patching the apps
+        // the phone already has. The old default bought "nothing installs, ever" with a phone
+        // whose apps quietly went stale.
+        val seeded = PolicySettings().seedRestrictions(DeviceRestrictions.RECOMMENDED_DEFAULTS)
+        assertTrue(DeviceRestrictions.KEY_INSTALLS in seeded.deviceRestrictions, "the guard is armed")
+        assertEquals(AppUpdates.MODE_GUARDED, AppUpdates.modeOf(seeded.installMode))
+        assertFalse(
+            DeviceRestrictions.KEY_INSTALLS in seeded.restrictionKeysToApply(),
+            "the platform is never told to refuse installs in this mode",
+        )
+    }
+
+    @Test
+    fun `a policy from a parent too old to name a mode is still read as the strict one`() {
+        // The direction that must never invert. A phone set up today starts guarded, but that is
+        // seeded, not defaulted: this same absence is what a policy published by a parent on an
+        // older build looks like, and reading it as guarded would drop a restriction its owner
+        // believes is set, on a phone they cannot see.
+        val json = Json { ignoreUnknownKeys = true }
+        val legacy = json.decodeFromString(
+            PolicySettings.serializer(),
+            """{"version":5,"deviceRestrictions":["installs"]}""",
+        )
+        assertEquals(AppUpdates.MODE_STRICT, AppUpdates.modeOf(legacy.installMode))
+        assertTrue(DeviceRestrictions.KEY_INSTALLS in legacy.restrictionKeysToApply())
     }
 
     // --- Leaving categories behind (see migratedFromCategories) ---

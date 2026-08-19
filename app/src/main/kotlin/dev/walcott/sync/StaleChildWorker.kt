@@ -96,6 +96,8 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val remaining = Duration.ofMillis(snapshot.installExemptionUntilMs - now).humanize()
             SyncNotifications.notifyInstallWindowOpen(
                 context, SyncNotifications.who(name, label), remaining, snapshot.deviceId, snapshot.childId,
+                watching = dev.walcott.enforcement.AppUpdates.modeOf(settings.installMode) ==
+                    dev.walcott.enforcement.AppUpdates.MODE_GUARDED,
             )
             feedEvent(ParentEvent.TYPE_INSTALL_WINDOW, snapshot.childId, name)
             reminded[snapshot.deviceId] = now

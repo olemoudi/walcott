@@ -68,13 +68,18 @@ object SetupPresets {
             .copy(weekendStartsFridayAtMinute = null, weekendEndsSundayAtMinute = null)
 
     /**
-     * Turns on the recommended anti-tamper set and applies the parent's install-block choice.
+     * Turns on the recommended anti-tamper set and applies the parent's choice about new apps.
      * Restrictions outside this preset's scope are preserved either way.
+     *
+     * [watchInstalls] rather than "block": the key it sets is what makes the install guard judge
+     * arrivals, and how that is enforced — Play refused at the door, or Play left alone and what
+     * turns up suspended — is the mode, which lives on the Protection screen beside the window it
+     * needs. A family set up today gets the watching one (see [PolicySettings.seedRestrictions]).
      */
-    fun withProtection(settings: PolicySettings, blockInstalls: Boolean): PolicySettings {
+    fun withProtection(settings: PolicySettings, watchInstalls: Boolean): PolicySettings {
         val base = settings.deviceRestrictions + DeviceRestrictions.RECOMMENDED_DEFAULTS
         return settings.copy(
-            deviceRestrictions = if (blockInstalls) {
+            deviceRestrictions = if (watchInstalls) {
                 base + DeviceRestrictions.KEY_INSTALLS
             } else {
                 base - DeviceRestrictions.KEY_INSTALLS

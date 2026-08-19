@@ -69,6 +69,8 @@ fun AppSettingsScreen(
     deviceOwner: Boolean,
     childDevice: Boolean,
     installsBlocked: Boolean,
+    /** True in the guarded mode, where the button below pauses the guard rather than a block. */
+    watching: Boolean,
     installExemptionUntil: Long,
     onAllowInstalls: (durationMs: Long) -> Unit,
     onEndInstallWindow: () -> Unit,
@@ -166,13 +168,21 @@ fun AppSettingsScreen(
             )
             if (childDevice && installsBlocked) {
                 val remainingMs = installExemptionUntil - System.currentTimeMillis()
+                // The one door for "I am the parent and I am installing things on this phone
+                // right now" — and the sentence it needs is not the same in the two modes. With
+                // Play refused at the door the block is what lifts; with Play working all day
+                // nothing was ever blocked, and what this pauses is the judging of what appears.
+                // Said the wrong way round it is either a lie or an invitation.
                 NavCard(
                     Icons.Outlined.InstallMobile,
-                    stringResource(R.string.allow_installs_title),
-                    if (remainingMs > 0) {
-                        stringResource(R.string.allow_installs_active, Duration.ofMillis(remainingMs).humanize())
-                    } else {
-                        stringResource(R.string.allow_installs_desc)
+                    stringResource(if (watching) R.string.pause_watch_title else R.string.allow_installs_title),
+                    when {
+                        remainingMs > 0 -> stringResource(
+                            if (watching) R.string.pause_watch_active else R.string.allow_installs_active,
+                            Duration.ofMillis(remainingMs).humanize(),
+                        )
+                        watching -> stringResource(R.string.pause_watch_desc)
+                        else -> stringResource(R.string.allow_installs_desc)
                     },
                     onClick = { showAllowInstalls = true },
                 )
@@ -206,6 +216,7 @@ fun AppSettingsScreen(
 
     if (showAllowInstalls) {
         AllowInstallsDialog(
+            watching = watching,
             windowOpen = installExemptionUntil > System.currentTimeMillis(),
             onPick = { durationMs -> showAllowInstalls = false; onAllowInstalls(durationMs) },
             onReblock = { showAllowInstalls = false; onEndInstallWindow() },
@@ -276,6 +287,7 @@ fun AppSettingsScreen(
  */
 @Composable
 private fun AllowInstallsDialog(
+    watching: Boolean,
     windowOpen: Boolean,
     onPick: (durationMs: Long) -> Unit,
     onReblock: () -> Unit,
@@ -286,12 +298,24 @@ private fun AllowInstallsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.allow_installs_title)) },
+        title = { Text(stringResource(if (watching) R.string.pause_watch_title else R.string.allow_installs_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.sm)) {
                 when (step) {
-                    Step.TEMPORARY -> Text(stringResource(R.string.allow_installs_q_temporary))
-                    Step.PERMANENT_HINT -> Text(stringResource(R.string.allow_installs_permanent_hint))
+                    Step.TEMPORARY -> Text(
+                        stringResource(
+                            if (watching) R.string.pause_watch_q_temporary else R.string.allow_installs_q_temporary,
+                        ),
+                    )
+                    Step.PERMANENT_HINT -> Text(
+                        stringResource(
+                            if (watching) {
+                                R.string.pause_watch_permanent_hint
+                            } else {
+                                R.string.allow_installs_permanent_hint
+                            },
+                        ),
+                    )
                     Step.DURATION -> {
                         Text(stringResource(R.string.allow_installs_duration_q))
                         DurationOption(stringResource(R.string.allow_installs_10)) {
@@ -302,10 +326,16 @@ private fun AllowInstallsDialog(
                         }
                         DurationOption(
                             stringResource(R.string.allow_installs_unsure),
-                            supporting = stringResource(R.string.allow_installs_unsure_hint),
+                            supporting = stringResource(
+                                if (watching) R.string.pause_watch_unsure_hint else R.string.allow_installs_unsure_hint,
+                            ),
                         ) { onPick(DeviceRestrictions.INSTALL_EXEMPTION_UNSURE_MS) }
                         if (windowOpen) {
-                            DurationOption(stringResource(R.string.allow_installs_reblock)) { onReblock() }
+                            DurationOption(
+                                stringResource(
+                                    if (watching) R.string.pause_watch_resume else R.string.allow_installs_reblock,
+                                ),
+                            ) { onReblock() }
                         }
                     }
                 }

@@ -181,7 +181,12 @@ class WalcottViewModel(
         sync.state.map { it.parentVersion }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
     val pendingRequests: StateFlow<List<SyncManager.PendingRequest>> = sync.pendingRequests
     val pendingAsks: StateFlow<List<SyncManager.PendingAsk>> = sync.pendingAsks
-    val installExemption: StateFlow<Long> = sync.installExemption
+    /**
+     * The install window a PERSON opened, which is the only one a screen may talk about: the
+     * nightly update hour lifts the same restriction, but nothing is forgiven in it and telling
+     * anyone "you can install your app now" while it runs is both false and an invitation.
+     */
+    val installExemption: StateFlow<Long> = sync.personalInstallExemption
     /** Package of a parent-pushed install still waiting for its tap on this device, or "". */
     val pendingInstall: StateFlow<String> = sync.pendingInstall
     val pendingInstallLabel: StateFlow<String> = sync.pendingInstallLabel
@@ -666,11 +671,17 @@ class WalcottViewModel(
         repository.updateSettings { it.copy(installMode = mode) }
     }
 
-    fun setUpdateWindow(enabled: Boolean, hour: Int, minutes: Int) = viewModelScope.launch {
-        repository.updateSettings {
-            it.copy(updateWindowEnabled = enabled, updateWindowHour = hour, updateWindowMinutes = minutes)
+    fun setUpdateWindow(enabled: Boolean, followsBedtime: Boolean, hour: Int, minutes: Int) =
+        viewModelScope.launch {
+            repository.updateSettings {
+                it.copy(
+                    updateWindowEnabled = enabled,
+                    updateWindowFollowsBedtime = followsBedtime,
+                    updateWindowHour = hour,
+                    updateWindowMinutes = minutes,
+                )
+            }
         }
-    }
 
     /** Family-default location tracking interval (0 = off); children inherit unless overridden. */
     fun setFamilyTrackingInterval(minutes: Int) = viewModelScope.launch {
@@ -723,9 +734,15 @@ class WalcottViewModel(
         repository.updateSettings { dev.walcott.data.SetupPresets.withoutWeekendDistinction(it) }
     }
 
-    /** Recommended anti-tamper set plus the parent's choice on blocking new installs. */
-    fun applyProtectionPreset(blockInstalls: Boolean) = viewModelScope.launch {
-        repository.updateSettings { dev.walcott.data.SetupPresets.withProtection(it, blockInstalls) }
+    /**
+     * Recommended anti-tamper set plus the parent's choice on new apps.
+     *
+     * "Watch", not "block": what the key turns on is the install guard (see
+     * [dev.walcott.enforcement.AppUpdates]), and in the mode a family is set up with the platform
+     * is never told to refuse installs at all — Play goes on working, and what appears is judged.
+     */
+    fun applyProtectionPreset(watchInstalls: Boolean) = viewModelScope.launch {
+        repository.updateSettings { dev.walcott.data.SetupPresets.withProtection(it, watchInstalls) }
     }
 
     // Reloads the 7-day history whenever today's usage changes.

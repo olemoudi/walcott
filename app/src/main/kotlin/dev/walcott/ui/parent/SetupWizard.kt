@@ -451,7 +451,7 @@ private fun ProtectionStep(viewModel: WalcottViewModel) {
         stringResource(R.string.nav_protection_title),
         stringResource(R.string.step_protection_teach),
     )
-    val blockInstalls = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions
+    val watchInstalls = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions
     WalcottCard {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -462,11 +462,22 @@ private fun ProtectionStep(viewModel: WalcottViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = blockInstalls, onCheckedChange = { viewModel.applyProtectionPreset(it) })
+            Switch(checked = watchInstalls, onCheckedChange = { viewModel.applyProtectionPreset(it) })
         }
     }
-    // When installs aren't blocked, offer the softer option: just be told a new app appeared.
-    if (!blockInstalls) {
+    // The one thing that makes the first hour with the phone bearable, said where the parent is
+    // about to live it: they are usually holding the child's phone with a list of apps to put on
+    // it, and watching turns that into a queue of alerts about apps they installed themselves.
+    if (watchInstalls) {
+        Text(
+            stringResource(R.string.pause_watch_setup_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = spacing.sm),
+        )
+    }
+    // When new apps aren't watched at all, offer the softer option: just be told one appeared.
+    if (!watchInstalls) {
         WalcottCard {
             Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

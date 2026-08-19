@@ -164,9 +164,22 @@
             android:exported="false" />
 
         <!-- The nightly hour in which a blocked phone may update what it has installed
-             (see AppUpdateWindowAlarm). An alarm because it has to fire while asleep. -->
+             (see AppUpdateWindowAlarm). An alarm because it has to fire while asleep, plus the
+             clock broadcasts: the alarm is an absolute instant computed from a local hour, so a
+             family that flies east has 4am armed in the timezone they left. -->
         <receiver
             android:name=".enforcement.AppUpdateWindowReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Puts the install block back when the window that lifted it runs out
+             (see InstallBlockAlarm). An alarm, because those windows end on a sleeping phone. -->
+        <receiver
+            android:name=".enforcement.InstallBlockReceiver"
             android:exported="false" />
 
         <!-- The child's periodic location fix (see LocationAlarm). An alarm rather than an

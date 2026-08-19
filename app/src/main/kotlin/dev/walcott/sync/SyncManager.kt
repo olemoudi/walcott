@@ -185,9 +185,22 @@ class SyncManager(
         s.domainInbox.filter { it.complete && it.batchId !in s.domainsHandled }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    /** Until when app installs are temporarily allowed on this device. */
+    /** Until when app installs are temporarily allowed on this device, whoever opened the window. */
     val installExemption: StateFlow<Long> =
         syncStore.state.map { it.installExemptionUntilMs }.stateIn(scope, SharingStarted.Eagerly, 0L)
+
+    /**
+     * The same window, but only when a PERSON opened it — a PIN window or an approved ask.
+     *
+     * What every screen wants, and never [installExemption]: during the nightly update hour
+     * installs are technically possible and nothing about that is an invitation, since the guard
+     * goes on suspending whatever appears. Told as "you can install your app now, 58 minutes
+     * left", which is what the child's home screen used to say at four in the morning, it is
+     * both false and an invitation.
+     */
+    val personalInstallExemption: StateFlow<Long> = syncStore.state
+        .map { if (it.installWindowMaintenance) 0L else it.installExemptionUntilMs }
+        .stateIn(scope, SharingStarted.Eagerly, 0L)
 
     // --- Child-side visibility of its own request lifecycle ---
 
@@ -1029,9 +1042,7 @@ class SyncManager(
         syncStore.update { it.copy(installExemptionUntilMs = until, installWindowMaintenance = false) }
         // Synchronous lift, like openInstallForPush: the parent is standing at the device with
         // Play already open — don't depend on the exemption collector being alive and prompt.
-        runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = until)
-        }
+        applyInstallWindow(until)
         // The window is parent-visible state (and drives the reminder ladder on their phone).
         runCatching { publishSelf() }
     }
@@ -1044,17 +1055,68 @@ class SyncManager(
      * [SyncState.installWindowMaintenance]) and does not go on the parent's reminder ladder.
      * Refuses to reopen over a window somebody else opened, whose terms are different.
      */
-    suspend fun openUpdateWindow(minutes: Int) {
+    suspend fun openUpdateWindow(untilMs: Long) {
         val now = System.currentTimeMillis()
+        if (untilMs <= now) return
         val s = syncStore.current()
         if (s.installExemptionUntilMs > now && !s.installWindowMaintenance) return
-        val until = now + minutes.coerceAtLeast(1) * 60_000L
-        syncStore.update { it.copy(installExemptionUntilMs = until, installWindowMaintenance = true) }
-        runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = until)
-        }
-        dev.walcott.debug.DebugLog.i(TAG, "update window open for $minutes min")
+        // Already open to exactly that deadline. Asked more than once on purpose — the alarm, a
+        // policy edit during the hour, a reboot at 04:10 all ask — and each answer used to cost a
+        // restriction round-trip and a publish for a window that was already running. A DIFFERENT
+        // deadline is a real answer in either direction: the hour the policy names now is the
+        // hour, whether the parent lengthened it or cut it short.
+        if (s.installWindowMaintenance && s.installExemptionUntilMs == untilMs) return
+        syncStore.update { it.copy(installExemptionUntilMs = untilMs, installWindowMaintenance = true) }
+        applyInstallWindow(untilMs)
+        dev.walcott.debug.DebugLog.i(TAG, "update window open for ${(untilMs - now) / 60_000} min")
         runCatching { publishSelf() }
+    }
+
+    /**
+     * Closes an open nightly window because the family stopped wanting one — the mode changed,
+     * the switch went off, the block was lifted altogether (see `AppUpdateWindowAlarm.sync`).
+     *
+     * Without this, turning the window off during it left the block down for the rest of the
+     * hour: the setting that governs it is only read when the NEXT one is due.
+     */
+    suspend fun endUpdateWindow() {
+        val s = syncStore.current()
+        if (!s.installWindowMaintenance || s.installExemptionUntilMs <= System.currentTimeMillis()) return
+        syncStore.update { it.copy(installExemptionUntilMs = 0) }
+        applyInstallWindow(0)
+        dev.walcott.debug.DebugLog.i(TAG, "update window closed early: this hour is no longer one")
+        runCatching { publishSelf() }
+    }
+
+    /**
+     * Puts the install block back now that a window has run out. Called by [InstallBlockAlarm],
+     * which is the only clock that ticks on a sleeping phone, and by the enforcement service's
+     * own countdown while it is awake.
+     *
+     * A no-op while the stored deadline is still in the future: whichever of the two gets here
+     * first must not cut short a window the other extended.
+     */
+    suspend fun rearmInstallBlock() {
+        if (syncStore.current().installExemptionUntilMs > System.currentTimeMillis()) return
+        applyInstallWindow(0)
+    }
+
+    /**
+     * Applies the family's restrictions with [untilMs] as the install exemption, and arms (or
+     * cancels) the alarm that puts the block back when it runs out.
+     *
+     * One place, because there are five ways to open or close one of these windows and the
+     * block coming back afterwards is not something to remember at each of them.
+     */
+    private suspend fun applyInstallWindow(untilMs: Long) {
+        runCatching {
+            DeviceRestrictions.apply(
+                context,
+                settingsStore.current().restrictionKeysToApply(),
+                installExemptUntilMs = untilMs,
+            )
+        }.onFailure { dev.walcott.debug.DebugLog.e(TAG, "could not apply the install restrictions", it) }
+        dev.walcott.enforcement.InstallBlockAlarm.arm(context, untilMs)
     }
 
     /** Ends any open install window now and re-arms the block (the "re-block now" action). */
@@ -1067,9 +1129,7 @@ class SyncManager(
             return
         }
         syncStore.update { it.copy(installExemptionUntilMs = 0) }
-        runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = 0)
-        }
+        applyInstallWindow(0)
         runCatching { publishSelf() }
     }
 
@@ -1101,9 +1161,7 @@ class SyncManager(
         }
         // Synchronous lift, mirroring closeInstallWindow's re-arm: the child may be looking
         // at Play seconds from now, so don't depend on the exemption collector's timing.
-        runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = until)
-        }
+        applyInstallWindow(until)
     }
 
     /**
@@ -1159,9 +1217,7 @@ class SyncManager(
         }
         InstallPromptNotifications.cancel(context, s.pendingInstallPackage)
         // Synchronous re-arm: don't wait for the settings/exemption collector to react.
-        runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = 0)
-        }
+        applyInstallWindow(0)
         if (pushedLanded) publishSelf()
     }
 
@@ -2624,7 +2680,8 @@ class SyncManager(
                     // Reported apart, because they mean opposite things to a parent: one is a
                     // window somebody opened and may have forgotten (and is nagged about), the
                     // other is the scheduled hour in which Play updates what is installed.
-                    updatesOpenUntilMs = if (s.installWindowMaintenance) s.installExemptionUntilMs else 0L,
+                    updatesOpenUntilMs = s.installExemptionUntilMs
+                        .takeIf { s.installWindowMaintenance && it > System.currentTimeMillis() } ?: 0L,
                     // Sent only once it says something. An empty summary would put "we measured
                     // nothing" on the parent's screen as though it were a measurement.
                     batteryDrain = BatteryDrain.summarize(s.batteryDays, s.batterySessions)

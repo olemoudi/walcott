@@ -618,8 +618,8 @@
     <string name="step_screen_time_teach">Un límite diario que recibe cada app salvo que le des el suyo — cada una con su contador, así una hora de una no le quita tiempo a otra. El teléfono en sí siempre funciona. Déjalo apagado si prefieres limitar app por app.</string>
     <string name="step_protection_teach">También activamos las protecciones anti-manipulación recomendadas: cambios de hora, VPNs, forzar el cierre de Walcott e instalar fuera de Play.</string>
     <string name="step_protection_installs">Pedir permiso para apps nuevas</string>
-    <string name="step_protection_installs_desc">Instalar desde Play necesita tu aprobación; también puedes enviarle apps desde tu móvil.</string>
-    <string name="install_mode_title">Cómo funciona el bloqueo</string>
+    <string name="step_protection_installs_desc">Play sigue funcionando — así las apps del móvil siguen recibiendo parches — y lo que aparezca sin tu aprobación se suspende en segundos y te lo ponemos delante.</string>
+    <string name="install_mode_title">Cómo se tratan las apps nuevas</string>
     <string name="install_mode_note">Android no sabe permitir actualizaciones y negar apps nuevas: para él, actualizar es instalar. Así que el bloqueo tiene que levantarse un rato, o cambiarse por vigilar lo que aparece.</string>
     <string name="install_mode_strict">Bloqueado, con ventana nocturna</string>
     <string name="install_mode_strict_desc">No se instala nada salvo durante la ventana de abajo. Lo que aparezca nuevo en ella se suspende y te preguntamos, igual que a cualquier otra hora.</string>
@@ -630,7 +630,18 @@
     <string name="update_window_at">A partir de las</string>
     <string name="update_window_hour_fmt">%1$02d:00</string>
     <string name="update_window_length">Durante</string>
-    <string name="update_window_minutes_fmt">%1$d min</string>
+    <string name="update_window_range_fmt">De %1$s a %2$s</string>
+    <string name="update_window_bedtime">Mientras duermen</string>
+    <string name="update_window_custom">Una hora concreta</string>
+    <string name="update_window_no_bedtime">Esta familia no tiene horario de sueño, así que se usa la franja de abajo.</string>
+    <string name="pause_watch_title">Pausar la vigilancia</string>
+    <string name="pause_watch_desc">Instala varias apps de golpe sin que se vayan suspendiendo</string>
+    <string name="pause_watch_active">Sin vigilar — quedan %1$s. Toca para cambiarlo o volver a vigilar</string>
+    <string name="pause_watch_q_temporary">¿Estás preparando este móvil ahora mismo?</string>
+    <string name="pause_watch_permanent_hint">Para dejar de vigilar del todo, desactiva «Pedir permiso para apps nuevas» en Protección del dispositivo, desde el móvil del padre. Un cambio hecho aquí lo sobrescribiría la siguiente sincronización.</string>
+    <string name="pause_watch_unsure_hint">La vigilancia queda en pausa 8 horas. Tu móvil te lo recuerda cada hora, y vuelve sola.</string>
+    <string name="pause_watch_resume">Volver a vigilar ya</string>
+    <string name="pause_watch_setup_hint">¿Estás preparando el móvil? Pausa la vigilancia desde el propio móvil del niño (Ajustes → Pausar la vigilancia) e instala todo de una vez: vuelve sola, y te lo recordamos.</string>
     <string name="update_window_open_fmt">Actualizando ahora · quedan %1$s</string>
     <string name="unauthorized_app_installer_play">La ha instalado Play Store</string>
     <string name="unauthorized_app_installer_other">La ha instalado %1$s</string>
@@ -678,8 +689,8 @@
     <string name="restriction_datetime_desc">Reloj automático: no se pueden burlar los límites cambiando la hora</string>
     <string name="restriction_biometrics_title">Desactivar desbloqueo biométrico</string>
     <string name="restriction_biometrics_desc">Huella y cara dejan de desbloquear; solo funciona el PIN o patrón</string>
-    <string name="restriction_installs_title">Bloquear instalación de apps</string>
-    <string name="restriction_installs_desc">El hijo no puede instalar apps; aprueba su petición o usa tu PIN en su móvil para permitirlo un rato</string>
+    <string name="restriction_installs_title">Pedir permiso para apps nuevas</string>
+    <string name="restriction_installs_desc">Las apps nuevas necesitan tu visto bueno. Cómo se hace cumplir — dejando a Play funcionar y suspendiendo lo que aparezca, o rechazando a Play en la puerta — es la elección de abajo.</string>
     <string name="restriction_add_user_title">Bloquear usuarios nuevos</string>
     <string name="restriction_add_user_desc">Un segundo perfil de usuario escaparía a las reglas</string>
     <string name="restriction_apps_control_title">Bloquear manipulación de apps</string>
@@ -980,6 +991,8 @@
     <string name="install_window_open_title">Las instalaciones siguen permitidas en el móvil de %1$s</string>
     <string name="install_window_open_text">Quedan %1$s para que el bloqueo vuelva solo.</string>
     <string name="install_window_reblock">Volver a bloquear</string>
+    <string name="pause_watch_open_title">Las apps nuevas no se están vigilando en el móvil de %1$s</string>
+    <string name="pause_watch_open_text">Quedan %1$s para que la vigilancia vuelva sola.</string>
     <string name="event_install_window">Las instalaciones siguen permitidas en el móvil de %1$s</string>
     <!-- Child home: the two things worth a card of their own, and the one that isn't. -->
     <!-- Tapping a request notification that no longer has a card behind it. -->
@@ -1727,6 +1740,12 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_80_0">
+        <item>Un móvil configurado desde hoy VIGILA las apps nuevas en vez de rechazarlas. Play Store sigue funcionando — que es lo que mantiene con parches de seguridad las apps que ya están en el móvil — y lo que aparezca sin tu aprobación se suspende en segundos y se te pone delante. Las familias que ya eligieron bloquear las instalaciones se quedan exactamente con lo que eligieron; las dos opciones, con lo que cuesta cada una, están en Protección.</item>
+        <item>Si sí bloqueas las instalaciones, la ventana en la que las apps pueden actualizarse es ahora el horario de sueño de tu familia, en vez de una hora a las cuatro de la mañana (de 1:00 a 6:00 si no hay horario de sueño). Nadie fuera de Google puede obligar a Play a actualizar dentro de una hora que elijamos nosotros — hace su pasada cuando encuentra el móvil cargando, quieto y con Wi-Fi —, así que una sola hora era una apuesta que costaba una noche entera cada vez que se perdía. Y a esas horas la hora de dormir ya está cerrando la pantalla de Play de todos modos.</item>
+        <item>¿Estás preparando un móvil, con una lista de apps que instalar? Pausa la vigilancia desde el propio móvil del niño (Ajustes) e instala todo de una vez, en lugar de responder a un aviso por cada app que instalas tú. Vuelve sola, y tu móvil te lo recuerda cada hora hasta que lo haga.</item>
+        <item>Y la ventana termina ya cuando dice: en un móvil dormido el bloqueo de instalaciones podía volver horas tarde, porque la cuenta atrás que lo devolvía no corre en sueño profundo. Ahora es una alarma, ya no despierta el móvil una y otra vez durante toda la ventana, el móvil ya no le dice a quien lo tenga en la mano que puede instalar apps mientras corre, y se ve desde aquí: un hijo cuyas apps se están actualizando lo dice en su ficha.</item>
     </string-array>
     <string-array name="whats_new_0_79_0">
         <item>Un móvil con las instalaciones bloqueadas vuelve a poder actualizar sus apps. Para Android actualizar ES instalar, así que bloquear instalaciones había dejado de dejar entrar los parches de seguridad. Ahora hay una ventana nocturna — las 4:00 durante una hora, cambiable o desactivable en Protección — en la que Play puede actualizar lo que ya está instalado. Lo que aparezca NUEVO en ella se sigue suspendiendo y se te sigue preguntando.</item>

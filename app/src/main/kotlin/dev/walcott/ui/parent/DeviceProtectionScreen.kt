@@ -20,6 +20,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -35,8 +36,12 @@ import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.components.cardPosition
+import dev.walcott.ui.format.hhmm
+import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
+import java.time.Duration
+import java.time.LocalDateTime
 
 private data class RestrictionUi(
     val key: String,
@@ -143,18 +148,35 @@ fun DeviceProtectionScreen(
                 }
             }
             // How the block is enforced, and the window that keeps Play working under it. Family
-            // -wide and shown only where it can mean something: with the block armed, on the
-            // family policy rather than a per-child override.
-            if (childId == null && DeviceRestrictions.KEY_INSTALLS in enabledKeys) {
+            // -wide and shown only where it can mean something: with the block armed somewhere,
+            // on the family policy rather than a per-child override.
+            //
+            // "Somewhere" includes a child who gets the block through an override alone. The
+            // mode and the window are family-wide settings that are running on that child
+            // tonight, and this screen is the only place they can be changed — hiding it because
+            // the FAMILY set has no install block left a household unable to reach the hour its
+            // one blocked phone was lifting its block at.
+            val installsBlockedSomewhere = DeviceRestrictions.KEY_INSTALLS in enabledKeys ||
+                settings.children.any {
+                    DeviceRestrictions.KEY_INSTALLS in it.overrides?.deviceRestrictions.orEmpty()
+                }
+            if (childId == null && installsBlockedSomewhere) {
                 item(key = "install-mode") {
                     InstallModeCard(
                         mode = AppUpdates.modeOf(settings.installMode),
                         windowEnabled = settings.updateWindowEnabled,
+                        followsBedtime = settings.updateWindowFollowsBedtime,
+                        // Resolved through the policy itself, so this reads back the very window
+                        // the child's alarm will open tonight rather than a second guess at it.
+                        window = remember(settings) { settings.updateWindowAt(LocalDateTime.now()) },
                         windowHour = settings.updateWindowHour,
                         windowMinutes = settings.updateWindowMinutes,
+                        hasBedtime = remember(settings) {
+                            settings.toFamilyConfig(emptySet()).scheduledBedtimeAt(LocalDateTime.now()) != null
+                        },
                         onMode = { viewModel.setInstallMode(it) },
-                        onWindow = { enabled, hour, minutes ->
-                            viewModel.setUpdateWindow(enabled, hour, minutes)
+                        onWindow = { enabled, follows, hour, minutes ->
+                            viewModel.setUpdateWindow(enabled, follows, hour, minutes)
                         },
                     )
                 }
@@ -205,19 +227,23 @@ private fun RestrictionRow(
  * The two answers to "Play cannot update while installs are blocked", and the window one of them
  * needs.
  *
- * Both are offered because the risk families mind is not the same one: an hour at four in the
- * morning during which a determined child could install something, or a few seconds at any hour
- * during which an app exists before it is suspended. Neither is free, and picking for everybody
- * would be picking for the wrong half of them.
+ * Both are offered because the risk families mind is not the same one: hours in the night during
+ * which a determined child could install something, or a few seconds at any hour during which an
+ * app exists before it is suspended. Neither is free, and picking for everybody would be picking
+ * for the wrong half of them — but one of them has to be what a new family starts with, and
+ * watching is the one whose cost is not "this phone quietly stopped getting security fixes".
  */
 @Composable
 private fun InstallModeCard(
     mode: String,
     windowEnabled: Boolean,
+    followsBedtime: Boolean,
+    window: AppUpdates.Window,
     windowHour: Int,
     windowMinutes: Int,
+    hasBedtime: Boolean,
     onMode: (String) -> Unit,
-    onWindow: (Boolean, Int, Int) -> Unit,
+    onWindow: (Boolean, Boolean, Int, Int) -> Unit,
 ) {
     val spacing = Tokens.spacing
     WalcottCard {
@@ -228,17 +254,19 @@ private fun InstallModeCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            ModeChoice(
-                title = stringResource(R.string.install_mode_strict),
-                description = stringResource(R.string.install_mode_strict_desc),
-                selected = mode == AppUpdates.MODE_STRICT,
-                onClick = { onMode(AppUpdates.MODE_STRICT) },
-            )
+            // Watching first: it is what a phone set up today does, and the one a parent reading
+            // this list should have to choose to leave rather than choose to reach.
             ModeChoice(
                 title = stringResource(R.string.install_mode_guarded),
                 description = stringResource(R.string.install_mode_guarded_desc),
                 selected = mode == AppUpdates.MODE_GUARDED,
                 onClick = { onMode(AppUpdates.MODE_GUARDED) },
+            )
+            ModeChoice(
+                title = stringResource(R.string.install_mode_strict),
+                description = stringResource(R.string.install_mode_strict_desc),
+                selected = mode == AppUpdates.MODE_STRICT,
+                onClick = { onMode(AppUpdates.MODE_STRICT) },
             )
             if (mode == AppUpdates.MODE_STRICT) {
                 HorizontalDivider(Modifier.padding(top = spacing.sm))
@@ -257,31 +285,60 @@ private fun InstallModeCard(
                     Spacer(Modifier.width(spacing.sm))
                     Switch(
                         checked = windowEnabled,
-                        onCheckedChange = { onWindow(it, windowHour, windowMinutes) },
+                        onCheckedChange = { onWindow(it, followsBedtime, windowHour, windowMinutes) },
                     )
                 }
                 if (windowEnabled) {
-                    Text(stringResource(R.string.update_window_at), style = MaterialTheme.typography.titleSmall)
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                    ) {
-                        WINDOW_HOURS.forEach { hour ->
-                            ChoiceChip(
-                                selected = hour == windowHour,
-                                onClick = { onWindow(true, hour, windowMinutes) },
-                                label = stringResource(R.string.update_window_hour_fmt, hour),
-                            )
-                        }
-                    }
-                    Text(stringResource(R.string.update_window_length), style = MaterialTheme.typography.titleSmall)
+                    // What the window actually is, in the end, whichever way it was arrived at:
+                    // the one line a parent needs to know how long their phone is open for.
+                    Text(
+                        stringResource(R.string.update_window_range_fmt, window.start.hhmm(), window.end.hhmm()),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                        AppUpdates.MINUTE_CHOICES.forEach { minutes ->
-                            ChoiceChip(
-                                selected = minutes == windowMinutes,
-                                onClick = { onWindow(true, windowHour, minutes) },
-                                label = stringResource(R.string.update_window_minutes_fmt, minutes),
-                            )
+                        ChoiceChip(
+                            selected = followsBedtime,
+                            onClick = { onWindow(true, true, windowHour, windowMinutes) },
+                            label = stringResource(R.string.update_window_bedtime),
+                        )
+                        ChoiceChip(
+                            selected = !followsBedtime,
+                            onClick = { onWindow(true, false, windowHour, windowMinutes) },
+                            label = stringResource(R.string.update_window_custom),
+                        )
+                    }
+                    if (followsBedtime && !hasBedtime) {
+                        // Said rather than silently substituted: "follow their sleeping hours" has
+                        // to mean something on a phone whose family never set any.
+                        Text(
+                            stringResource(R.string.update_window_no_bedtime),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (!followsBedtime) {
+                        Text(stringResource(R.string.update_window_at), style = MaterialTheme.typography.titleSmall)
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                        ) {
+                            AppUpdates.HOUR_CHOICES.forEach { hour ->
+                                ChoiceChip(
+                                    selected = hour == windowHour,
+                                    onClick = { onWindow(true, false, hour, windowMinutes) },
+                                    label = stringResource(R.string.update_window_hour_fmt, hour),
+                                )
+                            }
+                        }
+                        Text(stringResource(R.string.update_window_length), style = MaterialTheme.typography.titleSmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                            AppUpdates.MINUTE_CHOICES.forEach { minutes ->
+                                ChoiceChip(
+                                    selected = minutes == windowMinutes,
+                                    onClick = { onWindow(true, false, windowHour, minutes) },
+                                    label = Duration.ofMinutes(minutes.toLong()).humanize(),
+                                )
+                            }
                         }
                     }
                 }
@@ -312,4 +369,3 @@ private fun ModeChoice(title: String, description: String, selected: Boolean, on
 }
 
 /** The hours offered for the window: the small ones, where a phone is charging and nobody is up. */
-private val WINDOW_HOURS = listOf(2, 3, 4, 5)

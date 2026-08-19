@@ -59,8 +59,21 @@ object DeviceRestrictions {
     const val INSTALL_EXEMPTION_MEDIUM_MS = 30 * 60 * 1000L
     const val INSTALL_EXEMPTION_UNSURE_MS = 8 * 60 * 60 * 1000L
 
-    /** Anti-tamper features seeded on by default for new families (see PolicySettings.seedRestrictions). */
-    val RECOMMENDED_DEFAULTS = setOf(KEY_DATETIME, KEY_VPN, KEY_APPS_CONTROL, KEY_UNKNOWN_SOURCES)
+    /**
+     * Seeded on by default for new families (see PolicySettings.seedRestrictions).
+     *
+     * [KEY_INSTALLS] is in it, and that is not the same as "no new apps" any more: a new family
+     * is seeded into the guarded mode (see [dev.walcott.enforcement.AppUpdates]), where this key
+     * means "judge what appears" and the platform is never told to refuse installs at all. Play
+     * keeps working — which is what keeps the phone's apps patched — and anything that turns up
+     * unapproved is suspended and put in front of the parent within seconds.
+     *
+     * That is the default worth having: the alternative starts a family off with a phone whose
+     * apps quietly stop updating, in exchange for a promise ("nothing installs, ever") most
+     * families did not know they were making.
+     */
+    val RECOMMENDED_DEFAULTS =
+        setOf(KEY_DATETIME, KEY_VPN, KEY_APPS_CONTROL, KEY_UNKNOWN_SOURCES, KEY_INSTALLS)
 
     /**
      * What an adult being helped is offered as a starting point: the accidents, plus not installing

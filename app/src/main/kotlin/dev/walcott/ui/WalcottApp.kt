@@ -572,6 +572,11 @@ fun WalcottApp(
                         deviceOwner = deviceOwner,
                         childDevice = !parentMode,
                         installsBlocked = DeviceRestrictions.KEY_INSTALLS in settings.deviceRestrictions,
+                        // Which of the two the phone is living under, because the same button
+                        // means different things: with Play refused at the door it lifts the
+                        // block, and with Play left alone it pauses the watching.
+                        watching = dev.walcott.enforcement.AppUpdates.modeOf(settings.installMode) ==
+                            dev.walcott.enforcement.AppUpdates.MODE_GUARDED,
                         installExemptionUntil = installExemption,
                         onAllowInstalls = { durationMs -> viewModel.allowInstallsFor(durationMs) },
                         onEndInstallWindow = { viewModel.endInstallExemption() },

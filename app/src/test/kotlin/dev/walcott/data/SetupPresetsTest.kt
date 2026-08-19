@@ -101,21 +101,26 @@ class SetupPresetsTest {
     }
 
     @Test
-    fun `protection preset adds the recommended set plus the install block`() {
-        val out = SetupPresets.withProtection(PolicySettings(), blockInstalls = true)
+    fun `protection preset adds the recommended set plus watching new apps`() {
+        val out = SetupPresets.withProtection(PolicySettings(), watchInstalls = true)
         assertTrue(out.deviceRestrictions.containsAll(DeviceRestrictions.RECOMMENDED_DEFAULTS))
         assertTrue(DeviceRestrictions.KEY_INSTALLS in out.deviceRestrictions)
     }
 
     @Test
-    fun `declining the install block removes it but keeps everything else`() {
-        val withInstalls = SetupPresets.withProtection(
+    fun `declining to watch new apps removes it but keeps everything else`() {
+        val watched = SetupPresets.withProtection(
             PolicySettings(deviceRestrictions = setOf(DeviceRestrictions.KEY_BIOMETRICS)),
-            blockInstalls = true,
+            watchInstalls = true,
         )
-        val without = SetupPresets.withProtection(withInstalls, blockInstalls = false)
+        val without = SetupPresets.withProtection(watched, watchInstalls = false)
         assertFalse(DeviceRestrictions.KEY_INSTALLS in without.deviceRestrictions)
-        assertTrue(without.deviceRestrictions.containsAll(DeviceRestrictions.RECOMMENDED_DEFAULTS))
+        assertTrue(
+            without.deviceRestrictions.containsAll(
+                DeviceRestrictions.RECOMMENDED_DEFAULTS - DeviceRestrictions.KEY_INSTALLS,
+            ),
+            "declining ONE recommendation must not quietly withdraw the others",
+        )
         // A restriction outside the preset's scope survives both passes.
         assertTrue(DeviceRestrictions.KEY_BIOMETRICS in without.deviceRestrictions)
     }

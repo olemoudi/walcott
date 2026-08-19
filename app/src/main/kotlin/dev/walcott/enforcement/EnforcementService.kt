@@ -463,13 +463,18 @@ class EnforcementService : LifecycleService() {
                     listOf(
                         it.installMode,
                         it.updateWindowEnabled.toString(),
+                        it.updateWindowFollowsBedtime.toString(),
                         it.updateWindowHour.toString(),
                         it.updateWindowMinutes.toString(),
                         (DeviceRestrictions.KEY_INSTALLS in it.deviceRestrictions).toString(),
+                        // The bedtime too, because the window follows it by default: a family that
+                        // moves bedtime an hour later has moved the window with it, and an alarm
+                        // still armed for the old hour would open the block while they are up.
+                        it.bedtime.toString(),
                     )
                 }
                 .distinctUntilChanged()
-                .collectLatest { AppUpdateWindowAlarm.schedule(this@EnforcementService) }
+                .collectLatest { AppUpdateWindowAlarm.sync(this@EnforcementService) }
         }
     }
 
@@ -484,11 +489,19 @@ class EnforcementService : LifecycleService() {
                 .distinctUntilChanged()
                 .collectLatest { (keys, exemptUntil) ->
                     DeviceRestrictions.apply(this@EnforcementService, keys, exemptUntil)
-                    // Re-arm the install block when the exemption window closes.
+                    // Re-arm the install block when the exemption window closes. Two ways to
+                    // notice, because neither is enough on its own: an alarm, which is the only
+                    // clock that ticks on a sleeping phone (the nightly update window ends on
+                    // one by design), and this countdown, which is the precise one while the
+                    // phone is awake — an inexact alarm may run minutes late, and a ten-minute
+                    // window that becomes fourteen is a promise broken to whoever typed the PIN.
                     val untilExpiry = exemptUntil - System.currentTimeMillis()
                     if (untilExpiry > 0 && DeviceRestrictions.KEY_INSTALLS in keys) {
+                        InstallBlockAlarm.arm(this@EnforcementService, exemptUntil)
                         delay(untilExpiry + 1_000)
-                        DeviceRestrictions.apply(this@EnforcementService, keys, exemptUntil)
+                        app.syncManager.rearmInstallBlock()
+                    } else {
+                        InstallBlockAlarm.cancel(this@EnforcementService)
                     }
                 }
         }
