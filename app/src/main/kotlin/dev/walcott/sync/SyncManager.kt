@@ -2992,6 +2992,23 @@ class SyncManager(
                 )
             }
         }
+        // Adopted means DECODED, not merely "newer than what we had".
+        //
+        // Unknown fields are not the risk — the decoder ignores them, which is what makes a new
+        // rule type land harmlessly on an old child. A field whose TYPE changed is, and that is
+        // precisely the non-additive change the project rules warn about. When that happens the
+        // decode returns null, the rules above are not applied — and the version was recorded as
+        // adopted anyway. The child then ran the OLD rules while telling the parent it was on the
+        // new version, so the parent's screen said "up to date", every subsequent re-emit was
+        // refused by the version gate for reusing a version this device claimed to have, and
+        // nothing anywhere said otherwise. Failing to adopt has to look like failing to adopt.
+        val rulesAdopted = newRulesAdopted && incoming != null
+        if (newRulesAdopted && incoming == null) {
+            dev.walcott.debug.DebugLog.e(
+                TAG,
+                "could not read the parent's rules (v${snapshot.version}); staying on the ones we have",
+            )
+        }
 
         val deviceId = id.deviceId
         val s = syncStore.current()
@@ -3056,8 +3073,10 @@ class SyncManager(
         if (snapshot.iconRequests.isNotEmpty()) runCatching { answerIconRequests(snapshot.iconRequests, id) }
 
         // Record which rules version this child now runs, and echo it promptly so the
-        // parent's "updating rules…" indicator clears (a re-emit would take minutes).
-        if (newRulesAdopted) {
+        // parent's "updating rules…" indicator clears (a re-emit would take minutes). A policy
+        // that would not decode leaves this alone deliberately: the indicator stays lit, the
+        // next re-emit is retried rather than refused, and the parent can see something is wrong.
+        if (rulesAdopted) {
             syncStore.update {
                 it.copy(
                     appliedParentVersion =
