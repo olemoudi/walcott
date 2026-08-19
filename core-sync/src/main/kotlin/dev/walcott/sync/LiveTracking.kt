@@ -106,6 +106,29 @@ object LiveTracking {
         return stepped.coerceIn(STEP_MINUTES, MAX_MINUTES)
     }
 
+    /** How much longer one tap on "extend" buys a running session. */
+    const val EXTEND_MINUTES = 30
+
+    /**
+     * The length to ask for so a session with [remainingMs] left runs [EXTEND_MINUTES] longer.
+     *
+     * A session is set, never added to: the child writes a deadline of "now plus what was
+     * asked for", so extending means asking for what is LEFT plus the extension. Reading the
+     * remainder from the parent's copy is honest to within one publish (two minutes while a
+     * session runs), and erring by that much on a bounded mode is the right direction.
+     *
+     * Rounded UP to a whole [STEP_MINUTES], unlike [clampMinutes], which rounds to the nearest:
+     * a parent who taps "+30" and is handed 23 more minutes has been quietly short-changed by
+     * the arithmetic. Capped at [MAX_MINUTES] like everything else here — past that the answer
+     * is a new session, not a longer one.
+     */
+    fun extendedMinutes(remainingMs: Long): Int {
+        val left = ((remainingMs.coerceAtLeast(0L) + 59_999L) / 60_000L).toInt()
+        val wanted = left + EXTEND_MINUTES
+        val stepped = (wanted + STEP_MINUTES - 1) / STEP_MINUTES * STEP_MINUTES
+        return stepped.coerceAtMost(MAX_MINUTES)
+    }
+
     /**
      * Whether a session that should end at [untilElapsedMs] is still running at [nowElapsedMs].
      *

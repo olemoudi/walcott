@@ -34,6 +34,34 @@ class LiveTrackingTest {
     }
 
     @Test
+    fun `extending buys at least the half hour it offers, never less`() {
+        // The trap this avoids: a session is SET, not added to, so extending asks for
+        // "what is left plus thirty" — and clampMinutes rounds to the NEAREST step, so asking
+        // for 37 would have handed back 30 and taken seven minutes off a running session.
+        assertEquals(30, LiveTracking.extendedMinutes(0L))
+        assertEquals(60, LiveTracking.extendedMinutes(30 * 60_000L))
+        assertEquals(60, LiveTracking.extendedMinutes(20 * 60_000L)) // 50 rounds UP to 60
+        assertEquals(45, LiveTracking.extendedMinutes(7 * 60_000L)) // 37 rounds UP to 45
+        listOf(0L, 1L, 59_999L, 7 * 60_000L, 20 * 60_000L, 90 * 60_000L).forEach { left ->
+            val asked = LiveTracking.extendedMinutes(left)
+            val leftMinutes = (left + 59_999L) / 60_000L
+            assertTrue(
+                asked - leftMinutes >= LiveTracking.EXTEND_MINUTES,
+                "extending by ${asked - leftMinutes} min is less than was offered",
+            )
+            // Whatever this answers travels through clampMinutes twice (the parent's request and
+            // the child's own guard), so it has to survive both untouched.
+            assertEquals(asked, LiveTracking.clampMinutes(asked))
+        }
+    }
+
+    @Test
+    fun `extending cannot outgrow the longest session on offer`() {
+        assertEquals(LiveTracking.MAX_MINUTES, LiveTracking.extendedMinutes(LiveTracking.MAX_MINUTES * 60_000L))
+        assertEquals(LiveTracking.MAX_MINUTES, LiveTracking.extendedMinutes(230 * 60_000L))
+    }
+
+    @Test
     fun `a session runs until its monotonic deadline and not a tick longer`() {
         val until = 100_000L
         assertTrue(LiveTracking.isRunning(until, nowElapsedMs = 99_999L))

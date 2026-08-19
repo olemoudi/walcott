@@ -407,7 +407,9 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * `--es child_usage "com.whatsapp=1800,com.roblox=600"` (today's per-app seconds),
      * `--ei child_history_days N` (a ledger of N past days, for the dashboard average),
      * `--ez child_feed true` (a handful of activity-feed entries for the wall),
-     * `--ei child_tz_offset_min N` (a child in another timezone, reporting its own day).
+     * `--ei child_tz_offset_min N` (a child in another timezone, reporting its own day),
+     * `--ei child_battery N` + `--ez child_charging true` (what the tracking controls show),
+     * `--ei child_live_min N` (a close-tracking session with N minutes left).
      */
     private suspend fun seedChild(target: dev.walcott.FamilyScope, spec: String, intent: Intent) {
         val (childId, name, appsPart) = spec.split(":", limit = 3).let {
@@ -442,6 +444,14 @@ class PolicySeedReceiver : BroadcastReceiver() {
             apps = apps,
             usage = usage,
             batteryPercent = intent.getIntExtra("child_battery", -1),
+            // `--ez child_charging true`, and `--ei child_live_min N` for a close-tracking
+            // session with N minutes left: the two halves of what the location card and the
+            // quick-actions sheet show about tracking, neither of which a single emulator can
+            // produce on its own.
+            charging = intent.getBooleanExtra("child_charging", false),
+            liveTrackingUntilMs = intent.getIntExtra("child_live_min", 0)
+                .takeIf { it > 0 }
+                ?.let { System.currentTimeMillis() + it * 60_000L } ?: 0L,
             enforcementGaps = intent.getStringExtra("child_gaps")?.split(",")?.filter { it.isNotBlank() }
                 ?: emptyList(),
             clockSkewMs = intent.getLongExtra("child_skew_ms", 0),

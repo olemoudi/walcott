@@ -293,6 +293,17 @@ fun QuickActionsSheet(
                 ) {
                     if (liveUntilMs != null) {
                         val stopped = stringResource(R.string.quick_live_stopped)
+                        // Half an hour more without asking again: the price was accepted when the
+                        // session started, and a parent tapping this is watching a phone move.
+                        val asked = LiveTracking.extendedMinutes(liveUntilMs - System.currentTimeMillis())
+                        val extended = stringResource(
+                            R.string.live_extended,
+                            java.time.Duration.ofMinutes(asked.toLong()).humanize(),
+                        )
+                        ActionChip(stringResource(R.string.live_extend_fmt, LiveTracking.EXTEND_MINUTES)) {
+                            viewModel.setLiveTracking(snapshot.deviceId, asked)
+                            done(extended)
+                        }
                         ActionChip(stringResource(R.string.quick_live_stop)) {
                             viewModel.setLiveTracking(snapshot.deviceId, 0)
                             done(stopped)
@@ -302,6 +313,10 @@ fun QuickActionsSheet(
                             askLive = true
                         }
                     }
+                }
+                // What the session costs, where the tap that spends it is.
+                if (understandsLive || liveUntilMs != null) {
+                    LiveBatteryTag(snapshot.batteryPercent, snapshot.charging)
                 }
                 if (!understandsLive && liveUntilMs == null) {
                     Text(
@@ -341,87 +356,6 @@ fun QuickActionsSheet(
             }
         }
     }
-}
-
-/**
- * The close-tracking confirmation: what it will do, what it costs, and for how long.
- *
- * The duration is the whole point of the dialog. A mode this expensive must be bought for a
- * stated length of time rather than switched on, so there is no "off" to forget: the presets are
- * the answers people actually want, the stepper covers the rest in quarter hours, and four hours
- * is the ceiling because past that it has stopped being about right now.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun LiveTrackingDialog(
-    name: String,
-    ordinaryIntervalMinutes: Int,
-    onDismiss: () -> Unit,
-    onConfirm: (Int) -> Unit,
-) {
-    val spacing = Tokens.spacing
-    var minutes by remember { mutableIntStateOf(LiveTracking.DEFAULT_MINUTES) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.live_dialog_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-                Text(
-                    // A family with periodic tracking off has no "instead of" to compare against.
-                    // The two percentages come from the rules rather than the copy, so the
-                    // sentence cannot drift away from what the session will actually do.
-                    if (ordinaryIntervalMinutes > 0) {
-                        stringResource(
-                            R.string.live_dialog_body,
-                            name,
-                            ordinaryIntervalMinutes,
-                            LiveTracking.THROTTLE_FROM_PERCENT,
-                            LiveTracking.BATTERY_FLOOR_PERCENT,
-                        )
-                    } else {
-                        stringResource(
-                            R.string.live_dialog_body_no_interval,
-                            name,
-                            LiveTracking.THROTTLE_FROM_PERCENT,
-                            LiveTracking.BATTERY_FLOOR_PERCENT,
-                        )
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(stringResource(R.string.live_dialog_duration), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    LiveTracking.PRESET_MINUTES.forEach { preset ->
-                        ChoiceChip(
-                            selected = minutes == preset,
-                            onClick = { minutes = preset },
-                            label = java.time.Duration.ofMinutes(preset.toLong()).humanize(),
-                        )
-                    }
-                    CustomValueChip(
-                        selected = minutes !in LiveTracking.PRESET_MINUTES,
-                        customLabel = java.time.Duration.ofMinutes(minutes.toLong()).humanize()
-                            .takeIf { minutes !in LiveTracking.PRESET_MINUTES },
-                        dialogTitle = stringResource(R.string.live_dialog_duration),
-                        initial = minutes,
-                        onConfirm = { minutes = LiveTracking.clampMinutes(it) },
-                    )
-                }
-                Text(
-                    stringResource(R.string.live_dialog_visible, name),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(minutes) }) {
-                Text(stringResource(R.string.live_dialog_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-        },
-    )
 }
 
 /** One labelled line of the sheet: what this is, how it stands, and the taps that change it. */

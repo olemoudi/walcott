@@ -1712,6 +1712,10 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_77_0">
+        <item>El seguimiento estrecho está ahora también en la tarjeta de localización de cada miembro, además de bajo el botón del rayo: se activa, se prorroga media hora más o se detiene sin tener que buscar dónde vive.</item>
+        <item>Allí donde se ofrece, la batería del móvil aparece junto al botón — en rojo por debajo del 40%, que es donde una sesión en marcha empieza a ralentizarse sola para que la carga dure.</item>
+    </string-array>
     <string-array name="whats_new_0_72_0">
         <item>La tarjeta de cada miembro en la pantalla de inicio está rehecha. Los tres números del día se alinean en columnas propias en vez de partirse a media frase, y lo que de verdad se puede pulsar son botones con su palabra — Acciones y Mapa — y no tres iconos pequeños con aspecto de adorno.</item>
     </string-array>
@@ -1731,6 +1735,9 @@
     <string name="live_dialog_duration">¿Durante cuánto tiempo?</string>
     <string name="live_dialog_confirm">Empezar</string>
     <string name="live_dialog_visible">%1$s verá en su pantalla que esto está pasando.</string>
+    <string name="live_battery_low_note">Por debajo del %1$d%% el seguimiento estrecho se va ralentizando solo según baja la carga.</string>
+    <string name="live_extend_fmt">+%1$d min</string>
+    <string name="live_extended">Seguimiento ampliado: quedan %1$s</string>
     <string name="event_live_tracking_ended">Seguimiento estrecho detenido: quedaba poca batería</string>
     <string name="map_live_active">Seguimiento estrecho · quedan %1$s</string>
     <string name="map_point_count_of">%1$d de %2$d ubicaciones en las últimas 48 h</string>

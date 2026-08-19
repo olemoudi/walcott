@@ -94,6 +94,7 @@ import dev.walcott.provisioning.DeviceOwnerProvisioning
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.ClockGuard
 import dev.walcott.sync.EnforcementStatus
+import dev.walcott.sync.LiveTracking
 import dev.walcott.sync.PairingPayload
 import dev.walcott.sync.PanicProtocol
 import dev.walcott.sync.PanicRequest
@@ -113,6 +114,7 @@ import dev.walcott.rules.RuleEngine
 import dev.walcott.rules.activeBlocks
 import dev.walcott.rules.ruleContext
 import dev.walcott.ui.format.hhmm
+import dev.walcott.ui.components.LocalSnackbar
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.qr.rememberQrBitmap
 import dev.walcott.ui.theme.SectionAccent
@@ -325,7 +327,11 @@ fun ChildDetailScreen(
             onSetInterval = { viewModel.setTrackingInterval(childId, it) },
             historyEnabled = resolved.locationHistoryEnabled,
             onSetHistory = { viewModel.setLocationHistory(childId, it) },
-            hasDevice = snapshot != null,
+            device = snapshot,
+            childName = entry.name,
+            onSetLiveTracking = { minutes ->
+                snapshot?.let { viewModel.setLiveTracking(it.deviceId, minutes) }
+            },
             // Live feedback: the button spins from tap until the device answers.
             locating = snapshot != null &&
                 dev.walcott.sync.SyncEngine.locatePending(pendingOps, snapshot.deviceId),
@@ -2161,7 +2167,9 @@ private fun LocationCard(
     onSetInterval: (Int) -> Unit,
     historyEnabled: Boolean,
     onSetHistory: (Boolean) -> Unit,
-    hasDevice: Boolean,
+    device: ChildSnapshot?,
+    childName: String,
+    onSetLiveTracking: (Int) -> Unit,
     locating: Boolean,
     onLocateNow: () -> Unit,
     onOpenMap: () -> Unit,
@@ -2239,7 +2247,17 @@ private fun LocationCard(
                     Switch(checked = historyEnabled, onCheckedChange = onSetHistory)
                 }
             }
-            if (hasDevice) {
+            if (device != null) {
+                // Close tracking sits under the ordinary interval because it is the answer to the
+                // question the interval provokes: "fifteen minutes is not enough RIGHT NOW". It is
+                // the same control as the one in the quick-actions sheet, in the place a parent
+                // arrives at from the other direction — through this child's settings.
+                CloseTrackingBlock(
+                    device = device,
+                    childName = childName,
+                    ordinaryIntervalMinutes = intervalMinutes,
+                    onSetLiveTracking = onSetLiveTracking,
+                )
                 Row(
                     Modifier.fillMaxWidth().padding(top = spacing.md),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -2259,6 +2277,116 @@ private fun LocationCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * Close tracking, offered where this child's location is configured.
+ *
+ * The same three states as the quick-actions sheet, because they are the same session: not
+ * running (a button that asks first, since this is the one mode expensive enough to be bought
+ * rather than switched on), running (what is left, half an hour more, or stop), and a child too
+ * old to understand the command at all.
+ *
+ * The battery sits next to the buttons rather than in the dialog alone: a parent deciding whether
+ * to follow a phone across town needs the number BEFORE the tap, and a session that quietly
+ * throttles itself ten minutes in is not the moment to learn the handset was on 12%.
+ */
+@Composable
+private fun CloseTrackingBlock(
+    device: ChildSnapshot,
+    childName: String,
+    ordinaryIntervalMinutes: Int,
+    onSetLiveTracking: (Int) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val snackbar = LocalSnackbar.current
+    val supported = LiveTracking.isSupported(device.appVersionCode)
+    val runningUntilMs = device.liveTrackingUntilMs.takeIf { it > System.currentTimeMillis() }
+    var asking by remember { mutableStateOf(false) }
+    // Resolved here rather than inside the taps: the sentence has to be built while there is a
+    // composition to build it in, and the duration is only known when the tap happens.
+    val startedFmt = stringResource(R.string.quick_live_started)
+    val extendedFmt = stringResource(R.string.live_extended)
+    val stopped = stringResource(R.string.quick_live_stopped)
+
+    if (asking) {
+        LiveTrackingDialog(
+            name = childName,
+            ordinaryIntervalMinutes = ordinaryIntervalMinutes,
+            onDismiss = { asking = false },
+            onConfirm = { minutes ->
+                asking = false
+                onSetLiveTracking(minutes)
+                snackbar.show(
+                    String.format(startedFmt, childName, Duration.ofMinutes(minutes.toLong()).humanize()),
+                )
+            },
+        )
+    }
+
+    // Ruled off from the settings above it: those are what this phone does all day, this is what
+    // it is doing right now, and running them together made one card read as one thought.
+    androidx.compose.material3.HorizontalDivider(Modifier.padding(top = spacing.md))
+    Text(
+        stringResource(R.string.quick_live_title),
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.padding(top = spacing.md),
+    )
+    runningUntilMs?.let {
+        Text(
+            stringResource(
+                R.string.quick_live_left,
+                Duration.ofMillis(it - System.currentTimeMillis()).humanize(),
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    LiveBatteryTag(device.batteryPercent, device.charging)
+    Row(
+        Modifier.fillMaxWidth().padding(top = spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        if (runningUntilMs != null) {
+            // Half an hour more, without asking again: the price was accepted when the session
+            // started, and whoever taps this is watching a phone move.
+            OutlinedButton(
+                onClick = {
+                    val asked = LiveTracking.extendedMinutes(runningUntilMs - System.currentTimeMillis())
+                    onSetLiveTracking(asked)
+                    snackbar.show(String.format(extendedFmt, Duration.ofMinutes(asked.toLong()).humanize()))
+                },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(stringResource(R.string.live_extend_fmt, LiveTracking.EXTEND_MINUTES))
+            }
+            OutlinedButton(
+                onClick = {
+                    onSetLiveTracking(0)
+                    snackbar.show(stopped)
+                },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(stringResource(R.string.quick_live_stop))
+            }
+        } else {
+            OutlinedButton(
+                onClick = { asking = true },
+                enabled = supported,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(stringResource(R.string.quick_live_start))
+            }
+        }
+    }
+    if (!supported && runningUntilMs == null) {
+        Text(
+            stringResource(R.string.quick_live_needs_update),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = spacing.xs),
+        )
     }
 }
 

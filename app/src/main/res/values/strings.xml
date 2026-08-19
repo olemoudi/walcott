@@ -1720,6 +1720,10 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_77_0">
+        <item>Close tracking is now on each member\'s location card as well as under the lightning button: start it, add half an hour to a running session, or stop it, without hunting for where it lives.</item>
+        <item>Wherever it is offered, the phone\'s battery is shown next to the button — flagged in red below 40%, which is where a running session starts slowing itself down to make the charge last.</item>
+    </string-array>
     <string-array name="whats_new_0_72_0">
         <item>Each member\'s card on the home screen has been rebuilt. The day\'s three numbers now line up in their own columns instead of wrapping mid-phrase, and the things you can actually press are buttons with words on them — Actions and Map — rather than three small icons that looked like decoration.</item>
     </string-array>
@@ -1739,6 +1743,9 @@
     <string name="live_dialog_duration">For how long?</string>
     <string name="live_dialog_confirm">Start</string>
     <string name="live_dialog_visible">%1$s will say on screen that this is happening.</string>
+    <string name="live_battery_low_note">Below %1$d%% close tracking slows itself down as the charge falls.</string>
+    <string name="live_extend_fmt">+%1$d min</string>
+    <string name="live_extended">Close tracking extended — %1$s left</string>
     <string name="event_live_tracking_ended">Close tracking stopped: battery was running low</string>
     <string name="map_live_active">Close tracking · %1$s left</string>
     <string name="map_point_count_of">%1$d of %2$d locations over the last 48 h</string>
