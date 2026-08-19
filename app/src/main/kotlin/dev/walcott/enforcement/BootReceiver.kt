@@ -35,6 +35,13 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val identity = IdentityStore(context).current()
                 if (identity.enforcesLocally) {
+                    // A close-tracking session cannot survive a restart: its deadline is on the
+                    // monotonic clock, which starts again from zero here, so a stored one would
+                    // read as a session with hours left to run (see SyncManager.liveDeadlineOf).
+                    // The parent can always start another; a phone silently holding a wakelock
+                    // after a reboot nobody asked for is the outcome worth ruling out.
+                    val app = context.applicationContext as dev.walcott.WalcottApplication
+                    runCatching { app.syncManager.endLiveTracking(stoppedForBattery = false) }
                     runCatching { EnforcementService.start(context) }
                         .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
                     // Alarms don't survive a reboot: re-arm the 30-min check-in chain.

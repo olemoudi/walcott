@@ -1991,6 +1991,95 @@ class SyncManager(
     /** Publish this child's snapshot now (used by the periodic location sampler). */
     suspend fun publishLocationUpdate() = publishSelf()
 
+    /** Slack on the wall-clock sanity bound for a live session, for a slow start or a paused CPU. */
+    private val LIVE_SANITY_SLACK_MS = 10 * 60 * 1000L
+
+    // --- Close tracking (see LiveTracking) ---
+
+    /**
+     * The monotonic deadline of a running close-tracking session, or 0 when none is running.
+     * [dev.walcott.enforcement.EnforcementService] follows this and holds the wakelock for it.
+     */
+    val liveTrackingUntilElapsed: StateFlow<Long> =
+        syncStore.state.map { liveDeadlineOf(it) }.stateIn(scope, SharingStarted.Eagerly, 0L)
+
+    /**
+     * The stored deadline, or 0 when it cannot be believed.
+     *
+     * Monotonic time restarts from zero at every boot, so a deadline stored before a restart
+     * would read as a session with hours left on it. [dev.walcott.enforcement.BootReceiver]
+     * clears the pair on BOOT_COMPLETED; this is the backstop for the boot that never announced
+     * itself, and it fails safe — every ambiguous case is read as "no session", because the
+     * mode that must never be left running by accident is this one.
+     */
+    private fun liveDeadlineOf(state: SyncState): Long {
+        if (state.liveUntilElapsedMs <= 0L || state.liveStartedAtMs <= 0L) return 0L
+        val age = System.currentTimeMillis() - state.liveStartedAtMs
+        val longestPossible = LiveTracking.MAX_MINUTES * 60_000L + LIVE_SANITY_SLACK_MS
+        if (age < 0L || age > longestPossible) return 0L
+        return state.liveUntilElapsedMs
+    }
+
+    /** Child: begin (or extend) a close-tracking session of [minutes]; 0 ends one. */
+    suspend fun startLiveTracking(minutes: Int) {
+        val clamped = LiveTracking.clampMinutes(minutes)
+        if (clamped <= 0) {
+            endLiveTracking(stoppedForBattery = false)
+            return
+        }
+        syncStore.update {
+            it.copy(
+                liveUntilElapsedMs = android.os.SystemClock.elapsedRealtime() + clamped * 60_000L,
+                liveStartedAtMs = System.currentTimeMillis(),
+            )
+        }
+        dev.walcott.debug.DebugLog.w(TAG, "close tracking asked for: $clamped min")
+        publishSelf()
+    }
+
+    /**
+     * Child: end the running session. Called from the session's own `finally`, so it covers the
+     * deadline passing, the battery floor, and the parent stopping it early alike.
+     *
+     * [onlyIfDeadline] is the session the caller believes it is ending; 0 clears whatever is
+     * there. The service's session loop passes its own deadline, and it has to: a parent
+     * EXTENDING a session writes a new deadline, which cancels the loop watching the old one,
+     * whose `finally` would then clear the session that had just been started. The extension
+     * would have read as a stop — from the same tap that asked for more.
+     */
+    suspend fun endLiveTracking(stoppedForBattery: Boolean, onlyIfDeadline: Long = 0L) {
+        val state = syncStore.current()
+        if (state.liveUntilElapsedMs == 0L && state.liveStartedAtMs == 0L) return
+        if (onlyIfDeadline != 0L && state.liveUntilElapsedMs != onlyIfDeadline) {
+            dev.walcott.debug.DebugLog.i(TAG, "a newer close-tracking session owns this device now")
+            return
+        }
+        val now = System.currentTimeMillis()
+        syncStore.update {
+            it.copy(
+                liveUntilElapsedMs = 0L,
+                liveStartedAtMs = 0L,
+                // A session that gave up early has to say so: a parent watching a map that
+                // quietly stopped moving will otherwise draw their own conclusion from it.
+                ruleEvents = if (stoppedForBattery) {
+                    ChildEventLog.plus(
+                        it.ruleEvents,
+                        listOf(ChildEvent(UUID.randomUUID().toString(), now, ChildEvent.KIND_LIVE_TRACKING_ENDED)),
+                        now,
+                    )
+                } else {
+                    it.ruleEvents
+                },
+            )
+        }
+        publishSelf()
+    }
+
+    /** Parent: ask [targetDeviceId] to track closely for [minutes] (0 stops a running session). */
+    suspend fun requestLiveTracking(targetDeviceId: String, minutes: Int) {
+        sendCommand(targetDeviceId, RemoteAction.LIVE_TRACKING, arg = LiveTracking.clampMinutes(minutes).toString())
+    }
+
     // --- Idle-earn (token-window model) ---
 
     /** Minutes earned today, for the child's "earned" display. Reactive to the grant ledger. */
@@ -2264,10 +2353,21 @@ class SyncManager(
                     token = s.lockTokenB64.takeIf { it.isNotBlank() }
                         ?.let { runCatching { FamilyCrypto.fromB64(it) }.getOrNull() },
                 )
+                val inWindow = if (historyOn) repository.recentLocations() else emptyList()
                 val locations = if (historyOn) {
-                    LocationTrail.compress(repository.recentLocations(), System.currentTimeMillis())
+                    LocationTrail.compress(inWindow, System.currentTimeMillis())
                 } else {
                     repository.latestLocation()
+                }
+                // What the map is a sample OF. Sent so a thinned trail can say so rather than
+                // implying that what arrived is all this phone ever recorded.
+                val locationsTotal = if (historyOn) inWindow.size else locations.size
+                val liveUntilElapsed = liveDeadlineOf(s)
+                val liveUntilMs = if (liveUntilElapsed > 0L) {
+                    System.currentTimeMillis() +
+                        LiveTracking.remainingMs(liveUntilElapsed, android.os.SystemClock.elapsedRealtime())
+                } else {
+                    0L
                 }
                 val snapshot = ChildSnapshot(
                     deviceId = id.deviceId,
@@ -2285,6 +2385,9 @@ class SyncManager(
                     asks = s.pendingAsks,
                     apps = apps,
                     locations = locations,
+                    locationsTotal = locationsTotal,
+                    lastLocateFailedMs = s.lastLocateFailedMs,
+                    liveTrackingUntilMs = liveUntilMs,
                     networkLocationOn = LocationSampler(context).networkProviderEnabled(),
                     usageAccessOn = UsageAccess.granted(context),
                     appVersionCode = BuildConfig.VERSION_CODE,
@@ -2837,11 +2940,29 @@ class SyncManager(
             if (progressed && next != null && !next.delivered && !next.abandoned) publishSelf()
         }
 
-        // On-demand: answer a fresh "locate now" addressed to this device (one attempt each).
+        // On-demand: answer a fresh "locate now" addressed to this device.
         val locReq = SyncEngine.freshLocationRequest(snapshot, deviceId, s.appliedLocationRequestMs)
         if (locReq != null) {
-            LocationSampler(context).currentFix()?.let { repository.recordLocation(it) }
-            syncStore.update { it.copy(appliedLocationRequestMs = locReq.requestedAtMs) }
+            // Background location rides entirely on the location-typed foreground service (the
+            // background permission is deliberately denied — see LocationPolicy), so a service
+            // that is down, or that lost the race for its location type at start-up, is a phone
+            // that cannot be found. Ask for both to be repaired before giving up on the fix.
+            runCatching { dev.walcott.enforcement.EnforcementService.start(context, recheck = true) }
+            val sampler = LocationSampler(context)
+            // Two tries, because the first one is what warms a cold GPS up. One attempt was the
+            // difference between "indoors for a moment" and "this phone cannot be located".
+            val fix = sampler.currentFix() ?: sampler.currentFix()
+            if (fix != null) repository.recordLocation(fix)
+            syncStore.update {
+                // The request is marked answered either way, so the parent's pending list can't
+                // fossilize on a phone with no sky. But "I tried and there was nothing" must not
+                // look identical to "here you are", which until now it did.
+                it.copy(
+                    appliedLocationRequestMs = locReq.requestedAtMs,
+                    lastLocateFailedMs = if (fix == null) System.currentTimeMillis() else it.lastLocateFailedMs,
+                )
+            }
+            if (fix == null) dev.walcott.debug.DebugLog.w(TAG, "could not answer a locate request with a fix")
             publishSelf()
         }
 
@@ -2946,6 +3067,7 @@ class SyncManager(
                 allowApp = { pkg -> allowAppNow(pkg) },
                 setLockPin = { pin -> dev.walcott.enforcement.LockScreen.apply(context, pin, lockToken()) },
                 publishNotifications = { arg -> publishNotifications(arg) },
+                setLiveTracking = { minutes -> startLiveTracking(minutes) },
             )
         }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {

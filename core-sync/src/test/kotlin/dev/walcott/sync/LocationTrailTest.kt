@@ -121,6 +121,55 @@ class LocationTrailTest {
     }
 
     @Test
+    fun `a dense recent burst cannot evict the older trail`() {
+        // The regression: four hours of live tracking at one fix a minute, on top of two days
+        // of ordinary 30-minute sampling. The recent burst used to swallow the whole budget and
+        // the parent's two-day map silently became a two-hour one.
+        val live = trail(spanMs = 4 * hour, everyMs = 60 * 1000L)
+        val ordinary = generateSequence(4 * hour) { it + 30 * 60 * 1000L }
+            .takeWhile { it <= 47 * hour }.map { pointAt(it) }.toList()
+        val out = LocationTrail.compress(live + ordinary, now)
+
+        assertTrue(out.size <= LocationTrail.MAX_POINTS) { "got ${out.size}" }
+        val older = out.filter { now - it.epochMs > 6 * hour }
+        assertTrue(older.size >= 12) { "the day-scale trail must survive a burst, got ${older.size}" }
+        val oldest = out.minByOrNull { it.epochMs }!!
+        assertTrue(now - oldest.epochMs > 40 * hour) {
+            "the trail must still span two days, oldest is ${(now - oldest.epochMs) / hour}h old"
+        }
+    }
+
+    @Test
+    fun `the last 45 minutes keep every fix while a session runs`() {
+        val out = LocationTrail.compress(trail(spanMs = 4 * hour, everyMs = 60 * 1000L), now)
+        val inBand = out.filter { now - it.epochMs <= 45 * 60 * 1000L }
+        // 46 fixes fall in the band (0..45 min inclusive); all of them must come through.
+        assertEquals(46, inBand.size) { "the watched window must not be thinned" }
+    }
+
+    @Test
+    fun `thinning a band spreads the survivors instead of collapsing them onto one end`() {
+        // A band squeezed to a floor must still describe the whole band. Taking its newest few
+        // would be the same bug the floors exist to stop, one level down.
+        val out = LocationTrail.compress(trail(spanMs = 47 * hour, everyMs = 60 * 1000L), now)
+        val oldBand = out.filter { now - it.epochMs > 24 * hour }.sortedBy { it.epochMs }
+        assertTrue(oldBand.size >= 2) { "the oldest band must keep its floor" }
+        val span = oldBand.last().epochMs - oldBand.first().epochMs
+        assertTrue(span > 12 * hour) { "survivors must span the band, they span ${span / hour}h" }
+    }
+
+    @Test
+    fun `a smaller budget thins the trail rather than shortening it`() {
+        // What SnapshotFit does when the rest of the snapshot leaves less room than hoped.
+        val points = trail(spanMs = 47 * hour, everyMs = 5 * 60 * 1000L)
+        val out = LocationTrail.compress(points, now, budget = 60)
+        assertTrue(out.size <= 60) { "got ${out.size}" }
+        assertEquals(now, out.last().epochMs, "the current position always survives")
+        val oldest = out.minByOrNull { it.epochMs }!!
+        assertTrue(now - oldest.epochMs > 40 * hour) { "a thinner trail must still span two days" }
+    }
+
+    @Test
     fun `a compressed 48h trail fits comfortably in one ntfy message`() {
         // The regression this whole class exists for: an oversized publish is rejected
         // with HTTP 413 and the child's check-in is silently lost.

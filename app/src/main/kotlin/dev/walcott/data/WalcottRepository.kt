@@ -170,9 +170,14 @@ class WalcottRepository(
         db.locations().deleteOlderThan(System.currentTimeMillis() - LOCATION_RETENTION_MS)
     }
 
-    /** The last [LOCATION_RETENTION_MS] of fixes, oldest first, for the parent's map. */
+    /**
+     * The fixes the parent's map is built from, oldest first: the publish window, not the whole
+     * retained history. [dev.walcott.sync.LocationTrail] would drop anything older anyway, and
+     * reading a week to throw away five days of it costs the check-in for nothing.
+     */
     suspend fun recentLocations(): List<LocationPoint> =
-        db.locations().getSince(System.currentTimeMillis() - LOCATION_RETENTION_MS).map { it.toPoint() }
+        db.locations().getSince(System.currentTimeMillis() - dev.walcott.sync.LocationTrail.WINDOW_MS)
+            .map { it.toPoint() }
 
     /**
      * Just the current position, for children whose parent hasn't enabled location history.
@@ -292,7 +297,18 @@ class WalcottRepository(
          * Location history retention shown on the parent map. Matches the trail window the
          * child publishes, so the timeline never runs past the data it has.
          */
-        const val LOCATION_RETENTION_MS = dev.walcott.sync.LocationTrail.WINDOW_MS
+        /**
+         * How long fixes are kept ON THIS DEVICE — deliberately longer than the 48h
+         * [dev.walcott.sync.LocationTrail.WINDOW_MS] the parent's map is published over.
+         *
+         * They used to be the same constant, which quietly tied two things with nothing in
+         * common. Publishing is bounded by what fits in one 4 KB relay message and is genuinely
+         * scarce. Local retention is a row of about forty bytes in SQLite: a four-hour
+         * close-tracking session at a fix a minute is 240 rows, roughly ten kilobytes, and a
+         * week of ordinary five-minute sampling is under a hundred. Throwing that away at 48h
+         * bought nothing and made a session unreviewable the moment it aged out.
+         */
+        const val LOCATION_RETENTION_MS = 7 * 24 * 60 * 60 * 1000L
         /** How often the "today" flows re-check the date (cheap; rollover lands within a minute). */
         private const val DAY_CHECK_MILLIS = 60_000L
 

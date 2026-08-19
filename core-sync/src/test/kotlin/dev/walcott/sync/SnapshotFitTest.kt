@@ -54,8 +54,8 @@ class SnapshotFitTest {
     }
 
     @Test
-    fun `an oversized snapshot sacrifices the trail first`() {
-        // Enough apps to overflow with a full trail but fit once the trail is dropped.
+    fun `an oversized snapshot thins the trail first, and does not drop it`() {
+        // Enough apps to overflow with a full trail but fit once the trail is thinned.
         var appCount = 100
         var result = SnapshotFit.encodeChild(snapshot(apps = appCount), key)
         while (result.degraded == null && appCount < 400) {
@@ -65,7 +65,37 @@ class SnapshotFitTest {
         assertTrue(result.degraded != null) { "could not build an oversized snapshot" }
         assertTrue(result.encoded.length <= SnapshotFit.MAX_BYTES)
         val out = decode(result.encoded)
-        assertTrue(out.locations.size <= 1) { "trail must be the first sacrifice" }
+        // The regression this replaced: the trail went from 100 points straight to one, so a
+        // parent with a long app list saw a single pin and no way to know history was cut.
+        assertTrue(out.locations.size > 1) { "the trail must be thinned, not dropped" }
+        assertTrue(out.locations.size < 100) { "something has to give at this size" }
+        assertEquals(
+            trail(100).last().epochMs,
+            out.locations.last().epochMs,
+            "the current position survives every step",
+        )
+    }
+
+    @Test
+    fun `thinning the trail keeps its span, not just its newest end`() {
+        val result = SnapshotFit.encodeChild(snapshot(apps = 260), key)
+        val out = decode(result.encoded)
+        assertTrue(out.locations.size > 1) { "expected a thinned trail, got ${out.locations.size}" }
+        val full = trail(100)
+        assertEquals(full.first().epochMs, out.locations.first().epochMs, "the oldest fix survives")
+        assertEquals(full.last().epochMs, out.locations.last().epochMs, "the newest fix survives")
+    }
+
+    @Test
+    fun `a trail older than the publish window is thinned, never emptied`() {
+        // A phone that has been off for days: every fix has aged out. Re-compressing against the
+        // clock would return nothing at all and take the child's last known position with it.
+        val ancient = List(100) {
+            LocationPoint(40.4 + it / 1e5, -3.7 - it / 1e5, now - LocationTrail.WINDOW_MS - it * 60_000L, 8f)
+        }
+        val result = SnapshotFit.encodeChild(snapshot(apps = 400).copy(locations = ancient), key)
+        val out = decode(result.encoded)
+        assertTrue(out.locations.isNotEmpty()) { "the last known position must never be dropped here" }
     }
 
     @Test

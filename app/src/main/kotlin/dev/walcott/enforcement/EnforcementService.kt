@@ -19,10 +19,12 @@ import dev.walcott.MainActivity
 import dev.walcott.R
 import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
+import dev.walcott.location.LocationAlarm
 import dev.walcott.location.LocationPolicy
 import dev.walcott.location.LocationSampler
 import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
+import dev.walcott.sync.LiveTracking
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
 import dev.walcott.update.UpdateCheckOutcome
@@ -37,6 +39,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 
 /**
@@ -156,6 +160,7 @@ class EnforcementService : LifecycleService() {
         observeDeviceRestrictions()
         scheduleUpdateChecks()
         scheduleLocationSampling()
+        observeLiveTracking()
         // Catch up on whatever happened while this service wasn't running. The package receiver
         // lives in this process, so a device that was off — or a service an OEM battery saver
         // killed — witnesses no install at all; without this pass, that is exactly when an app
@@ -201,8 +206,13 @@ class EnforcementService : LifecycleService() {
     }
 
     /**
-     * Periodic GPS sampling driven by the child's resolved tracking interval (0 = off). A new
-     * interval restarts the loop; the Doze-exempt FGS gives near-exact cadence at any interval.
+     * Periodic GPS sampling driven by the child's resolved tracking interval (0 = off).
+     *
+     * All this does now is arm an alarm. The sampling itself used to be a `delay()` loop in this
+     * service, on the belief that an always-on FGS gives near-exact cadence at any interval; it
+     * does not, and [LocationAlarm] documents exactly why. A timer that stops counting whenever
+     * the phone is in somebody's pocket is a timer that fails in the one situation the whole
+     * feature exists for.
      */
     private fun scheduleLocationSampling() {
         val app = application as WalcottApplication
@@ -210,52 +220,112 @@ class EnforcementService : LifecycleService() {
             app.repository.settingsFlow
                 .map { it.trackingIntervalMinutes }
                 .distinctUntilChanged()
-                .collectLatest { minutes ->
+                .collect { minutes ->
                     DebugLog.i(LOC_TAG, "tracking interval resolved: $minutes min")
-                    if (minutes <= 0) return@collectLatest
-                    val sampler = LocationSampler(this@EnforcementService)
-                    val periodMs = minutes * 60_000L
-                    // Consecutive cycles that produced nothing, so a device that cannot be
-                    // located backs off instead of retrying at full price for ever.
-                    var failures = 0
-                    while (currentCoroutineContext().isActive) {
-                        val startedAt = SystemClock.elapsedRealtime()
-                        var gotFix = false
-                        runCatching {
-                            // A fix from anyone, less than a third of a period old, is as good as
-                            // ours and costs nothing: a phone on a desk reports the same place
-                            // whether or not we spin its GPS to hear it.
-                            val fix = sampler.currentFix(maxCacheAgeMs = periodMs / 3)
-                            if (fix != null) {
-                                app.repository.recordLocation(fix)
-                                gotFix = true
-                                DebugLog.i(LOC_TAG, "recorded fix acc=${fix.accuracyM}m mock=${fix.mock}")
-                            } else {
-                                DebugLog.w(LOC_TAG, "no location fix this cycle")
-                            }
-                            app.syncManager.publishLocationUpdate()
-                        }.onFailure { DebugLog.e(LOC_TAG, "location sampling cycle failed", it) }
-
-                        // Sleep the REMAINDER of the period, not a full one: acquiring a fix takes
-                        // real time, and adding that to every cycle made the interval drift well
-                        // past the one the parent chose. A failed cycle retries sooner — a device
-                        // that just walked outdoors shouldn't stay unlocatable for a whole period.
-                        //
-                        // But it retries sooner only for a while. A phone that cannot be located
-                        // usually cannot be located for hours (indoors, aeroplane mode, no sky),
-                        // and a fixed one-minute retry meant powering the radio every ninety
-                        // seconds all afternoon to be told the same thing. Each failure doubles
-                        // the wait, up to the interval the parent asked for; one success resets
-                        // it. The floor stays as the last guard against a zero wait.
-                        failures = if (gotFix) 0 else failures + 1
-                        val backoff = RETRY_LOCATION_MILLIS shl (failures - 1).coerceIn(0, MAX_LOCATION_BACKOFF_SHIFT)
-                        val target = if (gotFix) periodMs else minOf(backoff, periodMs)
-                        val elapsed = SystemClock.elapsedRealtime() - startedAt
-                        delay((target - elapsed).coerceAtLeast(MIN_LOCATION_GAP_MILLIS))
+                    // The permission may only have landed after startForeground ran, and without
+                    // the location FGS type nothing below can get a fix at all.
+                    claimLocationType()
+                    if (minutes <= 0) {
+                        LocationAlarm.cancel(this@EnforcementService)
+                    } else {
+                        // Soon rather than in a full period: a phone that has just booted, or
+                        // whose family has just changed the interval, should say where it is
+                        // while somebody is still looking. The cycle arms the real interval.
+                        LocationAlarm.schedule(this@EnforcementService, FIRST_FIX_DELAY_MILLIS)
                     }
                 }
         }
     }
+
+    /**
+     * Close tracking: while the parent's session runs, hold the CPU awake and take a fix a
+     * minute (see [LiveTracking]).
+     *
+     * A wakelock rather than an alarm chain, and this is the one place in the app that takes one.
+     * At a fix a minute the alarm approach would be sixty wakeups an hour fighting Doze for
+     * permission to fire, and the whole point of this mode is that the cadence is guaranteed
+     * rather than best-effort. The cost is real, which is why nothing here is open-ended: the
+     * session is bounded by the parent's deadline, by the battery floor, and by the wakelock's
+     * own timeout, and the parent was told what it costs before it started.
+     */
+    private fun observeLiveTracking() {
+        val app = application as WalcottApplication
+        lifecycleScope.launch {
+            app.syncManager.liveTrackingUntilElapsed
+                .collectLatest { untilElapsed ->
+                    if (!LiveTracking.isRunning(untilElapsed, SystemClock.elapsedRealtime())) return@collectLatest
+                    runLiveSession(untilElapsed)
+                }
+        }
+    }
+
+    private suspend fun runLiveSession(untilElapsedMs: Long) {
+        val app = application as WalcottApplication
+        val sampler = LocationSampler(this)
+        // Bounded by what is actually left, plus a little slack for the fix in flight when the
+        // deadline passes. A wakelock without a timeout is how a phone dies overnight.
+        val budget = LiveTracking.remainingMs(untilElapsedMs, SystemClock.elapsedRealtime()) +
+            LIVE_WAKELOCK_SLACK_MILLIS
+        val lock = runCatching {
+            power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "walcott:live-tracking")
+                .apply { setReferenceCounted(false); acquire(budget) }
+        }.getOrNull()
+        DebugLog.w(LOC_TAG, "close tracking started, ${budget / 60_000} min of wakelock")
+        setLiveTrackingBanner(true)
+        var lastPublishAt = 0L
+        var stoppedForBattery = false
+        try {
+            while (currentCoroutineContext().isActive &&
+                LiveTracking.isRunning(untilElapsedMs, SystemClock.elapsedRealtime())
+            ) {
+                // The failure this prevents is the one that matters: a session that flattens the
+                // phone leaves the parent with NO location at all, which is the opposite of what
+                // they switched it on for.
+                val battery = batteryPercent()
+                val charging = batteryCharging()
+                if (LiveTracking.batteryTooLow(battery, charging)) {
+                    DebugLog.w(LOC_TAG, "close tracking stopping: battery below the floor")
+                    stoppedForBattery = true
+                    break
+                }
+                // Re-read every cycle, so a session that started on a full battery slows down by
+                // itself as it drains rather than running flat out into the floor.
+                val sampleEvery = LiveTracking.sampleIntervalMs(battery, charging)
+                runCatching {
+                    val fix = sampler.currentFix(maxCacheAgeMs = LIVE_CACHE_MAX_AGE_MILLIS)
+                    if (fix != null) app.repository.recordLocation(fix)
+                    // Publishing is deliberately coarser than sampling: each publish is a whole
+                    // snapshot over the relay, and one per fix would be sixty messages an hour.
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastPublishAt >= LiveTracking.publishIntervalMs(sampleEvery)) {
+                        lastPublishAt = now
+                        app.syncManager.publishLocationUpdate()
+                    }
+                }.onFailure { DebugLog.e(LOC_TAG, "close tracking cycle failed", it) }
+                delay(sampleEvery)
+            }
+        } finally {
+            runCatching { lock?.release() }
+            setLiveTrackingBanner(false)
+            DebugLog.w(LOC_TAG, "close tracking ended (battery=$stoppedForBattery)")
+            // Outside the cancellable body: a session ending because the rules changed under it
+            // must still tidy up and tell the parent where the phone finished.
+            withContext(NonCancellable) {
+                // Scoped to THIS session: a parent who extended it wrote a new deadline, which
+                // is what cancelled this loop, and clearing that would undo their own tap.
+                runCatching { app.syncManager.endLiveTracking(stoppedForBattery, untilElapsedMs) }
+            }
+        }
+    }
+
+    private fun batteryPercent(): Int = runCatching {
+        getSystemService(android.os.BatteryManager::class.java)
+            ?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+    }.getOrDefault(-1)
+
+    private fun batteryCharging(): Boolean = runCatching {
+        getSystemService(android.os.BatteryManager::class.java)?.isCharging ?: false
+    }.getOrDefault(false)
 
     /** Keeps [usageToday] / [extraToday] current, so the tick never has to query for them. */
     private fun observeCounters() {
@@ -400,6 +470,9 @@ class EnforcementService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        // Anything that has just repaired this device's permissions can ask for the location
+        // type to be claimed again, without needing a handle on the running service.
+        if (intent?.action == ACTION_RECHECK) claimLocationType()
         return START_STICKY
     }
 
@@ -782,8 +855,35 @@ class EnforcementService : LifecycleService() {
             .notify(NOTIF_ID, buildStatusNotification(text))
     }
 
+    /**
+     * Whether a close-tracking session is running, which the ongoing notification says outright.
+     *
+     * Deliberately not hidden. Android shows its own location indicator regardless, and a mode
+     * that reports where this phone is every minute for hours is a different thing from a
+     * half-hourly check-in — a family app that quietly blurred the two would be teaching the
+     * wrong lesson about what supervision is.
+     */
+    @Volatile private var liveTrackingActive = false
+
+    /** Puts the close-tracking sentence on the ongoing notification, or takes it back off. */
+    private fun setLiveTrackingBanner(active: Boolean) {
+        liveTrackingActive = active
+        val text = if (active) getString(R.string.status_live_tracking) else getString(R.string.service_notif_text)
+        statusText = text
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification(text))
+        }
+    }
+
     /** The sentence for [status], in the phone's own language. */
-    private fun statusTextOf(status: PhoneStatus, appLabel: (String) -> String?): String = when (status) {
+    private fun statusTextOf(status: PhoneStatus, appLabel: (String) -> String?): String = when {
+        // Outranks everything else: for as long as it is running it is the most surprising
+        // thing this phone is doing, and the one its user is most entitled to be told about.
+        liveTrackingActive -> getString(R.string.status_live_tracking)
+        else -> plainStatusTextOf(status, appLabel)
+    }
+
+    private fun plainStatusTextOf(status: PhoneStatus, appLabel: (String) -> String?): String = when (status) {
         is PhoneStatus.Paused -> getString(R.string.status_paused, status.until.hhmm())
         is PhoneStatus.Bedtime -> getString(R.string.status_bedtime, status.until.hhmm())
         is PhoneStatus.ScreenFree -> getString(R.string.status_screen_free, status.until.hhmm())
@@ -836,15 +936,40 @@ class EnforcementService : LifecycleService() {
             // Claim the location type only when the permission is held. Degrade to special-use
             // if the richer type is refused, so enforcement never dies at startup.
             val special = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            val wantsLocation = LocationPolicy.hasFineLocation(this)
             val withLocation =
-                if (LocationPolicy.hasFineLocation(this)) special or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-                else special
-            if (runCatching { startForeground(NOTIF_ID, notification, withLocation) }.isFailure && withLocation != special) {
+                if (wantsLocation) special or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else special
+            if (runCatching { startForeground(NOTIF_ID, notification, withLocation) }.isFailure &&
+                withLocation != special
+            ) {
                 startForeground(NOTIF_ID, notification, special)
+                locationTypeHeld = false
+            } else {
+                locationTypeHeld = wantsLocation
             }
         } else {
             startForeground(NOTIF_ID, notification)
+            locationTypeHeld = true
         }
+    }
+
+    /**
+     * Whether this service actually holds the `location` foreground-service type.
+     *
+     * It is the whole basis of the child's background location access — the background permission
+     * is deliberately denied (see [LocationPolicy]) — and the claim can fail: at start-up the
+     * permission grant may not have landed yet, and the degrade to plain special-use was
+     * permanent. A service that lost that race then ran for its entire life unable to get a fix,
+     * silently, and the parent's only symptom was a child that never reported a position.
+     */
+    @Volatile private var locationTypeHeld = false
+
+    /** Re-runs the claim when the permission is there and the type isn't. Cheap and idempotent. */
+    private fun claimLocationType() {
+        if (locationTypeHeld || !LocationPolicy.hasFineLocation(this)) return
+        DebugLog.w(LOC_TAG, "re-claiming the location foreground-service type")
+        runCatching { startForegroundCompat() }
+            .onFailure { DebugLog.e(LOC_TAG, "could not re-claim the location FGS type", it) }
     }
 
     companion object {
@@ -877,13 +1002,20 @@ class EnforcementService : LifecycleService() {
         private const val IDLE_STEP_MILLIS = 5 * 60_000L
         /** Cap on idle credited per accrual, so a long screen-off park can't dump hours at once. */
         private const val MAX_IDLE_STEP_SECONDS = 360L
-        /** First backoff after a cycle that produced no fix (indoors, GPS warming up, airplane mode). */
-        private const val RETRY_LOCATION_MILLIS = 60_000L
+        /**
+         * How soon after start-up (or an interval change) the first fix is taken, rather than
+         * waiting out a whole period on a phone that has just come back.
+         */
+        private const val FIRST_FIX_DELAY_MILLIS = 30_000L
 
-        /** Caps the doubling at 2^4 = 16 minutes, before the period's own cap applies. */
-        private const val MAX_LOCATION_BACKOFF_SHIFT = 4
-        /** Hard floor between sampling cycles, so a never-succeeding fix can't spin the radio. */
-        private const val MIN_LOCATION_GAP_MILLIS = 30_000L
+        /** Slack on the live-tracking wakelock, for the fix still in flight at the deadline. */
+        private const val LIVE_WAKELOCK_SLACK_MILLIS = 2 * 60_000L
+
+        /**
+         * How stale a fix may be during close tracking. Short: the parent is watching this move,
+         * so somebody else's minute-old fix is worth taking and nothing older is.
+         */
+        private const val LIVE_CACHE_MAX_AGE_MILLIS = 20_000L
         /** Screen-off checkpoint publish, skipped if anything published this recently. */
         private const val SCREEN_OFF_PUBLISH_MIN_MS = 5 * 60_000L
 
@@ -892,8 +1024,12 @@ class EnforcementService : LifecycleService() {
         private const val LOC_TAG = "WalcottLocation"
         private const val TAG = "WalcottEnforce"
 
-        fun start(context: Context) {
+        /** Asks a running service to re-check what it holds (see [ACTION_RECHECK]). */
+        private const val ACTION_RECHECK = "dev.walcott.RECHECK"
+
+        fun start(context: Context, recheck: Boolean = false) {
             val intent = Intent(context, EnforcementService::class.java)
+                .apply { if (recheck) action = ACTION_RECHECK }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {

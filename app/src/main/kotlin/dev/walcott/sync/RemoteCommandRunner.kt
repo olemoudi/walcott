@@ -43,6 +43,8 @@ class RemoteCommandRunner(
         { dev.walcott.enforcement.LockScreen.Result.REFUSED },
     /** Publishes the notification log a [RemoteAction.NOTIFICATION_LOG] asks for (see [NotificationQuery]). */
     private val publishNotifications: suspend (arg: String) -> Int = { 0 },
+    /** Starts or stops a close-tracking session (see [RemoteAction.LIVE_TRACKING]). */
+    private val setLiveTracking: suspend (minutes: Int) -> Unit = { },
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -62,6 +64,7 @@ class RemoteCommandRunner(
                 RemoteAction.NOTIFICATION_LOG -> notificationLog(command.arg)
                 RemoteAction.RELEASE_DEVICE -> release(command)
                 RemoteAction.SET_RELAY -> setRelay(command.arg)
+                RemoteAction.LIVE_TRACKING -> liveTracking(command)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -233,6 +236,26 @@ class RemoteCommandRunner(
             return false to RemoteAction.DETAIL_RELAY_REFUSED
         }
         return true to RemoteAction.DETAIL_RELAY_MOVED
+    }
+
+    /**
+     * Starts (or stops) close tracking for the number of minutes in the arg.
+     *
+     * Refuses an expired command outright, like the lock-screen one and for a sharper version of
+     * the same reason: this mode is *about* right now. An hour of minute-by-minute GPS beginning
+     * tomorrow morning is not a late version of what the parent meant — it is a phone flattening
+     * its battery for an audience that stopped watching yesterday.
+     */
+    private suspend fun liveTracking(command: RemoteCommand): Pair<Boolean, String> {
+        val minutes = command.arg.toIntOrNull() ?: return false to "bad_duration"
+        // A stop is always obeyed, however old it is: the worst a late one can do is end
+        // something that has already ended, and refusing it would strand a running session.
+        if (minutes > 0 && RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
+            DebugLog.w(TAG, "ignoring a close-tracking request that is too old to still be meant")
+            return false to RemoteAction.DETAIL_EXPIRED
+        }
+        setLiveTracking(minutes)
+        return true to if (minutes > 0) LiveTracking.DETAIL_STARTED else LiveTracking.DETAIL_STOPPED
     }
 
     private fun lockNow(): Pair<Boolean, String> {

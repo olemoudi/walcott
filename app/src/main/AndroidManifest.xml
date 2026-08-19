@@ -16,6 +16,10 @@
          tracking keeps working when Walcott isn't in the foreground. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The periodic location fix and close-tracking sessions hold the CPU awake while a fix is
+         acquired. Without it the SoC suspends the moment the alarm's receiver returns, which is
+         the very hole that made the old timer-driven sampling drift (see LocationAlarm). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -153,6 +157,12 @@
         <!-- The child's ~30-minute check-in alarm (see HeartbeatAlarm). -->
         <receiver
             android:name=".sync.HeartbeatReceiver"
+            android:exported="false" />
+
+        <!-- The child's periodic location fix (see LocationAlarm). An alarm rather than an
+             in-process timer, because a timer does not tick while the device is asleep. -->
+        <receiver
+            android:name=".location.LocationSampleReceiver"
             android:exported="false" />
 
         <!-- The parent's catch-up alarm (see ParentCheckAlarm): WorkManager alone is deferred by

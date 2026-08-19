@@ -110,6 +110,9 @@ data class ParentEvent(
         const val TYPE_BEDTIME = "bedtime"
         const val TYPE_SCREEN_FREE = "screen_free"
 
+        /** A close-tracking session gave up early (see [LiveTracking.BATTERY_FLOOR_PERCENT]). */
+        const val TYPE_LIVE_TRACKING_ENDED = "live_tracking_ended"
+
         /**
          * The wall entry for something the child reported its rules doing, or null when this
          * build doesn't know the kind (a newer child; skipped rather than shown as a blank
@@ -121,6 +124,7 @@ data class ParentEvent(
                 ChildEvent.KIND_BUDGET_OUT -> TYPE_APP_TIME_OUT
                 ChildEvent.KIND_BEDTIME -> TYPE_BEDTIME
                 ChildEvent.KIND_SCREEN_FREE -> TYPE_SCREEN_FREE
+                ChildEvent.KIND_LIVE_TRACKING_ENDED -> TYPE_LIVE_TRACKING_ENDED
                 else -> return null
             }
             return ParentEvent(
@@ -197,6 +201,24 @@ data class SyncState(
     val appliedBonusIds: Set<String> = emptySet(),
     /** Until when app installs are temporarily allowed on this device (PIN gate or approval). */
     val installExemptionUntilMs: Long = 0,
+    /**
+     * Deadline of a running close-tracking session, on the MONOTONIC clock (see [LiveTracking]).
+     * 0 = no session.
+     *
+     * `SystemClock.elapsedRealtime`, not wall clock, because this is the one feature a child has
+     * an obvious motive to end early and the wall clock is a thing phones let you edit. (The
+     * family's recommended restrictions block that anyway — see `DeviceRestrictions.KEY_DATETIME`
+     * — but a guard that only works when another setting is on is not a guard.)
+     *
+     * Monotonic time restarts from zero at boot, so a stored deadline would look valid again on
+     * the other side of a restart; [dev.walcott.enforcement.BootReceiver] clears both fields, and
+     * [liveStartedAtMs] is the coarse backstop for the boot that never announced itself.
+     */
+    val liveUntilElapsedMs: Long = 0,
+    /** Wall-clock ms the session began: shown to the parent, and a sanity bound on the above. */
+    val liveStartedAtMs: Long = 0,
+    /** Wall-clock ms of the last "locate now" this device could not answer with a fix. */
+    val lastLocateFailedMs: Long = 0,
     /**
      * Target package of a parent-pushed install, while its self-closing window is open.
      * Non-empty means "one install allowed, then re-arm the block"; "" for the blanket

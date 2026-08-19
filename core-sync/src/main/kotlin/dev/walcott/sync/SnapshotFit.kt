@@ -11,16 +11,25 @@ import javax.crypto.SecretKey
  * is driven by whatever the child installs, so the total has no hard ceiling without this.
  *
  * Degradation order trades the least critical data first:
- *  1. location trail → newest fix only (the map loses history, never the current position)
+ *  1. location trail → thinned, NOT dropped (see below)
  *  2. usage history → empty (the weekly report degrades; today's usage still travels)
  *  3. block statistics → breakdown first, then the whole report (the totals come back in the
  *     next report's catch-up days, so this costs a day's long tail and never a number)
  *  4. domain slices → fewer per message (the rest ride the next publish; they are resent
  *     until acknowledged anyway, so this costs latency and nothing else)
  *  5. app list → progressively halved (classification of the tail waits for a leaner day)
- *  6. asks → dropped, and only here. An ask is a child waiting for an answer, so losing one is
+ *  6. location trail → newest fix only (the map loses history, never the current position)
+ *  7. asks → dropped, and only here. An ask is a child waiting for an answer, so losing one is
  *     worse than losing any of the above; it is still better than a rejected publish, which
  *     loses the child's whole voice rather than one sentence of it.
+ *
+ * The trail appears twice on purpose, and that is the whole difference between this and what it
+ * replaced. It used to be sacrificed in ONE step, from a full trail straight to a single point,
+ * while every other payload here degrades gradually. Measured against a realistic app list that
+ * step was not rare: a child with sixty user apps had room for well under the trail's own point
+ * budget, so the parent was shown one pin — with history switched on, and with nothing anywhere
+ * saying why. It is now thinned like everything else, and only collapses to the current position
+ * once the app list has already been halved away.
  *
  * Nothing is returned without being measured. The last resort used to be assumed to fit — true
  * only while every remaining field was small, which stopped being true the moment a child could
@@ -31,6 +40,13 @@ object SnapshotFit {
     /** Headroom under ntfy's 4096-byte default message cap. */
     const val MAX_BYTES = 3800
 
+    /**
+     * Trail sizes tried, in order, before anything else is given up. Each is a call to
+     * [LocationTrail.compress], so a smaller budget is a THINNER trail spanning the same two
+     * days — not a shorter one — and the reserved floors keep the old end of it alive.
+     */
+    private val TRAIL_STEPS = listOf(60, 30, 12)
+
     /** What had to be sacrificed, for the caller's log line. Null = nothing, sent in full. */
     data class Result(val encoded: String, val degraded: String?)
 
@@ -38,12 +54,20 @@ object SnapshotFit {
         val full = SyncProtocol.encodeChild(snapshot, familyKey)
         if (full.length <= maxBytes) return Result(full, null)
 
-        val noTrail = snapshot.copy(locations = snapshot.locations.takeLast(1))
-        SyncProtocol.encodeChild(noTrail, familyKey).let {
-            if (it.length <= maxBytes) return Result(it, "trail")
+        // The trail, thinned rather than thrown away — and thinned with the clock-free
+        // [LocationTrail.thin], not by re-compressing: a second compress pass would have to date
+        // every fix again, and a trail whose newest fix has aged out of the window would come
+        // back empty. Losing history is a degradation; losing the current position is not.
+        var thinned = snapshot
+        for (step in TRAIL_STEPS) {
+            if (thinned.locations.size <= step) continue
+            thinned = thinned.copy(locations = LocationTrail.thin(thinned.locations, step))
+            SyncProtocol.encodeChild(thinned, familyKey).let {
+                if (it.length <= maxBytes) return Result(it, "trail:${thinned.locations.size}")
+            }
         }
 
-        val noHistory = noTrail.copy(history = emptyList())
+        val noHistory = thinned.copy(history = emptyList())
         SyncProtocol.encodeChild(noHistory, familyKey).let {
             if (it.length <= maxBytes) return Result(it, "trail,history")
         }
@@ -85,24 +109,31 @@ object SnapshotFit {
             if (it.length <= maxBytes) return Result(it, "trail,history,blocks,apps:0")
         }
 
-        // Still too big, so something variable is left: the last domain slice, then the asks.
-        // Measured rather than assumed, because the alternative to an honest degradation here is
-        // a rejected publish, and a rejected publish is a child that has simply gone quiet.
+        // Still too big, so something variable is left: the last domain slice, the trail's own
+        // history, then the asks. Measured rather than assumed, because the alternative to an
+        // honest degradation here is a rejected publish, and a rejected publish is a child that
+        // has simply gone quiet.
         val noChunks = bare.copy(domainChunks = emptyList())
         SyncProtocol.encodeChild(noChunks, familyKey).let {
             if (it.length <= maxBytes) return Result(it, "trail,history,blocks,apps:0,chunks:0")
         }
-        var asks = noChunks.asks
+        // Only now does the map lose its history. The current position never goes: a child with
+        // no trail is a child the parent can still find.
+        val currentOnly = noChunks.copy(locations = noChunks.locations.takeLast(1))
+        SyncProtocol.encodeChild(currentOnly, familyKey).let {
+            if (it.length <= maxBytes) return Result(it, "trail:current,history,blocks,apps:0,chunks:0")
+        }
+        var asks = currentOnly.asks
         while (asks.isNotEmpty()) {
             asks = asks.dropLast(1)
-            SyncProtocol.encodeChild(noChunks.copy(asks = asks), familyKey).let {
+            SyncProtocol.encodeChild(currentOnly.copy(asks = asks), familyKey).let {
                 if (it.length <= maxBytes) {
-                    return Result(it, "trail,history,blocks,apps:0,chunks:0,asks:${asks.size}")
+                    return Result(it, "trail:current,history,blocks,apps:0,chunks:0,asks:${asks.size}")
                 }
             }
         }
         return Result(
-            SyncProtocol.encodeChild(noChunks.copy(asks = emptyList(), requests = emptyList()), familyKey),
+            SyncProtocol.encodeChild(currentOnly.copy(asks = emptyList(), requests = emptyList()), familyKey),
             "everything but the fixed fields",
         )
     }

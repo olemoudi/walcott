@@ -1715,4 +1715,26 @@
     <string-array name="whats_new_0_72_0">
         <item>La tarjeta de cada miembro en la pantalla de inicio está rehecha. Los tres números del día se alinean en columnas propias en vez de partirse a media frase, y lo que de verdad se puede pulsar son botones con su palabra — Acciones y Mapa — y no tres iconos pequeños con aspecto de adorno.</item>
     </string-array>
+
+    <!-- Close tracking (see LiveTracking) -->
+    <string name="status_live_tracking">Tu familia puede ver dónde está este teléfono ahora mismo</string>
+    <string name="quick_live_title">Seguimiento estrecho</string>
+    <string name="quick_live_start">Seguir de cerca</string>
+    <string name="quick_live_stop">Parar</string>
+    <string name="quick_live_left">quedan %1$s</string>
+    <string name="quick_live_started">Siguiendo de cerca a %1$s durante %2$s</string>
+    <string name="quick_live_stopped">Seguimiento estrecho detenido</string>
+    <string name="quick_live_needs_update">Este teléfono tiene que actualizarse antes de poder seguirlo de cerca.</string>
+    <string name="live_dialog_title">¿Seguir de cerca?</string>
+    <string name="live_dialog_body">%1$s informará de dónde está cada minuto, en vez de cada %2$d minutos. Esto consume mucha batería, así que se cuida solo: por debajo del %3$d%% va espaciándose a medida que baja la carga, y se detiene del todo al %4$d%% o cuando acabe el tiempo.</string>
+    <string name="live_dialog_body_no_interval">%1$s informará de dónde está cada minuto. Esto consume mucha batería, así que se cuida solo: por debajo del %2$d%% va espaciándose a medida que baja la carga, y se detiene del todo al %3$d%% o cuando acabe el tiempo.</string>
+    <string name="live_dialog_duration">¿Durante cuánto tiempo?</string>
+    <string name="live_dialog_confirm">Empezar</string>
+    <string name="live_dialog_visible">%1$s verá en su pantalla que esto está pasando.</string>
+    <string name="event_live_tracking_ended">Seguimiento estrecho detenido: quedaba poca batería</string>
+    <string name="map_live_active">Seguimiento estrecho · quedan %1$s</string>
+    <string name="map_point_count_of">%1$d de %2$d ubicaciones en las últimas 48 h</string>
+    <string name="map_accuracy_unknown">precisión desconocida</string>
+    <string name="map_fix_age">hace %1$s</string>
+    <string name="location_locate_failed">Este teléfono no pudo obtener una posición la última vez que la pediste. Lo que ves es anterior.</string>
 </resources>

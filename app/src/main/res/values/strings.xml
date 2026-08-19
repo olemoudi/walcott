@@ -1723,4 +1723,26 @@
     <string-array name="whats_new_0_72_0">
         <item>Each member\'s card on the home screen has been rebuilt. The day\'s three numbers now line up in their own columns instead of wrapping mid-phrase, and the things you can actually press are buttons with words on them — Actions and Map — rather than three small icons that looked like decoration.</item>
     </string-array>
+
+    <!-- Close tracking (see LiveTracking) -->
+    <string name="status_live_tracking">Your family can see where this phone is right now</string>
+    <string name="quick_live_title">Close tracking</string>
+    <string name="quick_live_start">Track closely</string>
+    <string name="quick_live_stop">Stop</string>
+    <string name="quick_live_left">%1$s left</string>
+    <string name="quick_live_started">Following %1$s closely for %2$s</string>
+    <string name="quick_live_stopped">Close tracking stopped</string>
+    <string name="quick_live_needs_update">This phone has to update before it can be tracked closely.</string>
+    <string name="live_dialog_title">Track closely?</string>
+    <string name="live_dialog_body">%1$s will report where it is every minute instead of every %2$d minutes. This uses a lot of battery, so it looks after itself: below %3$d%% it gradually slows down as the charge falls, and it stops altogether at %4$d%% or when the time is up.</string>
+    <string name="live_dialog_body_no_interval">%1$s will report where it is every minute. This uses a lot of battery, so it looks after itself: below %2$d%% it gradually slows down as the charge falls, and it stops altogether at %3$d%% or when the time is up.</string>
+    <string name="live_dialog_duration">For how long?</string>
+    <string name="live_dialog_confirm">Start</string>
+    <string name="live_dialog_visible">%1$s will say on screen that this is happening.</string>
+    <string name="event_live_tracking_ended">Close tracking stopped: battery was running low</string>
+    <string name="map_live_active">Close tracking · %1$s left</string>
+    <string name="map_point_count_of">%1$d of %2$d locations over the last 48 h</string>
+    <string name="map_accuracy_unknown">accuracy unknown</string>
+    <string name="map_fix_age">%1$s ago</string>
+    <string name="location_locate_failed">This phone could not get a fix the last time you asked. What you see is older.</string>
 </resources>

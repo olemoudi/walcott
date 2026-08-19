@@ -45,6 +45,7 @@ import dev.walcott.R
 import dev.walcott.sync.LocationPoint
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.WalcottTopBar
+import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
 import org.osmdroid.config.Configuration
@@ -52,6 +53,7 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
 import java.time.Instant
@@ -87,6 +89,17 @@ fun MapScreen(viewModel: WalcottViewModel, childId: String, onBack: () -> Unit) 
         if (points.any { it.mock }) {
             MapWarning(stringResource(R.string.location_mock_warning))
         }
+        // "I asked and it could not answer" must not look like "I have not asked": until the
+        // child started reporting this, a locate that failed indoors cleared the parent's
+        // spinner and left them reading an older position as the current one.
+        if (snapshot != null && snapshot.lastLocateFailedMs > 0 &&
+            points.lastOrNull()?.let { snapshot.lastLocateFailedMs > it.epochMs } == true
+        ) {
+            MapWarning(stringResource(R.string.location_locate_failed))
+        }
+        if (snapshot != null && snapshot.liveTrackingUntilMs > System.currentTimeMillis()) {
+            LiveTrackingBanner(snapshot.liveTrackingUntilMs)
+        }
 
         if (points.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(spacing.screen), contentAlignment = Alignment.Center) {
@@ -98,7 +111,7 @@ fun MapScreen(viewModel: WalcottViewModel, childId: String, onBack: () -> Unit) 
                 )
             }
         } else {
-            TrailMap(points, historyOn, Modifier.weight(1f))
+            TrailMap(points, historyOn, snapshot?.locationsTotal ?: 0, Modifier.weight(1f))
         }
 
         if (snapshot != null) {
@@ -130,10 +143,19 @@ private fun MapWarning(text: String) {
 
 /** The map plus, when there is a trail worth replaying, the timeline scrubber over it. */
 @Composable
-private fun TrailMap(points: List<LocationPoint>, historyOn: Boolean, modifier: Modifier = Modifier) {
+private fun TrailMap(
+    points: List<LocationPoint>,
+    historyOn: Boolean,
+    totalPoints: Int,
+    modifier: Modifier = Modifier,
+) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
     val trailColor = MaterialTheme.colorScheme.primary
+    // Read from the theme here, not inside the update block, which must stay free of composition
+    // reads; both follow the palette, so the circle is legible in light and dark alike.
+    val accuracyFill = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f).toArgb()
+    val accuracyStroke = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f).toArgb()
     val scrubbable = points.size > 1
     val stampFormatter = remember { DateTimeFormatter.ofPattern("EEE HH:mm", Locale.getDefault()) }
 
@@ -215,6 +237,21 @@ private fun TrailMap(points: List<LocationPoint>, historyOn: Boolean, modifier: 
                             },
                         )
                     }
+                    // The circle the fix actually justifies. A bare pin says "here" with the same
+                    // confidence whether the fix is eight metres wide or two kilometres, and the
+                    // parent has no way to tell which they are looking at.
+                    if (current.accuracyM > 0f) {
+                        map.overlays.add(
+                            // Named receiver: `points` here is the polygon's own, and the trail
+                            // of the same name is in scope.
+                            Polygon(map).also { circle ->
+                                circle.points = Polygon.pointsAsCircle(currentGeo, current.accuracyM.toDouble())
+                                circle.fillPaint.color = accuracyFill
+                                circle.outlinePaint.color = accuracyStroke
+                                circle.outlinePaint.strokeWidth = 2f
+                            },
+                        )
+                    }
                     map.overlays.add(
                         Marker(map).apply {
                             position = currentGeo
@@ -246,6 +283,7 @@ private fun TrailMap(points: List<LocationPoint>, historyOn: Boolean, modifier: 
             Timeline(
                 points = points,
                 selected = selected,
+                totalPoints = totalPoints,
                 formatter = stampFormatter,
                 sliderValue = sliderValue,
                 playing = playing,
@@ -265,6 +303,7 @@ private fun TrailMap(points: List<LocationPoint>, historyOn: Boolean, modifier: 
 private fun Timeline(
     points: List<LocationPoint>,
     selected: Int,
+    totalPoints: Int,
     formatter: DateTimeFormatter,
     sliderValue: Float,
     playing: Boolean,
@@ -283,24 +322,46 @@ private fun Timeline(
         Column(Modifier.padding(horizontal = spacing.lg, vertical = spacing.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
+                    // "Now" is a claim, and it was made about the newest fix whatever its age —
+                    // so a twenty-minute-old cached position was labelled as where the child is.
+                    // Past a few minutes it says how old it really is instead.
+                    val ageMs = System.currentTimeMillis() - current.epochMs
                     Text(
-                        if (atLatest) stringResource(R.string.map_timeline_latest) else formatStamp(current.epochMs, formatter),
+                        when {
+                            !atLatest -> formatStamp(current.epochMs, formatter)
+                            ageMs <= FRESH_ENOUGH_MS -> stringResource(R.string.map_timeline_latest)
+                            else -> stringResource(
+                                R.string.map_fix_age,
+                                java.time.Duration.ofMillis(ageMs).humanize(),
+                            )
+                        },
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            stringResource(R.string.map_point_count, points.size),
+                            // What is on the map, out of what the child actually recorded. The
+                            // trail is the first thing a squeezed check-in thins, and saying
+                            // "120" when the phone holds 600 reads as a phone that barely moved.
+                            if (totalPoints > points.size) {
+                                stringResource(R.string.map_point_count_of, points.size, totalPoints)
+                            } else {
+                                stringResource(R.string.map_point_count, points.size)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (current.accuracyM > 0f) {
-                            Spacer(Modifier.width(spacing.sm))
-                            Text(
-                                stringResource(R.string.map_accuracy_fmt, current.accuracyM.roundToInt()),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Spacer(Modifier.width(spacing.sm))
+                        Text(
+                            // An accuracy of zero is not a perfect fix, it is a fix that would not
+                            // say — and drawing nothing at all made the two indistinguishable.
+                            if (current.accuracyM > 0f) {
+                                stringResource(R.string.map_accuracy_fmt, current.accuracyM.roundToInt())
+                            } else {
+                                stringResource(R.string.map_accuracy_unknown)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 FilledTonalIconButton(onClick = onTogglePlay) {
@@ -342,5 +403,38 @@ private fun Timeline(
 private fun formatStamp(epochMs: Long, formatter: DateTimeFormatter): String =
     formatter.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
 
+/** Says a close-tracking session is running, and for how much longer. */
+@Composable
+private fun LiveTrackingBanner(untilMs: Long) {
+    val spacing = Tokens.spacing
+    // Recomposes once a minute so the countdown stays honest without costing a frame budget.
+    var left by remember(untilMs) { mutableStateOf(untilMs - System.currentTimeMillis()) }
+    LaunchedEffect(untilMs) {
+        while (left > 0) {
+            delay(30_000L)
+            left = untilMs - System.currentTimeMillis()
+        }
+    }
+    if (left <= 0) return
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            stringResource(R.string.map_live_active, java.time.Duration.ofMillis(left).humanize()),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(horizontal = spacing.screen, vertical = spacing.sm),
+        )
+    }
+}
+
 /** Playback speed: fast enough to read as motion, slow enough to follow. */
 private const val PLAYBACK_STEP_MS = 220L
+
+/**
+ * How recent the newest fix has to be for the timeline to call it "now" rather than give its age.
+ * A couple of sampling cycles: long enough not to nag on an ordinary interval, short enough that
+ * a stale position can never be read as a current one.
+ */
+private const val FRESH_ENOUGH_MS = 5 * 60 * 1000L

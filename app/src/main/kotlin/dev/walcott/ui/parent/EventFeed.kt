@@ -67,6 +67,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_PANIC_CANCELLED, ParentEvent.TYPE_DOMAINS, ParentEvent.TYPE_INSTALL_WINDOW,
     ParentEvent.TYPE_WRONG_APP, ParentEvent.TYPE_APP_TIME_OUT, ParentEvent.TYPE_BEDTIME,
     ParentEvent.TYPE_SCREEN_FREE, ParentEvent.TYPE_WEB_FILTER_DOWN, ParentEvent.TYPE_WEB_FILTER_BACK,
+    ParentEvent.TYPE_LIVE_TRACKING_ENDED,
     ParentEvent.TYPE_CHILD_CRASHED, ParentEvent.TYPE_RULES_APPLIED,
     ParentEvent.TYPE_SETUP_PENDING, ParentEvent.TYPE_SETUP_DONE,
 )
@@ -174,6 +175,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_APP_TIME_OUT -> Icons.Outlined.Timer to neutral
         ParentEvent.TYPE_BEDTIME -> Icons.Outlined.Bedtime to neutral
         ParentEvent.TYPE_SCREEN_FREE -> Icons.Outlined.Schedule to neutral
+        ParentEvent.TYPE_LIVE_TRACKING_ENDED -> Icons.Outlined.LocationOff to neutral
         ParentEvent.TYPE_WEB_FILTER_DOWN -> Icons.Outlined.Language to error
         ParentEvent.TYPE_WEB_FILTER_BACK -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_CHILD_CRASHED -> Icons.Filled.Warning to warn
@@ -245,6 +247,7 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_APP_TIME_OUT -> stringResource(R.string.event_app_time_out, name, event.detail)
     ParentEvent.TYPE_BEDTIME -> stringResource(R.string.event_bedtime, name)
     ParentEvent.TYPE_SCREEN_FREE -> stringResource(R.string.event_screen_free, name)
+    ParentEvent.TYPE_LIVE_TRACKING_ENDED -> stringResource(R.string.event_live_tracking_ended)
     ParentEvent.TYPE_REMOTE_DONE -> stringResource(
         if (event.count > 0) R.string.event_remote_ok else R.string.event_remote_failed,
         name, remoteActionLabel(event.detail),

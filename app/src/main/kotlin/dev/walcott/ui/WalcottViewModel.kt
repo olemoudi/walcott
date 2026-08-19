@@ -610,6 +610,13 @@ class WalcottViewModel(
     fun requestLocation(targetDeviceId: String) =
         viewModelScope.launch { sync.requestLocation(targetDeviceId) }
 
+    /**
+     * Ask a child device to track closely for [minutes] (see [dev.walcott.sync.LiveTracking]);
+     * 0 stops a running session.
+     */
+    fun setLiveTracking(targetDeviceId: String, minutes: Int) =
+        viewModelScope.launch { sync.requestLiveTracking(targetDeviceId, minutes) }
+
     /** Queue a remote fix for a child device (see [dev.walcott.sync.RemoteAction]). */
     fun sendRemoteCommand(targetDeviceId: String, action: String, arg: String = "") =
         viewModelScope.launch { sync.sendCommand(targetDeviceId, action, arg) }

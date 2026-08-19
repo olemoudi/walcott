@@ -306,6 +306,13 @@ data class ChildEvent(
 
         /** A family screen-free window began. Same reasoning as bedtime. */
         const val KIND_SCREEN_FREE = "screen_free"
+
+        /**
+         * A close-tracking session stopped itself before the parent's deadline (see
+         * [LiveTracking.BATTERY_FLOOR_PERCENT]). Reported because the alternative is a parent
+         * watching a map that quietly stopped moving and drawing their own conclusion from it.
+         */
+        const val KIND_LIVE_TRACKING_ENDED = "live_tracking_ended"
     }
 }
 
@@ -439,6 +446,20 @@ object RemoteAction {
     const val LOCK_NOW = "lock_now"
 
     /**
+     * Track this device closely for [RemoteCommand.arg] minutes, or stop when the arg is "0"
+     * (see [LiveTracking]). The child holds the CPU awake and samples every minute for the stated
+     * length of time, then stops by itself.
+     *
+     * The duration travels rather than an end time, and the child turns it into a MONOTONIC
+     * deadline of its own: a wall-clock instant would be defeated by winding the phone's clock
+     * forward, and this is the one feature a child has an obvious reason to want ended early.
+     *
+     * TTL'd like [SET_LOCK_PIN]: "follow this phone closely for an hour" delivered tomorrow is
+     * not a stale version of what the parent meant, it is a different and unwanted thing.
+     */
+    const val LIVE_TRACKING = "live_tracking"
+
+    /**
      * Publish the notifications this device received (see `NotificationLog`), newest first.
      * [RemoteCommand.arg] carries the query — which app, and where to page from (see
      * [NotificationQuery]).
@@ -519,18 +540,27 @@ object RemoteAction {
     /**
      * Whether a command that changes something irreversible has waited too long to still be meant.
      *
-     * Only two actions have a life at all, and both for the same reason: they act on the phone
+     * Only three actions have a life at all, and all for the same reason: they act on the phone
      * itself rather than on the app. A lock-screen PIN landing next week locks somebody out with a
      * number nobody remembers being told; a release landing next week frees a phone the family
-     * thought better of, and re-enrolling it means a factory reset. Everything else here is
-     * harmless when it arrives late, and pretending otherwise would only lose commands that a
-     * child was right to run after a fortnight offline.
+     * thought better of, and re-enrolling it means a factory reset; and a close-tracking session
+     * is by definition about right now, so one that starts tomorrow is a phone burning its battery
+     * for nobody. Everything else here is harmless when it arrives late, and pretending otherwise
+     * would only lose commands that a child was right to run after a fortnight offline.
      */
     fun expired(action: String, issuedAtMs: Long, nowMs: Long): Boolean = when (action) {
         SET_LOCK_PIN -> nowMs - issuedAtMs > LOCK_PIN_TTL_MS
         RELEASE_DEVICE -> nowMs - issuedAtMs > RELEASE_TTL_MS
+        LIVE_TRACKING -> nowMs - issuedAtMs > LIVE_TRACKING_TTL_MS
         else -> false
     }
+
+    /**
+     * How long a [LIVE_TRACKING] stays valid. Generous enough for a phone that was in a tunnel
+     * or briefly off to still start the session the parent is waiting on, short enough that one
+     * never begins long after everybody stopped looking.
+     */
+    const val LIVE_TRACKING_TTL_MS = 15 * 60 * 1000L
 
     /** How long a [SET_LOCK_PIN] stays valid after the parent issued it. */
     const val LOCK_PIN_TTL_MS = 30 * 60 * 1000L
@@ -609,8 +639,34 @@ data class ChildSnapshot(
     val domainChunks: List<DomainChunk> = emptyList(),
     /** User apps installed on this device, so the parent classifies the real list. */
     val apps: List<InstalledAppInfo> = emptyList(),
-    /** Recent GPS fixes (last 12h) for the parent's map, newest last. */
+    /** Recent GPS fixes (last 48h) for the parent's map, newest last. */
     val locations: List<LocationPoint> = emptyList(),
+    /**
+     * How many fixes this device actually held in the publish window, before [LocationTrail]
+     * and [SnapshotFit] thinned them down to what fitted.
+     *
+     * Sent so the map can say "120 of 613" instead of implying that what arrived is all there
+     * ever was. The trail is the first thing a squeezed snapshot sacrifices, and until now that
+     * happened in silence: a parent whose child has a long app list could be shown a single pin,
+     * with history switched on, and had no way to tell that from a phone that had not moved.
+     * 0 = legacy child that doesn't report it.
+     */
+    val locationsTotal: Int = 0,
+    /**
+     * Wall-clock ms of the most recent "locate now" this device could NOT answer with a fix.
+     *
+     * The request is still marked answered ([answeredLocationRequestMs]) so the parent's pending
+     * list doesn't fossilize, but "I tried and there was no signal" and "here you are" must not
+     * look the same. 0 = never failed / legacy child.
+     */
+    val lastLocateFailedMs: Long = 0,
+    /**
+     * Wall-clock ms at which the running close-tracking session ends, or 0 when none is running
+     * (see [LiveTracking]). Wall clock HERE, and only here, because it exists to be shown to a
+     * person — the deadline the session is actually enforced against is monotonic and never
+     * leaves the device.
+     */
+    val liveTrackingUntilMs: Long = 0,
     /**
      * Whether the network location provider (Wi-Fi/cell) is enabled on this device. A Device
      * Owner can't force it on (it's the GMS "Google Location Accuracy" setting), so when it's
