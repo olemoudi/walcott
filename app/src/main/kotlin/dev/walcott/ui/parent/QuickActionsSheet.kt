@@ -144,6 +144,7 @@ fun QuickActionsSheet(
         LiveTrackingDialog(
             name = entry.name,
             ordinaryIntervalMinutes = interval,
+            drain = snapshot.batteryDrain,
             onDismiss = { askLive = false },
             onConfirm = { minutes ->
                 askLive = false
@@ -317,6 +318,7 @@ fun QuickActionsSheet(
                 // What the session costs, where the tap that spends it is.
                 if (understandsLive || liveUntilMs != null) {
                     LiveBatteryTag(snapshot.batteryPercent, snapshot.charging)
+                    LiveCostNote(snapshot.batteryDrain)
                 }
                 if (!understandsLive && liveUntilMs == null) {
                     Text(

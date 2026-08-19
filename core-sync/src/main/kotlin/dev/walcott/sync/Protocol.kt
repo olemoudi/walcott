@@ -710,6 +710,14 @@ data class ChildSnapshot(
     val appliedPolicyVersion: Long = 0,
     /** Battery level 0–100, or -1 when unknown/legacy. Lets the parent be warned before a child dies. */
     val batteryPercent: Int = -1,
+    /**
+     * What this phone measured close tracking to cost IT, against its own ordinary use.
+     *
+     * Null on a child too old to measure it, and on a new one until there is enough to say. The
+     * summary travels rather than the ledger behind it: four numbers make the sentence a parent
+     * reads before tapping, and the fifteen days they come from would not fit beside the rules.
+     */
+    val batteryDrain: BatteryDrain.Summary? = null,
     /** Whether the device is plugged in / charging (a low level while charging is not worth alerting). */
     val charging: Boolean = false,
     /**

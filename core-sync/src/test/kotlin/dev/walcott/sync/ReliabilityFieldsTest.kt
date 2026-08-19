@@ -26,6 +26,30 @@ class ReliabilityFieldsTest {
     }
 
     @Test
+    fun `what close tracking cost this phone round-trips, and is absent by default`() {
+        val plain = ChildSnapshot(deviceId = "dev-1", displayName = "Ana", version = 9, epochDay = 20_000)
+        val decodedPlain = SyncProtocol.decode(SyncProtocol.encodeChild(plain, familyKey), familyKey, parent.public)
+        assertNull(
+            (decodedPlain as IncomingMessage.FromChild).snapshot.batteryDrain,
+            "a child that has measured nothing must send nothing, not zeroes",
+        )
+
+        val measured = plain.copy(
+            batteryDrain = BatteryDrain.Summary(
+                normalPct = 1.2f,
+                normalMinutes = 900,
+                livePct = 4.5f,
+                liveSessions = 3,
+                lastDrop = 6,
+                lastMinutes = 45,
+            ),
+        )
+        val decoded = SyncProtocol.decode(SyncProtocol.encodeChild(measured, familyKey), familyKey, parent.public)
+        assertEquals(measured.batteryDrain, (decoded as IncomingMessage.FromChild).snapshot.batteryDrain)
+        assertEquals(275, measured.batteryDrain?.upliftPercent)
+    }
+
+    @Test
     fun `the child's timezone offset round-trips, negative ones included`() {
         for (offset in listOf(0, 60, 9 * 60, -6 * 60, -12 * 60, 14 * 60)) {
             val snapshot = ChildSnapshot(

@@ -410,7 +410,8 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * `--ei child_tz_offset_min N` (a child in another timezone, reporting its own day),
      * `--ei child_battery N` + `--ez child_charging true` (what the tracking controls show),
      * `--ei child_live_min N` (a close-tracking session with N minutes left),
-     * `--es child_locations "lat,lng;lat,lng"` (a trail for the map, newest first).
+     * `--es child_locations "lat,lng;lat,lng"` (a trail for the map, newest first),
+     * `--es child_drain "normalPct,livePct,lastDrop,lastMinutes"` (what close tracking costs it).
      */
     private suspend fun seedChild(target: dev.walcott.FamilyScope, spec: String, intent: Intent) {
         val (childId, name, appsPart) = spec.split(":", limit = 3).let {
@@ -466,6 +467,19 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         accuracyM = 12f,
                     )
                 }?.sortedBy { it.epochMs } ?: emptyList(),
+            // `--es child_drain "normalPct,livePct,lastDrop,lastMinutes"`: what this fake child
+            // claims close tracking costs it. Real figures take fifteen days and a few sessions
+            // to accumulate, which is not a thing a screenshot can wait for.
+            batteryDrain = intent.getStringExtra("child_drain")?.split(",")?.let { parts ->
+                dev.walcott.sync.BatteryDrain.Summary(
+                    normalPct = parts.getOrNull(0)?.trim()?.toFloatOrNull() ?: -1f,
+                    normalMinutes = 15 * 8 * 60,
+                    livePct = parts.getOrNull(1)?.trim()?.toFloatOrNull() ?: -1f,
+                    liveSessions = 3,
+                    lastDrop = parts.getOrNull(2)?.trim()?.toIntOrNull() ?: 0,
+                    lastMinutes = parts.getOrNull(3)?.trim()?.toIntOrNull() ?: 0,
+                )
+            },
             liveTrackingUntilMs = intent.getIntExtra("child_live_min", 0)
                 .takeIf { it > 0 }
                 ?.let { System.currentTimeMillis() + it * 60_000L } ?: 0L,

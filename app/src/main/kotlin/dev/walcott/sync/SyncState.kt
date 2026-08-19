@@ -232,6 +232,35 @@ data class SyncState(
     val liveUntilElapsedMs: Long = 0,
     /** Wall-clock ms the session began: shown to the parent, and a sanity bound on the above. */
     val liveStartedAtMs: Long = 0,
+    /**
+     * The battery level when the running session started, so its cost can be closed out when it
+     * ends (see [dev.walcott.sync.BatteryDrain]). -1 = not measured.
+     *
+     * Kept across an EXTENSION on purpose: extending writes a new deadline, and re-marking here
+     * would charge the session only for its last leg — the half-hour a parent added would look
+     * like the whole cost of following a phone for three hours.
+     */
+    val liveBatteryStartPct: Int = -1,
+    /**
+     * When the running session's cost measurement began — its own field rather than
+     * [liveStartedAtMs], which an extension deliberately restarts (it is the sanity bound on the
+     * monotonic deadline). Charging a three-hour session for its last half hour would be the
+     * cheerful end of a wrong answer.
+     */
+    val liveBatteryStartMs: Long = 0,
+    /**
+     * Where the last ordinary-use measurement stopped: when, at what level, and whether that
+     * moment counted at all (awake, off charge, no session, outside bedtime and screen-free
+     * windows). Both ends of an interval have to count for the interval to be attributed to
+     * ordinary use, which is what makes the flag worth storing rather than recomputing.
+     */
+    val batteryMarkMs: Long = 0,
+    val batteryMarkPct: Int = -1,
+    val batteryMarkCountable: Boolean = false,
+    /** Ordinary use per day, newest last, pruned to [BatteryDrain.RETENTION_DAYS]. */
+    val batteryDays: List<BatteryDrain.Day> = emptyList(),
+    /** The last [BatteryDrain.KEEP_SESSIONS] close-tracking sessions, oldest first. */
+    val batterySessions: List<BatteryDrain.Session> = emptyList(),
     /** Wall-clock ms of the last "locate now" this device could not answer with a fix. */
     val lastLocateFailedMs: Long = 0,
     /**

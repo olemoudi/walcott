@@ -1712,6 +1712,9 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_78_0">
+        <item>El seguimiento estrecho ya dice lo que cuesta de verdad, medido en el propio móvil: su consumo normal de las dos últimas semanas frente a sus diez últimas sesiones, en % cada media hora, con la diferencia entre ambos. Aparece allí donde se activa, y sólo cuando hay medición suficiente para ser honesto.</item>
+    </string-array>
     <string-array name="whats_new_0_77_0">
         <item>El seguimiento estrecho está ahora también en la tarjeta de localización de cada miembro, además de bajo el botón del rayo: se activa, se prorroga media hora más o se detiene sin tener que buscar dónde vive.</item>
         <item>Allí donde se ofrece, la batería del móvil aparece junto al botón — en rojo por debajo del 40%, que es donde una sesión en marcha empieza a ralentizarse sola para que la carga dure.</item>
@@ -1736,6 +1739,10 @@
     <string name="live_dialog_duration">¿Durante cuánto tiempo?</string>
     <string name="live_dialog_confirm">Empezar</string>
     <string name="live_dialog_visible">%1$s verá en su pantalla que esto está pasando.</string>
+    <string name="live_cost_compare">Gasta ~%1$s cada 30 min, frente a ~%2$s en uso normal: un %3$d%% más.</string>
+    <string name="live_cost_compare_plain">Gasta ~%1$s cada 30 min, frente a ~%2$s en uso normal.</string>
+    <string name="live_cost_last">La última vez gastó un %1$d%% en %2$s.</string>
+    <string name="live_cost_percent">%1$s%%</string>
     <string name="live_battery_low_note">Por debajo del %1$d%% el seguimiento estrecho se va ralentizando solo según baja la carga.</string>
     <string name="live_extend_fmt">+%1$d min</string>
     <string name="live_extended">Seguimiento ampliado: quedan %1$s</string>

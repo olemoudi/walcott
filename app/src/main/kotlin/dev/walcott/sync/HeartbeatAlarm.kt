@@ -96,6 +96,12 @@ object HeartbeatAlarm {
         // have been alive — and because a removal the OS refused has to be retried by somebody.
         runCatching { app.syncManager.reconcileInstalls() }
             .onFailure { DebugLog.e(TAG, "install reconciliation failed", it) }
+        // What the last half hour cost this phone, folded in before the publish so the figure
+        // travels in the same wakeup that measured it (see BatteryDrain). This alarm is the only
+        // clock the child has with the screen off, which is exactly why the measurement lives on
+        // it rather than on a timer of its own.
+        runCatching { app.syncManager.noteBatteryUse() }
+            .onFailure { DebugLog.e(TAG, "battery accounting failed", it) }
         runCatching { app.syncManager.publishHeartbeatIfStale(PUBLISH_MIN_INTERVAL_MS) }
             .onFailure { DebugLog.e(TAG, "heartbeat publish failed", it) }
         // An emergency release must die the moment the channel fails on it. While the channel

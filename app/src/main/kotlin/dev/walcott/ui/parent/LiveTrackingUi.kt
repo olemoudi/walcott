@@ -26,11 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.walcott.R
+import dev.walcott.sync.BatteryDrain
 import dev.walcott.sync.LiveTracking
 import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.format.humanize
 import dev.walcott.ui.theme.Tokens
+import java.time.Duration
 
 // Close tracking is offered in two places — the parent's quick-actions sheet and the child's
 // location card — and these are the pieces both need. Shared rather than copied because they are
@@ -50,6 +52,7 @@ import dev.walcott.ui.theme.Tokens
 internal fun LiveTrackingDialog(
     name: String,
     ordinaryIntervalMinutes: Int,
+    drain: BatteryDrain.Summary?,
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit,
 ) {
@@ -82,6 +85,7 @@ internal fun LiveTrackingDialog(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                LiveCostNote(drain, includeLast = true)
                 Text(stringResource(R.string.live_dialog_duration), style = MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     LiveTracking.PRESET_MINUTES.forEach { preset ->
@@ -166,3 +170,51 @@ internal fun LiveBatteryTag(batteryPercent: Int, charging: Boolean) {
         )
     }
 }
+
+/**
+ * What a session has cost THIS phone, in the place the parent is about to buy another one.
+ *
+ * The dialog used to say "this uses a lot of battery" — true, and impossible to act on. The
+ * child measures its own ordinary drain and its own sessions (see [BatteryDrain]), so this can
+ * name both and price the difference.
+ *
+ * Says nothing at all until there is enough measurement to be honest: whole-percent reporting
+ * makes a single half hour worthless, and a made-up figure beside a battery is worse than no
+ * figure. That means the comparison appears after the first real session, not before it — with
+ * [includeLast] the dialog still has "last time it cost you this much" to offer in the meantime.
+ */
+@Composable
+internal fun LiveCostNote(drain: BatteryDrain.Summary?, includeLast: Boolean = false) {
+    val spacing = Tokens.spacing
+    if (drain == null) return
+    val comparison = when {
+        !drain.hasLive || !drain.hasNormal -> null
+        else -> {
+            val live = stringResource(R.string.live_cost_percent, oneDecimal(drain.livePct))
+            val normal = stringResource(R.string.live_cost_percent, oneDecimal(drain.normalPct))
+            drain.upliftPercent
+                ?.let { stringResource(R.string.live_cost_compare, live, normal, it) }
+                ?: stringResource(R.string.live_cost_compare_plain, live, normal)
+        }
+    }
+    val last = stringResource(
+        R.string.live_cost_last,
+        drain.lastDrop,
+        Duration.ofMinutes(drain.lastMinutes.toLong()).humanize(),
+    ).takeIf { includeLast && drain.lastMinutes > 0 && drain.lastDrop > 0 }
+
+    // Deliberately quiet: this is a price tag, not a warning. The red on this screen belongs to
+    // a battery that is genuinely low (see LiveBatteryTag), and two alarms would rank a routine
+    // cost alongside a phone about to die.
+    listOfNotNull(comparison, last).forEach {
+        Text(
+            it,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = spacing.xs),
+        )
+    }
+}
+
+/** One decimal, in the reader's locale: "1.2" or "1,2". */
+private fun oneDecimal(value: Float): String = String.format(java.util.Locale.getDefault(), "%.1f", value)

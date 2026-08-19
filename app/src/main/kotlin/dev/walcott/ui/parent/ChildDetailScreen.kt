@@ -2314,6 +2314,7 @@ private fun CloseTrackingBlock(
         LiveTrackingDialog(
             name = childName,
             ordinaryIntervalMinutes = ordinaryIntervalMinutes,
+            drain = device.batteryDrain,
             onDismiss = { asking = false },
             onConfirm = { minutes ->
                 asking = false
@@ -2344,6 +2345,7 @@ private fun CloseTrackingBlock(
         )
     }
     LiveBatteryTag(device.batteryPercent, device.charging)
+    LiveCostNote(device.batteryDrain)
     Row(
         Modifier.fillMaxWidth().padding(top = spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),

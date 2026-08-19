@@ -2106,10 +2106,26 @@ class SyncManager(
             endLiveTracking(stoppedForBattery = false)
             return
         }
+        val now = System.currentTimeMillis()
+        val level = batteryPercent()
+        val extending = LiveTracking.isRunning(
+            liveDeadlineOf(syncStore.current()),
+            android.os.SystemClock.elapsedRealtime(),
+        )
         syncStore.update {
             it.copy(
                 liveUntilElapsedMs = android.os.SystemClock.elapsedRealtime() + clamped * 60_000L,
-                liveStartedAtMs = System.currentTimeMillis(),
+                liveStartedAtMs = now,
+                // The cost window opens with the FIRST session and survives every extension of
+                // it (see SyncState.liveBatteryStartMs): what a parent wants priced is the whole
+                // time they followed the phone, not the last piece they added.
+                liveBatteryStartPct = if (extending && it.liveBatteryStartPct >= 0) it.liveBatteryStartPct else level,
+                liveBatteryStartMs = if (extending && it.liveBatteryStartMs > 0) it.liveBatteryStartMs else now,
+                // And the ordinary-use window closes here without being counted: the minutes on
+                // either side of a session belong to neither measurement (see BatteryDrain).
+                batteryMarkMs = now,
+                batteryMarkPct = level,
+                batteryMarkCountable = false,
             )
         }
         dev.walcott.debug.DebugLog.w(TAG, "close tracking asked for: $clamped min")
@@ -2134,10 +2150,45 @@ class SyncManager(
             return
         }
         val now = System.currentTimeMillis()
+        // What this session cost, closed out before the state that measures it is cleared. The
+        // guards live in BatteryDrain: too short to survive whole-percent reporting, a charger at
+        // either end, or a level that went up all mean this one teaches the parent nothing.
+        val level = batteryPercent()
+        val ranMinutes = if (state.liveBatteryStartMs > 0) {
+            ((now - state.liveBatteryStartMs) / 60_000L).toInt()
+        } else {
+            0
+        }
+        val priced = state.liveBatteryStartPct >= 0 &&
+            BatteryDrain.measurableSession(ranMinutes, state.liveBatteryStartPct, level, batteryCharging())
+        if (priced) {
+            dev.walcott.debug.DebugLog.i(
+                TAG,
+                "close tracking cost ${state.liveBatteryStartPct - level}% over $ranMinutes min",
+            )
+        }
         syncStore.update {
             it.copy(
                 liveUntilElapsedMs = 0L,
                 liveStartedAtMs = 0L,
+                liveBatteryStartPct = -1,
+                liveBatteryStartMs = 0L,
+                batterySessions = if (priced) {
+                    BatteryDrain.plusSession(
+                        it.batterySessions,
+                        BatteryDrain.Session(
+                            startedAtMs = state.liveBatteryStartMs,
+                            minutes = ranMinutes,
+                            drop = state.liveBatteryStartPct - level,
+                        ),
+                    )
+                } else {
+                    it.batterySessions
+                },
+                // Ordinary use starts measuring again from here, and not from before the session.
+                batteryMarkMs = now,
+                batteryMarkPct = level,
+                batteryMarkCountable = false,
                 // A session that gave up early has to say so: a parent watching a map that
                 // quietly stopped moving will otherwise draw their own conclusion from it.
                 ruleEvents = if (stoppedForBattery) {
@@ -2152,6 +2203,53 @@ class SyncManager(
             )
         }
         publishSelf()
+    }
+
+    /**
+     * Child: fold the interval since the last mark into the ordinary-use ledger, and open the
+     * next one. See [BatteryDrain] for why this is summed rather than averaged.
+     *
+     * Called from the ~30-minute check-in and nowhere else, and that is the whole design: it is
+     * the only wakeup this phone is guaranteed to get with the screen off (the enforcement loop
+     * parks without one), so the baseline costs no battery to measure. Measuring the cost of a
+     * feature must not become a cost of its own.
+     *
+     * BOTH ENDS of an interval have to count for it to be ordinary use. Charging, a session, a
+     * pause, bedtime and screen-free windows are all excluded — a night asleep drains almost
+     * nothing, and a baseline that included one would make close tracking look several times
+     * worse than it is.
+     */
+    suspend fun noteBatteryUse() {
+        if (!identityStore.current().enforcesLocally) return
+        val now = System.currentTimeMillis()
+        val level = batteryPercent()
+        val charging = batteryCharging()
+        val blocked = runCatching {
+            dev.walcott.rules.RuleEngine.deviceWideBlock(repository.configNow(), java.time.LocalDateTime.now()) != null
+        }.getOrDefault(true) // unreadable rules mean this minute cannot be vouched for
+        val state = syncStore.current()
+        val live = LiveTracking.isRunning(liveDeadlineOf(state), android.os.SystemClock.elapsedRealtime())
+        val countable = !charging && !blocked && !live && level in 0..100
+        val minutes = if (state.batteryMarkMs > 0) ((now - state.batteryMarkMs) / 60_000L).toInt() else 0
+        val fold = countable && state.batteryMarkCountable &&
+            BatteryDrain.measurable(minutes, state.batteryMarkPct, level, charging)
+        syncStore.update {
+            it.copy(
+                batteryDays = if (fold) {
+                    BatteryDrain.plusNormal(
+                        it.batteryDays,
+                        LocalDate.now().toEpochDay(),
+                        minutes,
+                        state.batteryMarkPct - level,
+                    )
+                } else {
+                    it.batteryDays
+                },
+                batteryMarkMs = now,
+                batteryMarkPct = level,
+                batteryMarkCountable = countable,
+            )
+        }
     }
 
     /** Parent: ask [targetDeviceId] to track closely for [minutes] (0 stops a running session). */
@@ -2486,6 +2584,10 @@ class SyncManager(
                     locationsTotal = locationsTotal,
                     lastLocateFailedMs = s.lastLocateFailedMs,
                     liveTrackingUntilMs = liveUntilMs,
+                    // Sent only once it says something. An empty summary would put "we measured
+                    // nothing" on the parent's screen as though it were a measurement.
+                    batteryDrain = BatteryDrain.summarize(s.batteryDays, s.batterySessions)
+                        .takeIf { it.hasNormal || it.hasLive },
                     networkLocationOn = LocationSampler(context).networkProviderEnabled(),
                     usageAccessOn = UsageAccess.granted(context),
                     appVersionCode = BuildConfig.VERSION_CODE,

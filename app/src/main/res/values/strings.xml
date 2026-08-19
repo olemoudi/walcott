@@ -1720,6 +1720,9 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_78_0">
+        <item>Close tracking now says what it actually costs, measured on the phone itself: its ordinary drain over the last two weeks against its last ten sessions, in percent per half hour, with the difference between them. It appears wherever you turn it on, and only once there is enough measurement to be honest about it.</item>
+    </string-array>
     <string-array name="whats_new_0_77_0">
         <item>Close tracking is now on each member\'s location card as well as under the lightning button: start it, add half an hour to a running session, or stop it, without hunting for where it lives.</item>
         <item>Wherever it is offered, the phone\'s battery is shown next to the button — flagged in red below 40%, which is where a running session starts slowing itself down to make the charge last.</item>
@@ -1744,6 +1747,10 @@
     <string name="live_dialog_duration">For how long?</string>
     <string name="live_dialog_confirm">Start</string>
     <string name="live_dialog_visible">%1$s will say on screen that this is happening.</string>
+    <string name="live_cost_compare">About %1$s per 30 min, against %2$s in ordinary use — %3$d%% more battery.</string>
+    <string name="live_cost_compare_plain">About %1$s per 30 min, against %2$s in ordinary use.</string>
+    <string name="live_cost_last">Last time it used %1$d%% in %2$s.</string>
+    <string name="live_cost_percent">%1$s%%</string>
     <string name="live_battery_low_note">Below %1$d%% close tracking slows itself down as the charge falls.</string>
     <string name="live_extend_fmt">+%1$d min</string>
     <string name="live_extended">Close tracking extended — %1$s left</string>
