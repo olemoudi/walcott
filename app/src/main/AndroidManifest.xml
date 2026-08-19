@@ -163,6 +163,12 @@
             android:name=".sync.HeartbeatReceiver"
             android:exported="false" />
 
+        <!-- The nightly hour in which a blocked phone may update what it has installed
+             (see AppUpdateWindowAlarm). An alarm because it has to fire while asleep. -->
+        <receiver
+            android:name=".enforcement.AppUpdateWindowReceiver"
+            android:exported="false" />
+
         <!-- The child's periodic location fix (see LocationAlarm). An alarm rather than an
              in-process timer, because a timer does not tick while the device is asleep. -->
         <receiver

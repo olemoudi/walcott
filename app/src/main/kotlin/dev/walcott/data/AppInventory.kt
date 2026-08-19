@@ -3,6 +3,7 @@ package dev.walcott.data
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.os.Build
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 
@@ -163,6 +164,24 @@ class AppInventory(context: Context) {
     /** Display label for one installed package, or null when it isn't installed. */
     fun label(packageName: String): String? =
         runCatching { pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString() }.getOrNull()
+
+    /**
+     * Who installed [packageName], as the platform records it: "com.android.vending" for Play,
+     * null for a sideload or when the platform will not say.
+     *
+     * Asked because Play installs things on its own account — a component a preinstalled app
+     * turned out to need, a split it decided to fetch — and on the parent's screen that arrives
+     * looking exactly like a child downloading a game. It is context, never a verdict: a child
+     * installing from Play produces the same answer, which is why the parent is still asked.
+     */
+    fun installerOf(packageName: String): String? = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            pm.getInstallSourceInfo(packageName).installingPackageName
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getInstallerPackageName(packageName)
+        }
+    }.getOrNull()
 
     private fun ApplicationInfo.isSystemApp(): Boolean =
         (flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0

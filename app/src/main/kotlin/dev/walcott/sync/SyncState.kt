@@ -217,6 +217,21 @@ data class SyncState(
     /** Until when app installs are temporarily allowed on this device (PIN gate or approval). */
     val installExemptionUntilMs: Long = 0,
     /**
+     * Whether the open window is the nightly one that lets Play update what is installed, rather
+     * than a person standing at the phone (see [dev.walcott.enforcement.AppUpdates]).
+     *
+     * The difference is not cosmetic. A window a parent opened forgives every install in it, by
+     * definition — they are doing the installing. A maintenance window forgives nothing: the
+     * install guard goes on judging arrivals, because an update does not change the set of
+     * installed packages and anything that DOES is not an update. It also stays out of the
+     * parent's "you left a window open" reminders, which exist for a forgotten PIN and not for
+     * a scheduled hour at four in the morning.
+     *
+     * Only meaningful while [installExemptionUntilMs] is in the future, which is why nothing
+     * clears it: reading it always asks both.
+     */
+    val installWindowMaintenance: Boolean = false,
+    /**
      * Deadline of a running close-tracking session, on the MONOTONIC clock (see [LiveTracking]).
      * 0 = no session.
      *

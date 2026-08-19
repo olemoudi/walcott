@@ -99,7 +99,10 @@ class WalcottApplication : Application() {
         // Doze defers for exactly as long as the parent's phone is resting.
         appScope.launch {
             val id = identityStore.current()
-            if (id.enforcesLocally) dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
+            if (id.enforcesLocally) {
+                dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication)
+                dev.walcott.enforcement.AppUpdateWindowAlarm.schedule(this@WalcottApplication)
+            }
             if (id.effectiveMode == dev.walcott.sync.DeviceMode.PARENT) {
                 dev.walcott.sync.ParentCheckAlarm.schedule(this@WalcottApplication)
             }
@@ -306,6 +309,9 @@ class WalcottApplication : Application() {
                         // foreground service is what keeps it alive. It would have looked
                         // perfectly healthy while checking in never.
                         runCatching { dev.walcott.sync.HeartbeatAlarm.schedule(this@WalcottApplication) }
+                        runCatching {
+                            dev.walcott.enforcement.AppUpdateWindowAlarm.schedule(this@WalcottApplication)
+                        }
                         WatchdogWorker.schedule(this@WalcottApplication)
                         UpdateWorker.schedule(this@WalcottApplication)
                     } else {

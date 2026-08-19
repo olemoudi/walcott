@@ -1026,13 +1026,34 @@ class SyncManager(
     /** PIN-gated manual exemption: allow installs on this device for [durationMs] (blanket). */
     suspend fun allowInstallsFor(durationMs: Long) {
         val until = System.currentTimeMillis() + durationMs
-        syncStore.update { it.copy(installExemptionUntilMs = until) }
+        syncStore.update { it.copy(installExemptionUntilMs = until, installWindowMaintenance = false) }
         // Synchronous lift, like openInstallForPush: the parent is standing at the device with
         // Play already open — don't depend on the exemption collector being alive and prompt.
         runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = until)
+            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = until)
         }
         // The window is parent-visible state (and drives the reminder ladder on their phone).
+        runCatching { publishSelf() }
+    }
+
+    /**
+     * Child: open the nightly window in which Play may update what is installed.
+     *
+     * Deliberately NOT [allowInstallsFor]: that one is a person at the phone with their PIN
+     * entered, and everything installed in it is theirs. This forgives nothing (see
+     * [SyncState.installWindowMaintenance]) and does not go on the parent's reminder ladder.
+     * Refuses to reopen over a window somebody else opened, whose terms are different.
+     */
+    suspend fun openUpdateWindow(minutes: Int) {
+        val now = System.currentTimeMillis()
+        val s = syncStore.current()
+        if (s.installExemptionUntilMs > now && !s.installWindowMaintenance) return
+        val until = now + minutes.coerceAtLeast(1) * 60_000L
+        syncStore.update { it.copy(installExemptionUntilMs = until, installWindowMaintenance = true) }
+        runCatching {
+            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = until)
+        }
+        dev.walcott.debug.DebugLog.i(TAG, "update window open for $minutes min")
         runCatching { publishSelf() }
     }
 
@@ -1047,7 +1068,7 @@ class SyncManager(
         }
         syncStore.update { it.copy(installExemptionUntilMs = 0) }
         runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = 0)
+            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = 0)
         }
         runCatching { publishSelf() }
     }
@@ -1071,6 +1092,7 @@ class SyncManager(
         syncStore.update { state ->
             state.copy(
                 installExemptionUntilMs = until,
+                installWindowMaintenance = false,
                 pendingInstallPackage = pkg,
                 pendingInstallCommandId = commandId,
                 // Kept across a reopen: the second call comes from a tap, which knows no label.
@@ -1080,7 +1102,7 @@ class SyncManager(
         // Synchronous lift, mirroring closeInstallWindow's re-arm: the child may be looking
         // at Play seconds from now, so don't depend on the exemption collector's timing.
         runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = until)
+            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = until)
         }
     }
 
@@ -1138,7 +1160,7 @@ class SyncManager(
         InstallPromptNotifications.cancel(context, s.pendingInstallPackage)
         // Synchronous re-arm: don't wait for the settings/exemption collector to react.
         runCatching {
-            DeviceRestrictions.apply(context, settingsStore.current().deviceRestrictions, installExemptUntilMs = 0)
+            DeviceRestrictions.apply(context, settingsStore.current().restrictionKeysToApply(), installExemptUntilMs = 0)
         }
         if (pushedLanded) publishSelf()
     }
@@ -1202,7 +1224,13 @@ class SyncManager(
         val installed = repository.inventory.userPackages() ?: return false
         val s = syncStore.current()
         val now = System.currentTimeMillis()
-        val blanketWindow = s.installExemptionUntilMs > now && s.pendingInstallPackage.isEmpty()
+        // A maintenance window is NOT a blanket one: nobody is standing at the phone installing
+        // things, so nothing in it is forgiven. Updates are invisible here anyway — they do not
+        // change the set of installed packages — and a package that IS new during that hour is
+        // exactly what the guard exists for.
+        val blanketWindow = s.installExemptionUntilMs > now &&
+            s.pendingInstallPackage.isEmpty() &&
+            !s.installWindowMaintenance
         // Device Owner is part of the question, not just of the answer: the install block is a
         // user restriction only a Device Owner can set, so anywhere else there is no block to
         // violate and every install is legitimate. Without this, the same policy read on a
@@ -1240,7 +1268,14 @@ class SyncManager(
         )
         val fresh = InstallGuard
             .fresh(installed, s.knownPackages, approved, s.unauthorizedApps.map { it.pkg }.toSet())
-            .map { UnauthorizedApp(pkg = it, label = repository.inventory.label(it) ?: it, atMs = now) }
+            .map {
+                UnauthorizedApp(
+                    pkg = it,
+                    label = repository.inventory.label(it) ?: it,
+                    atMs = now,
+                    installer = repository.inventory.installerOf(it).orEmpty(),
+                )
+            }
         val dropped = InstallGuard.overflow(s.unauthorizedApps, fresh, installed)
         if (dropped > 0) {
             dev.walcott.debug.DebugLog.w(TAG, "quarantine at capacity: $dropped case(s) not tracked")
@@ -1311,6 +1346,8 @@ class SyncManager(
                             atMs = entry?.atMs ?: System.currentTimeMillis(),
                             suspended = pkg in suspended,
                             removalAttempts = (entry?.removalAttempts ?: 0) + 1,
+                            installer = entry?.installer.orEmpty()
+                                .ifBlank { repository.inventory.installerOf(pkg).orEmpty() },
                         ),
                     ),
                     installed,
@@ -2584,6 +2621,10 @@ class SyncManager(
                     locationsTotal = locationsTotal,
                     lastLocateFailedMs = s.lastLocateFailedMs,
                     liveTrackingUntilMs = liveUntilMs,
+                    // Reported apart, because they mean opposite things to a parent: one is a
+                    // window somebody opened and may have forgotten (and is nagged about), the
+                    // other is the scheduled hour in which Play updates what is installed.
+                    updatesOpenUntilMs = if (s.installWindowMaintenance) s.installExemptionUntilMs else 0L,
                     // Sent only once it says something. An empty summary would put "we measured
                     // nothing" on the parent's screen as though it were a measurement.
                     batteryDrain = BatteryDrain.summarize(s.batteryDays, s.batterySessions)
@@ -2604,7 +2645,10 @@ class SyncManager(
                     enforcementGaps = s.enforcementGaps,
                     clockSkewMs = s.clockSkewMs,
                     panic = s.panic,
-                    installExemptionUntilMs = s.installExemptionUntilMs,
+                    // The maintenance window is reported as itself and not as an exemption: the
+                    // parent's chip and their "you left installs open" reminders both mean a
+                    // person opened this, and neither is true of a scheduled hour.
+                    installExemptionUntilMs = if (s.installWindowMaintenance) 0L else s.installExemptionUntilMs,
                     domainChunks = DomainDelivery.forPublish(s.domainBatch),
                     // Which clock `epochDay` and the counters beside it were read by, so the
                     // parent doesn't date them with its own while one of them is travelling.
@@ -3528,6 +3572,7 @@ class SyncManager(
                 val name = entry.label.ifBlank { entry.pkg }
                 SyncNotifications.notifyUnauthorizedApp(
                     context, who, name, entry.pkg, snapshot.deviceId, snapshot.childId,
+                    installer = entry.installer,
                 )
                 syncStore.update {
                     it.plusEvent(event(ParentEvent.TYPE_WRONG_APP, snapshot, detail = name))

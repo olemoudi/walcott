@@ -161,6 +161,7 @@ class EnforcementService : LifecycleService() {
         scheduleUpdateChecks()
         scheduleLocationSampling()
         observeLiveTracking()
+        observeUpdateWindow()
         // Catch up on whatever happened while this service wasn't running. The package receiver
         // lives in this process, so a device that was off — or a service an OEM battery saver
         // killed — witnesses no install at all; without this pass, that is exactly when an app
@@ -447,12 +448,37 @@ class EnforcementService : LifecycleService() {
         }.getOrNull()
     }
 
+    /**
+     * Keeps the nightly update window's alarm in step with the policy.
+     *
+     * Here rather than at each place a policy can change, because there are several — a parent's
+     * edit, a restore, the setup wizard — and an alarm that quietly stopped matching the rules
+     * is the kind of thing nobody notices until a phone has gone a month without updates.
+     */
+    private fun observeUpdateWindow() {
+        val app = application as WalcottApplication
+        lifecycleScope.launch {
+            app.repository.settingsFlow
+                .map {
+                    listOf(
+                        it.installMode,
+                        it.updateWindowEnabled.toString(),
+                        it.updateWindowHour.toString(),
+                        it.updateWindowMinutes.toString(),
+                        (DeviceRestrictions.KEY_INSTALLS in it.deviceRestrictions).toString(),
+                    )
+                }
+                .distinctUntilChanged()
+                .collectLatest { AppUpdateWindowAlarm.schedule(this@EnforcementService) }
+        }
+    }
+
     /** Keeps the Device Owner user restrictions in sync with the policy. */
     private fun observeDeviceRestrictions() {
         val app = application as WalcottApplication
         lifecycleScope.launch {
             combine(
-                app.repository.settingsFlow.map { it.deviceRestrictions },
+                app.repository.settingsFlow.map { it.restrictionKeysToApply() },
                 app.syncManager.installExemption,
             ) { keys, exemptUntil -> keys to exemptUntil }
                 .distinctUntilChanged()

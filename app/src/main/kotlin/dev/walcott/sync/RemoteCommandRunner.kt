@@ -105,7 +105,7 @@ class RemoteCommandRunner(
      */
     private suspend fun reapplyPolicy(): Pair<Boolean, String> {
         LocationPolicy.ensureEnforced(context)
-        val restrictions = repository.settingsFlow.first().deviceRestrictions
+        val restrictions = repository.settingsFlow.first().restrictionKeysToApply()
         DeviceRestrictions.apply(context, restrictions, installExemptUntilMs = 0)
         EnforcementService.start(context)
         return true to "reapplied"

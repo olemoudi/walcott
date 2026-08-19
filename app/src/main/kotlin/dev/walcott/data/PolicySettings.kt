@@ -684,6 +684,25 @@ data class PolicySettings(
     val pinSalt: String? = null,
     /** Enabled device-protection features (keys from DeviceRestrictions; Device Owner only). */
     val deviceRestrictions: Set<String> = emptySet(),
+    /**
+     * How the "no new apps" rule is enforced (see [dev.walcott.enforcement.AppUpdates]).
+     *
+     * A string rather than an enum because it travels: a child on an older build decodes an
+     * unknown value as the strict mode it already implements, which is the safe direction, and a
+     * mode added later cannot make an old phone drop its restriction.
+     */
+    val installMode: String = dev.walcott.enforcement.AppUpdates.MODE_STRICT,
+    /**
+     * The nightly window in which the install block lifts so Play can update what is installed.
+     *
+     * ON by default, and deliberately: to Android an update IS an install, so every family that
+     * had ever armed the block was quietly running phones that could no longer take security
+     * fixes. A default of "off" would have left them there until they went looking for a setting
+     * they had no reason to suspect existed.
+     */
+    val updateWindowEnabled: Boolean = true,
+    val updateWindowHour: Int = dev.walcott.enforcement.AppUpdates.DEFAULT_HOUR,
+    val updateWindowMinutes: Int = dev.walcott.enforcement.AppUpdates.DEFAULT_MINUTES,
     /** Family display name, shown on parent and enrolled child devices. */
     val familyName: String = "",
     /** Children registered by the parent, each with optional per-child overrides. */
@@ -856,6 +875,21 @@ data class PolicySettings(
      * downloaded half the filter streams straight off disk.
      */
     fun blocklistDomains(): Set<String> = dev.walcott.rules.Blocklists.domains(enabledBlocklists)
+
+    /**
+     * The restriction keys to hand the platform, which are NOT always the ones the family set.
+     *
+     * In the guarded mode the install block is a policy this app enforces itself rather than a
+     * user restriction: the key stays in [deviceRestrictions] — the family still means "no new
+     * apps", and the install guard reads it there to know it must judge arrivals — while the
+     * platform is never told, so Play keeps working. Everything else applies as written.
+     */
+    fun restrictionKeysToApply(): Set<String> =
+        if (dev.walcott.enforcement.AppUpdates.modeOf(installMode) == dev.walcott.enforcement.AppUpdates.MODE_GUARDED) {
+            deviceRestrictions - dev.walcott.enforcement.DeviceRestrictions.KEY_INSTALLS
+        } else {
+            deviceRestrictions
+        }
 
     /** Builds the engine's [FamilyConfig] from these rules. */
     fun toFamilyConfig(essentials: Set<String>): FamilyConfig {

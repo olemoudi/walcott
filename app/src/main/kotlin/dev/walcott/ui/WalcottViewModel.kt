@@ -657,6 +657,21 @@ class WalcottViewModel(
         repository.updateSettings { it.copy(newAppAlerts = enabled) }
     }
 
+    /**
+     * How the install block is enforced, and the nightly window that lets Play update what is
+     * installed (see [dev.walcott.enforcement.AppUpdates]). Family-wide: it is a statement about
+     * how this household wants app installs policed, not about one phone.
+     */
+    fun setInstallMode(mode: String) = viewModelScope.launch {
+        repository.updateSettings { it.copy(installMode = mode) }
+    }
+
+    fun setUpdateWindow(enabled: Boolean, hour: Int, minutes: Int) = viewModelScope.launch {
+        repository.updateSettings {
+            it.copy(updateWindowEnabled = enabled, updateWindowHour = hour, updateWindowMinutes = minutes)
+        }
+    }
+
     /** Family-default location tracking interval (0 = off); children inherit unless overridden. */
     fun setFamilyTrackingInterval(minutes: Int) = viewModelScope.launch {
         repository.updateSettings { it.copy(trackingIntervalMinutes = minutes) }

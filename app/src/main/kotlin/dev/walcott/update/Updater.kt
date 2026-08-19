@@ -158,7 +158,7 @@ class Updater(private val context: Context) {
     private suspend fun liftInstallBlockIfNeeded(): Boolean {
         if (!isDeviceOwner()) return false
         val app = context.applicationContext as? WalcottApplication ?: return false
-        val keys = runCatching { app.repository.settingsFlow.first().deviceRestrictions }.getOrNull() ?: return false
+        val keys = runCatching { app.repository.settingsFlow.first().restrictionKeysToApply() }.getOrNull() ?: return false
         if (DeviceRestrictions.KEY_INSTALLS !in keys) return false
         DebugLog.i(TAG, "install blocked by DISALLOW_INSTALL_APPS; lifting it for this commit")
         return runCatching {
@@ -173,7 +173,7 @@ class Updater(private val context: Context) {
     private suspend fun reArmInstallBlock() {
         val app = context.applicationContext as? WalcottApplication ?: return
         runCatching {
-            val keys = app.repository.settingsFlow.first().deviceRestrictions
+            val keys = app.repository.settingsFlow.first().restrictionKeysToApply()
             DeviceRestrictions.apply(context, keys, app.syncManager.installExemption.value)
         }.onFailure { DebugLog.e(TAG, "failed to re-arm the install block", it) }
     }

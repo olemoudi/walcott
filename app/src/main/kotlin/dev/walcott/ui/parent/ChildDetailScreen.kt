@@ -1646,6 +1646,21 @@ private fun UnauthorizedAppCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // Who installed it. Play fetches components on its own account — a service a
+                    // preinstalled app turned out to need — and on this card that looks exactly
+                    // like a download. The decision is still the parent's; this is what it rests
+                    // on.
+                    Text(
+                        when {
+                            entry.installer == dev.walcott.sync.SyncNotifications.PLAY_STORE ->
+                                stringResource(R.string.unauthorized_app_installer_play)
+                            entry.installer.isNotBlank() ->
+                                stringResource(R.string.unauthorized_app_installer_other, entry.installer)
+                            else -> stringResource(R.string.unauthorized_app_installer_unknown)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             Text(

@@ -621,6 +621,22 @@
     <string name="step_protection_teach">We also switch on the recommended anti-tamper protections: clock changes, VPNs, force-closing Walcott and sideloading.</string>
     <string name="step_protection_installs">Ask permission for new apps</string>
     <string name="step_protection_installs_desc">Installing from Play needs your approval; you can also send apps from your phone.</string>
+    <string name="install_mode_title">How the block works</string>
+    <string name="install_mode_note">Android has no way to allow updates and refuse new apps: to it, an update is an install. So the block has to be lifted for a while, or replaced by watching what turns up.</string>
+    <string name="install_mode_strict">Blocked, with a nightly window</string>
+    <string name="install_mode_strict_desc">Nothing installs at all except during the window below. Anything new that appears in it is suspended and you are asked about it, exactly as at any other hour.</string>
+    <string name="install_mode_guarded">Watched instead of blocked</string>
+    <string name="install_mode_guarded_desc">Play works all day. Anything new that appears is suspended within seconds and you are asked to allow it or remove it — so the app is on the phone for those seconds. Sideloading stays blocked by its own switch.</string>
+    <string name="update_window_title">Let apps update at night</string>
+    <string name="update_window_desc">The block lifts for a while so Play can update what is already installed. Without this, a blocked phone stops getting security fixes.</string>
+    <string name="update_window_at">Starting at</string>
+    <string name="update_window_hour_fmt">%1$02d:00</string>
+    <string name="update_window_length">For</string>
+    <string name="update_window_minutes_fmt">%1$d min</string>
+    <string name="update_window_open_fmt">Updating now · %1$s left</string>
+    <string name="unauthorized_app_installer_play">Installed by the Play Store</string>
+    <string name="unauthorized_app_installer_other">Installed by %1$s</string>
+    <string name="unauthorized_app_installer_unknown">Installed from outside the Play Store</string>
     <string name="new_app_alerts_title">Tell me about new apps</string>
     <string name="new_app_alerts_desc">Get a notification whenever a new app is installed on a child\'s phone</string>
     <string name="step_location_teach">See where the phone is on a map, updated at the interval you choose. Optional — leave it off if you prefer.</string>
@@ -1719,6 +1735,11 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_79_0">
+        <item>A phone with installs blocked can update its apps again. To Android an update IS an install, so blocking installs had quietly stopped security fixes from arriving. There is now a nightly window — 4am for an hour, and you can change or switch it off in Protection — in which Play may update what is already installed. Anything NEW that appears in it is still suspended and you are still asked about it.</item>
+        <item>If you would rather Play worked all day, Protection now offers watching instead of blocking: nothing is refused at the door, and anything that turns up is suspended within seconds and put in front of you.</item>
+        <item>When an app does turn up unapproved, the alert now says who installed it — the Play Store, another app, or somewhere outside it. Play fetches components on its own account, and until now that looked exactly like a download.</item>
     </string-array>
     <string-array name="whats_new_0_78_0">
         <item>Close tracking now says what it actually costs, measured on the phone itself: its ordinary drain over the last two weeks against its last ten sessions, in percent per half hour, with the difference between them. It appears wherever you turn it on, and only once there is enough measurement to be honest about it.</item>

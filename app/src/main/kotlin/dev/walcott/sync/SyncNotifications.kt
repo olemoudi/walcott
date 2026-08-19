@@ -466,6 +466,7 @@ object SyncNotifications {
         pkg: String,
         deviceId: String,
         childId: String = "",
+        installer: String = "",
     ) {
         fun action(intentAction: String, labelRes: Int): NotificationCompat.Action {
             val intent = Intent(context, UnauthorizedAppReceiver::class.java)
@@ -484,7 +485,11 @@ object SyncNotifications {
         post(
             context, URGENT_CHANNEL, R.string.urgent_channel_name,
             title = context.getString(R.string.unauthorized_app_title, childName),
-            text = context.getString(R.string.unauthorized_app_text, appLabel),
+            // Who installed it, on its own line. Play installs components on its own account, and
+            // without this that arrives worded exactly like a child downloading a game — the
+            // parent is asked the same question with none of what decides it.
+            text = context.getString(R.string.unauthorized_app_text, appLabel) +
+                installerLine(context, installer)?.let { "\n" + it }.orEmpty(),
             notifId = UnauthorizedAppReceiver.notificationId(deviceId, pkg),
             dest = childDest(childId),
             actions = listOf(
@@ -493,6 +498,19 @@ object SyncNotifications {
             ),
         )
     }
+
+    /**
+     * "Installed by the Play Store" / "by <package>" / "from outside the Play Store", or null
+     * when the platform would not say — in which case silence is better than a guess.
+     */
+    fun installerLine(context: Context, installer: String): String? = when {
+        installer == PLAY_STORE -> context.getString(R.string.unauthorized_app_installer_play)
+        installer.isNotBlank() -> context.getString(R.string.unauthorized_app_installer_other, installer)
+        else -> context.getString(R.string.unauthorized_app_installer_unknown)
+    }
+
+    /** Play's own package name, as the installer field reports it. */
+    const val PLAY_STORE = "com.android.vending"
 
     /** A different app than the approved one was installed during a window (and removed). */
     fun notifyWrongApp(context: Context, childName: String, pkg: String, deviceId: String, childId: String = "") = post(

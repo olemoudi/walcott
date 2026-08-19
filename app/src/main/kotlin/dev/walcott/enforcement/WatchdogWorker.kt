@@ -33,7 +33,7 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 val settings = app.repository.settingsFlow.first()
                 DeviceRestrictions.apply(
                     applicationContext,
-                    settings.deviceRestrictions,
+                    settings.restrictionKeysToApply(),
                     app.syncManager.installExemption.value,
                 )
                 // The DNS filter can be torn down without us: another VPN app takes the tun,

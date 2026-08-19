@@ -619,6 +619,22 @@
     <string name="step_protection_teach">También activamos las protecciones anti-manipulación recomendadas: cambios de hora, VPNs, forzar el cierre de Walcott e instalar fuera de Play.</string>
     <string name="step_protection_installs">Pedir permiso para apps nuevas</string>
     <string name="step_protection_installs_desc">Instalar desde Play necesita tu aprobación; también puedes enviarle apps desde tu móvil.</string>
+    <string name="install_mode_title">Cómo funciona el bloqueo</string>
+    <string name="install_mode_note">Android no sabe permitir actualizaciones y negar apps nuevas: para él, actualizar es instalar. Así que el bloqueo tiene que levantarse un rato, o cambiarse por vigilar lo que aparece.</string>
+    <string name="install_mode_strict">Bloqueado, con ventana nocturna</string>
+    <string name="install_mode_strict_desc">No se instala nada salvo durante la ventana de abajo. Lo que aparezca nuevo en ella se suspende y te preguntamos, igual que a cualquier otra hora.</string>
+    <string name="install_mode_guarded">Vigilado en vez de bloqueado</string>
+    <string name="install_mode_guarded_desc">Play funciona todo el día. Lo que aparezca nuevo se suspende en segundos y te preguntamos si permitirlo o quitarlo — así que la app está en el móvil esos segundos. Las fuentes desconocidas siguen bloqueadas por su propio interruptor.</string>
+    <string name="update_window_title">Dejar que las apps se actualicen de noche</string>
+    <string name="update_window_desc">El bloqueo se levanta un rato para que Play actualice lo que ya está instalado. Sin esto, un móvil bloqueado deja de recibir parches de seguridad.</string>
+    <string name="update_window_at">A partir de las</string>
+    <string name="update_window_hour_fmt">%1$02d:00</string>
+    <string name="update_window_length">Durante</string>
+    <string name="update_window_minutes_fmt">%1$d min</string>
+    <string name="update_window_open_fmt">Actualizando ahora · quedan %1$s</string>
+    <string name="unauthorized_app_installer_play">La ha instalado Play Store</string>
+    <string name="unauthorized_app_installer_other">La ha instalado %1$s</string>
+    <string name="unauthorized_app_installer_unknown">Instalada desde fuera de Play Store</string>
     <string name="new_app_alerts_title">Avisarme de apps nuevas</string>
     <string name="new_app_alerts_desc">Recibe una notificación cuando se instale una app nueva en el móvil de un hijo</string>
     <string name="step_location_teach">Ver dónde está el móvil en un mapa, actualizado con la frecuencia que elijas. Opcional — déjalo apagado si lo prefieres.</string>
@@ -1711,6 +1727,11 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_79_0">
+        <item>Un móvil con las instalaciones bloqueadas vuelve a poder actualizar sus apps. Para Android actualizar ES instalar, así que bloquear instalaciones había dejado de dejar entrar los parches de seguridad. Ahora hay una ventana nocturna — las 4:00 durante una hora, cambiable o desactivable en Protección — en la que Play puede actualizar lo que ya está instalado. Lo que aparezca NUEVO en ella se sigue suspendiendo y se te sigue preguntando.</item>
+        <item>Si prefieres que Play funcione todo el día, Protección ofrece ahora vigilar en vez de bloquear: no se rechaza nada en la puerta, y lo que aparece se suspende en segundos y se te pone delante.</item>
+        <item>Cuando aparece una app sin aprobar, el aviso dice ya quién la instaló — Play Store, otra app, o algo de fuera. Play se descarga componentes por su cuenta, y hasta ahora eso se leía igual que una descarga.</item>
     </string-array>
     <string-array name="whats_new_0_78_0">
         <item>El seguimiento estrecho ya dice lo que cuesta de verdad, medido en el propio móvil: su consumo normal de las dos últimas semanas frente a sus diez últimas sesiones, en % cada media hora, con la diferencia entre ambos. Aparece allí donde se activa, y sólo cuando hay medición suficiente para ser honesto.</item>

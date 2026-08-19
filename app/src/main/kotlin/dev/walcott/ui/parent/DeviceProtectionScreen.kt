@@ -1,15 +1,21 @@
 package dev.walcott.ui.parent
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,9 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.enforcement.AppUpdates
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
+import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
@@ -134,6 +142,23 @@ fun DeviceProtectionScreen(
                     }
                 }
             }
+            // How the block is enforced, and the window that keeps Play working under it. Family
+            // -wide and shown only where it can mean something: with the block armed, on the
+            // family policy rather than a per-child override.
+            if (childId == null && DeviceRestrictions.KEY_INSTALLS in enabledKeys) {
+                item(key = "install-mode") {
+                    InstallModeCard(
+                        mode = AppUpdates.modeOf(settings.installMode),
+                        windowEnabled = settings.updateWindowEnabled,
+                        windowHour = settings.updateWindowHour,
+                        windowMinutes = settings.updateWindowMinutes,
+                        onMode = { viewModel.setInstallMode(it) },
+                        onWindow = { enabled, hour, minutes ->
+                            viewModel.setUpdateWindow(enabled, hour, minutes)
+                        },
+                    )
+                }
+            }
             // Family-wide alert (not a per-child override), most useful when installs aren't blocked.
             if (childId == null && DeviceRestrictions.KEY_INSTALLS !in enabledKeys) {
                 item {
@@ -175,3 +200,116 @@ private fun RestrictionRow(
         }
     }
 }
+
+/**
+ * The two answers to "Play cannot update while installs are blocked", and the window one of them
+ * needs.
+ *
+ * Both are offered because the risk families mind is not the same one: an hour at four in the
+ * morning during which a determined child could install something, or a few seconds at any hour
+ * during which an app exists before it is suspended. Neither is free, and picking for everybody
+ * would be picking for the wrong half of them.
+ */
+@Composable
+private fun InstallModeCard(
+    mode: String,
+    windowEnabled: Boolean,
+    windowHour: Int,
+    windowMinutes: Int,
+    onMode: (String) -> Unit,
+    onWindow: (Boolean, Int, Int) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    WalcottCard {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Text(stringResource(R.string.install_mode_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.install_mode_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ModeChoice(
+                title = stringResource(R.string.install_mode_strict),
+                description = stringResource(R.string.install_mode_strict_desc),
+                selected = mode == AppUpdates.MODE_STRICT,
+                onClick = { onMode(AppUpdates.MODE_STRICT) },
+            )
+            ModeChoice(
+                title = stringResource(R.string.install_mode_guarded),
+                description = stringResource(R.string.install_mode_guarded_desc),
+                selected = mode == AppUpdates.MODE_GUARDED,
+                onClick = { onMode(AppUpdates.MODE_GUARDED) },
+            )
+            if (mode == AppUpdates.MODE_STRICT) {
+                HorizontalDivider(Modifier.padding(top = spacing.sm))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.update_window_title), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.update_window_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(spacing.sm))
+                    Switch(
+                        checked = windowEnabled,
+                        onCheckedChange = { onWindow(it, windowHour, windowMinutes) },
+                    )
+                }
+                if (windowEnabled) {
+                    Text(stringResource(R.string.update_window_at), style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    ) {
+                        WINDOW_HOURS.forEach { hour ->
+                            ChoiceChip(
+                                selected = hour == windowHour,
+                                onClick = { onWindow(true, hour, windowMinutes) },
+                                label = stringResource(R.string.update_window_hour_fmt, hour),
+                            )
+                        }
+                    }
+                    Text(stringResource(R.string.update_window_length), style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        AppUpdates.MINUTE_CHOICES.forEach { minutes ->
+                            ChoiceChip(
+                                selected = minutes == windowMinutes,
+                                onClick = { onWindow(true, windowHour, minutes) },
+                                label = stringResource(R.string.update_window_minutes_fmt, minutes),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One of the two enforcement modes, as a radio row with the trade-off written under it. */
+@Composable
+private fun ModeChoice(title: String, description: String, selected: Boolean, onClick: () -> Unit) {
+    val spacing = Tokens.spacing
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = spacing.xs),
+        verticalAlignment = Alignment.Top,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(spacing.xs))
+        Column(Modifier.weight(1f).padding(top = spacing.sm)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** The hours offered for the window: the small ones, where a phone is charging and nobody is up. */
+private val WINDOW_HOURS = listOf(2, 3, 4, 5)

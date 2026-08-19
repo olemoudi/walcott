@@ -46,6 +46,7 @@ class BootReceiver : BroadcastReceiver() {
                         .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
                     // Alarms don't survive a reboot: re-arm the 30-min check-in chain.
                     runCatching { dev.walcott.sync.HeartbeatAlarm.schedule(context) }
+                    runCatching { AppUpdateWindowAlarm.schedule(context) }
                 }
                 // Same for the parent's catch-up chain, and for the same reason: without this a
                 // parent who reboots their phone silently falls back to WorkManager alone.

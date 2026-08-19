@@ -609,6 +609,15 @@ data class UnauthorizedApp(
     val atMs: Long = 0,
     /** Whether the OS accepted the suspension. False is a real gap, and says so on screen. */
     val suspended: Boolean = false,
+    /**
+     * Who installed it, as the platform reports it ("com.android.vending" for Play), or "".
+     *
+     * The one fact that makes this notification decidable. Play installs components on its own
+     * account — services a preinstalled app suddenly needs, a split it decided to fetch — and
+     * those arrive looking exactly like a child downloading a game. The parent is asked either
+     * way; this is what tells them which question they are being asked.
+     */
+    val installer: String = "",
     /** How many times removal has been attempted, so a stuck one is visible rather than silent. */
     val removalAttempts: Int = 0,
 )
@@ -710,6 +719,15 @@ data class ChildSnapshot(
     val appliedPolicyVersion: Long = 0,
     /** Battery level 0–100, or -1 when unknown/legacy. Lets the parent be warned before a child dies. */
     val batteryPercent: Int = -1,
+    /**
+     * Until when the nightly update window is open on this phone, or 0.
+     *
+     * Its own field rather than an install exemption, because the two mean opposite things: an
+     * exemption is a person at the phone (and is nagged about until it closes), while this is the
+     * scheduled hour in which Play may update what is already installed. Nothing is forgiven in
+     * it — see `AppUpdates` and the install guard.
+     */
+    val updatesOpenUntilMs: Long = 0,
     /**
      * What this phone measured close tracking to cost IT, against its own ordinary use.
      *
