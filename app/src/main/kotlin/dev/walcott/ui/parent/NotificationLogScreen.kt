@@ -44,7 +44,7 @@ import java.util.Locale
  * entries, and a screen that quietly showed those as the whole day would answer that question
  * wrongly.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun NotificationLogScreen(
     viewModel: WalcottViewModel,
@@ -104,7 +104,11 @@ fun NotificationLogScreen(
             // Which question is being asked. Narrowing to one app is the lighter, more focused
             // request — fewer of somebody's messages travel, and fewer are read.
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                // FlowRow: the second chip wears the chosen app's own name, which has no length
+                // anyone here controls — a Row put "Todo" beside it and ran the rest off-screen.
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
                     dev.walcott.ui.components.ChoiceChip(
                         selected = filter.isEmpty(),
                         onClick = { filter = "" },

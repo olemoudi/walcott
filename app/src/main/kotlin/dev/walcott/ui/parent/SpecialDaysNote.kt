@@ -116,6 +116,11 @@ internal fun SpecialDaysSection(
                     Text(
                         stringResource(R.string.special_days_own_rules_title),
                         style = MaterialTheme.typography.bodyMedium,
+                        // Weighted, so the title wraps rather than crushing the button that
+                        // explains it. This row already gives half its width to a Switch, and
+                        // unweighted the title took the rest: the ⓘ was measured into what was
+                        // left of a line that had nothing left.
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     SpecialDaysInfoButton(onOpenCalendar)
                 }

@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -236,6 +238,7 @@ private fun RestrictionRow(
  * for the wrong half of them — but one of them has to be what a new family starts with, and
  * watching is the one whose cost is not "this phone quietly stopped getting security fixes".
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InstallModeCard(
     mode: String,
@@ -298,7 +301,10 @@ private fun InstallModeCard(
                         stringResource(R.string.update_window_range_fmt, window.start.hhmm(), window.end.hhmm()),
                         style = MaterialTheme.typography.titleSmall,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    // FlowRow: "Mientras duermen" and "Una hora concreta" together are wider
+                    // than the card they sit in, and a Row would have run the second chip off
+                    // the edge of the screen rather than dropping it onto a second line.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                         ChoiceChip(
                             selected = followsBedtime,
                             onClick = { onWindow(true, true, windowHour, windowMinutes) },

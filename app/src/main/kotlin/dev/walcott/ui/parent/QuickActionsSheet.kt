@@ -381,12 +381,17 @@ private fun QuickRow(
             Text(
                 "  " + title,
                 style = MaterialTheme.typography.titleSmall,
+                // Weighted so the title, not the detail, absorbs a narrow phone. Unweighted it
+                // was measured first and took the whole line, leaving the detail beside it —
+                // "· 45m left", the part that changes — a couple of characters to wrap into.
+                modifier = Modifier.weight(1f, fill = false),
             )
             detail?.let {
                 Text(
                     "  · $it",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                 )
             }
         }

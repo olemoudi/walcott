@@ -1075,6 +1075,8 @@
     <string name="map_point_count">%1$d locations over the last 48 h</string>
     <string name="map_accuracy_fmt">±%1$d m</string>
     <string name="map_recenter">Re-centre</string>
+    <string name="map_zoom_in">Zoom in</string>
+    <string name="map_zoom_out">Zoom out</string>
 
     <!-- Usage access fail-closed (child home) -->
 
@@ -1757,6 +1759,12 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_85_0">
+        <item>The map no longer paints over the strip above it. On a phone with close tracking running, the band saying so — and the warnings that sit above it — were half covered by the map, and the join between them flickered every time the map was dragged. An embedded map is allowed to draw wherever it likes unless it is told otherwise, and it had never been told; it now stays inside its own half of the screen.</item>
+        <item>The accuracy of a position is readable again. Next to a line as long as \"120 of 171 locations in the last 48 h\" there was about one character of room left over, so \"±100 m\" came out vertically, one digit per line down the side of the panel. The two now share a line of their own, with the full width to use, and the count is the one that gives way on a narrow phone.</item>
+        <item>The map\'s controls are the app\'s. Zooming was two bare white squares the mapping library draws at the foot of the map — glaring on a dark screen, and sitting exactly where the timeline meets the tiles; they are now real buttons, stacked under Re-centre. And the pin marking the child wore the library\'s stock icon, a green balloon with a mouse cursor inside it, which on a phone reads as a stray pointer stuck to the map. It is now the same violet as the trail it sits at the head of.</item>
+        <item>Things stopped disappearing at a larger text size. With Android\'s font size turned up, the badges saying an app carries rules of its own vanished from the list altogether, and so did the information button that explains special-day rules — both simply squeezed out of existence. \"No limit\" broke across two lines inside the stepper, and the pair of options for the nightly update window ran off the edge of its card. Every one of them was a row where the longest label took the whole width and left nothing for whatever sat beside it.</item>
     </string-array>
     <string-array name="whats_new_0_84_0">
         <item>An update dismissed by mistake is no longer an update lost. Tap Cancel on the install prompt by reflex, or swipe the notification away, and until now the downloaded version was deleted and the whole fifty megabytes were fetched again on the next scheduled check — hours later, if the phone was on Wi-Fi, if you noticed. The download now stays, the prompt comes back rather than going quiet, and Settings offers an \"Install 0.84.0-beta now\" button that installs what is already on the phone with no connection of any kind.</item>

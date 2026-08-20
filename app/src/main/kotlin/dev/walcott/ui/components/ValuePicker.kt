@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -182,7 +181,10 @@ fun MinutesPickerDialog(
                         isError = text.isNotEmpty() && !valid,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         textStyle = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center),
-                        modifier = Modifier.width(120.dp),
+                        // Whatever is left between the two buttons, not a fixed 120dp. Fixed,
+                        // the row asked for 56 + 120 + 56 plus its gaps — wider than a dialog
+                        // gets on a 360dp phone, so the "+" ran off the edge of the sheet.
+                        modifier = Modifier.weight(1f),
                     )
                     FilledTonalIconButton(
                         onClick = { set(nextStep(current)) },

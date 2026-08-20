@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
@@ -246,6 +247,13 @@ private fun AppAssignRow(
                             limitLabel
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // The badges are the row's other half and must not be measured into
+                        // whatever this leaves behind: unweighted, this line took the width and
+                        // squeezed them to nothing, so an app's own rules simply vanished off
+                        // the list whenever its limit had a week's usage printed after it.
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     AppRestrictionBadges(restrictions, Modifier.padding(start = Tokens.spacing.sm))
                 }

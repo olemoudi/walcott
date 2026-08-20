@@ -3,7 +3,7 @@ package dev.walcott.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -41,7 +41,12 @@ fun Stepper(
             valueLabel,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(72.dp),
+            // A MINIMUM, not a width: 72dp holds the durations this shows ("1h 30m") and keeps
+            // the two buttons from shuffling as the value steps. Fixed, it also had to hold
+            // "No limit"/"Sin límite", which it cannot — that broke across two lines and pushed
+            // the whole row taller than the buttons beside it.
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = 72.dp),
         )
         StepButton(Icons.Filled.Add, stringResource(R.string.increment), enabled = enabled, onClick = onIncrement)
     }

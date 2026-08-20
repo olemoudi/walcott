@@ -7,17 +7,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -47,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -63,6 +65,7 @@ import kotlinx.coroutines.delay
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
@@ -238,6 +241,12 @@ private fun TrailMap(
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             controller.setZoom(16.0)
+            // osmdroid's own zoom buttons, off. They default to SHOW_AND_FADEOUT and are two
+            // bare white squares drawn straight onto the canvas at the bottom of the map: they
+            // know nothing about the theme (glaring white over a dark map), nothing about the
+            // spacing scale, and they sit exactly where the timeline sheet meets the tiles. The
+            // pair below replaces them with the same buttons the rest of the screen uses.
+            zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
         }
     }
 
@@ -263,8 +272,17 @@ private fun TrailMap(
         }
     }
     val accuracyCircle = remember(mapView) { Polygon(mapView) }
-    val marker = remember(mapView) {
-        Marker(mapView).apply { setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM) }
+    val marker = remember(mapView, headColor) {
+        Marker(mapView).apply {
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            // osmdroid's stock icon is a green balloon with a pointing-hand CURSOR inside it. On
+            // a phone that reads as a mouse pointer stuck to the map, and it is green beside a
+            // trail and an accuracy circle that are violet. Our own pin, tinted to the head of
+            // the trail, so the three things drawn at the current position agree.
+            icon = ContextCompat.getDrawable(context, R.drawable.ic_map_pin)?.apply {
+                setTint(headColor.toArgb())
+            }
+        }
     }
     DisposableEffect(mapView) {
         mapView.overlays.add(trailLine)
@@ -339,7 +357,12 @@ private fun TrailMap(
     }
 
     Column(modifier) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        // clipToBounds, and it is not optional. Compose hands an embedded View to a container
+        // that runs with clipChildren off, so nothing stops osmdroid painting outside the slot
+        // it was measured into: the map drew straight over the warnings and the close-tracking
+        // band above it, and every pan repainted that overlap a frame before the band repainted
+        // itself — which is the flickering edge along the top of the map.
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { mapView },
@@ -378,11 +401,21 @@ private fun TrailMap(
                     map.invalidate()
                 },
             )
-            FilledTonalIconButton(
-                onClick = { recenterRequest += 1 },
-                modifier = Modifier.align(Alignment.TopEnd).padding(spacing.md),
+            // Re-centre and zoom, one stack, out of the way of the trail: a thumb reaching the
+            // corner is not covering the child.
+            Column(
+                Modifier.align(Alignment.TopEnd).padding(spacing.md),
+                verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
-                Icon(Icons.Filled.MyLocation, contentDescription = stringResource(R.string.map_recenter))
+                FilledTonalIconButton(onClick = { recenterRequest += 1 }) {
+                    Icon(Icons.Filled.MyLocation, contentDescription = stringResource(R.string.map_recenter))
+                }
+                FilledTonalIconButton(onClick = { mapView.controller.zoomIn() }) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.map_zoom_in))
+                }
+                FilledTonalIconButton(onClick = { mapView.controller.zoomOut() }) {
+                    Icon(Icons.Filled.Remove, contentDescription = stringResource(R.string.map_zoom_out))
+                }
             }
         }
 
@@ -453,49 +486,22 @@ private fun Timeline(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
-                Column(Modifier.weight(1f)) {
-                    // "Now" is a claim, and it was made about the newest fix whatever its age —
-                    // so a twenty-minute-old cached position was labelled as where the child is.
-                    // Past a few minutes it says how old it really is instead.
-                    val ageMs = System.currentTimeMillis() - current.epochMs
-                    Text(
-                        when {
-                            !atLatest -> formatStamp(current.epochMs, formatter)
-                            ageMs <= FRESH_ENOUGH_MS -> stringResource(R.string.map_timeline_latest)
-                            else -> stringResource(
-                                R.string.map_fix_age,
-                                java.time.Duration.ofMillis(ageMs).humanize(),
-                            )
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            // What is on the map, out of what the child actually recorded. The
-                            // trail is the first thing a squeezed check-in thins, and saying
-                            // "120" when the phone holds 600 reads as a phone that barely moved.
-                            if (totalPoints > points.size) {
-                                stringResource(R.string.map_point_count_of, points.size, totalPoints)
-                            } else {
-                                stringResource(R.string.map_point_count, points.size)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // "Now" is a claim, and it was made about the newest fix whatever its age —
+                // so a twenty-minute-old cached position was labelled as where the child is.
+                // Past a few minutes it says how old it really is instead.
+                val ageMs = System.currentTimeMillis() - current.epochMs
+                Text(
+                    when {
+                        !atLatest -> formatStamp(current.epochMs, formatter)
+                        ageMs <= FRESH_ENOUGH_MS -> stringResource(R.string.map_timeline_latest)
+                        else -> stringResource(
+                            R.string.map_fix_age,
+                            java.time.Duration.ofMillis(ageMs).humanize(),
                         )
-                        Spacer(Modifier.width(spacing.sm))
-                        Text(
-                            // An accuracy of zero is not a perfect fix, it is a fix that would not
-                            // say — and drawing nothing at all made the two indistinguishable.
-                            if (current.accuracyM > 0f) {
-                                stringResource(R.string.map_accuracy_fmt, current.accuracyM.roundToInt())
-                            } else {
-                                stringResource(R.string.map_accuracy_unknown)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
                 // Speed sits next to play because it is only ever about play. One button that
                 // cycles rather than a row of chips: the timeline is already carrying a time, two
                 // counts and a slider, and a speed is a thing you nudge, not a thing you browse.
@@ -512,6 +518,45 @@ private fun Timeline(
                         contentDescription = stringResource(if (playing) R.string.map_pause else R.string.map_play),
                     )
                 }
+            }
+            // The trail's two facts get the whole width, on their own line. Stacked inside the
+            // header's column they were sharing it with the speed and play buttons, and the
+            // count — a full sentence in either language — took every pixel: the accuracy behind
+            // it was measured into what was left, which was about one character, and "±100 m"
+            // came out as one glyph per line down the side of the sheet.
+            Row(
+                Modifier.fillMaxWidth().padding(top = spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                Text(
+                    // What is on the map, out of what the child actually recorded. The
+                    // trail is the first thing a squeezed check-in thins, and saying
+                    // "120" when the phone holds 600 reads as a phone that barely moved.
+                    if (totalPoints > points.size) {
+                        stringResource(R.string.map_point_count_of, points.size, totalPoints)
+                    } else {
+                        stringResource(R.string.map_point_count, points.size)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Weighted, so it is the one that gives way on a narrow phone; fill = false
+                    // so it does not push the accuracy to the far edge on a wide one.
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Text(
+                    // An accuracy of zero is not a perfect fix, it is a fix that would not
+                    // say — and drawing nothing at all made the two indistinguishable.
+                    if (current.accuracyM > 0f) {
+                        stringResource(R.string.map_accuracy_fmt, current.accuracyM.roundToInt())
+                    } else {
+                        stringResource(R.string.map_accuracy_unknown)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Unweighted, and therefore measured first: this one is short and must never
+                    // be the thing that gets squeezed.
+                    maxLines = 1,
+                )
             }
             Slider(
                 value = selected.toFloat(),

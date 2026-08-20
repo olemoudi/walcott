@@ -411,6 +411,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
      * `--ei child_battery N` + `--ez child_charging true` (what the tracking controls show),
      * `--ei child_live_min N` (a close-tracking session with N minutes left),
      * `--es child_locations "lat,lng;lat,lng"` (a trail for the map, newest first),
+     * `--ei child_locations_total N` (the child holds N but only published the trail above),
      * `--es child_drain "normalPct,livePct,lastDrop,lastMinutes"` (what close tracking costs it).
      */
     private suspend fun seedChild(target: dev.walcott.FamilyScope, spec: String, intent: Intent) {
@@ -469,6 +470,11 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         accuracyM = 12f,
                     )
                 }?.sortedBy { it.epochMs } ?: emptyList(),
+            // `--ei child_locations_total N`: what the child says it actually HOLDS, when a
+            // squeezed check-in published fewer than that. Drives the timeline's "84 of 171"
+            // line, which is otherwise unreachable on one emulator - the seeded trail always
+            // arrives whole, so the count and the total always agree.
+            locationsTotal = intent.getIntExtra("child_locations_total", 0),
             // `--es child_drain "normalPct,livePct,lastDrop,lastMinutes"`: what this fake child
             // claims close tracking costs it. Real figures take fifteen days and a few sessions
             // to accumulate, which is not a thing a screenshot can wait for.

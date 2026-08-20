@@ -13,9 +13,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -1278,10 +1280,13 @@ private fun EnrollPrepareStatus(setupUnmet: List<String>, linked: Boolean) {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun EnrollModeChips(mode: EnrollMode, onSelect: (EnrollMode) -> Unit) {
     val spacing = Tokens.spacing
-    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+    // FlowRow: "Protección total" and "Instalación simple" side by side are wider than the
+    // sheet, and the pair is a choice — the second chip going off the edge would hide half of it.
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
         dev.walcott.ui.components.ChoiceChip(
             selected = mode == EnrollMode.DEVICE_OWNER,
             onClick = { onSelect(EnrollMode.DEVICE_OWNER) },
@@ -2311,11 +2316,19 @@ private fun LocationCard(
                     ordinaryIntervalMinutes = intervalMinutes,
                     onSetLiveTracking = onSetLiveTracking,
                 )
+                // IntrinsicSize.Min + fillMaxHeight, so the pair is as tall as the taller of
+                // them. Half a row is not much width for "Localizar ahora", and at a larger font
+                // size it takes two lines — which left the button beside it noticeably shorter
+                // and the two of them looking like a mistake rather than a choice.
                 Row(
-                    Modifier.fillMaxWidth().padding(top = spacing.md),
+                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = spacing.md),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
-                    OutlinedButton(onClick = onLocateNow, enabled = !locating, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = onLocateNow,
+                        enabled = !locating,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    ) {
                         if (locating) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(spacing.xs))
@@ -2324,7 +2337,7 @@ private fun LocationCard(
                             Text(stringResource(R.string.locate_now))
                         }
                     }
-                    Button(onClick = onOpenMap, modifier = Modifier.weight(1f)) {
+                    Button(onClick = onOpenMap, modifier = Modifier.weight(1f).fillMaxHeight()) {
                         Text(stringResource(R.string.view_on_map))
                     }
                 }

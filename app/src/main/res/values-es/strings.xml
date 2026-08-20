@@ -1073,6 +1073,8 @@
     <string name="map_point_count">%1$d ubicaciones en las últimas 48 h</string>
     <string name="map_accuracy_fmt">±%1$d m</string>
     <string name="map_recenter">Recentrar</string>
+    <string name="map_zoom_in">Acercar</string>
+    <string name="map_zoom_out">Alejar</string>
 
     <!-- Fail-closed de acceso de uso (home del hijo) -->
 
@@ -1749,6 +1751,12 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_85_0">
+        <item>El mapa ya no se pinta encima de la banda de arriba. En un móvil con el seguimiento estrecho en marcha, la banda que lo anuncia — y los avisos que van encima — quedaban medio tapados por el mapa, y la unión entre los dos parpadeaba cada vez que lo arrastrabas. Un mapa incrustado puede dibujar donde le parezca mientras nadie le diga lo contrario, y nadie se lo había dicho; ahora se queda dentro de su mitad de la pantalla.</item>
+        <item>La precisión de una posición vuelve a leerse. Al lado de una línea tan larga como «120 de 171 ubicaciones en las últimas 48 h» quedaba sitio para un carácter, así que «±100 m» salía en vertical, un dígito por línea por el costado del panel. Ahora las dos comparten una línea propia, con todo el ancho para ellas, y en un móvil estrecho la que cede es la cuenta.</item>
+        <item>Los mandos del mapa son los de la app. Para acercar y alejar había dos cuadrados blancos que dibuja la librería de mapas al pie del mapa — deslumbrantes sobre una pantalla oscura, y justo donde la línea de tiempo se junta con el mapa; ahora son botones de verdad, debajo del de recentrar. Y el pin que marca al hijo llevaba el icono de serie de la librería, un globo verde con un cursor de ratón dentro, que en un móvil parece un puntero que se ha quedado pegado al mapa. Ahora es del mismo violeta que el rastro en cuya cabeza está.</item>
+        <item>Dejaron de desaparecer cosas con la letra grande. Con el tamaño de fuente de Android subido, las insignias que dicen que una app tiene reglas propias desaparecían de la lista por completo, y con ellas el botón de información que explica las reglas de los días especiales: a las dos las estrujaban hasta dejarlas en nada. «Sin límite» se partía en dos líneas dentro del selector, y el par de opciones de la ventana nocturna de actualización se salía de su tarjeta. Todas eran filas donde la etiqueta más larga se quedaba con el ancho entero y no dejaba nada para lo que iba al lado.</item>
     </string-array>
     <string-array name="whats_new_0_84_0">
         <item>Una actualización descartada por error ya no es una actualización perdida. Tocar Cancelar en el aviso de instalación por reflejo, o deslizar la notificación, borraba la versión descargada y volvía a bajar los cincuenta megas enteros en la siguiente comprobación programada: horas después, si el móvil estaba en Wi-Fi, si te dabas cuenta. Ahora la descarga se conserva, el aviso vuelve en vez de callarse, y en Ajustes hay un botón «Instalar 0.84.0-beta ahora» que instala lo que ya está en el móvil sin conexión de ningún tipo.</item>
