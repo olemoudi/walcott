@@ -11,8 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Pause
@@ -444,6 +447,14 @@ private fun TrailMap(
                     // the next one.
                     selectedMs = if (index == points.lastIndex) PINNED_TO_NEWEST else points[index].epochMs
                 },
+                onStep = { delta ->
+                    playing = false
+                    val index = (selected + delta).coerceIn(0, points.lastIndex)
+                    // Same rule the slider follows: stepping onto the last fix means "keep up with
+                    // them", not "this instant" — otherwise one tap forward parks the parent on
+                    // the newest fix and the next one to arrive leaves them behind.
+                    selectedMs = if (index == points.lastIndex) PINNED_TO_NEWEST else points[index].epochMs
+                },
                 onTogglePlay = { playing = !playing },
                 onCycleSpeed = { speedIndex = MapTrail.nextSpeed(speedIndex) },
             )
@@ -461,6 +472,8 @@ private fun Timeline(
     playing: Boolean,
     speedIndex: Int,
     onScrub: (Float) -> Unit,
+    /** Move the scrubber by whole fixes: -1 back, +1 on. */
+    onStep: (Int) -> Unit,
     onTogglePlay: () -> Unit,
     onCycleSpeed: () -> Unit,
 ) {
@@ -558,14 +571,42 @@ private fun Timeline(
                     maxLines = 1,
                 )
             }
-            Slider(
-                value = selected.toFloat(),
-                onValueChange = onScrub,
-                valueRange = 0f..points.lastIndex.toFloat(),
-                // Continuous, and rounded to a real fix by the caller. Asking the slider for one
-                // step per fix snapped the knob just the same but drew a tick for every one of
-                // them: at a full trail, a hundred and eighteen dots along the track.
-            )
+            // A step either side of the track. A full trail is a hundred and twenty fixes across
+            // about three hundred points of slider, so one fix is under three points of travel —
+            // findable with a mouse and not with a thumb, and impossible to land on deliberately
+            // when the one you want is the fix between two others. Dragging still works and is
+            // still the way to cross an afternoon; these are for arriving.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalIconButton(
+                    onClick = { onStep(-1) },
+                    enabled = selected > 0,
+                    modifier = Modifier.size(StepButtonSize),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = stringResource(R.string.map_step_back),
+                    )
+                }
+                Slider(
+                    value = selected.toFloat(),
+                    onValueChange = onScrub,
+                    valueRange = 0f..points.lastIndex.toFloat(),
+                    // Continuous, and rounded to a real fix by the caller. Asking the slider for
+                    // one step per fix snapped the knob just the same but drew a tick for every
+                    // one of them: at a full trail, a hundred and eighteen dots along the track.
+                    modifier = Modifier.weight(1f).padding(horizontal = spacing.xs),
+                )
+                FilledTonalIconButton(
+                    onClick = { onStep(1) },
+                    enabled = selected < points.lastIndex,
+                    modifier = Modifier.size(StepButtonSize),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = stringResource(R.string.map_step_forward),
+                    )
+                }
+            }
             Row(Modifier.fillMaxWidth()) {
                 Text(
                     formatStamp(points.first().epochMs, formatter),
@@ -640,6 +681,14 @@ private fun rememberTimeLeft(untilMs: Long): Long {
     }
     return left.coerceAtLeast(0L)
 }
+
+/**
+ * The scrubber's own step buttons, a shade smaller than the play control beside the speed.
+ *
+ * They flank a slider rather than sitting in the header, so they read as part of the track they
+ * move; at the default 40dp they crowded it and pushed the thumb's travel down noticeably.
+ */
+private val StepButtonSize = 36.dp
 
 /** The scrubber parked on "wherever the child is now" rather than on a particular instant. */
 private const val PINNED_TO_NEWEST = Long.MAX_VALUE

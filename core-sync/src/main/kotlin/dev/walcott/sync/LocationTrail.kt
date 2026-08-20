@@ -91,6 +91,7 @@ object LocationTrail {
         kept += 0 // the current position, whatever else has to go
         recent.indices.filterTo(kept) { recent[it].mock } // spoofing evidence, always
         perTier.forEachIndexed { tier, indexes -> kept += decimate(indexes, quota[tier]) }
+        refill(recent, kept, nowMs, budget)
 
         return kept.take(budget).map { recent[it].rounded() }.reversed()
     }
@@ -117,6 +118,36 @@ object LocationTrail {
         chosen += decimate(newestFirst, keep) // an even spread of everything else
         // Back to budget from the OLD end, so a squeeze costs the oldest history first.
         return chosen.sortedDescending().take(keep).sorted().map { points[it] }
+    }
+
+    /**
+     * Spends what the spacing left on the table.
+     *
+     * [spaced] is a PRIORITY, and it was being applied as a ceiling. It runs before the budget is
+     * ever consulted, so a band thinned to one fix per half hour stayed at one fix per half hour
+     * even when the message had room for four times as many — the budget was an upper bound the
+     * trail could not reach rather than an allowance it could spend. A parent sampling every ten
+     * minutes was shown 80 of their child's 187 fixes with room for 120, and on a phone that
+     * sleeps through the night, 49 of 197. Nothing was over budget; the points were simply
+     * dropped before anything counted them.
+     *
+     * So: once every band has its quota, hand the remainder back, finest band first — recent
+     * movement is what a parent scrubs — and spread within each band rather than taken off its
+     * newest edge, for the same reason [decimate] does everywhere else. Bands already at full
+     * detail contribute nothing and the loop falls through them.
+     *
+     * This only ever ADDS resolution inside the span that was already being published. It cannot
+     * reach past the 48h window, cannot exceed [budget], and when the rest of the snapshot leaves
+     * less room than hoped [SnapshotFit] thins it straight back down.
+     */
+    private fun refill(recent: List<LocationPoint>, kept: java.util.SortedSet<Int>, nowMs: Long, budget: Int) {
+        for (tier in TIERS.indices) {
+            if (kept.size >= budget) return
+            val dropped = recent.indices.filter {
+                it !in kept && tierOf(nowMs - recent[it].epochMs) == tier
+            }
+            kept += decimate(dropped, budget - kept.size)
+        }
     }
 
     /** Which [TIERS] band a fix of the given [ageMs] belongs to. */

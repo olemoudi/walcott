@@ -1075,6 +1075,8 @@
     <string name="map_point_count">%1$d locations over the last 48 h</string>
     <string name="map_accuracy_fmt">±%1$d m</string>
     <string name="map_recenter">Re-centre</string>
+    <string name="map_step_back">Previous location</string>
+    <string name="map_step_forward">Next location</string>
     <string name="map_zoom_in">Zoom in</string>
     <string name="map_zoom_out">Zoom out</string>
 
@@ -1760,6 +1762,10 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_88_0">
+        <item>The map was throwing away most of the trail it had room to send. A phone that recorded 197 positions published 49 of them, and the missing ones were not too big to fit — the thinning that spaces older fixes out ran before anything counted the budget, so a stretch reduced to one point every half hour stayed that way with room for four times as many. The budget is spent now, nearest the present first, so a trail arrives at the detail the message can actually carry. Same 48 hours, several times the resolution.</item>
+        <item>Arrows either side of the timeline, for moving one position at a time. A full trail is a hundred and twenty fixes across a slider the width of a phone, which is under three pixels each — findable with a mouse and not with a thumb, and near impossible when the one you want sits between two others. Dragging is still there for crossing an afternoon; the arrows are for arriving.</item>
     </string-array>
     <string-array name="whats_new_0_87_0">
         <item>Replaying a child\'s movements runs at a quarter of the pace. At 1x the marker crossed a street faster than you could see which way it had gone, so following a route meant watching it twice. It is something you can actually follow now, and nothing is lost: the speed button still goes to 4x, which is exactly the old 1x, for skimming a whole afternoon.</item>

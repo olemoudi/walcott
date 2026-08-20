@@ -64,6 +64,37 @@ class LocationTrailTest {
     }
 
     @Test
+    fun `a trail that fits under the budget is not thinned to fit a bucket`() {
+        // The bug this pins: the tier spacing ran BEFORE anything counted the budget, so a band
+        // thinned to one fix per half hour stayed there even with room for four times as many.
+        // A real family's phone — ten minutes apart awake, three quarters of an hour asleep —
+        // published 80 of 187 fixes into a 120-point budget, and 49 of 197 on a longer night.
+        // Nothing was over budget; the points were dropped before anything looked.
+        //
+        // The sibling of `thins older fixes to roughly one per bucket`, which feeds a trail dense
+        // enough to saturate the budget and so still sees strict hourly buckets. Both are true:
+        // the spacing is a priority when the budget binds, and an allowance when it does not.
+        val points = trail(spanMs = 37 * hour, everyMs = 12 * 60 * 1000L) // 186 fixes
+        assertTrue(points.size > LocationTrail.MAX_POINTS) { "the fixture must exceed the budget" }
+
+        val out = LocationTrail.compress(points, now)
+        assertEquals(LocationTrail.MAX_POINTS, out.size) { "spare budget must be spent, got ${out.size}" }
+    }
+
+    @Test
+    fun `spare budget buys detail nearest the present first`() {
+        // Where the reclaimed points land matters as much as that they are reclaimed: a parent
+        // scrubs the recent end, so the finest band is served before the older ones. Without this
+        // the refill would be free to spend a whole budget on the far side of two days ago.
+        val points = trail(spanMs = 37 * hour, everyMs = 12 * 60 * 1000L)
+        val out = LocationTrail.compress(points, now)
+
+        val lastSixHours = out.count { now - it.epochMs <= 6 * hour }
+        val raw = points.count { now - it.epochMs <= 6 * hour }
+        assertEquals(raw, lastSixHours) { "the recent band should be whole before older ones gain" }
+    }
+
+    @Test
     fun `never exceeds the point budget`() {
         val points = trail(spanMs = 47 * hour, everyMs = 60 * 1000L) // a fix every minute
         val out = LocationTrail.compress(points, now)

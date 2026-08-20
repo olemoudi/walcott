@@ -1073,6 +1073,8 @@
     <string name="map_point_count">%1$d ubicaciones en las últimas 48 h</string>
     <string name="map_accuracy_fmt">±%1$d m</string>
     <string name="map_recenter">Recentrar</string>
+    <string name="map_step_back">Posición anterior</string>
+    <string name="map_step_forward">Posición siguiente</string>
     <string name="map_zoom_in">Acercar</string>
     <string name="map_zoom_out">Alejar</string>
 
@@ -1752,6 +1754,10 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_88_0">
+        <item>El mapa estaba tirando la mayor parte del rastro que tenía sitio para enviar. Un móvil que había registrado 197 posiciones publicaba 49, y las que faltaban no es que no cupieran: el adelgazado que separa las posiciones más antiguas se aplicaba antes de que nadie contara el presupuesto, así que un tramo reducido a un punto cada media hora se quedaba así habiendo sitio para cuatro veces más. Ahora el presupuesto se gasta, empezando por lo más cercano al presente, y el rastro llega con el detalle que el mensaje puede llevar de verdad. Las mismas 48 horas, varias veces la resolución.</item>
+        <item>Flechas a los lados de la línea de tiempo, para moverse de una posición en una. Un rastro completo son ciento veinte posiciones repartidas en una barra del ancho del móvil: menos de tres píxeles cada una, que se encuentran con un ratón y no con el pulgar, y casi nunca cuando la que buscas está entre otras dos. Arrastrar sigue estando para cruzar una tarde; las flechas son para llegar.</item>
     </string-array>
     <string-array name="whats_new_0_87_0">
         <item>Reproducir los movimientos de un hijo va a la cuarta parte de la velocidad. A 1x el marcador cruzaba una calle antes de que te diera tiempo a ver por dónde había ido, así que seguir un recorrido obligaba a verlo dos veces. Ahora se puede seguir de verdad, y no se pierde nada: el botón de velocidad sigue llegando a 4x, que es exactamente el 1x de antes, para pasar una tarde entera por encima.</item>
