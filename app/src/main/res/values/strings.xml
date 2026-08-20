@@ -1749,6 +1749,11 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_81_0">
+        <item>The map replays a day properly now. There is a speed control beside play — from half speed up to four times — and the trail behind the marker has become a comet: the last ten positions, running from solid violet at where they are to nothing at the far end, so which way they were walking reads at a glance.</item>
+        <item>Three things that made a replay unusable are fixed. A position arriving from the phone no longer throws you back to the present in the middle of watching the afternoon, and no longer stops playback dead — with close tracking running, that happened every single minute. The map now follows the marker while a replay runs, instead of letting them walk off the edge of it. And a map left open in the background stops working when you leave the screen.</item>
+        <item>Family rules now say who is not listening to them. Wherever you set a rule for the whole family — bedtime, screen-free times, the default limit, per-app limits, the web filter, protection, location, updates — anyone with their own version of that rule is named right beside it. It matters because their rule REPLACES the family one rather than adding to it: a child with a bedtime of 23:00 is not covered by the family 22:00, and it works that way round whichever of the two is stricter.</item>
+    </string-array>
     <string-array name="whats_new_0_80_0">
         <item>A phone set up from today WATCHES new apps instead of refusing them. The Play Store keeps working — which is what keeps the apps already on the phone getting their security fixes — and anything that appears without your approval is suspended within seconds and put in front of you. Families who already chose to block installs keep exactly what they chose; the two options, with what each one costs, are in Protection.</item>
         <item>If you do block installs, the window in which apps may update is now your family\'s own sleeping hours rather than one hour at four in the morning (1:00 to 6:00 when no bedtime is set). Nobody outside Google can make Play update inside an hour of our choosing — it runs its own pass when it finds the phone charging, idle and on Wi-Fi — so a single hour was a bet that cost the phone a whole night whenever it lost. During those hours their bedtime is already closing Play\'s screen anyway.</item>
@@ -1807,4 +1812,12 @@
     <string name="quick_catch_up_build">an older app version</string>
     <string name="quick_catch_up_both">rules and app version behind</string>
     <string name="quick_catch_up_asked">%1$s was asked to update now</string>
+    <string name="map_speed_fmt">%1$s×</string>
+    <string name="map_speed_desc">Playback speed %1$s. Tap to change.</string>
+    <plurals name="override_ignores_this">
+        <item quantity="one">%1$s has a custom rule that ignores this one, stricter or looser.</item>
+        <item quantity="other">%1$s have custom rules that ignore this one, stricter or looser.</item>
+    </plurals>
+    <string name="list_join_two">%1$s and %2$s</string>
+    <string name="list_join_more">%1$s, %2$s</string>
 </resources>

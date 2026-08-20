@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.enforcement.AppUpdates
 import dev.walcott.enforcement.DeviceRestrictions
+import dev.walcott.data.FamilyRule
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.ChoiceChip
@@ -119,6 +120,8 @@ fun DeviceProtectionScreen(
         ) {
             if (childName != null) {
                 item { OverrideScopeBanner(childName, editable = editable) }
+            } else {
+                item { OverriddenNote(settings, FamilyRule.PROTECTION) }
             }
             item {
                 Text(

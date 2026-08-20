@@ -75,6 +75,11 @@ internal fun BedtimeCard(
     specialDaysOwnRules: Boolean = false,
     onOpenSpecialDays: (() -> Unit)? = null,
     onSetSpecialDaysOwnRules: ((Boolean) -> Unit)? = null,
+    /**
+     * Members whose own copy of this rule ignores it. Empty in a member's own editor — there the
+     * rule on screen IS theirs — and filled in only on the family screens.
+     */
+    overriddenBy: List<String> = emptyList(),
     onChange: (Map<String, WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -115,6 +120,7 @@ internal fun BedtimeCard(
                     onCheckedChange = { want -> if (want) setAll(defaultStart, defaultEnd) else setAll(null, null) },
                 )
             }
+            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm))
             if (on) {
                 @Composable
                 fun bedtimeRow(dayType: DayType) {
@@ -286,6 +292,11 @@ internal fun BlockedWindowsCard(
     onOpenSpecialDays: (() -> Unit)? = null,
     onSetSpecialDaysOwnRules: ((Boolean) -> Unit)? = null,
     /**
+     * Members whose own copy of this rule ignores it. Empty in a member's own editor — there the
+     * rule on screen IS theirs — and filled in only on the family screens.
+     */
+    overriddenBy: List<String> = emptyList(),
+    /**
      * Receives the WHOLE schedule, once per edit. It used to be called per day type, which meant
      * one edit became three separate writes racing each other through the store — and between
      * them the stored schedule genuinely disagreed with itself about which rules existed, which
@@ -298,6 +309,7 @@ internal fun BlockedWindowsCard(
         Column(Modifier.padding(spacing.lg).animateContentSize()) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm))
             // One list. Every rule already named its own days, so filing it into a weekday or
             // weekend section asked the same question a second time, in a coarser way — and the
             // special-days section asked a third. The rule now says all of it on the rule.
@@ -682,6 +694,11 @@ internal fun DailyBudgetCard(
     onOpenSpecialDays: (() -> Unit)? = null,
     /** Null hides the switch — the per-child editor edits one child, the switch is family-wide. */
     onSetSpecialDaysOwnRules: ((Boolean) -> Unit)? = null,
+    /**
+     * Members whose own copy of this rule ignores it. Empty in a member's own editor — there the
+     * rule on screen IS theirs — and filled in only on the family screens.
+     */
+    overriddenBy: List<String> = emptyList(),
     onSetBudget: (DayType, Int?) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -710,6 +727,9 @@ internal fun DailyBudgetCard(
                     )
                 }
             }
+            // Above the fold: this card collapses to its title, and a warning a parent has to
+            // expand the rule to find is a warning they will not see before editing it.
+            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm))
             if (expanded) {
                 Spacer(Modifier.size(spacing.md))
                 HorizontalDivider()

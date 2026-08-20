@@ -126,6 +126,13 @@ fun AppAssignScreen(
             Column(Modifier.padding(horizontal = spacing.screen)) {
                 OverrideScopeBanner(childName.orEmpty())
             }
+        } else {
+            // One note for the whole list, not one per app: the override takes the entire
+            // per-app map, so a member who has customized it ignores the family's limit on
+            // every app at once rather than on the ones they happen to have.
+            Column(Modifier.padding(horizontal = spacing.screen)) {
+                OverriddenNote(settings, dev.walcott.data.FamilyRule.APP_LIMITS)
+            }
         }
         if (rows.isEmpty()) {
             Box(

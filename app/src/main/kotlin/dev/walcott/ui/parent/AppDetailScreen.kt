@@ -90,6 +90,8 @@ fun AppDetailScreen(
         ) {
             if (childId != null) {
                 item { OverrideScopeBanner(childName.orEmpty()) }
+            } else {
+                item { OverriddenNote(settings, dev.walcott.data.FamilyRule.APP_LIMITS) }
             }
             item {
                 Row(Modifier.fillMaxWidth().padding(top = spacing.sm), verticalAlignment = Alignment.CenterVertically) {

@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.FamilyRule
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.AppPickerSheet
 import dev.walcott.ui.components.PickableApp
@@ -90,6 +91,10 @@ fun WebFilterScreen(
         ) {
             if (childName != null) {
                 item { OverrideScopeBanner(childName, editable = editable) }
+            } else {
+                // Family scope only: inside a member's own editor the list on screen is theirs,
+                // so there is nothing for them to be ignoring.
+                item { OverriddenNote(settings, FamilyRule.WEB_FILTER) }
             }
             item {
                 Text(

@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.FamilyRule
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.CustomValueChip
@@ -56,6 +57,7 @@ fun LocationSettingsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                         selected = settings.trackingIntervalMinutes,
                         onSelect = { viewModel.setFamilyTrackingInterval(it) },
                     )
+                    OverriddenNote(settings, FamilyRule.TRACKING_INTERVAL)
                     Text(
                         stringResource(R.string.tracking_battery_warning),
                         style = MaterialTheme.typography.bodySmall,
@@ -79,6 +81,11 @@ fun LocationSettingsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                             onCheckedChange = { viewModel.setFamilyLocationHistory(it) },
                         )
                     }
+                    OverriddenNote(
+                        settings,
+                        FamilyRule.LOCATION_HISTORY,
+                        Modifier.padding(top = spacing.sm),
+                    )
                 }
             }
         }

@@ -451,8 +451,10 @@ class PolicySeedReceiver : BroadcastReceiver() {
             // quick-actions sheet show about tracking, neither of which a single emulator can
             // produce on its own.
             charging = intent.getBooleanExtra("child_charging", false),
-            // `--es child_locations "lat,lng;lat,lng"`, oldest first: a trail for the map, which
-            // is otherwise the one parent screen a single emulator cannot show anything on.
+            // `--es child_locations "lat,lng;lat,lng"`, NEWEST first — the first pair is stamped
+            // now and each one after it a minute earlier, so a path written in walking order
+            // comes out reversed on the map. A trail for the map, which is otherwise the one
+            // parent screen a single emulator cannot show anything on.
             // Re-seeding with a further point is how the camera's behaviour while a session runs
             // gets looked at without a second phone walking down a street.
             locations = intent.getStringExtra("child_locations")

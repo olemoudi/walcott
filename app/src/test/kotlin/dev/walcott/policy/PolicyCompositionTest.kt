@@ -101,6 +101,87 @@ class PolicyCompositionTest {
         assertEquals(Verdict.Blocked(BlockReason.BLOCKED_WINDOW), RuleEngine.evaluate(child, game, monday.atTime(18, 0)))
     }
 
+    @Test
+    fun `a later bedtime for one child is that child's whole bedtime, not a window added to the family's`() {
+        // The question a parent asks out loud: family 22:00-06:00, this child 23:00-06:00 —
+        // what happens at 22:30? Nothing. The override replaces the rule rather than tightening
+        // it, so the hour the family blocks and the child does not is the child's to use.
+        val settings = PolicySettings(
+            bedtime = DayType.entries.associate { it.name to WindowDto(22 * 60, 6 * 60) },
+            children = listOf(
+                ChildEntry(
+                    "night-owl", "Ana",
+                    ChildOverrides(bedtime = DayType.entries.associate { it.name to WindowDto(23 * 60, 6 * 60) }),
+                ),
+                ChildEntry("inherits", "Luis", ChildOverrides()),
+            ),
+        )
+        val owl = config(settings, "night-owl")
+        val sibling = config(settings, "inherits")
+
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(owl, game, monday.atTime(22, 30)))
+        assertEquals(Verdict.Blocked(BlockReason.BEDTIME), RuleEngine.evaluate(sibling, game, monday.atTime(22, 30)))
+        // And the child's own hour still bites, so this is a different bedtime and not no bedtime.
+        assertEquals(Verdict.Blocked(BlockReason.BEDTIME), RuleEngine.evaluate(owl, game, monday.atTime(23, 30)))
+        assertEquals(WindowDto(23 * 60, 6 * 60), settings.resolveForChild("night-owl").bedtime[DayType.SCHOOL.name])
+    }
+
+    @Test
+    fun `an earlier bedtime for one child does not borrow the family's later one either`() {
+        // The mirror of the case above, and the reason "the stricter of the two wins" is not the
+        // rule: whichever way the override points, it is the only bedtime that member has.
+        val settings = PolicySettings(
+            bedtime = DayType.entries.associate { it.name to WindowDto(23 * 60, 6 * 60) },
+            children = listOf(
+                ChildEntry(
+                    "early", "Ana",
+                    ChildOverrides(bedtime = DayType.entries.associate { it.name to WindowDto(21 * 60, 6 * 60) }),
+                ),
+            ),
+        )
+        assertEquals(Verdict.Blocked(BlockReason.BEDTIME), RuleEngine.evaluate(config(settings, "early"), game, monday.atTime(21, 30)))
+    }
+
+    @Test
+    fun `a looser per-app limit for one child wins over the family's stricter one`() {
+        // The other half of what the family editors now say out loud: the member's rule wins
+        // whichever direction it points. A family hour and a personal three hours is three
+        // hours — the two are not intersected, and the family's is not a ceiling.
+        val settings = PolicySettings(
+            appPolicies = mapOf(game to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 60))),
+            children = listOf(
+                ChildEntry(
+                    "generous", "Ana",
+                    ChildOverrides(appPolicies = mapOf(game to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 180)))),
+                ),
+            ),
+        )
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofHours(3)),
+            RuleEngine.evaluate(config(settings, "generous"), game, monday.atTime(18, 0)),
+        )
+    }
+
+    @Test
+    fun `one member opting out of the family's screen-free hour leaves the others in it`() {
+        // The laxer-sibling case as a parent meets it: dinner is screen-free for the family, and
+        // the member who was given an empty schedule is simply not in it.
+        val dinner = DayType.entries.associate { it.name to listOf(WindowDto(20 * 60, 21 * 60)) }
+        val settings = PolicySettings(
+            allAppsBlockedWindows = dinner,
+            children = listOf(
+                ChildEntry("exempt", "Ana", ChildOverrides(allAppsBlockedWindows = emptyMap())),
+                ChildEntry("inherits", "Luis", ChildOverrides()),
+            ),
+        )
+        val at2030 = monday.atTime(20, 30)
+        assertEquals(Verdict.Allowed, RuleEngine.evaluate(config(settings, "exempt"), game, at2030))
+        assertEquals(
+            Verdict.Blocked(BlockReason.BLOCKED_WINDOW),
+            RuleEngine.evaluate(config(settings, "inherits"), game, at2030),
+        )
+    }
+
     // --- Settings that compose ---
 
     @Test

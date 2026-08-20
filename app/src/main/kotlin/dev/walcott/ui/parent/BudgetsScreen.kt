@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.FamilyRule
+import dev.walcott.data.RuleOverrides
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.NavCard
@@ -67,6 +69,7 @@ fun BudgetsScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                    overriddenBy = RuleOverrides.namesOverriding(settings, FamilyRule.BEDTIME),
                     onChange = viewModel::setBedtime,
                 )
             }
@@ -78,6 +81,7 @@ fun BudgetsScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                    overriddenBy = RuleOverrides.namesOverriding(settings, FamilyRule.SCREEN_FREE),
                     onChange = viewModel::setAllAppsWindows,
                 )
             }
@@ -100,6 +104,7 @@ fun BudgetsScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                    overriddenBy = RuleOverrides.namesOverriding(settings, FamilyRule.DEFAULT_BUDGET),
                     onSetBudget = { dayType, minutes -> viewModel.setDefaultBudget(dayType, minutes) },
                 )
             }
@@ -113,6 +118,7 @@ fun BudgetsScreen(
                     onOpenApps,
                 )
             }
+            item { OverriddenNote(settings, FamilyRule.APP_LIMITS) }
             item { Spacer(Modifier.size(spacing.xl)) }
         }
     }

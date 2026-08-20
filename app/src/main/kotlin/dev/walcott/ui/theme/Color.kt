@@ -6,6 +6,20 @@ import androidx.compose.ui.graphics.Color
 
 private val Violet = Color(0xFF5B49E0)
 private val VioletLight = Color(0xFF9E90FF)
+private val Teal = Color(0xFF0F7B94)
+
+/**
+ * The two ends of the map's location trail, and deliberately NOT taken from the colour scheme.
+ *
+ * Every other surface in this app is one this app chose. The trail is drawn on OpenStreetMap
+ * tiles, which are the same bright beige whatever theme the phone is in — so a line picked for a
+ * dark surface is a line picked for a background it will never be on. The dark scheme's pale
+ * violet lands at roughly 2.7:1 against those tiles and reads as a smudge; these two hold their
+ * own on a bright map in either theme, and in light mode they are exactly the palette's own
+ * violet and the location section's teal, so nothing changes there.
+ */
+val MapTrailHead = Violet
+val MapTrailTail = Teal
 
 /**
  * The colour each family of settings is recognised by.
@@ -36,7 +50,7 @@ enum class SectionAccent {
 
     internal fun color(dark: Boolean): Color = when (this) {
         RULES -> if (dark) VioletLight else Violet
-        FAMILY -> if (dark) Color(0xFF5CC8DF) else Color(0xFF0F7B94)
+        FAMILY -> if (dark) Color(0xFF5CC8DF) else Teal
         ACTIVITY -> if (dark) Color(0xFFF0A0CE) else Color(0xFFA0417E)
         DEVICE -> if (dark) Color(0xFF9BA5BC) else Color(0xFF5A6275)
     }

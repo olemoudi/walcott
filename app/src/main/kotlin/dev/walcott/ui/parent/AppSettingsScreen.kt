@@ -138,6 +138,7 @@ fun AppSettingsScreen(
                     enabled = settings.updateWifiOnly,
                     onToggle = { viewModel.setUpdateWifiOnly(it) },
                 )
+                OverriddenNote(settings, dev.walcott.data.FamilyRule.UPDATE_WIFI_ONLY)
             }
             SectionHeader(
                 stringResource(R.string.app_settings_section_device),
