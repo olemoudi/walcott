@@ -43,5 +43,12 @@ apksigner sign --ks walcott-release.jks --ks-pass pass:walcott --key-pass pass:w
 
 `second-unapproved-app.apk` is the same with `com.sneaky.second` / "Second Sneak".
 
+`startable-app.apk` (`com.sneaky.startable` / "Startable Toy") is the same recipe with one
+difference that matters: its activity is `android:name="android.app.Activity"` rather than a
+class of its own. A framework class resolves through the boot classloader, so an APK with no code
+in it can still be brought to the FOREGROUND — which the other two cannot, and which anything
+about the app a child is currently looking at needs. It comes up as a blank window and does
+nothing, which is exactly right.
+
 The signing key is irrelevant to what these test — any key works for a package nobody has
 installed before — but reusing the repository's keystore keeps the recipe to one keystore.

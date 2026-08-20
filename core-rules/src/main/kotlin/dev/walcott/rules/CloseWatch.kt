@@ -77,7 +77,16 @@ object CloseWatch {
             (RuleEngine.evaluate(config, packageName, at, emptyMap(), emptyMap()) as? Verdict.Blocked)
                 ?.reason
                 ?.takeIf { it == BlockReason.BEDTIME || it == BlockReason.BLOCKED_WINDOW }
-        }?.let { (reason, left) -> ClosingSoon(reason, packageName, left) }
+        }?.let { (reason, left) ->
+            // Bedtime and the family's screen-free hours are ONE event for the whole phone, and
+            // reporting them under whichever app the child happens to be holding made them look
+            // like a different countdown in each: the caller remembers what it has already said
+            // by reason AND package (see TimeWarnings), so leaving a game for the home screen
+            // earned the same bedtime a second warning and a second notification beside the
+            // first. An app's OWN window stays the app's — that one really is per-app.
+            val deviceWide = RuleEngine.deviceWideBlock(config, now.plusMinutes(left.toMinutes())) != null
+            ClosingSoon(reason, if (deviceWide) "" else packageName, left)
+        }
 
         return listOfNotNull(budget, timed).minByOrNull { it.left }
     }

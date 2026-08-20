@@ -75,6 +75,39 @@ class CloseWatchTest {
     }
 
     @Test
+    fun `a close that takes the whole phone is not reported as being about one app`() {
+        // Bedtime is ONE event however many apps a child moves through before it. Naming the app
+        // in the foreground made it look like a different countdown in each of them: the caller
+        // remembers what it has already said by reason AND package (see TimeWarnings), so leaving
+        // a game for the home screen earned the same bedtime a second warning, and a second
+        // notification beside the first.
+        val config = config(
+            perApp = mapOf(game to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofHours(4)))),
+            bedtime = mapOf(DayType.SCHOOL to TimeWindow(LocalTime.of(19, 20), LocalTime.of(7, 0))),
+        )
+        val fromInsideTheApp = CloseWatch.nextClose(config, game, wednesday)
+        val fromTheHomeScreen = CloseWatch.nextDeviceWideClose(config, wednesday)
+        assertEquals(BlockReason.BEDTIME, fromInsideTheApp?.reason)
+        assertEquals("", fromInsideTheApp?.packageName, "bedtime belongs to the phone, not to $game")
+        assertEquals(fromTheHomeScreen, fromInsideTheApp, "the same bedtime, asked about two ways")
+    }
+
+    @Test
+    fun `a family screen-free window is the phone's, an app's own window is the app's`() {
+        // The distinction the fix turns on. Both come back as BLOCKED_WINDOW, and only one of
+        // them is the same event for everybody — an app that schedules itself shut is nobody
+        // else's business, and de-duplicating it phone-wide would silence a second app's window.
+        val soon = TimeWindow(LocalTime.of(19, 10), LocalTime.of(20, 0))
+        val familyWide = config(windows = mapOf(DayType.SCHOOL to listOf(soon)))
+        assertEquals("", CloseWatch.nextClose(familyWide, game, wednesday)?.packageName)
+
+        val itsOwn = config(perApp = mapOf(game to AppPolicy(blockedWindows = mapOf(DayType.SCHOOL to listOf(soon)))))
+        val own = CloseWatch.nextClose(itsOwn, game, wednesday)
+        assertEquals(BlockReason.BLOCKED_WINDOW, own?.reason)
+        assertEquals(game, own?.packageName, "an app's own window is about that app")
+    }
+
+    @Test
     fun `bedtime further off than the horizon is not yet news`() {
         val config = config(bedtime = mapOf(DayType.SCHOOL to TimeWindow(LocalTime.of(21, 30), LocalTime.of(7, 0))))
         assertNull(CloseWatch.nextClose(config, game, wednesday))

@@ -18,6 +18,15 @@ import dev.walcott.ui.format.humanize
  *
  * A banner, but silent: inside a game a shade-only notification is invisible, which is exactly
  * the moment this exists for; a sound or a buzz would make a warning feel like a punishment.
+ *
+ * Silent comes from the CHANNEL — importance HIGH so it surfaces, with no sound and no vibration
+ * — and never from `setSilent(true)`. That call reads like exactly what is wanted here and does
+ * something else: it files the notification under AndroidX's "silent" group with
+ * GROUP_ALERT_SUMMARY, and with no summary notification in that group to alert on its behalf, it
+ * is never allowed to alert at all. Every warning this file sends was landing in the shade
+ * without ever appearing on screen — which for a child inside a game is the same as no warning —
+ * while the platform still recorded it as interruptive, so nothing short of looking at the screen
+ * could tell. `groupKey=silent` in `dumpsys notification` is the fingerprint.
  */
 object TimeWarningNotifications {
 
@@ -63,11 +72,21 @@ object TimeWarningNotifications {
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setSilent(true)
             // Gone by the time it could confuse: the thing it warned about has happened.
             .setTimeoutAfter(TIMEOUT_MS)
             .build()
-        runCatching { NotificationManagerCompat.from(context).notify(idFor(closing), notification) }
+        runCatching {
+            val manager = NotificationManagerCompat.from(context)
+            // Cancelled first, then posted. Re-using the id keeps one warning per thing at a
+            // time, which is right — but posting over a notification that is still on screen is
+            // an EDIT, and Android does not peek an edit. The rungs are 30, 5 and 1: the last two
+            // are four minutes apart, well inside the ten minutes a warning lives, so the
+            // one-minute warning — the one this whole feature is FOR, the one that stops the
+            // screen dying mid-sentence — arrived as a silent change to the five-minute one and
+            // was never shown. Cancelling makes each rung a new notification, which peeks.
+            manager.cancel(idFor(closing))
+            manager.notify(idFor(closing), notification)
+        }
     }
 
     private const val TIMEOUT_MS = 10 * 60 * 1000L
@@ -101,7 +120,6 @@ object TimeWarningNotifications {
             .setContentTitle(context.getString(R.string.open_banner_title, appLabel, remaining.humanize()))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setSilent(true)
             .setTimeoutAfter(OPENING_TIMEOUT_MS)
             .build()
         runCatching {

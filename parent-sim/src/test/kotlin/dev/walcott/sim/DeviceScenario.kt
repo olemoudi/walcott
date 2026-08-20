@@ -179,6 +179,14 @@ abstract class DeviceScenario {
     protected enum class Fixture(val apk: String, val pkg: String, val label: String) {
         FIRST("unapproved-app.apk", "com.sneaky.notapproved", "Sneaky Game"),
         SECOND("second-unapproved-app.apk", "com.sneaky.second", "Second Sneak"),
+
+        /**
+         * The one that can actually be put on screen, for the rules that only mean anything
+         * about the app a child is LOOKING at. The other two declare a launcher activity that
+         * could never start, which is enough to be classified and blocked and no use at all to
+         * a scenario about warnings.
+         */
+        STARTABLE("startable-app.apk", "com.sneaky.startable", "Startable Toy"),
     }
 
     /** Asserts the device does NOT reach [what] while the window lasts. */

@@ -198,6 +198,117 @@ class ChildDevice(
         run("shell", "wm", "dismiss-keyguard")
     }
 
+    /** One notification Walcott currently has posted, as the OS reports it. */
+    data class Posted(
+        val id: String,
+        val key: String,
+        val channel: String,
+        val title: String,
+        val interruptive: Boolean,
+        /** The device's own clock when it was posted (the notification's `when`). */
+        val postedAtMs: Long,
+        /**
+         * The group the platform filed it under. Worth reading because of one specific value:
+         * AndroidX's `setSilent(true)` files a notification under the group "silent" with
+         * GROUP_ALERT_SUMMARY, and with no summary in that group to alert for it, it is never
+         * allowed to surface — it goes straight to the shade, unseen, while still being recorded
+         * as interruptive. `groupKey=silent` is the fingerprint of a warning nobody will see.
+         */
+        val groupKey: String,
+    )
+
+    /**
+     * What Walcott has on this phone's shade right now.
+     *
+     * Read from the notification manager rather than from the app, because the question a warning
+     * has to answer is whether ANDROID showed it — a notification the app is sure it posted and
+     * the platform dropped (no permission, a silenced channel, a heads-up that never peeked) is
+     * exactly the failure that cannot be seen from inside.
+     *
+     * [Posted.interruptive] is the platform's own verdict on whether it surfaced over what was on
+     * screen, which is the difference between a warning and a line in a list nobody opens.
+     */
+    fun walcottNotifications(): List<Posted> {
+        val dump = runCatching { run("shell", "dumpsys", "notification", "--noredact") }.getOrDefault("")
+        return dump.split("NotificationRecord(")
+            .filter { it.contains("pkg=$PACKAGE ") }
+            .mapNotNull { block ->
+                val id = Regex("\\bid=(-?\\d+)").find(block)?.groupValues?.get(1) ?: return@mapNotNull null
+                Posted(
+                    id = id,
+                    key = Regex("key=(\\S+)").find(block)?.groupValues?.get(1).orEmpty(),
+                    channel = Regex("channel=(\\S+)").find(block)?.groupValues?.get(1).orEmpty(),
+                    // Only the record's OWN title: the next record starts at the next split.
+                    title = Regex("android\\.title=String \\((.*?)\\)").find(block)?.groupValues?.get(1).orEmpty(),
+                    interruptive = block.contains("mIsInterruptive=true"),
+                    postedAtMs = Regex("when=(\\d+)").find(block)?.groupValues?.get(1)?.toLongOrNull() ?: 0L,
+                    groupKey = Regex("groupKey=(\\S*)").find(block)?.groupValues?.get(1).orEmpty(),
+                )
+            }
+    }
+
+    /** Just the "this is about to close" warnings (see TimeWarningNotifications). */
+    fun timeWarnings(): List<Posted> = walcottNotifications().filter { it.channel == TIME_WARNING_CHANNEL }
+
+    /**
+     * The child device's own wall clock, for marking "from here on" when reading its shade.
+     *
+     * Notifications are stamped by the phone, so a scenario filtering them against THIS machine's
+     * clock would be trusting two clocks to agree. Second granularity, rounded down, which is the
+     * safe direction: a marker slightly in the past can only include a warning, and every
+     * assertion built on it is about one that must appear.
+     *
+     * A marker rather than a cleared shade, ON PURPOSE. Snoozing the old ones away is the obvious
+     * alternative and is a trap: there is no shell verb that cancels another app's notification,
+     * and Android goes on suppressing later posts of a SNOOZED key — so clearing the shade that
+     * way silences the very warning the next scenario is waiting for, and it reads exactly like a
+     * product that stopped warning. It cost a run and a wrong diagnosis here.
+     */
+    fun deviceNowMs(): Long =
+        run("shell", "date", "+%s").trim().toLongOrNull()?.times(1000) ?: System.currentTimeMillis()
+
+    /**
+     * Brings [pkg] to the foreground and answers what the OS says is on screen afterwards.
+     *
+     * Waits rather than asking once: `monkey` returns when the intent was sent, not when the
+     * activity is resumed, and the answer a scenario needs is the one the enforcement loop will
+     * read. A package that is suspended answers with the system's "blocked by admin" dialog
+     * instead, which is exactly the difference worth reporting rather than hiding behind false.
+     */
+    fun launchApp(pkg: String, timeoutMs: Long = 10_000): String {
+        // Awake and past the keyguard first. A long scenario can leave the emulator asleep, and
+        // an activity launched behind a lock screen never becomes the resumed one — the dump then
+        // names nothing at all, which reads as "the app would not start".
+        nudgeAwake()
+        dismissSwipeKeyguard()
+        run("shell", "monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1")
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var seen = ""
+        while (System.currentTimeMillis() < deadline) {
+            seen = foregroundPackage()
+            if (seen == pkg) return seen
+            Thread.sleep(500)
+        }
+        return seen
+    }
+
+    /**
+     * The package the OS says is on screen — not the one we asked for.
+     *
+     * Falls back to the focused window when there is no resumed activity to name: a phone showing
+     * a lock screen, or mid-transition, has one and not the other, and answering "" for both is
+     * how a scenario ends up reporting that an app would not start when the phone was merely
+     * asleep.
+     */
+    fun foregroundPackage(): String {
+        val activities = run("shell", "dumpsys", "activity", "activities")
+        Regex("topResumedActivity=ActivityRecord\\{\\S+ \\S+ (\\S+)/").find(activities)
+            ?.let { return it.groupValues[1] }
+        return Regex("mFocusedApp=ActivityRecord\\{\\S+ \\S+ (\\S+)/").find(activities)
+            ?.groupValues?.get(1)
+            .orEmpty()
+    }
+
     /** Leaves the ringer where a pocket would (see AudioGuard). */
     fun lowerRinger() = seed("--es", "lower_ringer", "now")
 
@@ -411,6 +522,12 @@ class ChildDevice(
 
     companion object {
         const val PACKAGE = "dev.walcott"
+
+        /** The channel the closing warnings and the opening banner are posted on. */
+        const val TIME_WARNING_CHANNEL = "walcott_time_warning"
+
+        /** The un-dismissable "Walcott is protecting this device" one. */
+        const val ONGOING_CHANNEL = "walcott_enforcement_quiet"
         private const val ADB_TIMEOUT_SEC = 120L
 
         /** Flattened component of the notification listener declared in the app's manifest. */

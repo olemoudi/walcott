@@ -20,6 +20,9 @@ import org.junit.jupiter.api.Test
 class LiveTrackingScenarioTest : DeviceScenario() {
 
     private companion object {
+        /** Room for the drift between this machine's clock and the phone's. */
+        const val CLOCK_SLACK_MS = 60_000L
+
         /**
          * How long a moved phone gets to reach the parent.
          *
@@ -54,7 +57,11 @@ class LiveTrackingScenarioTest : DeviceScenario() {
         // A child that acked and did nothing would look identical to the parent otherwise.
         val running = parent.awaitChild { it.liveTrackingUntilMs > System.currentTimeMillis() }
         val leftMs = running.liveTrackingUntilMs - System.currentTimeMillis()
-        assertTrue(leftMs <= 15 * 60_000L) { "reported $leftMs ms left of a 15 minute session" }
+        // Slack, because this subtracts THIS machine's clock from a deadline the PHONE computed
+        // from its own. An emulator drifts a second or so from its host, and without room for
+        // that the bound fails at 901180 ms — a second and a bit over — which says nothing about
+        // the product. A minute still tells a 15-minute session from an hour-long one.
+        assertTrue(leftMs <= 15 * 60_000L + CLOCK_SLACK_MS) { "reported $leftMs ms left of a 15 minute session" }
     }
 
     @Test

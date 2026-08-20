@@ -161,6 +161,7 @@ All in `PolicySeedReceiver` (debug builds only; absent from release):
 | Update window | 2 | `no_install_apps` really leaving the OS for the hour, and really coming back. |
 | Location trail | 2 | Two places, in order, with history on — and only one with it off. |
 | Web filter | 2 | A real `VpnService` establish, and its withdrawal. |
+| Time warnings | 3 | A warning the platform actually put ON SCREEN, once per thing that is closing. |
 
 Still uncovered, and worth knowing:
 
@@ -174,7 +175,20 @@ Still uncovered, and worth knowing:
   because a Device Owner's VPN needs no consent. Reproducing it needs a second VPN app to win the
   slot, or an OEM that kills the service. What IS pinned is the healthy state and the withdrawal.
 
-Two things worth knowing about what these assert:
+Three things worth knowing about what these assert:
+
+- **A notification that exists is not a notification anyone saw.** `TimeWarningScenarioTest` reads
+  the notification manager and checks two things: the platform's own `mIsInterruptive`, AND that
+  the record is not filed under the group `silent`. The second is the one that earns its keep —
+  `NotificationCompat.setSilent(true)` files a notification under that group with
+  GROUP_ALERT_SUMMARY, and with no summary in the group to alert on its behalf it is never allowed
+  to surface. Every time warning this app sent was going straight to the shade, unseen, while the
+  platform still recorded it as interruptive. Nothing short of looking at the screen could tell.
+- Do NOT try to clear the shade between scenarios by snoozing. There is no shell verb that cancels
+  another app's notification, and Android goes on suppressing later posts of a snoozed key — so
+  clearing it that way silences the warning the next scenario is waiting for, and it looks exactly
+  like a product that stopped warning. Mark the time with `ChildDevice.deviceNowMs()` and filter on
+  `postedAtMs` instead.
 
 - `appliedPolicyVersion` reports the **snapshot's** counter, not the policy JSON's own `version`.
   Both exist, `PolicyJson` warns about it, and waiting on the wrong one waits for a number that is
