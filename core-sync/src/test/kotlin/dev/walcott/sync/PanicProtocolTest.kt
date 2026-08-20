@@ -171,6 +171,43 @@ class PanicProtocolTest {
     }
 
     @Test
+    fun `a device with no server clock yet may not start a request`() {
+        // The cursor is zeroed when the family moves relay, and the last proof of the channel
+        // predates the move by less than half an hour — so every OTHER condition still says yes.
+        // A request anchored at zero has its deadline in January 1970 and is expired by the very
+        // next message, which spends the child's one request on a countdown already over.
+        assertFalse(
+            PanicProtocol.mayStart(
+                hasActiveRequest = false,
+                parentSupported = true,
+                msSinceChannelOk = 60_000,
+                blockedUntilSec = 0,
+                serverNowSec = 0,
+            ),
+            "a request with no server anchor must not be allowed to start",
+        )
+        assertTrue(PanicProtocol.anchored(1L))
+        assertFalse(PanicProtocol.anchored(0L))
+    }
+
+    @Test
+    fun `a request anchored at the epoch would be dead on arrival`() {
+        // Why the gate above exists, stated as the behaviour it prevents.
+        val stillborn = PanicRequest(id = "x", startedAtSec = 0, lastCheckpointSec = 0)
+        assertEquals(PanicProtocol.Step.EXPIRED, PanicProtocol.evaluate(stillborn, start))
+    }
+
+    @Test
+    fun `a cooldown anchored at the epoch would block nothing`() {
+        // Why the caller must pass a server second it can vouch for rather than a bare cursor.
+        assertTrue(
+            PanicProtocol.cooldownPassed(PanicProtocol.cooldownUntilSec(0), start),
+            "three days after the epoch is not a lockout",
+        )
+        assertFalse(PanicProtocol.cooldownPassed(PanicProtocol.cooldownUntilSec(start), start))
+    }
+
+    @Test
     fun `progress and remaining notices follow the proven checkpoints`() {
         assertEquals(0f, PanicProtocol.progress(request()))
         assertEquals(12, PanicProtocol.remainingCheckpoints(request()))

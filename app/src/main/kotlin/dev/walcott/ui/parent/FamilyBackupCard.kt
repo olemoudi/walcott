@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -68,18 +69,28 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
 
     // null = no dialog; SAVE/SHARE pick what happens after the passphrase is chosen.
     var dialogMode by remember { mutableStateOf<BackupMode?>(null) }
-    // Held between the passphrase dialog and the file picker's async result.
-    var pendingPassphrase by remember { mutableStateOf("") }
+    // The SEALED file, waiting for the picker to say where it goes.
+    //
+    // Saveable, and it is the ciphertext rather than the passphrase for two reasons. The picker is
+    // another activity, so this one can be recreated while it is open — a rotation was enough —
+    // and a plain `remember` came back empty, at which point the save silently did nothing at all.
+    // And a passphrase is the one thing that must not be handed to saved-instance state, whereas
+    // an encrypted backup is exactly as safe there as it is in the file it is about to become.
+    var pendingFile by rememberSaveable { mutableStateOf("") }
+    var sealing by remember { mutableStateOf(false) }
 
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
-        val passphrase = pendingPassphrase
-        pendingPassphrase = ""
-        if (uri == null || passphrase.isEmpty()) return@rememberLauncherForActivityResult
+        val text = pendingFile
+        pendingFile = ""
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (text.isEmpty()) {
+            Toast.makeText(context, R.string.backup_save_failed, Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
             val ok = runCatching {
-                val text = viewModel.createBackup(passphrase.toCharArray())
                 withContext(Dispatchers.IO) {
                     // "wt" truncates when overwriting a previous backup; some providers only
                     // accept the default mode, so fall back rather than fail the save.
@@ -114,8 +125,17 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
                     .putExtra(Intent.EXTRA_STREAM, uri)
                     .putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.backup_share_subject))
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                context.startActivity(Intent.createChooser(send, context.getString(R.string.backup_share)))
-                viewModel.recordBackupSaved()
+                // "Backed up" is recorded from the sheet's own callback, not from the fact that we
+                // opened it. Recording it here marked the family as safe the instant the sheet
+                // appeared — back out of it and the card said "backed up just now" about a file
+                // that had gone nowhere, and the reminder ladder stayed quiet for a month over it.
+                context.startActivity(
+                    Intent.createChooser(
+                        send,
+                        context.getString(R.string.backup_share),
+                        BackupSharedReceiver.callback(context, viewModel.familyId),
+                    ),
+                )
             }.onFailure {
                 Toast.makeText(context, R.string.backup_save_failed, Toast.LENGTH_LONG).show()
             }
@@ -163,10 +183,27 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
 
             // The nightly on-device copies. Stated plainly, and stated as NOT covering the case
             // this card is really about: a phone that is lost or broken takes them with it.
+            //
+            // And stated CONDITIONALLY, because they are conditional. They are sealed with the
+            // family PIN, so until one is set AND entered once there are none at all — and when a
+            // night's write fails, nothing anywhere said so: the flag was recorded and never read.
+            // Either way this line used to promise copies that did not exist, about the one
+            // disaster it exists to cover.
+            val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+            val localKeyed = syncState.localBackupKeyB64.isNotBlank()
+            val localFailing = syncState.localBackupError
             Text(
-                stringResource(R.string.backup_local_note, dev.walcott.sync.LocalBackupStore.FOLDER),
+                when {
+                    !localKeyed -> stringResource(R.string.backup_local_needs_pin)
+                    localFailing -> stringResource(R.string.backup_local_failed, dev.walcott.sync.LocalBackupStore.FOLDER)
+                    else -> stringResource(R.string.backup_local_note, dev.walcott.sync.LocalBackupStore.FOLDER)
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (localKeyed && !localFailing) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
                 modifier = Modifier.padding(top = spacing.sm),
             )
 
@@ -203,15 +240,29 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
 
     dialogMode?.let { mode ->
         BackupPassphraseDialog(
-            onDismiss = { dialogMode = null },
+            busy = sealing,
+            onDismiss = { if (!sealing) dialogMode = null },
             onConfirm = { passphrase ->
-                dialogMode = null
                 when (mode) {
-                    BackupMode.SAVE -> {
-                        pendingPassphrase = passphrase
+                    // Sealed BEFORE the picker opens, so the only thing that has to survive the
+                    // trip through another activity is ciphertext. Key derivation is 600k
+                    // rounds and takes a moment, hence the spinner rather than a frozen dialog.
+                    BackupMode.SAVE -> scope.launch {
+                        sealing = true
+                        val text = runCatching { viewModel.createBackup(passphrase.toCharArray()) }.getOrNull()
+                        sealing = false
+                        dialogMode = null
+                        if (text == null) {
+                            Toast.makeText(context, R.string.backup_save_failed, Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
+                        pendingFile = text
                         saveLauncher.launch("walcott-family-backup.json")
                     }
-                    BackupMode.SHARE -> shareBackup(passphrase)
+                    BackupMode.SHARE -> {
+                        dialogMode = null
+                        shareBackup(passphrase)
+                    }
                 }
             },
         )
@@ -223,6 +274,7 @@ private enum class BackupMode { SAVE, SHARE }
 /** Choose (and confirm) the backup passphrase. There is no reset — the dialog says so. */
 @Composable
 private fun BackupPassphraseDialog(
+    busy: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (passphrase: String) -> Unit,
 ) {
@@ -265,10 +317,64 @@ private fun BackupPassphraseDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = !tooShort && repeat == passphrase,
+                enabled = !tooShort && repeat == passphrase && !busy,
                 onClick = { onConfirm(passphrase) },
-            ) { Text(stringResource(R.string.action_continue)) }
+            ) {
+                if (busy) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(stringResource(R.string.action_continue))
+                }
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.action_cancel)) }
+        },
     )
+}
+
+
+/**
+ * Fires when the parent actually picks a target in the share sheet, and only then records the
+ * family as backed up (see [android.content.Intent.createChooser] with an [android.content.IntentSender]).
+ *
+ * The signal is the callback itself rather than anything in it: the PendingIntent is immutable, so
+ * the chooser cannot attach `EXTRA_CHOSEN_COMPONENT`, and an immutable one still delivers. What is
+ * knowable is "the file was handed to an app", which is as far as Android will ever let this go —
+ * `ACTION_SEND` has no result, and most targets report cancelled even after sending.
+ */
+class BackupSharedReceiver : android.content.BroadcastReceiver() {
+
+    override fun onReceive(context: android.content.Context, intent: Intent) {
+        val familyId = intent.getStringExtra(EXTRA_FAMILY).orEmpty()
+        val pending = goAsync()
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val app = context.applicationContext as dev.walcott.WalcottApplication
+                val family = runCatching { app.hub.scopeOf(familyId) }.getOrNull() ?: app.hub.own
+                family.syncManager.recordBackupSaved()
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
+    companion object {
+        private const val ACTION_SHARED = "dev.walcott.action.BACKUP_SHARED"
+        private const val EXTRA_FAMILY = "family_id"
+
+        /** The chooser's "a target was picked" callback, aimed at [familyId]'s scope. */
+        fun callback(context: android.content.Context, familyId: String): android.content.IntentSender =
+            android.app.PendingIntent.getBroadcast(
+                context,
+                familyId.hashCode(),
+                Intent(context, BackupSharedReceiver::class.java)
+                    .setAction(ACTION_SHARED)
+                    .putExtra(EXTRA_FAMILY, familyId),
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+            ).intentSender
+    }
 }

@@ -1741,6 +1741,12 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_82_0">
+        <item>La liberación de emergencia ya avisa al móvil de que ha ocurrido. El aviso que dice que el móvil ha quedado libre se borraba un segundo después de aparecer, por la misma limpieza que borra todo lo demás: el único mensaje para el que existe un día entero de espera no se leía nunca. Y de tu lado, la alerta que te pide rechazar desaparece cuando la solicitud termina: retirada, rechazada o caducada, antes se quedaba en tus notificaciones con un botón de rechazar que ya no hacía nada.</item>
+        <item>Un móvil liberado por una emergencia ya no se queda con un PIN que nadie le dijo a su dueño. Si habías puesto el PIN de desbloqueo de ese móvil desde aquí, seguía en vigor después — y con Walcott ya sin gestionar el móvil, nada podía volver a cambiarlo. La única forma de entrar era restablecer de fábrica, justo lo que esta función existe para evitar. Un bloqueo que eligió su propio dueño se sigue respetando.</item>
+        <item>Restaurar una copia de una familia que este móvil ya gestiona ya no rompe esa familia. Se rechazaba, y con razón, pero un paso demasiado tarde: para entonces la copia restaurada ya se había anunciado a los hijos, y la que de verdad los gestiona no podía volver a cambiar ninguna regla. Ahora nada se anuncia hasta tener la certeza de que le corresponde.</item>
+        <item>Las copias de seguridad dicen la verdad sobre sí mismas. Compartir una cuenta como guardada cuando eliges de verdad a dónde enviarla, no cuando se abre el menú de compartir: si te echabas atrás, los recordatorios se callaban un mes por un archivo que no llegó a ninguna parte. Girar el móvil a media copia o a media restauración ya no pierde el trabajo. Y la tarjeta dice si las copias diarias en este móvil se están escribiendo de verdad: se cifran con el PIN de la familia, así que una familia sin PIN no tenía ninguna mientras se le decía lo contrario.</item>
+    </string-array>
     <string-array name="whats_new_0_81_0">
         <item>El mapa ya reproduce bien el recorrido de un día. Junto a reproducir hay un control de velocidad —de media a cuatro veces— y el rastro tras el marcador es ahora un cometa: las últimas diez posiciones, del violeta sólido de donde está hasta desaparecer al final, para ver de un vistazo hacia dónde iba.</item>
         <item>Arreglados los tres fallos que hacían inservible la reproducción. Que llegue una posición nueva del móvil ya no te devuelve al presente mientras ves la tarde, y ya no corta la reproducción en seco: con seguimiento de cerca eso pasaba cada minuto. El mapa sigue ahora al marcador mientras se reproduce, en vez de dejar que se salga de la pantalla. Y un mapa abierto en segundo plano deja de trabajar al salir de la pantalla.</item>
@@ -1812,4 +1818,7 @@
     </plurals>
     <string name="list_join_two">%1$s y %2$s</string>
     <string name="list_join_more">%1$s, %2$s</string>
+    <string name="panic_start_refused">Ahora mismo no se ha podido iniciar la solicitud. Comprueba la conexión e inténtalo de nuevo.</string>
+    <string name="backup_local_needs_pin">Las copias diarias en este móvil están desactivadas hasta que se ponga el PIN de la familia y se introduzca una vez: se cifran con él.</string>
+    <string name="backup_local_failed">La copia diaria en %1$s no se pudo escribir la última vez que se intentó.</string>
 </resources>

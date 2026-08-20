@@ -158,6 +158,12 @@
             android:name=".update.InstallReceiver"
             android:exported="false" />
 
+        <!-- The share sheet reporting that the parent actually picked somewhere to send the
+             family backup (see FamilyBackupCard). -->
+        <receiver
+            android:name=".ui.parent.BackupSharedReceiver"
+            android:exported="false" />
+
         <!-- The child's ~30-minute check-in alarm (see HeartbeatAlarm). -->
         <receiver
             android:name=".sync.HeartbeatReceiver"

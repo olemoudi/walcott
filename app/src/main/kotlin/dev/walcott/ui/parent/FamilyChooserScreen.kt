@@ -159,8 +159,9 @@ fun FamilyChooserScreen(
             fromPin = dev.walcott.sync.FamilyBackup.keySourceOf(text) == dev.walcott.sync.FamilyBackup.SOURCE_PIN,
             onDismiss = { backupText = null },
             onRestore = { passphrase, onError ->
-                scope.launch {
-                    when (viewModel.addFamilyFromBackup(text, passphrase.toCharArray())) {
+                // ViewModel scope, not this composition's: see WalcottViewModel.restoreBackup.
+                viewModel.addFamilyFromBackup(text, passphrase.toCharArray()) { result ->
+                    when (result) {
                         FamilyHub.AddResult.OK -> {
                             backupText = null
                             onOpenFamily()

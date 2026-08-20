@@ -91,6 +91,23 @@ adb shell am broadcast -n dev.walcott/.debug.PolicySeedReceiver \
 The suite does this in its own setup and teardown, so a failing scenario cannot leave the next
 one unable to start.
 
+### A locked phone is not a slow phone
+
+If the emulator's user is locked (a PIN set, and nobody has typed it since boot), the app's
+credential-encrypted data is not mounted: the process cannot start, the seed receiver never runs,
+and `am start` reports that the activity does not exist. Every scenario then fails identically at
+the pairing with *"the device never checked in"*, which reads exactly like a product that has
+stopped talking to its family. It cost two full suite runs to work out.
+
+The suite now checks it and skips, loudly (`DeviceScenario` → `ChildDevice.userUnlocked`, asked of
+the activity manager rather than the keyguard, so a swipe-only lock screen does not skip a suite
+that would have run). Nothing here can type a PIN, so unlock it first:
+
+```sh
+adb shell input keyevent KEYCODE_WAKEUP && adb shell input swipe 540 1800 540 600
+adb shell input text 4291 && adb shell input keyevent KEYCODE_ENTER
+```
+
 ### The emulator loses its network
 
 Under a long run the emulated Wi-Fi interface disappears from the guest kernel entirely. adb
@@ -140,10 +157,34 @@ All in `PolicySeedReceiver` (debug builds only; absent from release):
 | Bonuses | 5 | Granted once, on the right phone, however often the snapshot repeats. |
 | Locate & icons | 6 | A fix and a rendered icon, both answered once and marked as answered. |
 | The wall | 3 | A limit set here, time counted there, and the moment it ran out reported back. |
+| Health flags | 2 | Screen-time counting taken away and given back; the charger. |
+| Update window | 2 | `no_install_apps` really leaving the OS for the hour, and really coming back. |
+| Location trail | 2 | Two places, in order, with history on — and only one with it off. |
+| Web filter | 2 | A real `VpnService` establish, and its withdrawal. |
 
-Still uncovered, and worth knowing: the domain monitor's chunked delivery and its acks, key
-rotation after a parent restores from backup, and the reported flags for a web filter that is
-expected but down. Each needs the child to be in a state the harness cannot yet arrange.
+Still uncovered, and worth knowing:
+
+- **The domain monitor's chunked delivery and its acks.** Needs the child's tunnel to observe real
+  DNS lookups, which needs traffic the `adb reverse` transport does not carry.
+- **Key rotation after a parent restores from backup** beyond what `RestoredParentScenarioTest`
+  already drives.
+- **A web filter that is expected but genuinely DOWN.** This is the one that looked reachable and
+  is not. Taking `ACTIVATE_VPN` away with `appops` does not refuse the tunnel on a Device Owner —
+  verified on this image, where the app logs `DNS tunnel established` with the op set to `ignore`,
+  because a Device Owner's VPN needs no consent. Reproducing it needs a second VPN app to win the
+  slot, or an OEM that kills the service. What IS pinned is the healthy state and the withdrawal.
+
+Two things worth knowing about what these assert:
+
+- `appliedPolicyVersion` reports the **snapshot's** counter, not the policy JSON's own `version`.
+  Both exist, `PolicyJson` warns about it, and waiting on the wrong one waits for a number that is
+  never coming. Use the `ParentSnapshot` that `pushPolicy` hands back.
+- `webFilterExpected` and `webFilterOn` do not settle in the same breath: the first flips when the
+  rules land, the second a few seconds later when the tunnel is up. Until then `webFilterOn` reads
+  false, because `VpnStatus` has been counting "down" since the process started — so a family
+  switching the filter on sees a brief, genuine "your filter is not running" on the parent's
+  screen. The scenario waits for the state that lasts and notes the transient rather than pinning
+  it.
 
 ## What it has already caught
 

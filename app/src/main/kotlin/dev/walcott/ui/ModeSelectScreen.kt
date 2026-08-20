@@ -183,8 +183,10 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
             fromPin = dev.walcott.sync.FamilyBackup.keySourceOf(text) == dev.walcott.sync.FamilyBackup.SOURCE_PIN,
             onDismiss = { backupText = null },
             onRestore = { passphrase, onError ->
-                scope.launch {
-                    if (viewModel.restoreBackup(text, passphrase.toCharArray())) {
+                // Not `scope.launch`: the work has to outlive this composition (see the
+                // ViewModel). A rotation here used to cancel the restore mid-write.
+                viewModel.restoreBackup(text, passphrase.toCharArray()) { ok ->
+                    if (ok) {
                         backupText = null
                         onRestored()
                     } else {

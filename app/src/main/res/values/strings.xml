@@ -1749,6 +1749,12 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_82_0">
+        <item>The emergency release now tells the phone it happened. The notice saying a phone has been handed back was being wiped about a second after it appeared, by the same cleanup that erases everything else — so the one message a whole day of waiting exists to deliver was never read. On your side, the alert asking you to refuse now goes away when the request ends: withdrawn, refused, or out of time, it used to stay in your notifications with a Refuse button that did nothing.</item>
+        <item>A phone freed by an emergency release no longer keeps a PIN nobody told its owner. If you had set that phone\'s unlock PIN from here, it stayed in force afterwards — and with Walcott no longer managing the phone, nothing could ever reset it again. The only way back in was a factory reset, which is the exact outcome this feature exists to avoid. A lock its owner chose for themselves is still left alone.</item>
+        <item>Restoring a backup for a family this phone already looks after no longer breaks that family. It was already refused, and correctly — but one step too late: the restored copy had by then announced itself to the children, and the copy that really manages them could never change a rule again. Nothing announces itself now until it is certain it belongs there.</item>
+        <item>Backups tell the truth about themselves. Sharing one counts as saved when you actually choose where to send it, not when the share sheet opens — back out of it and the reminders used to go quiet for a month over a file that went nowhere. Turning the phone sideways halfway through saving or restoring no longer loses the work. And the card now says whether the nightly copies on this phone are really being written: they are sealed with the family PIN, so a family that never set one had none at all while being told otherwise.</item>
+    </string-array>
     <string-array name="whats_new_0_81_0">
         <item>The map replays a day properly now. There is a speed control beside play — from half speed up to four times — and the trail behind the marker has become a comet: the last ten positions, running from solid violet at where they are to nothing at the far end, so which way they were walking reads at a glance.</item>
         <item>Three things that made a replay unusable are fixed. A position arriving from the phone no longer throws you back to the present in the middle of watching the afternoon, and no longer stops playback dead — with close tracking running, that happened every single minute. The map now follows the marker while a replay runs, instead of letting them walk off the edge of it. And a map left open in the background stops working when you leave the screen.</item>
@@ -1820,4 +1826,7 @@
     </plurals>
     <string name="list_join_two">%1$s and %2$s</string>
     <string name="list_join_more">%1$s, %2$s</string>
+    <string name="panic_start_refused">Couldn\'t start the request just now. Check the connection and try again.</string>
+    <string name="backup_local_needs_pin">Nightly copies on this phone are off until the family PIN is set and entered once — they are sealed with it.</string>
+    <string name="backup_local_failed">The nightly copy into %1$s could not be written last time it ran.</string>
 </resources>

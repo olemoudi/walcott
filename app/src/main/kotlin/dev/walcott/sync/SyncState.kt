@@ -472,6 +472,17 @@ data class SyncState(
      * thing that would let anybody holding it change the lock (see [dev.walcott.enforcement.LockScreen]).
      */
     val lockTokenB64: String = "",
+    /**
+     * CHILD: this device's unlock credential is one WALCOTT set, not one its owner chose.
+     *
+     * Recorded so the emergency release can hand the lock screen back along with everything else.
+     * A release that leaves a parent-set PIN behind hands over a phone whose owner may never have
+     * been told the number — and with Device Owner gone there is nothing left that can reset it,
+     * so the only way in is the factory reset this whole feature exists to avoid. Cleared when the
+     * lock is removed again, so a credential the owner has since chosen for themselves is never
+     * mistaken for ours.
+     */
+    val lockPinSetByUs: Boolean = false,
     /** CHILD: how many times this device has had to put its own ringer back. Cumulative. */
     val ringerRestores: Int = 0,
     /**

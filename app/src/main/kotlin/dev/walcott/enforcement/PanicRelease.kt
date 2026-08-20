@@ -49,9 +49,17 @@ object PanicRelease {
             // The quarantine is in there explicitly: an app suspended by the install guard
             // answers to no rule and may have no launcher icon, so neither of the other two
             // sets is guaranteed to name it — and this is the last chance to give it back.
+            val inventory = app.repository.inventory
             val managed = app.repository.managedPackagesNow() +
                 app.syncManager.quarantined.value +
-                withContext(Dispatchers.IO) { app.repository.inventory.launchableApps().map { it.packageName } }
+                withContext(Dispatchers.IO) {
+                    // Every user app, icon or not — the same list [finishIfInterrupted] falls back
+                    // to, and for the same reason. The three sets above SHOULD name everything this
+                    // device suspended, but "should" is doing a lot of work for the last chance a
+                    // released phone ever gets: after this there is no enforcement loop left to
+                    // unsuspend anything the sets happened to miss.
+                    inventory.launchableApps().map { it.packageName } + inventory.userPackages().orEmpty()
+                }
             Enforcer(context).releaseAll(managed)
         }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }
 
@@ -59,6 +67,14 @@ object PanicRelease {
         // and lift the self-uninstall block. Device Owner only, so it must precede step 6.
         runCatching { DeviceRestrictions.clearAll(context) }
             .onFailure { DebugLog.e(TAG, "clearing device restrictions failed", it) }
+
+        // 3b. And the lock screen, if the credential in force is one this app set remotely. Also
+        // Device Owner only, and the sharpest deadline of the lot: a release that steps over this
+        // hands back a phone whose owner may never have been told the PIN, with nothing left on it
+        // that could ever reset one — the factory reset this whole feature exists to avoid, handed
+        // out as the reward for waiting twenty-four hours. A lock the owner chose is left alone.
+        runCatching { app.syncManager.handBackLockScreen() }
+            .onFailure { DebugLog.e(TAG, "handing back the lock screen failed", it) }
 
         // 4. Stop enforcing and forget the family. The released flag is what keeps the boot
         // receiver, watchdog and heartbeat from starting it all up again on a wiped policy

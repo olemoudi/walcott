@@ -41,4 +41,20 @@ class PolicyReplayGateTest {
     fun `without rotation the baseline never moves down`() {
         assertEquals(7, SyncEngine.rebasedPolicyVersion(3, 7, rotationAdopted = false))
     }
+
+    @Test
+    fun `a same-key restore leaves the counter somewhere an incremental parent can never reach`() {
+        // Why a restore must not be spoken aloud on a topic until it is certain it belongs there
+        // (see FamilyHub.addFamilyFromBackup). A same-key restore carries no rotation cert, so it
+        // buys its way past this gate with a version a million ahead — and once a child has
+        // rebased there, a parent scope still counting 42, 43, 44 is refused for ever. Fixing that
+        // needs a factory reset of the family's counter; there is no way back over the wire.
+        val leaped = 42L + 1_000_000L
+        assertTrue(SyncEngine.adoptsPolicy(leaped, appliedVersion = 42, rotationAdopted = false))
+        val childBaseline = SyncEngine.rebasedPolicyVersion(leaped, 42, rotationAdopted = false)
+        assertEquals(leaped, childBaseline)
+        // The scope that really manages this family, carrying on from where it was.
+        assertFalse(SyncEngine.adoptsPolicy(snapshotVersion = 43, appliedVersion = childBaseline, rotationAdopted = false))
+        assertFalse(SyncEngine.adoptsPolicy(snapshotVersion = 99, appliedVersion = childBaseline, rotationAdopted = false))
+    }
 }

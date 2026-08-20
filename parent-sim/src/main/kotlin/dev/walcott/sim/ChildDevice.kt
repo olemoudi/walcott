@@ -171,6 +171,33 @@ class ChildDevice(
 
     fun screenAwake(): Boolean = run("shell", "dumpsys", "power").contains("mWakefulness=Awake")
 
+    /**
+     * Whether this user's credential-encrypted storage is mounted — "is the phone unlocked", as
+     * everything else here experiences it.
+     *
+     * A locked device is not a slow device, it is a device where the app does not exist: its data
+     * directory is not mounted, so the process cannot start, the seed receiver never runs and
+     * `am start` answers that the activity does not exist. Every scenario then fails identically,
+     * at the pairing, with "the device never checked in" — which reads as a product that has
+     * stopped talking to its family, and is worth a couple of full suite runs to work out. It
+     * happened here.
+     *
+     * Asked of the ACTIVITY MANAGER rather than of the keyguard: a swipe-only lock screen shows
+     * while the user is perfectly unlocked, so `mDreamingLockscreen` would skip suites that would
+     * have run. This is the state that actually decides whether there is an app to talk to.
+     */
+    fun userUnlocked(): Boolean = runCatching {
+        run("shell", "dumpsys", "activity").lineSequence()
+            .dropWhile { !it.contains("mStartedUsers") }
+            .take(4)
+            .any { it.contains("RUNNING_UNLOCKED") }
+    }.getOrDefault(false)
+
+    /** Pushes a swipe-only keyguard out of the way. A secure lock needs a person and their PIN. */
+    fun dismissSwipeKeyguard() {
+        run("shell", "wm", "dismiss-keyguard")
+    }
+
     /** Leaves the ringer where a pocket would (see AudioGuard). */
     fun lowerRinger() = seed("--es", "lower_ringer", "now")
 

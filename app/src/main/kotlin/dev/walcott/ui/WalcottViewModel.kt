@@ -393,9 +393,15 @@ class WalcottViewModel(
     /** Creates a family and returns its id (runs on the app scope; safe if the dialog closes). */
     suspend fun createFamily(name: String): String = hub.createFamily(name)
 
-    /** Adopts a backup as an ADDITIONAL family, leaving the ones already here alone. */
-    suspend fun addFamilyFromBackup(fileJson: String, passphrase: CharArray): dev.walcott.FamilyHub.AddResult =
-        hub.addFamilyFromBackup(fileJson, passphrase)
+    /**
+     * Adopts a backup as an ADDITIONAL family, leaving the ones already here alone. On the
+     * ViewModel's scope for the same reason as [restoreBackup]: it must not be abandoned midway.
+     */
+    fun addFamilyFromBackup(
+        fileJson: String,
+        passphrase: CharArray,
+        onDone: (dev.walcott.FamilyHub.AddResult) -> Unit,
+    ) = viewModelScope.launch { onDone(hub.addFamilyFromBackup(fileJson, passphrase)) }
 
     /** Stops managing a family (its children keep the last rules they received — see the dialog). */
     fun removeFamily(id: String) = viewModelScope.launch { hub.removeFamily(id) }
@@ -1023,9 +1029,22 @@ class WalcottViewModel(
     /** Record that a backup file actually reached its destination. */
     fun recordBackupSaved() = viewModelScope.launch { sync.recordBackupSaved() }
 
-    /** Restores a family from a backup file. False = wrong passphrase or invalid file. */
-    suspend fun restoreBackup(fileJson: String, passphrase: CharArray): Boolean =
-        sync.restoreBackup(fileJson, passphrase)
+    /** Which family this screen is showing, for a callback that has to find its way back. */
+    val familyId: String get() = sync.familyId
+
+    /**
+     * Restores a family from a backup file, reporting the outcome to [onDone]. False = wrong
+     * passphrase or invalid file.
+     *
+     * Runs on the ViewModel's scope rather than the caller's, and that is the point of the
+     * callback shape. A restore is several stores written in sequence — rules, then sync state,
+     * then the identity — and the screen that starts it launched from a composition scope that
+     * dies when the activity is recreated. Rotating the phone during the second or so the key
+     * derivation takes cancelled the restore halfway through, leaving a device holding a family's
+     * RULES with no identity to publish them under.
+     */
+    fun restoreBackup(fileJson: String, passphrase: CharArray, onDone: (Boolean) -> Unit) =
+        viewModelScope.launch { onDone(sync.restoreBackup(fileJson, passphrase)) }
 
     /**
      * True when this parent has a PIN but no key for the on-device copies yet, so the nightly

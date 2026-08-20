@@ -67,6 +67,8 @@ fun PanicScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
     val spacing = Tokens.spacing
     val scope = rememberCoroutineScope()
     val status by viewModel.panicStatus.collectAsStateWithLifecycle()
+    val snackbar = dev.walcott.ui.components.LocalSnackbar.current
+    val refusedMessage = stringResource(R.string.panic_start_refused)
     var confirming by remember { mutableStateOf(false) }
 
     // Local tick: the countdown is anchored to the server's clock but extrapolated locally,
@@ -135,7 +137,11 @@ fun PanicScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     confirming = false
-                    scope.launch { viewModel.startPanic() }
+                    // The gate is checked again where the request is written, against the store
+                    // rather than this screen's copy of it — so it can say no even though the
+                    // button was live. Silently doing nothing is the one answer this screen must
+                    // never give: the child came here because they are out of other options.
+                    scope.launch { if (!viewModel.startPanic()) snackbar.show(refusedMessage) }
                 }) { Text(stringResource(R.string.panic_confirm_button)) }
             },
             dismissButton = {
@@ -148,7 +154,12 @@ fun PanicScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 /** Why the button is greyed out, or null when it isn't. Ordered by what the child can fix. */
 @Composable
 private fun blockedReason(status: SyncManager.PanicStatus, nowMs: Long): String? = when {
-    !status.channelProven(nowMs) -> stringResource(R.string.panic_blocked_offline)
+    // "No server clock yet" is told as being offline, because for the child that is exactly what
+    // it is: the family has just moved relay and this phone has not heard from the new one. It has
+    // to come BEFORE the lockout line as well as before the grey button — measured against a clock
+    // of zero, three days of cooldown reads as fifty-seven years of it.
+    !status.channelProven(nowMs) || !PanicProtocol.anchored(status.serverNowSec) ->
+        stringResource(R.string.panic_blocked_offline)
     !PanicProtocol.cooldownPassed(status.blockedUntilSec, status.serverNowSec) -> stringResource(
         R.string.panic_blocked_denied,
         Duration.ofSeconds(status.cooldownRemainingSec).humanize(),

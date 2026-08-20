@@ -39,6 +39,12 @@ abstract class DeviceScenario {
         // scenario about a schedule or a budget times out waiting for a suspension nothing was even
         // going to attempt. It reads as a product that stopped enforcing, and it cost an hour once.
         device.keepAwake()
+        // And unlocked, which is a different thing and a worse failure. A locked phone has no
+        // mounted app data, so the seed receiver never runs and every scenario dies identically
+        // at the pairing below — reported as a product that stopped checking in. Nothing here can
+        // type a PIN, so this says what is wrong and skips.
+        device.dismissSwipeKeyguard()
+        precondition("the device is unlocked (a PIN-locked phone has no app data to talk to)", device.userUnlocked())
         // And able to count screen time. Without it every budget fails closed, so a suite of
         // scenarios about limits would be measuring a device that cannot measure anything (see
         // ChildDevice.ensureUsageAccess). Granted rather than asserted: it is one adb call, and a

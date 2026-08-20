@@ -215,7 +215,14 @@ class FamilyHub(
     suspend fun addFamilyFromBackup(fileJson: String, passphrase: CharArray): AddResult = onHubScope {
         val id = newFamilyId()
         val fresh = scopeOf(id)
-        val restored = runCatching { fresh.syncManager.restoreBackup(fileJson, passphrase) }.getOrDefault(false)
+        // Restored SILENT. The only way to know whose family this file is, is to open it, and a
+        // scope that has already published on the topic cannot be taken back: its snapshot carries
+        // a version a million ahead of the backup's, the children adopt it, and the scope that
+        // really manages that family — still counting from its own much lower number — is refused
+        // by every child from then on (SyncEngine.adoptsPolicy). The refusal below used to happen
+        // one publish too late, so declining a duplicate was what broke the family.
+        val restored = runCatching { fresh.syncManager.restoreBackup(fileJson, passphrase, goLive = false) }
+            .getOrDefault(false)
         if (!restored) {
             discard(id)
             return@onHubScope AddResult.BAD_FILE
@@ -228,6 +235,9 @@ class FamilyHub(
         }
         carryOverDeviceSecrets(active, fresh)
         store.update { it.plus(id, System.currentTimeMillis()) }
+        // Only now, and deliberately after the PIN has been carried over: the first snapshot then
+        // already carries the credential this device actually gates on, instead of the backup's.
+        fresh.syncManager.goLiveAfterRestore()
         DebugLog.i(TAG, "family restored as a new family ($id)")
         AddResult.OK
     }

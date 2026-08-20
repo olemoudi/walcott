@@ -128,11 +128,34 @@ object PanicProtocol {
     fun provesChannel(localNowMs: Long, serverTimeSec: Long): Boolean =
         serverTimeSec > 0 && kotlin.math.abs(localNowMs - serverTimeSec * 1000) <= MESSAGE_FRESH_MS
 
-    /** Server second until which a denial blocks new requests. */
+    /**
+     * Server second until which a denial blocks new requests.
+     *
+     * [deniedAtServerSec] must be a real server second. Anchored on zero — which is what the
+     * device's cursor reads for the first message after a relay move, and what it reads for the
+     * whole message being handled, since the cursor only advances afterwards — this returns three
+     * days after the epoch: a lockout that expired in 1970 and stops nothing at all. Callers pass
+     * the newest server second they can vouch for, and the denied request's own last checkpoint
+     * is always one of them.
+     */
     fun cooldownUntilSec(deniedAtServerSec: Long): Long = deniedAtServerSec + DENIAL_COOLDOWN_SEC
 
     /** Whether a parent's refusal has finished blocking new requests (three days). */
     fun cooldownPassed(blockedUntilSec: Long, serverNowSec: Long): Boolean = serverNowSec >= blockedUntilSec
+
+    /**
+     * Whether this device knows what time the server thinks it is.
+     *
+     * The cursor is reset to zero whenever the family moves relay: the old server's timestamps
+     * mean nothing on the new one. Until the first message lands there, this device has no server
+     * clock at all — and [channelProven] can still say yes, because the last proof of the channel
+     * predates the move by less than half an hour.
+     *
+     * A request started in that window is anchored to the epoch, so its deadline falls in January
+     * 1970 and the very next message [evaluate]s it as [Step.EXPIRED]. The child spends their one
+     * request on a countdown that was already over, which is the cruellest possible way to fail.
+     */
+    fun anchored(serverNowSec: Long): Boolean = serverNowSec > 0
 
     /**
      * The whole gate on starting a request, in one testable place. This is the only door out of
@@ -150,7 +173,7 @@ object PanicProtocol {
         blockedUntilSec: Long,
         serverNowSec: Long,
     ): Boolean = !hasActiveRequest && parentSupported && channelProven(msSinceChannelOk) &&
-        cooldownPassed(blockedUntilSec, serverNowSec)
+        anchored(serverNowSec) && cooldownPassed(blockedUntilSec, serverNowSec)
 
     /** Notices still to come before the device releases itself. */
     fun remainingCheckpoints(request: PanicRequest): Int =

@@ -55,7 +55,8 @@ class SyncManager(
      * collide outside their own stores — the on-device backup files, so far. The wire has no
      * notion of it: a family IS its topic and key (see [dev.walcott.data.FamilyIds]).
      */
-    private val familyId: String = dev.walcott.data.FamilyIds.DEFAULT,
+    /** Which family this manager speaks for; public so a callback can find its way back here. */
+    val familyId: String = dev.walcott.data.FamilyIds.DEFAULT,
     /**
      * This family's name when alerts need to say which family they are about (a parent holding
      * more than one), null otherwise. A lambda because both halves of that answer — the family
@@ -912,9 +913,20 @@ class SyncManager(
      * a standing refusal, a parent that couldn't be told, or a request already running) —
      * re-checked here and not only in the UI, since this is the one door out of enforcement.
      */
-    suspend fun startPanic(): Boolean {
-        val status = panicStatus.value
-        if (!status.canStart(System.currentTimeMillis())) return false
+    suspend fun startPanic(): Boolean = panicMutex.withLock {
+        // From the STORE, under the same lock as every other change to a request — not from
+        // `panicStatus`, which is a mapped flow and therefore lags the writes behind it. Read
+        // there, the gate could still see the request a refusal had just cleared, or miss the
+        // three-day lockout that refusal had just written, and let the request through anyway.
+        val s = syncStore.current()
+        val status = PanicStatus(
+            request = s.panic,
+            serverNowSec = s.ntfySinceSec,
+            blockedUntilSec = s.panicBlockedUntilSec,
+            lastChannelOkMs = s.lastChannelOkMs,
+            parentSupported = s.parentAppVersionCode >= PANIC_MIN_PARENT_VERSION,
+        )
+        if (!status.canStart(System.currentTimeMillis())) return@withLock false
         val anchor = status.serverNowSec
         syncStore.update {
             it.copy(
@@ -928,12 +940,12 @@ class SyncManager(
         }
         dev.walcott.debug.DebugLog.w(TAG, "emergency release requested by the child")
         publishSelf()
-        return true
+        true
     }
 
     /** The child withdraws their own request (starting again restarts the 24 hours). */
-    suspend fun cancelPanic() {
-        if (syncStore.current().panic == null) return
+    suspend fun cancelPanic() = panicMutex.withLock {
+        if (syncStore.current().panic == null) return@withLock
         syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
         dev.walcott.debug.DebugLog.w(TAG, "emergency release withdrawn by the child")
         publishSelf()
@@ -950,10 +962,16 @@ class SyncManager(
         val s = syncStore.current()
         val request = s.panic ?: return@withLock false to "no_request"
         if (requestId.isNotBlank() && requestId != request.id) return@withLock false to "stale_request"
+        // The newest server second this device can vouch for. NOT `ntfySinceSec` alone: the
+        // cursor only advances after the message carrying this refusal has been handled, and it
+        // reads zero outright for the first message after a relay move — which would put the
+        // three-day lockout three days after the epoch, i.e. nowhere. The request's own last
+        // checkpoint is a real server second by construction (see PanicProtocol.anchored).
+        val deniedAt = maxOf(s.ntfySinceSec, request.lastCheckpointSec)
         syncStore.update {
             it.copy(
                 panic = null,
-                panicBlockedUntilSec = PanicProtocol.cooldownUntilSec(it.ntfySinceSec),
+                panicBlockedUntilSec = PanicProtocol.cooldownUntilSec(deniedAt),
                 childVersion = it.childVersion + 1,
             )
         }
@@ -1009,6 +1027,12 @@ class SyncManager(
         }
         PanicNotifications.notifyReleased(context)
         dev.walcott.enforcement.PanicRelease.releaseDevice(context)
+        // Again, and this is not belt-and-braces: the teardown ends by cancelling every
+        // notification this app ever posted, which included the one above — so the single
+        // message this whole 24 hours exists to deliver was being shown for about a second and
+        // then wiped. Posted before as well, because between the two the process is ordinary
+        // and killable, and a child who is told nothing at all is the worse failure.
+        PanicNotifications.notifyReleased(context)
     }
 
     /**
@@ -1700,6 +1724,13 @@ class SyncManager(
     suspend fun denyPanicRequest(targetDeviceId: String, requestId: String) {
         val target = syncStore.current().children.firstOrNull { it.deviceId == targetDeviceId }
         sendCommand(targetDeviceId, RemoteAction.DENY_PANIC, arg = requestId)
+        // Same tidy-up the shade's own Refuse button does. A parent who refuses from the child's
+        // screen has answered the alert just as squarely, and leaving it standing invites them to
+        // answer it a second time from a notification whose countdown has already stopped.
+        runCatching {
+            androidx.core.app.NotificationManagerCompat.from(context)
+                .cancel(SyncNotifications.panicNotifId(targetDeviceId))
+        }
         if (target != null) {
             syncStore.update { it.plusEvent(event(ParentEvent.TYPE_PANIC_DENIED, target, detail = requestId)) }
         }
@@ -2108,8 +2139,13 @@ class SyncManager(
      * Resurrects a family from a backup on this (fresh) device: identity, keys, rules and
      * children registry come back, and the first publish re-asserts the rules — children
      * never need to be touched. False when the passphrase is wrong or the file is invalid.
+     *
+     * [goLive] false stops short of connecting and publishing, leaving a fully restored but
+     * SILENT scope. The multi-family path needs that: it can only tell whether this file is for a
+     * family the device already holds by opening it, and a device that has already announced
+     * itself on that topic cannot take the announcement back (see [dev.walcott.FamilyHub]).
      */
-    suspend fun restoreBackup(fileJson: String, passphrase: CharArray): Boolean {
+    suspend fun restoreBackup(fileJson: String, passphrase: CharArray, goLive: Boolean = true): Boolean {
         val payload = withContext(Dispatchers.Default) { FamilyBackup.decrypt(fileJson, passphrase) }
             ?: return false
         val policy = runCatching { json.decodeFromString(PolicySettings.serializer(), payload.policyJson) }
@@ -2155,9 +2191,23 @@ class SyncManager(
         }
         identityStore.save(identity)
         dev.walcott.debug.DebugLog.w(TAG, "family restored from backup (created ${payload.createdAtMs})")
+        if (goLive) goLiveAfterRestore()
+        return true
+    }
+
+    /**
+     * Announces a scope restored with `goLive = false`: connects and publishes.
+     *
+     * Separate because the first publish is irreversible. It re-asserts the rules on the family's
+     * topic at a version a million ahead of the backup's, which is exactly what makes a restore
+     * work — and exactly what must not happen on a topic this device is already the parent of
+     * under another scope, since the children would follow the doomed scope's counter and stop
+     * listening to the real one for ever.
+     */
+    suspend fun goLiveAfterRestore() {
+        val identity = identityStore.current()
         connect(identity)
         publishSelf()
-        return true
     }
 
     /** Publish this child's snapshot now (used by the periodic location sampler). */
@@ -2935,6 +2985,36 @@ class SyncManager(
     }
 
     /**
+     * Child: applies the parent's lock-screen change and remembers whether the credential now on
+     * this phone is one we put there (see [SyncState.lockPinSetByUs]).
+     */
+    private suspend fun setLockPin(pin: String): dev.walcott.enforcement.LockScreen.Result {
+        val result = dev.walcott.enforcement.LockScreen.apply(context, pin, lockToken())
+        if (result == dev.walcott.enforcement.LockScreen.Result.DONE) {
+            syncStore.update { it.copy(lockPinSetByUs = pin.isNotBlank()) }
+        }
+        return result
+    }
+
+    /**
+     * Child: gives the lock screen back, if the one in force is ours.
+     *
+     * Part of the emergency release, and it has to run while this device is still Device Owner —
+     * afterwards nothing can change the credential. Only a lock WE set is removed: a PIN its owner
+     * chose is theirs, and taking it off would hand back an unprotected phone nobody asked for.
+     */
+    suspend fun handBackLockScreen() {
+        if (!syncStore.current().lockPinSetByUs) return
+        dev.walcott.debug.DebugLog.w(TAG, "emergency release: removing the lock screen this app set")
+        val result = dev.walcott.enforcement.LockScreen.apply(context, "", lockToken())
+        if (result == dev.walcott.enforcement.LockScreen.Result.DONE) {
+            syncStore.update { it.copy(lockPinSetByUs = false) }
+        } else {
+            dev.walcott.debug.DebugLog.e(TAG, "could not remove the lock screen on release: $result")
+        }
+    }
+
+    /**
      * This device's lock-screen reset token, minted and registered on first use (see [LockScreen]).
      *
      * Kept device-local and re-registered every time it is read, which is cheap and covers the one
@@ -3385,7 +3465,7 @@ class SyncManager(
                 denyPanic = { requestId -> denyPanic(requestId) },
                 removeApp = { pkg -> removeAppNow(pkg) },
                 allowApp = { pkg -> allowAppNow(pkg) },
-                setLockPin = { pin -> dev.walcott.enforcement.LockScreen.apply(context, pin, lockToken()) },
+                setLockPin = { pin -> setLockPin(pin) },
                 publishNotifications = { arg -> publishNotifications(arg) },
                 setLiveTracking = { minutes -> startLiveTracking(minutes) },
             )
@@ -3678,6 +3758,15 @@ class SyncManager(
         } else if (panic == null && snapshot.deviceId in before.panicAlerted) {
             // Withdrawn by the child, refused, or killed by the connectivity rule. Either way
             // the parent deserves the closing line as much as the alarm.
+            //
+            // And the alarm itself has to go. Only the Refuse button in the shade ever took it
+            // down, so every other ending left a standing "asking to be released, 22 h left"
+            // alert whose one action now answers `no_request` — the shade insisting a countdown
+            // is running against a phone that stopped asking hours ago.
+            runCatching {
+                androidx.core.app.NotificationManagerCompat.from(context)
+                    .cancel(SyncNotifications.panicNotifId(snapshot.deviceId))
+            }
             syncStore.update {
                 it.copy(panicAlerted = it.panicAlerted - snapshot.deviceId)
                     .plusEvent(event(ParentEvent.TYPE_PANIC_CANCELLED, snapshot))
