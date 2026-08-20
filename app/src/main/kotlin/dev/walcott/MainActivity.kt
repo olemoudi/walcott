@@ -83,9 +83,15 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(newIntentDest) { newIntentDest?.let { dest = it } }
                 WalcottApp(vm, deviceOwner, startDest = dest, onDestConsumed = { dest = null })
                 // Above everything, and outside the per-family key: the app updated itself, and
-                // on a child device that update could not even be declined.
-                val whatsNewStore = remember { dev.walcott.data.WhatsNewStore(applicationContext) }
-                dev.walcott.ui.WhatsNewSheet(whatsNewStore)
+                // the parent is the one person in the family who chose that it would. A
+                // supervised phone gets nothing (see WhatsNew.isAnnouncedOn).
+                val identity by app.identityStore.identity.collectAsStateWithLifecycle(
+                    initialValue = dev.walcott.sync.FamilyIdentity(),
+                )
+                if (dev.walcott.ui.WhatsNew.isAnnouncedOn(identity.effectiveMode)) {
+                    val whatsNewStore = remember { dev.walcott.data.WhatsNewStore(applicationContext) }
+                    dev.walcott.ui.WhatsNewSheet(whatsNewStore)
+                }
             }
         }
     }

@@ -251,7 +251,7 @@ private fun ReportRows(stored: StoredDiag, appLabels: Map<String, String>) {
         DiagRow(
             label = stringResource(R.string.diag_update_error),
             value = remoteResultLabel(context, report.updateError),
-            ok = report.updateError == "waiting_parent",
+            ok = report.updateError in UPDATE_WAITS_ON_PURPOSE,
         )
     }
     if (report.suspendFailures.isNotEmpty()) {
@@ -312,7 +312,7 @@ internal fun DiagPayload.problems(seenAtVersionCode: Int): Int {
     if (!gpsOn) count++
     if (!networkLocationOn) count++
     if (batteryPercent in 0 until LOW_BATTERY_PERCENT && !charging) count++
-    if (updateError.isNotBlank() && updateError != "waiting_parent") count++
+    if (updateError.isNotBlank() && updateError !in UPDATE_WAITS_ON_PURPOSE) count++
     if (StoredDiag(this, seenAtVersionCode).versionWasBehind()) count++
     if (suspendFailures.isNotEmpty()) count++
     return count

@@ -197,6 +197,10 @@ class EnforcementService : LifecycleService() {
                                 // Not a failure, but the parent should see WHY the child is
                                 // behind: it is deliberately waiting for the canary.
                                 UpdateCheckOutcome.WAITING_FOR_PARENT -> "waiting_parent"
+                                // Nor is this one: the family asked for Wi-Fi-only updates and
+                                // this phone has not seen Wi-Fi. Without it the child reports
+                                // nothing at all and sits months behind looking perfectly well.
+                                UpdateCheckOutcome.WAITING_FOR_WIFI -> "waiting_wifi"
                                 else -> ""
                             },
                         )

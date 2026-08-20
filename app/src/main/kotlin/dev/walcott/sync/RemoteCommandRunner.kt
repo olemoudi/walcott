@@ -96,6 +96,11 @@ class RemoteCommandRunner(
             UpdateCheckOutcome.TRANSIENT_FAILURE -> false to "download_failed"
             UpdateCheckOutcome.INSTALL_FAILURE -> false to "install_failed"
             UpdateCheckOutcome.WAITING_FOR_PARENT -> true to "waiting_parent"
+            UpdateCheckOutcome.WAITING_FOR_WIFI -> true to "waiting_wifi"
+            // Another check was already running, so this one stood aside rather than fighting
+            // it for the same session. Reported as itself: acking "up_to_date" for a device
+            // that is nothing of the sort is exactly what makes a stuck child undiagnosable.
+            UpdateCheckOutcome.BUSY -> false to "busy"
         }
 
     /**

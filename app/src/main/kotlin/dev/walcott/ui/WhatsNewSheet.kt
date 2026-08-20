@@ -35,7 +35,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Shown once after the app has updated itself, listing what changed since the build this device
- * was last running.
+ * was last running. Parent phones only — [WhatsNew.isAnnouncedOn] says why, and the caller in
+ * MainActivity is what enforces it.
  *
  * Every string comes from resources, so the sheet speaks whatever language the app is set to
  * without this code doing anything about it. Dismissing marks the current build as seen — and so
@@ -71,8 +72,8 @@ fun WhatsNewSheet(store: WhatsNewStore) {
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = sheetState) {
         // The button sits OUTSIDE the scrolling part, and that is the whole point of the nesting:
         // it used to be the last child of the scroll, so a release with eight things to say
-        // pushed the only way out below the fold. The way out of a sheet shown to a child who
-        // did not ask for it must not be something you have to go looking for.
+        // pushed the only way out below the fold. The way out of a sheet that opened by itself
+        // must not be something you have to go looking for.
         Column(
             Modifier.fillMaxWidth()
                 .padding(horizontal = Tokens.spacing.screen)

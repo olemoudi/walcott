@@ -28,5 +28,27 @@ class ApkSourceTest {
         assertFalse(Updater.trustedApkUrl("https://github.com/someone/walcott/x.apk"))
         assertFalse(Updater.trustedApkUrl("https://github.com.evil.example/olemoudi/walcott/x.apk"))
         assertFalse(Updater.trustedApkUrl(""))
+        assertFalse(Updater.trustedApkUrl("not a url at all"))
+        assertFalse(Updater.trustedApkUrl("ftp://github.com/olemoudi/walcott/x.apk"))
+    }
+
+    @Test
+    fun `the url is judged as it will be requested, not as it was written`() {
+        // The one that a startsWith over the raw text waved straight through: the request is
+        // made from the PARSED url, and parsing resolves the dot-segments away — so this reads
+        // as our repository and downloads from somebody else's.
+        assertFalse(Updater.trustedApkUrl("https://github.com/olemoudi/walcott/../../someone/evil.apk"))
+        assertFalse(Updater.trustedApkUrl("https://github.com/olemoudi/walcott/../evil/x.apk"))
+    }
+
+    @Test
+    fun `a repository whose name merely starts the same is refused`() {
+        assertFalse(Updater.trustedApkUrl("https://github.com/olemoudi/walcott-evil/x.apk"))
+        assertFalse(Updater.trustedApkUrl("https://github.com/olemoudi-evil/walcott/x.apk"))
+    }
+
+    @Test
+    fun `the host is matched case-insensitively, as the network does`() {
+        assertTrue(Updater.trustedApkUrl("https://GitHub.COM/olemoudi/walcott/releases/x.apk"))
     }
 }

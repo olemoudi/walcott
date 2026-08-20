@@ -1872,8 +1872,10 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = Card
     var confirmRelease by remember(snapshot.deviceId) { mutableStateOf(false) }
     val outdated = snapshot.appVersionCode in 1 until BuildConfig.VERSION_CODE
     val needsPermissionNudge = !snapshot.usageAccessOn || !snapshot.networkLocationOn
-    // Deliberately waiting for the canary (this phone) is not a failure — don't paint it red.
+    // Deliberately waiting — for the canary (this phone), or for the Wi-Fi the family's own
+    // policy asked this phone to wait for — is not a failure. Don't paint either of them red.
     val waitingForParent = snapshot.updateError == "waiting_parent"
+    val waitingOnPurpose = snapshot.updateError in UPDATE_WAITS_ON_PURPOSE
 
     WalcottCard(position = position) {
         Column(Modifier.padding(spacing.lg)) {
@@ -1889,11 +1891,13 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = Card
                 Text(
                     if (waitingForParent) {
                         stringResource(R.string.child_update_waiting_parent)
+                    } else if (waitingOnPurpose) {
+                        stringResource(R.string.child_update_waiting, remoteResultLabel(context, snapshot.updateError))
                     } else {
                         stringResource(R.string.child_update_error, remoteResultLabel(context, snapshot.updateError))
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (waitingForParent) {
+                    color = if (waitingOnPurpose) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
                         MaterialTheme.colorScheme.error
@@ -2031,6 +2035,13 @@ private fun RemoteFixRow(title: String, description: String, emphasized: Boolean
  * Maps a command's machine-readable detail onto localized text. Unknown details (a newer
  * child reporting something this build doesn't know) fall through verbatim.
  */
+/**
+ * The update states a child reports that mean "waiting", not "broken": the canary gate, and the
+ * family's own Wi-Fi-only policy. Shared with the diagnostics screen so one list decides what
+ * counts as a problem there and what gets painted red here.
+ */
+internal val UPDATE_WAITS_ON_PURPOSE = setOf("waiting_parent", "waiting_wifi")
+
 internal fun remoteResultLabel(context: android.content.Context, detail: String): String = when (detail) {
     "up_to_date" -> context.getString(R.string.remote_result_up_to_date)
     "installing" -> context.getString(R.string.remote_result_installing)
@@ -2047,6 +2058,8 @@ internal fun remoteResultLabel(context: android.content.Context, detail: String)
     "not_installed" -> context.getString(R.string.remote_result_not_installed)
     "allowed" -> context.getString(R.string.remote_result_allowed)
     "waiting_parent" -> context.getString(R.string.remote_result_waiting_parent)
+    "waiting_wifi" -> context.getString(R.string.remote_result_waiting_wifi)
+    "busy" -> context.getString(R.string.remote_result_busy)
     "diag_sent" -> context.getString(R.string.remote_result_diag_sent)
     else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail
 }

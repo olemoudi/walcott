@@ -1,13 +1,14 @@
 package dev.walcott.ui
 
 import dev.walcott.R
+import dev.walcott.sync.DeviceMode
 
 /**
- * What changed, per release, for the sheet an updated app shows once.
+ * What changed, per release, for the sheet an updated app shows once — on the parent's phone,
+ * and only there (see [isAnnouncedOn]).
  *
- * Walcott updates itself silently — on a child device it cannot even be declined — so without
- * this a family's phones simply change behaviour one morning with no explanation. That is a poor
- * deal in a beta a real family is living in.
+ * Walcott updates itself silently, so without this the parent's phone simply changes behaviour
+ * one morning with no explanation. That is a poor deal in a beta a real family is living in.
  *
  * The text is a `string-array` resource rather than literals, which is what makes it appear in
  * whatever language the app is running in: the same resource resolution as every other string,
@@ -18,6 +19,17 @@ import dev.walcott.R
  */
 object WhatsNew {
 
+    /**
+     * Whether this device shows the sheet at all.
+     *
+     * Parent phones only. A supervised phone — a child's, or an adult's in assisted mode — did
+     * not choose to update and could not have declined it: handing it a list of what changed is
+     * explaining a decision that was never theirs, in a modal they have to dismiss before they
+     * can use the phone at all. The person who wants to know what changed is the one who runs
+     * the family, and they are looking at the phone where the release notes belong.
+     */
+    fun isAnnouncedOn(mode: DeviceMode): Boolean = mode == DeviceMode.PARENT
+
     /** One shipped release worth telling people about. */
     data class Release(val versionCode: Int, val name: String, val bulletsRes: Int)
 
@@ -26,6 +38,7 @@ object WhatsNew {
      * then has nothing to show and doesn't appear.
      */
     val RELEASES: List<Release> = listOf(
+        Release(137, "0.84.0-beta", R.array.whats_new_0_84_0),
         Release(136, "0.83.0-beta", R.array.whats_new_0_83_0),
         Release(135, "0.82.0-beta", R.array.whats_new_0_82_0),
         Release(134, "0.81.0-beta", R.array.whats_new_0_81_0),

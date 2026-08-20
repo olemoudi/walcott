@@ -550,6 +550,12 @@
     <string name="update_state_pending">Waiting for you to confirm the install — check your notifications</string>
     <string name="update_state_failed">Update failed (%1$s)</string>
     <string name="update_silent_note">This device installs updates silently</string>
+    <string name="update_state_installing">Installing %1$s…</string>
+    <string name="update_state_waiting_wifi">%1$s is out — waiting for Wi-Fi to download it</string>
+    <string name="update_state_staged">%1$s is downloaded and ready to install</string>
+    <string name="update_install_staged">Install %1$s now</string>
+    <string name="update_declined_title">Update not installed</string>
+    <string name="update_declined_text">Tap to finish updating Walcott — nothing to download again</string>
     <string name="nav_debug_title">Debug logs</string>
     <string name="nav_debug_subtitle">Recent internal activity, for troubleshooting</string>
     <string name="debug_logs_title">Debug logs</string>
@@ -1054,6 +1060,7 @@
     <string name="remote_result_nothing_missing">nothing to fix</string>
     <string name="remote_result_notified">the child was notified</string>
     <string name="child_update_error">This device could not update itself (%1$s). Try "Update now".</string>
+    <string name="child_update_waiting">This device is holding off on the update: %1$s.</string>
 
     <!-- Guided fixes shown on the child device -->
     <string name="fix_channel_name">Setup needed</string>
@@ -1313,6 +1320,8 @@
     <string name="update_state_waiting_parent">%1$s is out — this device waits until the parent\'s phone runs it</string>
     <string name="child_update_waiting_parent">Will update after your phone does — your phone is the canary for new versions.</string>
     <string name="remote_result_waiting_parent">waiting for your phone to update first</string>
+    <string name="remote_result_waiting_wifi">waiting for Wi-Fi to download it</string>
+    <string name="remote_result_busy">busy with another update check — try again in a moment</string>
     <!-- Family backup / restore -->
     <string name="backup_card_title">Family backup</string>
     <string name="backup_card_desc">An encrypted file with the family\'s keys and rules. If this phone is lost or broken, restore it on a new one and the children keep obeying — no re-enrollment.</string>
@@ -1748,6 +1757,12 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_84_0">
+        <item>An update dismissed by mistake is no longer an update lost. Tap Cancel on the install prompt by reflex, or swipe the notification away, and until now the downloaded version was deleted and the whole fifty megabytes were fetched again on the next scheduled check — hours later, if the phone was on Wi-Fi, if you noticed. The download now stays, the prompt comes back rather than going quiet, and Settings offers an \"Install 0.84.0-beta now\" button that installs what is already on the phone with no connection of any kind.</item>
+        <item>Nothing but Walcott gets installed. What came down the wire was handed straight to Android without ever being opened: a hotel Wi-Fi\'s login page served as a successful download, a body cut short when the signal dropped, or a release whose file did not match the version it announced — each of them a confusing failure and another full download every few hours, for ever. Every download is now checked to be this app, and newer, before anything is installed. The address it comes from is judged the way the network will actually read it, and can no longer be redirected onto an unencrypted connection.</item>
+        <item>The phone says what it is waiting for instead of saying it is up to date. A phone holding back because the family asked for Wi-Fi-only updates, or because another check was already running, reported itself as current — so a device months behind looked perfectly healthy from your side. Both now say so by name, the version being held is named with them, and \"waiting for Wi-Fi\" is shown as waiting rather than painted red as a fault.</item>
+        <item>The what\'s-new sheet no longer opens on a supervised phone. A child\'s phone, or an adult\'s in assisted mode, did not choose the update and could not have refused it; a list explaining someone else\'s decision, in the way of the phone until it is dismissed, was never theirs to read.</item>
     </string-array>
     <string-array name="whats_new_0_83_0">
         <item>The warnings before something closes are actually on screen now. Every one of them — the minutes left in an app, bedtime, screen-free hours — was being filed by Android as a silent notification, so it went into the drop-down list and never appeared over what your child was doing. Inside a game that is the same as no warning at all, which is the one moment they exist for. They arrive as a banner now, and still without a sound.</item>

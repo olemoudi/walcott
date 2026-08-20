@@ -548,6 +548,12 @@
     <string name="update_state_pending">Falta confirmar la instalación — mira tus notificaciones</string>
     <string name="update_state_failed">La actualización falló (%1$s)</string>
     <string name="update_silent_note">Este dispositivo instala las actualizaciones en silencio</string>
+    <string name="update_state_installing">Instalando %1$s…</string>
+    <string name="update_state_waiting_wifi">Ya está disponible %1$s — esperando al Wi-Fi para descargarla</string>
+    <string name="update_state_staged">%1$s ya está descargada y lista para instalar</string>
+    <string name="update_install_staged">Instalar %1$s ahora</string>
+    <string name="update_declined_title">La actualización no se instaló</string>
+    <string name="update_declined_text">Toca para terminar de actualizar Walcott — no hay que descargar nada otra vez</string>
     <string name="nav_debug_title">Registros de depuración</string>
     <string name="nav_debug_subtitle">Actividad interna reciente, para diagnóstico</string>
     <string name="debug_logs_title">Registros de depuración</string>
@@ -1052,6 +1058,7 @@
     <string name="remote_result_nothing_missing">nada que arreglar</string>
     <string name="remote_result_notified">se avisó al hijo</string>
     <string name="child_update_error">Este móvil no pudo actualizarse solo (%1$s). Prueba «Actualizar ahora».</string>
+    <string name="child_update_waiting">Este móvil está esperando para actualizarse: %1$s.</string>
 
     <!-- Arreglos guiados que se muestran en el móvil del hijo -->
     <string name="fix_channel_name">Falta configurar algo</string>
@@ -1311,6 +1318,8 @@
     <string name="update_state_waiting_parent">Ya está disponible %1$s — este dispositivo espera a que el móvil del padre la tenga</string>
     <string name="child_update_waiting_parent">Se actualizará después de tu móvil — tu móvil es el canario de las versiones nuevas.</string>
     <string name="remote_result_waiting_parent">esperando a que tu móvil se actualice primero</string>
+    <string name="remote_result_waiting_wifi">esperando al Wi-Fi para descargarla</string>
+    <string name="remote_result_busy">ocupado con otra comprobación — inténtalo en un momento</string>
     <!-- Copia de seguridad / restauración de la familia -->
     <string name="backup_card_title">Copia de seguridad de la familia</string>
     <string name="backup_card_desc">Un fichero cifrado con las claves y reglas de la familia. Si este móvil se pierde o se rompe, restáurala en uno nuevo y los hijos siguen obedeciendo — sin re-enrolar.</string>
@@ -1740,6 +1749,12 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_84_0">
+        <item>Una actualización descartada por error ya no es una actualización perdida. Tocar Cancelar en el aviso de instalación por reflejo, o deslizar la notificación, borraba la versión descargada y volvía a bajar los cincuenta megas enteros en la siguiente comprobación programada: horas después, si el móvil estaba en Wi-Fi, si te dabas cuenta. Ahora la descarga se conserva, el aviso vuelve en vez de callarse, y en Ajustes hay un botón «Instalar 0.84.0-beta ahora» que instala lo que ya está en el móvil sin conexión de ningún tipo.</item>
+        <item>No se instala nada que no sea Walcott. Lo que llegaba por la red se le entregaba a Android sin abrirlo siquiera: la página de acceso del Wi-Fi de un hotel servida como una descarga correcta, un archivo cortado al caerse la cobertura, o una versión publicada cuyo archivo no coincidía con la que anunciaba. Cada una de ellas era un fallo incomprensible y otra descarga completa cada pocas horas, indefinidamente. Ahora se comprueba que cada descarga sea esta app, y más nueva, antes de instalar nada. Y la dirección de la que viene se juzga como la va a leer la red de verdad, y ya no puede redirigirse a una conexión sin cifrar.</item>
+        <item>El móvil dice qué está esperando en vez de decir que está al día. Un móvil que se contenía porque la familia pidió actualizar solo por Wi-Fi, o porque ya había otra comprobación en marcha, se reportaba como actualizado: un dispositivo meses atrás parecía estar perfectamente desde tu lado. Ahora los dos lo dicen con su nombre, se nombra también la versión que está reteniendo, y «esperando al Wi-Fi» aparece como una espera y no en rojo como una avería.</item>
+        <item>La ventana de novedades ya no se abre en un móvil supervisado. El móvil de un hijo, o el de un adulto en modo asistido, no eligió la actualización ni podría haberla rechazado; una lista que explica una decisión ajena, delante de la pantalla hasta que se cierra, nunca fue suya para leerla.</item>
     </string-array>
     <string-array name="whats_new_0_83_0">
         <item>Los avisos de que algo va a cerrarse ya se ven de verdad. Todos ellos —los minutos que quedan en una app, la hora de dormir, las horas sin pantalla— los archivaba Android como notificación silenciosa, así que iban a la lista desplegable y no aparecían nunca encima de lo que estuviera haciendo tu hijo. Dentro de un juego eso es lo mismo que no avisar, que es justo el momento para el que existen. Ahora salen como aviso en pantalla, y siguen sin sonar.</item>

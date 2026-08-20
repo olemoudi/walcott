@@ -24,7 +24,7 @@ class InstallReceiver : BroadcastReceiver() {
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
-                UpdateCenter.report(UpdateUiState.PendingConfirmation(target = null))
+                UpdateCenter.report(UpdateUiState.PendingConfirmation(UpdateCenter.lastTarget()))
                 UpdateNotifications.notifyConfirmationNeeded(context, Intent(confirm))
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 runCatching { context.startActivity(confirm) }
@@ -36,13 +36,32 @@ class InstallReceiver : BroadcastReceiver() {
                 discardApk(context)
             }
             else -> {
-                UpdateNotifications.cancel(context)
                 val detail = message?.let { ": $it" } ?: ""
                 UpdateCenter.report(UpdateUiState.Failed("install status $status$detail"))
-                discardApk(context)
+                if (keepsApkAfterFailure(status)) {
+                    // Somebody said no. The APK is fine, so it stays and the shade does not go
+                    // quiet on it: the notification turns into the way back, and the button in
+                    // settings installs what is already on disk without touching the network.
+                    // Losing an update to one reflexive "Cancel" is not a thing this should do.
+                    //
+                    // Not on a Device Owner child, though: there was no dialog to decline there,
+                    // so a blocked install is our own restriction misfiring, and the person who
+                    // can act on it is the parent — who hears about it through the child's
+                    // reported update error, not through a notification on the child's phone.
+                    UpdateNotifications.cancel(context)
+                    if (!isDeviceOwner(context)) UpdateNotifications.notifyInstallDeclined(context)
+                } else {
+                    UpdateNotifications.cancel(context)
+                    discardApk(context)
+                }
             }
         }
     }
+
+    private fun isDeviceOwner(context: Context): Boolean = runCatching {
+        context.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+            .isDeviceOwnerApp(context.packageName)
+    }.getOrDefault(false)
 
     /**
      * Drops the downloaded APK once the install reached a terminal state. It is ~50 MB sitting
