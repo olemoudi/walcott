@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +46,7 @@ import dev.walcott.rules.SpecialDays
 import dev.walcott.ui.DAY_TYPES
 import dev.walcott.ui.RULE_DAY_TYPES
 import dev.walcott.ui.editableUnder
+import dev.walcott.ui.components.ActionChip
 import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.Stepper
 import dev.walcott.ui.components.TimePickerDialog
@@ -65,6 +68,7 @@ import dev.walcott.ui.theme.Tokens
  * and report the whole new value through onChange.
  */
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun BedtimeCard(
     bedtime: Map<String, WindowDto>,
@@ -79,7 +83,9 @@ internal fun BedtimeCard(
      * Members whose own copy of this rule ignores it. Empty in a member's own editor — there the
      * rule on screen IS theirs — and filled in only on the family screens.
      */
-    overriddenBy: List<String> = emptyList(),
+    overriddenBy: List<dev.walcott.data.ChildEntry> = emptyList(),
+    /** Opens one of [overriddenBy]'s own rules. See [OverriddenNote]. */
+    onOpenMemberRules: ((String) -> Unit)? = null,
     onChange: (Map<String, WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -120,23 +126,38 @@ internal fun BedtimeCard(
                     onCheckedChange = { want -> if (want) setAll(defaultStart, defaultEnd) else setAll(null, null) },
                 )
             }
-            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm))
+            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm), onOpenMemberRules)
             if (on) {
                 @Composable
                 fun bedtimeRow(dayType: DayType) {
                     val (start, end) = windowOf(dayType)
-                    Row(
+                    // A day and its two ends are ONE decision, so they hold together or they move
+                    // together. As a Row they did neither: the label was measured first and took
+                    // what it liked, the first button took what was left, and the second — "Hasta
+                    // 07:30", the half a parent is usually reaching for — got the remainder and
+                    // broke across two lines. FlowRow keeps them on one line while they fit and
+                    // drops BOTH buttons under the label when they do not, which is the same
+                    // shape the earned-time editor has always used for the same pair.
+                    FlowRow(
                         Modifier.fillMaxWidth().padding(top = spacing.sm),
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
                     ) {
-                        Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.bodyLarge)
-                        Spacer(Modifier.weight(1f))
-                        TimeButton(stringResource(R.string.from), start.hhmm(), enabled) {
-                            editing = BedtimeEdit(dayType, isStart = true)
-                        }
-                        Spacer(Modifier.size(spacing.sm))
-                        TimeButton(stringResource(R.string.to), end.hhmm(), enabled) {
-                            editing = BedtimeEdit(dayType, isStart = false)
+                        Text(
+                            stringResource(dayType.labelRes()),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.align(Alignment.CenterVertically),
+                        )
+                        Row(
+                            Modifier.align(Alignment.CenterVertically),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                        ) {
+                            TimeButton(stringResource(R.string.from), start.hhmm(), enabled) {
+                                editing = BedtimeEdit(dayType, isStart = true)
+                            }
+                            TimeButton(stringResource(R.string.to), end.hhmm(), enabled) {
+                                editing = BedtimeEdit(dayType, isStart = false)
+                            }
                         }
                     }
                 }
@@ -295,7 +316,9 @@ internal fun BlockedWindowsCard(
      * Members whose own copy of this rule ignores it. Empty in a member's own editor — there the
      * rule on screen IS theirs — and filled in only on the family screens.
      */
-    overriddenBy: List<String> = emptyList(),
+    overriddenBy: List<dev.walcott.data.ChildEntry> = emptyList(),
+    /** Opens one of [overriddenBy]'s own rules. See [OverriddenNote]. */
+    onOpenMemberRules: ((String) -> Unit)? = null,
     /**
      * Receives the WHOLE schedule, once per edit. It used to be called per day type, which meant
      * one edit became three separate writes racing each other through the store — and between
@@ -309,7 +332,7 @@ internal fun BlockedWindowsCard(
         Column(Modifier.padding(spacing.lg).animateContentSize()) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm))
+            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm), onOpenMemberRules)
             // One list. Every rule already named its own days, so filing it into a weekday or
             // weekend section asked the same question a second time, in a coarser way — and the
             // special-days section asked a third. The rule now says all of it on the rule.
@@ -496,7 +519,7 @@ private fun WindowsForDay(
     }
     if (editable) {
         Spacer(Modifier.size(spacing.sm))
-        BudgetPreset(stringResource(R.string.window_add)) { editing = WindowEdit.NewStart }
+        ActionChip(stringResource(R.string.window_add)) { editing = WindowEdit.NewStart }
     }
 
     when (val edit = editing) {
@@ -661,24 +684,7 @@ internal fun TimeButton(label: String, value: String, enabled: Boolean = true, o
     }
 }
 
-@Composable
-private fun BudgetPreset(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(dev.walcott.ui.components.ComfortableChipPadding),
-        )
-    }
-}
-
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun DailyBudgetCard(
     title: String,
@@ -698,7 +704,9 @@ internal fun DailyBudgetCard(
      * Members whose own copy of this rule ignores it. Empty in a member's own editor — there the
      * rule on screen IS theirs — and filled in only on the family screens.
      */
-    overriddenBy: List<String> = emptyList(),
+    overriddenBy: List<dev.walcott.data.ChildEntry> = emptyList(),
+    /** Opens one of [overriddenBy]'s own rules. See [OverriddenNote]. */
+    onOpenMemberRules: ((String) -> Unit)? = null,
     onSetBudget: (DayType, Int?) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -729,7 +737,7 @@ internal fun DailyBudgetCard(
             }
             // Above the fold: this card collapses to its title, and a warning a parent has to
             // expand the rule to find is a warning they will not see before editing it.
-            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm))
+            OverriddenNote(overriddenBy, Modifier.padding(top = spacing.sm), onOpenMemberRules)
             if (expanded) {
                 Spacer(Modifier.size(spacing.md))
                 HorizontalDivider()
@@ -741,15 +749,17 @@ internal fun DailyBudgetCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = spacing.sm),
                 )
-                androidx.compose.foundation.layout.FlowRow(
+                FlowRow(
                     Modifier.fillMaxWidth().padding(top = spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
-                    BudgetPreset(stringResource(R.string.no_limit), enabled) { editableDays.forEach { onSetBudget(it, null) } }
-                    BudgetPreset("1h", enabled) { editableDays.forEach { onSetBudget(it, 60) } }
-                    BudgetPreset("2h", enabled) { editableDays.forEach { onSetBudget(it, 120) } }
+                    ActionChip(stringResource(R.string.no_limit), enabled = enabled) {
+                        editableDays.forEach { onSetBudget(it, null) }
+                    }
+                    ActionChip("1h", enabled = enabled) { editableDays.forEach { onSetBudget(it, 60) } }
+                    ActionChip("2h", enabled = enabled) { editableDays.forEach { onSetBudget(it, 120) } }
                     var customAll by remember { mutableStateOf(false) }
-                    BudgetPreset(stringResource(R.string.custom_value), enabled) { customAll = true }
+                    ActionChip(stringResource(R.string.custom_value), enabled = enabled) { customAll = true }
                     if (customAll) {
                         dev.walcott.ui.components.MinutesPickerDialog(
                             title = stringResource(R.string.custom_minutes_title),
@@ -762,12 +772,18 @@ internal fun DailyBudgetCard(
                 @Composable
                 fun budgetRow(dayType: DayType) {
                     val minutes = perDay[dayType.name]
-                    Row(
+                    // Same as the bedtime rows: a day and its limit are one decision, kept on one
+                    // line while it fits and moved together when it does not.
+                    FlowRow(
                         Modifier.fillMaxWidth().padding(vertical = spacing.sm),
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
                     ) {
-                        Text(stringResource(dayType.labelRes()), style = MaterialTheme.typography.bodyLarge)
-                        Spacer(Modifier.weight(1f))
+                        Text(
+                            stringResource(dayType.labelRes()),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.align(Alignment.CenterVertically),
+                        )
                         Stepper(
                             valueLabel = minutes?.let { Duration.ofMinutes(it.toLong()).humanize() }
                                 ?: stringResource(R.string.no_limit),

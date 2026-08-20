@@ -35,7 +35,15 @@ import dev.walcott.ui.theme.Tokens
  * switches on a per-child customization.
  */
 @Composable
-fun LocationSettingsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
+fun LocationSettingsScreen(
+    viewModel: WalcottViewModel,
+    onBack: () -> Unit,
+    /**
+     * Opens one member's own rules, for the note that says who is not following a family
+     * rule. Null on a phone with nowhere to send them (see [OverriddenNote]).
+     */
+    onOpenMemberRules: ((String) -> Unit)? = null,
+) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
@@ -57,7 +65,7 @@ fun LocationSettingsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                         selected = settings.trackingIntervalMinutes,
                         onSelect = { viewModel.setFamilyTrackingInterval(it) },
                     )
-                    OverriddenNote(settings, FamilyRule.TRACKING_INTERVAL)
+                    OverriddenNote(settings, FamilyRule.TRACKING_INTERVAL, onOpenMemberRules = onOpenMemberRules)
                     Text(
                         stringResource(R.string.tracking_battery_warning),
                         style = MaterialTheme.typography.bodySmall,
@@ -85,6 +93,7 @@ fun LocationSettingsScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                         settings,
                         FamilyRule.LOCATION_HISTORY,
                         Modifier.padding(top = spacing.sm),
+                        onOpenMemberRules = onOpenMemberRules,
                     )
                 }
             }

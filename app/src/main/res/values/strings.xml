@@ -1123,6 +1123,7 @@
     <string name="nav_location_title">Location</string>
     <string name="nav_location_subtitle">Tracking interval and 48-hour history for the whole family</string>
     <string name="location_family_note">Family defaults. Each child inherits these; you can customize a child from their own screen.</string>
+    <string name="override_scope_goto_rules">Go to their rules</string>
     <string name="override_scope_banner_inherited">These are the family rules %1$s inherits. Turn on the custom switch on their screen to change them.</string>
     <string name="override_scope_banner">Editing %1$s\'s custom rules. The family rules no longer apply to this section for them.</string>
     <string name="override_earn_title">Custom earned time</string>
@@ -1759,6 +1760,12 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_86_0">
+        <item>The line that says a child is not following a family rule now takes you to the rule that is. It named them and stopped there, which is half an answer: knowing Marta ignores the family bedtime, the next thing you want is to see hers, and finding it meant leaving the screen, opening her page, and hunting down the fold her rules live in. Each name is a button now. It opens her page on that rule, with her hours and the family\'s side by side, and Back returns you to the rule you were editing.</item>
+        <item>The banner on a child\'s copy of a rule stopped asking for something it would not help with. Looking at the web filter or the device locks a child still inherits, it said to go and turn on their custom switch, on a screen it did not name and would not open. It carries the way there now, in the same corner every time.</item>
+        <item>A day and its two times hold together, or they move together. At a larger text size the label took the room it wanted, the first button took what was left, and the second — usually the one you were reaching for — broke across two lines. Each row now keeps all three on one line while they fit and drops the pair onto their own line when they do not, one row at a time.</item>
+        <item>Buttons that DO something stopped looking like buttons that say what is chosen. The presets under \"Apply to every day\" and \"Add a schedule\" were drawn exactly like a selected chip, so four one-shot actions read as a four-way choice with the first one already made. They are outlined now, because an action has no state to show. Three near-identical chips and two identical time pills, each drifting on its own, became one of each.</item>
     </string-array>
     <string-array name="whats_new_0_85_0">
         <item>The map no longer paints over the strip above it. On a phone with close tracking running, the band saying so — and the warnings that sit above it — were half covered by the map, and the join between them flickered every time the map was dragged. An embedded map is allowed to draw wherever it likes unless it is told otherwise, and it had never been told; it now stays inside its own half of the screen.</item>

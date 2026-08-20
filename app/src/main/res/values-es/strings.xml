@@ -1121,6 +1121,7 @@
     <string name="nav_location_title">Ubicación</string>
     <string name="nav_location_subtitle">Frecuencia de rastreo e historial de 48 horas para toda la familia</string>
     <string name="location_family_note">Valores por defecto de la familia. Cada hijo los hereda; puedes personalizar a un hijo desde su propia pantalla.</string>
+    <string name="override_scope_goto_rules">Ir a sus reglas</string>
     <string name="override_scope_banner_inherited">Estas son las reglas de familia que hereda %1$s. Activa el interruptor de personalizar en su pantalla para cambiarlas.</string>
     <string name="override_scope_banner">Editando las reglas personalizadas de %1$s. Las reglas de la familia ya no aplican a esta sección para este hijo.</string>
     <string name="override_earn_title">Tiempo ganado personalizado</string>
@@ -1751,6 +1752,12 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_86_0">
+        <item>La línea que dice que un hijo no sigue una regla de la familia ahora te lleva a la regla que sí sigue. Los nombraba y ahí se quedaba, que es media respuesta: si sabes que Marta ignora la hora de dormir de la familia, lo siguiente que quieres es ver la suya, y encontrarla obligaba a salir de la pantalla, abrir su ficha y buscar el desplegable donde viven sus reglas. Ahora cada nombre es un botón. Abre su ficha en esa regla, con sus horas y las de la familia una al lado de la otra, y Atrás te devuelve a la regla que estabas editando.</item>
+        <item>El aviso que aparece en la copia de una regla de un hijo dejó de pedir algo con lo que no ayudaba. Mirando el filtro web o los bloqueos que un hijo todavía hereda, decía que fueras a activar su interruptor de personalizar, en una pantalla que no nombraba y no abría. Ahora lleva el camino encima, y siempre en la misma esquina.</item>
+        <item>Un día y sus dos horas van juntos, o se mueven juntos. Con la letra grande, la etiqueta se quedaba con el sitio que quería, el primer botón con lo que sobraba y el segundo — normalmente el que ibas a tocar — se partía en dos líneas. Ahora cada fila mantiene los tres en una línea mientras quepan y baja la pareja a una línea propia cuando no, fila por fila.</item>
+        <item>Los botones que HACEN algo dejaron de parecerse a los que dicen qué está elegido. Los atajos de «Aplicar a todos los días» y «Añadir horario» se dibujaban igual que una opción seleccionada, así que cuatro acciones de un solo toque parecían una elección de cuatro con la primera ya hecha. Ahora van con borde, porque una acción no tiene ningún estado que enseñar. Tres píldoras casi iguales y dos idénticas, cada una separándose por su cuenta, se han quedado en una de cada.</item>
     </string-array>
     <string-array name="whats_new_0_85_0">
         <item>El mapa ya no se pinta encima de la banda de arriba. En un móvil con el seguimiento estrecho en marcha, la banda que lo anuncia — y los avisos que van encima — quedaban medio tapados por el mapa, y la unión entre los dos parpadeaba cada vez que lo arrastrabas. Un mapa incrustado puede dibujar donde le parezca mientras nadie le diga lo contrario, y nadie se lo había dicho; ahora se queda dentro de su mitad de la pantalla.</item>

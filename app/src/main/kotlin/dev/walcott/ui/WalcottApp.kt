@@ -130,6 +130,12 @@ fun WalcottApp(
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
     // policy, and back returns to the child detail.
     var overrideChildId by remember { mutableStateOf<String?>(null) }
+    // Where a "who is not following this?" button jumped from, and whether the child screen it
+    // landed on should open on their rules. A family editor that names a member and offers the
+    // way to them is offering a LOOK, not a departure — so Back comes back here rather than
+    // dropping the parent on the family list with their edit half-made.
+    var childDetailReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var childDetailOnRules by remember { mutableStateOf(false) }
     // Selected package for the per-app detail screen (Apps & categories).
     var appDetailPkg by remember { mutableStateOf<String?>(null) }
     // Where the per-app editor was opened from: the app list, or the report a parent was reading
@@ -242,6 +248,21 @@ fun WalcottApp(
         return
     }
 
+    // "Ana is not following this" -> Ana's own copy of it, opened and scrolled to.
+    //
+    // Null off the parent's phone: the same family editors are reachable behind the PIN gate on a
+    // child's device, where a member's detail page is not a place that phone can go.
+    val openMemberRules: ((String) -> Unit)? = if (parentMode) {
+        { memberId ->
+            childDetailId = memberId
+            childDetailOnRules = true
+            childDetailReturnTo = screen
+            screen = Screen.CHILD_DETAIL
+        }
+    } else {
+        null
+    }
+
     fun back() {
         screen = when (screen) {
             Screen.WEBFILTER, Screen.PROTECTION ->
@@ -272,7 +293,10 @@ fun WalcottApp(
             Screen.FAMILY_CHOOSER -> Screen.FAMILIES
             Screen.SETUP_PRESETS -> Screen.FAMILIES
             Screen.SETUP_WIZARD -> Screen.SETUP_PRESETS
-            Screen.CHILD_DETAIL -> Screen.FAMILIES
+            Screen.CHILD_DETAIL -> {
+                childDetailOnRules = false
+                childDetailReturnTo?.also { childDetailReturnTo = null } ?: Screen.FAMILIES
+            }
             Screen.CHILD_MAP -> mapReturnTo?.also { mapReturnTo = null } ?: Screen.CHILD_DETAIL
             Screen.CHILD_HEALTH, Screen.CHILD_NOTIFICATIONS -> Screen.CHILD_DETAIL
             Screen.DOMAIN_MONITOR -> Screen.FAMILY
@@ -433,6 +457,9 @@ fun WalcottApp(
                             viewModel,
                             childId,
                             onBack = ::back,
+                            // Arrived from a family rule that named this member: open on the rule
+                            // that is overriding it rather than on the top of their page.
+                            openOnRules = childDetailOnRules,
                             onOpenMap = {
                                 childDetailId = it
                                 screen = Screen.CHILD_MAP
@@ -508,6 +535,7 @@ fun WalcottApp(
                         onOpenApp = { pkg -> appDetailPkg = pkg; screen = Screen.APP_DETAIL },
                         childId = overrideChildId,
                         childName = overrideChildName(settings, overrideChildId),
+                        onOpenMemberRules = openMemberRules,
                     )
                     Screen.APP_DETAIL -> appDetailPkg?.let { pkg ->
                         AppDetailScreen(
@@ -518,6 +546,7 @@ fun WalcottApp(
                             onOpenSpecialDays = { calendarReturnTo = Screen.APP_DETAIL; screen = Screen.CALENDAR },
                             childId = overrideChildId,
                             childName = overrideChildName(settings, overrideChildId),
+                            onOpenMemberRules = openMemberRules,
                         )
                     }
                     Screen.BUDGETS -> BudgetsScreen(
@@ -527,6 +556,7 @@ fun WalcottApp(
                         // Per-app limits are the everyday instrument now, so Limits opens onto
                         // them; Back returns here rather than to the hub.
                         onOpenApps = { overrideChildId = null; appsReturnTo = Screen.BUDGETS; screen = Screen.APPS },
+                        onOpenMemberRules = openMemberRules,
                     )
                     Screen.CHILDREN -> ChildrenScreen(viewModel, onBack = { screen = Screen.FAMILY })
                     Screen.EARN -> EarnRulesScreen(
@@ -561,12 +591,18 @@ fun WalcottApp(
                         } else {
                             null
                         },
+                        onOpenMemberRules = openMemberRules,
                     )
                     Screen.PROTECTION -> DeviceProtectionScreen(
                         viewModel, onBack = ::back,
                         childId = overrideChildId, childName = overrideChildName(settings, overrideChildId),
+                        onOpenMemberRules = openMemberRules,
                     )
-                    Screen.LOCATION -> LocationSettingsScreen(viewModel, onBack = { screen = Screen.FAMILY })
+                    Screen.LOCATION -> LocationSettingsScreen(
+                        viewModel,
+                        onBack = { screen = Screen.FAMILY },
+                        onOpenMemberRules = openMemberRules,
+                    )
                     Screen.APP_SETTINGS -> AppSettingsScreen(
                         viewModel = viewModel,
                         deviceOwner = deviceOwner,
@@ -588,6 +624,7 @@ fun WalcottApp(
                         },
                         onReleased = { screen = Screen.MODE_SELECT },
                         onBack = ::back,
+                        onOpenMemberRules = openMemberRules,
                     )
                     Screen.DEBUG_LOGS -> DebugLogScreen(onBack = ::back)
                     Screen.DEVICE_SETUP -> dev.walcott.ui.setup.DeviceSetupScreen(

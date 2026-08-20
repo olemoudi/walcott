@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -205,8 +203,11 @@ private fun EarnWindowsCard(
                         val start = LocalTime.ofSecondOfDay(window.startMinute * 60L)
                         val end = LocalTime.ofSecondOfDay(window.endMinute * 60L)
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), modifier = Modifier.padding(top = spacing.xs)) {
-                            WindowChip(stringResource(R.string.from), start.hhmm()) { editing = dayType to true }
-                            WindowChip(stringResource(R.string.to), end.hhmm()) { editing = dayType to false }
+                            // The same pill the bedtime and weekend editors use. Two ways to
+                            // pick a time that looked alike and were two components stayed alike
+                            // only while somebody remembered to change both.
+                            TimeButton(stringResource(R.string.from), start.hhmm()) { editing = dayType to true }
+                            TimeButton(stringResource(R.string.to), end.hhmm()) { editing = dayType to false }
                         }
                     } else {
                         Text(
@@ -254,16 +255,3 @@ private fun StepperRow(label: String, valueLabel: String, onDecrement: () -> Uni
     }
 }
 
-@Composable
-private fun WindowChip(label: String, value: String, enabled: Boolean = true, onClick: () -> Unit) {
-    // Same reasoning as TimeButton: a mirrored row has to look mirrored, not merely be inert.
-    val container = MaterialTheme.colorScheme.surfaceVariant.let { if (enabled) it else it.copy(alpha = 0.4f) }
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.let { if (enabled) it else it.copy(alpha = 0.5f) }
-    val valueColor = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.5f) }
-    Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(14.dp), color = container) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = labelColor)
-            Text(value, style = MaterialTheme.typography.titleLarge, color = valueColor)
-        }
-    }
-}

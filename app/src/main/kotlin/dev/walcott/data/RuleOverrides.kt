@@ -79,7 +79,16 @@ object RuleOverrides {
     fun membersOverriding(settings: PolicySettings, rule: FamilyRule): List<ChildEntry> =
         settings.children.filter { rule.isTakenOverBy(it.overrides) }
 
+    /**
+     * The same members, minus the ones that cannot be named.
+     *
+     * A nameless entry can neither render as a sentence nor be offered as a button to press, so
+     * the two callers agree on dropping it here rather than each remembering to.
+     */
+    fun namedMembersOverriding(settings: PolicySettings, rule: FamilyRule): List<ChildEntry> =
+        membersOverriding(settings, rule).filter { it.name.isNotBlank() }
+
     /** Their names, blank ones dropped so a nameless entry can never render as an empty sentence. */
     fun namesOverriding(settings: PolicySettings, rule: FamilyRule): List<String> =
-        membersOverriding(settings, rule).map { it.name.trim() }.filter { it.isNotEmpty() }
+        namedMembersOverriding(settings, rule).map { it.name.trim() }
 }

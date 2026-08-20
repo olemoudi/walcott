@@ -56,6 +56,11 @@ fun WebFilterScreen(
     childName: String? = null,
     /** Opens the short guided run through the lists; null hides the entry (child scope). */
     onQuickSetup: (() -> Unit)? = null,
+    /**
+     * Opens one member's own rules, for the note that says who is not following a family
+     * rule. Null on a phone with nowhere to send them (see [OverriddenNote]).
+     */
+    onOpenMemberRules: ((String) -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -90,11 +95,17 @@ fun WebFilterScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
             if (childName != null) {
-                item { OverrideScopeBanner(childName, editable = editable) }
+                item {
+                    OverrideScopeBanner(
+                        childName,
+                        editable = editable,
+                        onOpenMemberRules = childId?.let { id -> onOpenMemberRules?.let { open -> { open(id) } } },
+                    )
+                }
             } else {
                 // Family scope only: inside a member's own editor the list on screen is theirs,
                 // so there is nothing for them to be ignoring.
-                item { OverriddenNote(settings, FamilyRule.WEB_FILTER) }
+                item { OverriddenNote(settings, FamilyRule.WEB_FILTER, onOpenMemberRules = onOpenMemberRules) }
             }
             item {
                 Text(

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -49,6 +50,28 @@ fun ChoiceChip(selected: Boolean, onClick: () -> Unit, label: String, modifier: 
         // ~44dp tall with roomier sides — above the compact 32dp default, close to the 48dp target.
         modifier = modifier.heightIn(min = 44.dp),
         shape = FilterChipDefaults.shape,
+    )
+}
+
+/**
+ * A chip that DOES something, next to chips that say which one is chosen.
+ *
+ * The distinction is the whole reason this exists. "Apply to every day: No limit / 1h / 2h" and
+ * "Add a schedule" are one-shot actions, and they were drawn as filled secondaryContainer pills
+ * — pixel for pixel a SELECTED [ChoiceChip]. So a card offering four presets looked like a
+ * four-way choice with the first one already made, and "Add a schedule" looked like a state the
+ * card was in. Material's answer is the assist chip: outlined, because an action has no state to
+ * show, and an outline is what tells the eye there is none.
+ *
+ * Same comfortable height as [ChoiceChip], so a row mixing the two still lines up.
+ */
+@Composable
+fun ActionChip(label: String, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    AssistChip(
+        onClick = onClick,
+        enabled = enabled,
+        label = { Text(label, style = MaterialTheme.typography.bodyLarge) },
+        modifier = modifier.heightIn(min = 44.dp),
     )
 }
 

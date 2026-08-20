@@ -79,6 +79,11 @@ fun AppSettingsScreen(
     onChangeMode: () -> Unit,
     onReleased: () -> Unit,
     onBack: () -> Unit,
+    /**
+     * Opens one member's own rules, for the note that says who is not following a family
+     * rule. Null on a phone with nowhere to send them (see [OverriddenNote]).
+     */
+    onOpenMemberRules: ((String) -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -138,7 +143,7 @@ fun AppSettingsScreen(
                     enabled = settings.updateWifiOnly,
                     onToggle = { viewModel.setUpdateWifiOnly(it) },
                 )
-                OverriddenNote(settings, dev.walcott.data.FamilyRule.UPDATE_WIFI_ONLY)
+                OverriddenNote(settings, dev.walcott.data.FamilyRule.UPDATE_WIFI_ONLY, onOpenMemberRules = onOpenMemberRules)
             }
             SectionHeader(
                 stringResource(R.string.app_settings_section_device),

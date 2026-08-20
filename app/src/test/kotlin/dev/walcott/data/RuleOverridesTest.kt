@@ -74,6 +74,21 @@ class RuleOverridesTest {
     }
 
     @Test
+    fun `the members offered as a way to their own rule are exactly the ones that can be named`() {
+        // The note draws a button per member and labels it with their name, so a nameless entry
+        // would be an unlabelled button that navigates somewhere. Same filter as the sentence,
+        // from the same place, or the two would disagree about who is on the card.
+        val settings = family(
+            member("Ana", ChildOverrides(bedtime = emptyMap())),
+            ChildEntry("x", "   ", ChildOverrides(bedtime = emptyMap())),
+            member("Leo", ChildOverrides(bedtime = emptyMap())),
+        )
+        val offered = RuleOverrides.namedMembersOverriding(settings, FamilyRule.BEDTIME)
+        assertEquals(listOf("ana", "leo"), offered.map { it.childId })
+        assertEquals(RuleOverrides.namesOverriding(settings, FamilyRule.BEDTIME), offered.map { it.name })
+    }
+
+    @Test
     fun `every rule the enum names is one a member can actually take`() {
         // Guards against a rule being added here with no override behind it, which would render
         // a warning that can never appear — and against the reverse, silently.

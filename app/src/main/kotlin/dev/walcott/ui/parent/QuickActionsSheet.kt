@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,7 +17,6 @@ import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +41,7 @@ import dev.walcott.rules.nightOf
 import dev.walcott.sync.LiveTracking
 import dev.walcott.sync.SyncEngine
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.ActionChip
 import dev.walcott.ui.components.ChoiceChip
 import dev.walcott.ui.components.CustomValueChip
 import dev.walcott.ui.components.LocalSnackbar
@@ -402,13 +401,3 @@ private fun QuickRow(
     }
 }
 
-/** A chip that DOES something, sized for a thumb rather than for a form. */
-@Composable
-private fun ActionChip(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    AssistChip(
-        onClick = onClick,
-        enabled = enabled,
-        label = { Text(label, style = MaterialTheme.typography.bodyLarge) },
-        modifier = Modifier.heightIn(min = 44.dp),
-    )
-}

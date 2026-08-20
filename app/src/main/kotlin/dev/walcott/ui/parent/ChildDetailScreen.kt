@@ -148,6 +148,12 @@ fun ChildDetailScreen(
     onOpenSpecialDays: () -> Unit,
     /** What has arrived on that phone (see NotificationLogScreen); the device is the subject. */
     onOpenNotifications: (deviceId: String) -> Unit,
+    /**
+     * True when the parent arrived here from a family rule that named this member — the fold
+     * their rules live in opens and the list travels to it, because the question they came with
+     * is "what is this child doing instead?" and the answer is halfway down the page.
+     */
+    openOnRules: Boolean = false,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -261,6 +267,11 @@ fun ChildDetailScreen(
         showRules = true
         showAdvanced = false
         goToRules++
+    }
+    // Once per arrival, not once per recomposition: keyed on Unit because a new arrival is a new
+    // composable here (the screen is a branch of the app's when, disposed on the way out).
+    LaunchedEffect(Unit) {
+        if (openOnRules) openChildRules()
     }
 
 

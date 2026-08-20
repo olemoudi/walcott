@@ -42,6 +42,11 @@ fun BudgetsScreen(
     onBack: () -> Unit,
     onOpenSpecialDays: () -> Unit,
     onOpenApps: () -> Unit,
+    /**
+     * Opens one member's own rules, for the note that says who is not following a family
+     * rule. Null on a phone with nowhere to send them (see [OverriddenNote]).
+     */
+    onOpenMemberRules: ((String) -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -69,7 +74,8 @@ fun BudgetsScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                    overriddenBy = RuleOverrides.namesOverriding(settings, FamilyRule.BEDTIME),
+                    overriddenBy = RuleOverrides.namedMembersOverriding(settings, FamilyRule.BEDTIME),
+                    onOpenMemberRules = onOpenMemberRules,
                     onChange = viewModel::setBedtime,
                 )
             }
@@ -81,7 +87,8 @@ fun BudgetsScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                    overriddenBy = RuleOverrides.namesOverriding(settings, FamilyRule.SCREEN_FREE),
+                    overriddenBy = RuleOverrides.namedMembersOverriding(settings, FamilyRule.SCREEN_FREE),
+                    onOpenMemberRules = onOpenMemberRules,
                     onChange = viewModel::setAllAppsWindows,
                 )
             }
@@ -104,7 +111,8 @@ fun BudgetsScreen(
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
-                    overriddenBy = RuleOverrides.namesOverriding(settings, FamilyRule.DEFAULT_BUDGET),
+                    overriddenBy = RuleOverrides.namedMembersOverriding(settings, FamilyRule.DEFAULT_BUDGET),
+                    onOpenMemberRules = onOpenMemberRules,
                     onSetBudget = { dayType, minutes -> viewModel.setDefaultBudget(dayType, minutes) },
                 )
             }
@@ -118,7 +126,7 @@ fun BudgetsScreen(
                     onOpenApps,
                 )
             }
-            item { OverriddenNote(settings, FamilyRule.APP_LIMITS) }
+            item { OverriddenNote(settings, FamilyRule.APP_LIMITS, onOpenMemberRules = onOpenMemberRules) }
             item { Spacer(Modifier.size(spacing.xl)) }
         }
     }

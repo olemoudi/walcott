@@ -63,6 +63,11 @@ fun AppDetailScreen(
     // The category stays family-wide and reads as plain text in that scope.
     childId: String? = null,
     childName: String? = null,
+    /**
+     * Opens one member's own rules, for the note that says who is not following a family
+     * rule. Null on a phone with nowhere to send them (see [OverriddenNote]).
+     */
+    onOpenMemberRules: ((String) -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -89,9 +94,14 @@ fun AppDetailScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             if (childId != null) {
-                item { OverrideScopeBanner(childName.orEmpty()) }
+                item {
+                    OverrideScopeBanner(
+                        childName.orEmpty(),
+                        onOpenMemberRules = childId?.let { id -> onOpenMemberRules?.let { open -> { open(id) } } },
+                    )
+                }
             } else {
-                item { OverriddenNote(settings, dev.walcott.data.FamilyRule.APP_LIMITS) }
+                item { OverriddenNote(settings, dev.walcott.data.FamilyRule.APP_LIMITS, onOpenMemberRules = onOpenMemberRules) }
             }
             item {
                 Row(Modifier.fillMaxWidth().padding(top = spacing.sm), verticalAlignment = Alignment.CenterVertically) {

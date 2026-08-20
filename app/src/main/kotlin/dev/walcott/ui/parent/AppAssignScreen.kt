@@ -67,6 +67,11 @@ fun AppAssignScreen(
     // per-app editor behind each row writes that child's override (see AppDetailScreen).
     childId: String? = null,
     childName: String? = null,
+    /**
+     * Opens one member's own rules, for the note that says who is not following a family
+     * rule. Null on a phone with nowhere to send them (see [OverriddenNote]).
+     */
+    onOpenMemberRules: ((String) -> Unit)? = null,
 ) {
     val spacing = Tokens.spacing
     val allRows by viewModel.appRows.collectAsStateWithLifecycle()
@@ -125,14 +130,17 @@ fun AppAssignScreen(
         WalcottTopBar(stringResource(R.string.nav_apps_title), onBack)
         if (childId != null) {
             Column(Modifier.padding(horizontal = spacing.screen)) {
-                OverrideScopeBanner(childName.orEmpty())
+                OverrideScopeBanner(
+                    childName.orEmpty(),
+                    onOpenMemberRules = childId?.let { id -> onOpenMemberRules?.let { open -> { open(id) } } },
+                )
             }
         } else {
             // One note for the whole list, not one per app: the override takes the entire
             // per-app map, so a member who has customized it ignores the family's limit on
             // every app at once rather than on the ones they happen to have.
             Column(Modifier.padding(horizontal = spacing.screen)) {
-                OverriddenNote(settings, dev.walcott.data.FamilyRule.APP_LIMITS)
+                OverriddenNote(settings, dev.walcott.data.FamilyRule.APP_LIMITS, onOpenMemberRules = onOpenMemberRules)
             }
         }
         if (rows.isEmpty()) {
