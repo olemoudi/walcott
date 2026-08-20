@@ -1753,6 +1753,10 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_87_0">
+        <item>Reproducir los movimientos de un hijo va a la cuarta parte de la velocidad. A 1x el marcador cruzaba una calle antes de que te diera tiempo a ver por dónde había ido, así que seguir un recorrido obligaba a verlo dos veces. Ahora se puede seguir de verdad, y no se pierde nada: el botón de velocidad sigue llegando a 4x, que es exactamente el 1x de antes, para pasar una tarde entera por encima.</item>
+        <item>El rastro que se desvanece detrás del marcador es la mitad más largo: las últimas quince posiciones en vez de diez. Lo que lo mantiene como un cometa, y no como el día entero dibujado sobre las calles, es el desvanecido y no el número, así que el trozo añadido cae donde la línea ya está tenue: se ve más de por dónde acababan de pasar sin que el mapa se convierta en un garabato.</item>
+    </string-array>
     <string-array name="whats_new_0_86_0">
         <item>La línea que dice que un hijo no sigue una regla de la familia ahora te lleva a la regla que sí sigue. Los nombraba y ahí se quedaba, que es media respuesta: si sabes que Marta ignora la hora de dormir de la familia, lo siguiente que quieres es ver la suya, y encontrarla obligaba a salir de la pantalla, abrir su ficha y buscar el desplegable donde viven sus reglas. Ahora cada nombre es un botón. Abre su ficha en esa regla, con sus horas y las de la familia una al lado de la otra, y Atrás te devuelve a la regla que estabas editando.</item>
         <item>El aviso que aparece en la copia de una regla de un hijo dejó de pedir algo con lo que no ayudaba. Mirando el filtro web o los bloqueos que un hijo todavía hereda, decía que fueras a activar su interruptor de personalizar, en una pantalla que no nombraba y no abría. Ahora lleva el camino encima, y siempre en la misma esquina.</item>

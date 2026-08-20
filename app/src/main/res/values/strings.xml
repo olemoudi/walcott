@@ -1761,6 +1761,10 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_87_0">
+        <item>Replaying a child\'s movements runs at a quarter of the pace. At 1x the marker crossed a street faster than you could see which way it had gone, so following a route meant watching it twice. It is something you can actually follow now, and nothing is lost: the speed button still goes to 4x, which is exactly the old 1x, for skimming a whole afternoon.</item>
+        <item>The fading trail behind the marker is half again as long — the last fifteen fixes rather than ten. What keeps it a comet rather than the whole day drawn over the streets is the fade, not the count, so the extra length arrives where the line has already gone faint: more of where they had just been, without the map turning into a scribble.</item>
+    </string-array>
     <string-array name="whats_new_0_86_0">
         <item>The line that says a child is not following a family rule now takes you to the rule that is. It named them and stopped there, which is half an answer: knowing Marta ignores the family bedtime, the next thing you want is to see hers, and finding it meant leaving the screen, opening her page, and hunting down the fold her rules live in. Each name is a button now. It opens her page on that rule, with her hours and the family\'s side by side, and Back returns you to the rule you were editing.</item>
         <item>The banner on a child\'s copy of a rule stopped asking for something it would not help with. Looking at the web filter or the device locks a child still inherits, it said to go and turn on their custom switch, on a screen it did not name and would not open. It carries the way there now, in the same corner every time.</item>

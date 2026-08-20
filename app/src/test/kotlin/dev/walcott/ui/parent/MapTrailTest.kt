@@ -13,8 +13,14 @@ class MapTrailTest {
 
     @Test
     fun `tail ends on the selected fix and never exceeds its length`() {
-        assertEquals(20..29, MapTrail.tailRange(selected = 29, size = 120))
-        assertEquals(10, MapTrail.tailRange(selected = 29, size = 120).count())
+        // Derived from the constant rather than repeating it: the length is a tuning decision that
+        // has already moved once, and a test that restates the number just has to be edited
+        // alongside it — which tests nothing. What must hold whatever it is set to is that the
+        // tail ENDS on the selected fix and is exactly that long.
+        val tail = MapTrail.tailRange(selected = 29, size = 120)
+        assertEquals(29, tail.last)
+        assertEquals(MapTrail.TAIL_POINTS, tail.count())
+        assertEquals(29 - MapTrail.TAIL_POINTS + 1, tail.first)
     }
 
     @Test

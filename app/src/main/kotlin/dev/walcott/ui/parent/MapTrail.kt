@@ -17,11 +17,16 @@ internal object MapTrail {
     /**
      * How many fixes the trail shows, the selected one included.
      *
-     * The trail is a comet, not a route: it says "this is where they have just been", and beyond
-     * about ten fixes a line drawn at full strength stops being movement and becomes a map of
-     * the whole day drawn over the streets. Everything older has faded out entirely.
+     * The trail is a comet, not a route: it says "this is where they have just been", not "here
+     * is the whole day drawn over the streets". What keeps the two apart is the fade rather than
+     * this number — by the far end the line has gone to nothing (see [fade]) — so this sets how
+     * much of the recent past is visible AT ALL, and the last third of it is barely there.
+     *
+     * Fifteen, in the sampling intervals the app actually uses: a couple of hours on the ordinary
+     * fifteen-minute cadence, and about a quarter of an hour under close tracking, which is the
+     * mode where the shape of the last few minutes is the thing being watched.
      */
-    const val TAIL_POINTS = 10
+    const val TAIL_POINTS = 15
 
     /** Playback speeds on offer, slowest first. */
     val SPEEDS = listOf(0.5f, 1f, 2f, 4f)
@@ -29,8 +34,16 @@ internal object MapTrail {
     /** Index into [SPEEDS] that playback starts at. */
     val DEFAULT_SPEED: Int = SPEEDS.indexOf(1f)
 
-    /** One step per fix at 1x: fast enough to read as motion, slow enough to follow. */
-    private const val STEP_MS = 220L
+    /**
+     * One step per fix at 1x.
+     *
+     * A quarter of the pace it used to run at. 220ms a fix read as motion, which was the whole
+     * intent, and moved a marker across a street faster than anyone could see WHERE it had gone —
+     * a replay you have to watch twice is not a replay. At this pace 1x is something a parent can
+     * follow, and nothing is lost by it: the speed control goes up to 4x, which is exactly the old
+     * 1x, for anyone who wants to skim a whole afternoon.
+     */
+    private const val STEP_MS = 880L
 
     /**
      * Curve of the fade along the tail.
