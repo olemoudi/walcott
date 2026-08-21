@@ -3,6 +3,7 @@ package dev.walcott.sync
 import android.content.Context
 import dev.walcott.data.WalcottRepository
 import dev.walcott.debug.DebugLog
+import dev.walcott.enforcement.AppUpdateWindowAlarm
 import dev.walcott.enforcement.DeviceRestrictions
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.enforcement.UsageAccess
@@ -45,6 +46,8 @@ class RemoteCommandRunner(
     private val publishNotifications: suspend (arg: String) -> Int = { 0 },
     /** Starts or stops a close-tracking session (see [RemoteAction.LIVE_TRACKING]). */
     private val setLiveTracking: suspend (minutes: Int) -> Unit = { },
+    /** Ends any open install window (see [RemoteAction.REAPPLY_POLICY]). */
+    private val endInstallWindow: suspend () -> Unit = { },
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -107,12 +110,30 @@ class RemoteCommandRunner(
      * Re-asserts everything enforcement depends on: the location grant, the Device Owner
      * restrictions, and the service itself. This is the fix for a child that stopped
      * enforcing after a crash, a forced stop, or an OEM battery-saver kill.
+     *
+     * It is also the parent's "re-block installs now" / "resume watching" button (see
+     * [InstallReminderReceiver]), and that is why the window is ended in STATE and not only by
+     * re-applying the restrictions with no exemption. Doing only the latter half-worked at best
+     * and did nothing at worst:
+     *
+     *  - with the block armed, the block did come back — and the child went on reporting the
+     *    window as open, so the hourly nag returned for ever and the child's own screen still
+     *    said installs were allowed;
+     *  - in the guarded mode, where the platform is never told about installs at all, there is
+     *    no restriction to re-arm. The whole of "resume watching" was the stored deadline, and
+     *    the guard stayed paused for the remaining eight hours. The button did nothing.
      */
     private suspend fun reapplyPolicy(): Pair<Boolean, String> {
         LocationPolicy.ensureEnforced(context)
+        endInstallWindow()
         val restrictions = repository.settingsFlow.first().restrictionKeysToApply()
         DeviceRestrictions.apply(context, restrictions, installExemptUntilMs = 0)
         EnforcementService.start(context)
+        // And the nightly update hour, which this has just closed along with everything else.
+        // It is an alarm, so a force-stop is exactly the thing that loses it — re-arming it is
+        // part of re-asserting what enforcement depends on, and if this moment is inside tonight's
+        // window it is opened again rather than costing the phone a night of security fixes.
+        runCatching { AppUpdateWindowAlarm.sync(context) }
         return true to "reapplied"
     }
 
@@ -132,7 +153,13 @@ class RemoteCommandRunner(
     private suspend fun installApp(pkg: String, commandId: String, label: String): Pair<Boolean, String> {
         if (pkg.isBlank()) return false to "no_package"
         if (runCatching { context.packageManager.getApplicationInfo(pkg, 0) }.isSuccess) {
-            return true to RemoteAction.DETAIL_ALREADY_INSTALLED
+            // Already here — and possibly here under a quarantine, which is the interesting
+            // half. A parent pushing an install of an app the guard suspended is answering the
+            // guard's question with a yes, by the most natural route there is (share it from
+            // Play again). Acking "already installed" and walking away left the app suspended,
+            // being retried for removal, with the case still open on the parent's own screen.
+            return if (allowApp(pkg)) true to RemoteAction.DETAIL_ALLOWED
+            else true to RemoteAction.DETAIL_ALREADY_INSTALLED
         }
         openInstallForPush(pkg, commandId, label)
         InstallPromptNotifications.notify(context, pkg, label)

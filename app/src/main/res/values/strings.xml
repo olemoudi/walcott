@@ -1194,6 +1194,7 @@
     <string name="unauthorized_app_card_title">"%1$s" was installed without approval</string>
     <string name="unauthorized_app_card_state">It\'s blocked on their phone and is being removed.</string>
     <string name="unauthorized_app_card_state_unsuspended">Their phone couldn\'t block it — remove it from here.</string>
+    <string name="unauthorized_app_card_stuck">Their phone has tried %1$d times to remove it and it is still there. It stays blocked and unusable, but it can only be uninstalled from that phone.</string>
     <string name="remote_result_removing">removing it</string>
     <string name="remote_result_not_installed">that app isn\'t installed there</string>
     <string name="remote_result_allowed">the app may stay</string>
@@ -1762,6 +1763,12 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_89_0">
+        <item>A window a parent opens at the phone, with their PIN, is theirs — and it had stopped being. Approving an app the child never got round to installing leaves that approval pending indefinitely, on purpose, so the card can be tapped an hour later; while one was pending, the phone read the parent\'s own window as that approval\'s, and every app they stood there installing was treated as unapproved: suspended, reported and silently uninstalled while they watched. The window now says which kind it is instead of being guessed at, and the first install no longer slams it shut on the other four.</item>
+        <item>\"Block installs now\" from the reminder actually does it. It re-armed the block but never told the phone the window was over, so the reminder came back every hour for a window that was already shut — and on the phones set up to watch what appears rather than refuse it, where there is no block to re-arm, the button did nothing at all: the watching stayed paused for the full eight hours.</item>
+        <item>An app the phone cannot remove says so on the card. A removal a Device Owner uninstall keeps refusing looked exactly like one noticed a second ago, so the parent went on waiting for something that was never going to happen. After four failed attempts the card says how many times it tried — the app stays blocked and unusable throughout, which is the part that was already true and unsaid.</item>
+        <item>Sharing an app from Play to a child who already has it — and has had it quarantined — now means \"let it stay\". It used to answer \"already installed\" and walk away, leaving the app suspended and still being removed. And an unapproved app no longer arrives twice: it raised the urgent alert with its two buttons and then a second, ordinary \"new app installed\" notice, whose off switch is only offered to families that do not police installs.</item>
     </string-array>
     <string-array name="whats_new_0_88_0">
         <item>The map was throwing away most of the trail it had room to send. A phone that recorded 197 positions published 49 of them, and the missing ones were not too big to fit — the thinning that spaces older fixes out ran before anything counted the budget, so a stretch reduced to one point every half hour stayed that way with room for four times as many. The budget is spent now, nearest the present first, so a trail arrives at the detail the message can actually carry. Same 48 hours, several times the resolution.</item>

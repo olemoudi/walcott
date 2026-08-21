@@ -158,6 +158,11 @@
             android:name=".update.InstallReceiver"
             android:exported="false" />
 
+        <!-- What the OS made of a quarantined app's silent uninstall (see UninstallResultReceiver). -->
+        <receiver
+            android:name=".sync.UninstallResultReceiver"
+            android:exported="false" />
+
         <!-- The share sheet reporting that the parent actually picked somewhere to send the
              family backup (see FamilyBackupCard). -->
         <receiver

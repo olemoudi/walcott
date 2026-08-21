@@ -1063,7 +1063,17 @@ class SyncManager(
     /** PIN-gated manual exemption: allow installs on this device for [durationMs] (blanket). */
     suspend fun allowInstallsFor(durationMs: Long) {
         val until = System.currentTimeMillis() + durationMs
-        syncStore.update { it.copy(installExemptionUntilMs = until, installWindowMaintenance = false) }
+        syncStore.update {
+            it.copy(
+                installExemptionUntilMs = until,
+                installWindowMaintenance = false,
+                // Said outright, because the guard has to know whose window this is and could
+                // not work it out: with a pushed install still pending it read this one as that
+                // push's, and quarantined the apps being installed in it (see
+                // [SyncState.installWindowBlanket]).
+                installWindowBlanket = true,
+            )
+        }
         // Synchronous lift, like openInstallForPush: the parent is standing at the device with
         // Play already open — don't depend on the exemption collector being alive and prompt.
         applyInstallWindow(until)
@@ -1090,7 +1100,13 @@ class SyncManager(
         // deadline is a real answer in either direction: the hour the policy names now is the
         // hour, whether the parent lengthened it or cut it short.
         if (s.installWindowMaintenance && s.installExemptionUntilMs == untilMs) return
-        syncStore.update { it.copy(installExemptionUntilMs = untilMs, installWindowMaintenance = true) }
+        syncStore.update {
+            it.copy(
+                installExemptionUntilMs = untilMs,
+                installWindowMaintenance = true,
+                installWindowBlanket = false,
+            )
+        }
         applyInstallWindow(untilMs)
         dev.walcott.debug.DebugLog.i(TAG, "update window open for ${(untilMs - now) / 60_000} min")
         runCatching { publishSelf() }
@@ -1143,16 +1159,19 @@ class SyncManager(
         dev.walcott.enforcement.InstallBlockAlarm.arm(context, untilMs)
     }
 
-    /** Ends any open install window now and re-arms the block (the "re-block now" action). */
+    /**
+     * Ends any open install window now and re-arms the block (the "re-block now" action, and
+     * what a parent's [RemoteAction.REAPPLY_POLICY] does when it re-asserts the restrictions).
+     *
+     * Ends ALL of it, whatever is open and whoever opened it. The pushed half goes through
+     * [closeInstallWindow] so the pending fields and the prompt notification are cleaned up with
+     * it — and that call deliberately leaves a blanket window running, which is precisely what
+     * this action exists to end, so the window itself is closed here afterwards.
+     */
     suspend fun endInstallExemption() {
         val s = syncStore.current()
-        if (s.pendingInstallPackage.isNotEmpty()) {
-            // A pushed install's tight window is open: close it through its own path so the
-            // pending fields and the prompt notification are cleaned up with it.
-            closeInstallWindow()
-            return
-        }
-        syncStore.update { it.copy(installExemptionUntilMs = 0) }
+        if (s.pendingInstallPackage.isNotEmpty()) closeInstallWindow()
+        syncStore.update { it.copy(installExemptionUntilMs = 0, installWindowBlanket = false) }
         applyInstallWindow(0)
         runCatching { publishSelf() }
     }
@@ -1172,11 +1191,24 @@ class SyncManager(
      * whenever the child actually engages, so this first window expiring costs nothing.
      */
     suspend fun openInstallForPush(pkg: String, commandId: String, label: String = "") {
-        val until = System.currentTimeMillis() + INSTALL_PUSH_EXEMPTION_MS
+        val now = System.currentTimeMillis()
+        val s = syncStore.current()
+        // A blanket window is somebody's own: a push landing inside it neither shortens it nor
+        // turns it into a window that judges what the person at the phone is installing.
+        val blanketOpen = InstallGuard.blanketOpen(
+            s.installExemptionUntilMs, now, s.installWindowBlanket, s.installWindowMaintenance,
+            s.pendingInstallPackage,
+        )
+        val until = if (blanketOpen) {
+            maxOf(s.installExemptionUntilMs, now + INSTALL_PUSH_EXEMPTION_MS)
+        } else {
+            now + INSTALL_PUSH_EXEMPTION_MS
+        }
         syncStore.update { state ->
             state.copy(
                 installExemptionUntilMs = until,
                 installWindowMaintenance = false,
+                installWindowBlanket = blanketOpen,
                 pendingInstallPackage = pkg,
                 pendingInstallCommandId = commandId,
                 // Kept across a reopen: the second call comes from a tap, which knows no label.
@@ -1209,14 +1241,24 @@ class SyncManager(
      * Closing is all this does. What landed — the approved app, something else, or both — is
      * judged by [reconcileInstalls], which runs right after and, unlike a window, is still
      * there when the second app arrives three seconds later.
+     *
+     * And what it closes is the PUSH, not necessarily the window: inside a blanket window the
+     * deadline belongs to the person standing at the phone with their PIN entered, and the first
+     * thing they install is not their cue to be locked out of the next four.
      */
     suspend fun closeInstallWindow(installedPkg: String? = null) {
         val s = syncStore.current()
         if (s.pendingInstallPackage.isEmpty()) return
+        val blanketOpen = InstallGuard.blanketOpen(
+            s.installExemptionUntilMs, System.currentTimeMillis(), s.installWindowBlanket,
+            s.installWindowMaintenance, s.pendingInstallPackage,
+        )
+        val until = if (blanketOpen) s.installExemptionUntilMs else 0L
         val pushedLanded = installedPkg == s.pendingInstallPackage && s.pendingInstallCommandId.isNotEmpty()
         syncStore.update {
             it.copy(
-                installExemptionUntilMs = 0,
+                installExemptionUntilMs = until,
+                installWindowBlanket = blanketOpen,
                 pendingInstallPackage = "",
                 pendingInstallCommandId = "",
                 pendingInstallLabel = "",
@@ -1241,17 +1283,24 @@ class SyncManager(
         }
         InstallPromptNotifications.cancel(context, s.pendingInstallPackage)
         // Synchronous re-arm: don't wait for the settings/exemption collector to react.
-        applyInstallWindow(0)
+        applyInstallWindow(until)
         if (pushedLanded) publishSelf()
     }
 
-    /** Device Owner silent uninstall (no-op elsewhere); the result lands in the debug log only. */
+    /**
+     * Device Owner silent uninstall (no-op elsewhere); the result lands in the debug log only,
+     * through [UninstallResultReceiver].
+     *
+     * The result used to be addressed to a bare action string with no receiver behind it, so it
+     * landed nowhere: a phone refusing to remove the same app forever said nothing about why.
+     * The intent names the receiver now, which is also what makes it deliverable at all.
+     */
     private fun silentUninstall(pkg: String) {
         val dpm = context.getSystemService(android.app.admin.DevicePolicyManager::class.java)
         if (dpm?.isDeviceOwnerApp(context.packageName) != true) return
         val sender = android.app.PendingIntent.getBroadcast(
             context, pkg.hashCode(),
-            android.content.Intent("dev.walcott.action.UNINSTALL_RESULT").setPackage(context.packageName),
+            android.content.Intent(context, UninstallResultReceiver::class.java),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
         ).intentSender
         context.packageManager.packageInstaller.uninstall(pkg, sender)
@@ -1307,10 +1356,13 @@ class SyncManager(
         // A maintenance window is NOT a blanket one: nobody is standing at the phone installing
         // things, so nothing in it is forgiven. Updates are invisible here anyway — they do not
         // change the set of installed packages — and a package that IS new during that hour is
-        // exactly what the guard exists for.
-        val blanketWindow = s.installExemptionUntilMs > now &&
-            s.pendingInstallPackage.isEmpty() &&
-            !s.installWindowMaintenance
+        // exactly what the guard exists for. Neither is a pushed install's window, which forgives
+        // its one target and nothing else (see [InstallGuard.blanketOpen] for what this used to
+        // get wrong, and what it cost).
+        val blanketWindow = InstallGuard.blanketOpen(
+            s.installExemptionUntilMs, now, s.installWindowBlanket, s.installWindowMaintenance,
+            s.pendingInstallPackage,
+        )
         // Device Owner is part of the question, not just of the answer: the install block is a
         // user restriction only a Device Owner can set, so anywhere else there is no block to
         // violate and every install is legitimate. Without this, the same policy read on a
@@ -1327,13 +1379,19 @@ class SyncManager(
         if (!s.installBaselineSeeded || !InstallGuard.guarding(installsBlocked, blanketWindow)) {
             val keep = InstallGuard.retained(s.unauthorizedApps, installed, installsBlocked)
             val freed = s.unauthorizedApps.filterNot { entry -> keep.any { it.pkg == entry.pkg } }
-            syncStore.update {
-                it.copy(
-                    knownPackages = installed,
-                    installBaselineSeeded = true,
-                    unauthorizedApps = keep,
-                    childVersion = if (freed.isEmpty()) it.childVersion else it.childVersion + 1,
-                )
+            // A write only when there is something to write. This pass runs on every heartbeat
+            // for the life of the device, and on the ordinary phone — nothing installed, nothing
+            // uninstalled, nothing quarantined — it had nothing to say and said it anyway, in a
+            // rewrite of the whole sync blob (trails, ledgers and all) every half hour.
+            if (!s.installBaselineSeeded || s.knownPackages != installed || freed.isNotEmpty()) {
+                syncStore.update {
+                    it.copy(
+                        knownPackages = installed,
+                        installBaselineSeeded = true,
+                        unauthorizedApps = keep,
+                        childVersion = if (freed.isEmpty()) it.childVersion else it.childVersion + 1,
+                    )
+                }
             }
             if (freed.isEmpty()) return false
             dev.walcott.debug.DebugLog.i(TAG, "quarantine released: ${freed.joinToString { it.pkg }}")
@@ -1362,7 +1420,8 @@ class SyncManager(
         }
         val open = InstallGuard.nextQuarantine(s.unauthorizedApps, fresh, installed)
         if (open.isEmpty() && s.unauthorizedApps.isEmpty()) {
-            syncStore.update { it.copy(knownPackages = installed) }
+            // Same again: the quiet pass is the common one, and it is not worth a disk write.
+            if (s.knownPackages != installed) syncStore.update { it.copy(knownPackages = installed) }
             return false
         }
         if (fresh.isNotEmpty()) {
@@ -1378,7 +1437,7 @@ class SyncManager(
         val updated = open.map { entry ->
             runCatching { silentUninstall(entry.pkg) }
             val attempts = entry.removalAttempts + 1
-            if (attempts == STUCK_REMOVAL_ATTEMPTS) {
+            if (attempts == InstallGuard.STUCK_REMOVAL_ATTEMPTS) {
                 dev.walcott.debug.DebugLog.w(TAG, "${entry.pkg} survived $attempts removal attempts")
             }
             entry.copy(suspended = entry.pkg in suspended, removalAttempts = attempts)
@@ -3468,6 +3527,7 @@ class SyncManager(
                 setLockPin = { pin -> setLockPin(pin) },
                 publishNotifications = { arg -> publishNotifications(arg) },
                 setLiveTracking = { minutes -> startLiveTracking(minutes) },
+                endInstallWindow = { endInstallExemption() },
             )
         }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
@@ -3955,23 +4015,35 @@ class SyncManager(
             val newApps = snapshot.apps.filter {
                 it.packageName !in before.seenAppPackages && it.packageName !in assignedPackages
             }
+            // The install guard has already put its own apps in front of the parent, loudly and
+            // with the two buttons that answer them (see notifyUnauthorizedApp above). Telling
+            // the same parent "a new app was installed" about the same package is the same news
+            // twice — and the switch that would silence the second one is offered only to
+            // families that DON'T police installs, which is precisely not this one. Still
+            // remembered as seen, so allowing it later isn't announced as a fresh arrival.
+            val quarantined = snapshot.unauthorized.map { it.pkg }.toSet()
+            val worthTelling = newApps.filterNot { it.packageName in quarantined }
             if (newApps.isNotEmpty()) {
                 // Always advance the seen-set (so turning the alert on later doesn't flood);
                 // only post the notification when the parent opted to be told. The feed entry
                 // is unconditional — a new, still-blocked app is always worth a durable trace.
-                if (settingsStore.current().newAppAlerts) {
+                if (worthTelling.isNotEmpty() && settingsStore.current().newAppAlerts) {
                     SyncNotifications.notifyNewApp(
-                        context, who, newApps.first().label, newApps.size - 1, snapshot.deviceId,
+                        context, who, worthTelling.first().label, worthTelling.size - 1, snapshot.deviceId,
                     )
                 }
                 syncStore.update {
-                    it.copy(seenAppPackages = it.seenAppPackages + newApps.map { a -> a.packageName })
-                        .plusEvent(
+                    val seen = it.copy(seenAppPackages = it.seenAppPackages + newApps.map { a -> a.packageName })
+                    if (worthTelling.isEmpty()) {
+                        seen
+                    } else {
+                        seen.plusEvent(
                             event(
                                 ParentEvent.TYPE_NEW_APP, snapshot,
-                                detail = newApps.first().label, count = newApps.size - 1,
+                                detail = worthTelling.first().label, count = worthTelling.size - 1,
                             ),
                         )
+                    }
                 }
             }
         }
@@ -4118,13 +4190,6 @@ class SyncManager(
          */
         private const val INSTALL_PUSH_EXEMPTION_MS = 5 * 60 * 1000L
 
-        /**
-         * After this many failed removals, the debug log says so once. A Device Owner uninstall
-         * that keeps being refused is a real gap — the app is still suspended, but it is not
-         * going away, and the only surface that can say that out loud is the log the health
-         * report carries.
-         */
-        private const val STUCK_REMOVAL_ATTEMPTS = 4
         // Re-emits only heal lost messages: real changes (settings edits, requests,
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.

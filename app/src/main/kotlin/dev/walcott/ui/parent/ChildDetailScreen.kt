@@ -1704,15 +1704,22 @@ private fun UnauthorizedAppCard(
                     )
                 }
             }
+            // A removal that keeps being refused is why the ledger counts attempts at all, and
+            // until now nothing read the count: an app the phone CANNOT remove looked exactly
+            // like one noticed a second ago, and the parent went on waiting for a removal that
+            // was never going to happen. Said only once it is really stuck, so an ordinary
+            // retry-and-succeed never says anything.
+            val stuck = entry.removalAttempts >= dev.walcott.sync.InstallGuard.STUCK_REMOVAL_ATTEMPTS
             Text(
-                stringResource(
+                when {
+                    stuck -> stringResource(R.string.unauthorized_app_card_stuck, entry.removalAttempts)
                     // Suspension is the promise being made on this screen, so a device that
                     // could not deliver it says so instead of implying the app is harmless now.
-                    if (entry.suspended) R.string.unauthorized_app_card_state
-                    else R.string.unauthorized_app_card_state_unsuspended,
-                ),
+                    entry.suspended -> stringResource(R.string.unauthorized_app_card_state)
+                    else -> stringResource(R.string.unauthorized_app_card_state_unsuspended)
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (stuck) color else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (answered) {
                 Text(

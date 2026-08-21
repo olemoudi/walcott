@@ -159,6 +159,59 @@ class InstallGuardTest {
     }
 
     @Test
+    fun `a PIN window says it is one, whatever else is on file`() {
+        // The bug: a pushed install nobody acted on stays pending for good, and the window a
+        // parent opens with their PIN was read as that push's window — so the apps they stood
+        // there installing were suspended and silently uninstalled.
+        assertTrue(
+            InstallGuard.blanketOpen(
+                untilMs = now + 1, nowMs = now, blanket = true, maintenance = false,
+                pendingPackage = "com.pushed.but.never.installed",
+            ),
+        )
+    }
+
+    @Test
+    fun `a pushed install's own window forgives only its target`() {
+        assertFalse(
+            InstallGuard.blanketOpen(
+                untilMs = now + 1, nowMs = now, blanket = false, maintenance = false,
+                pendingPackage = "com.game",
+            ),
+        )
+    }
+
+    @Test
+    fun `a window opened before the flag existed is still read as blanket`() {
+        // No push pending is the old inference, kept as the fallback: it is right whenever there
+        // is nothing pending, and being wrong THIS way costs a window in which nothing is judged.
+        assertTrue(
+            InstallGuard.blanketOpen(
+                untilMs = now + 1, nowMs = now, blanket = false, maintenance = false, pendingPackage = "",
+            ),
+        )
+    }
+
+    @Test
+    fun `the nightly update hour is nobody's blanket`() {
+        // Nobody is standing at the phone at four in the morning, so nothing in it is forgiven.
+        assertFalse(
+            InstallGuard.blanketOpen(
+                untilMs = now + 1, nowMs = now, blanket = true, maintenance = true, pendingPackage = "",
+            ),
+        )
+    }
+
+    @Test
+    fun `an expired window forgives nothing`() {
+        assertFalse(
+            InstallGuard.blanketOpen(
+                untilMs = now, nowMs = now, blanket = true, maintenance = false, pendingPackage = "",
+            ),
+        )
+    }
+
+    @Test
     fun `the ledger is capped, and says how much it dropped`() {
         val ledger = (1..InstallGuard.MAX_QUARANTINE).map { UnauthorizedApp("com.app$it", atMs = now) }
         val installed = ledger.map { it.pkg }.toSet() + "com.newest"

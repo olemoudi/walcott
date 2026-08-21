@@ -39,6 +39,45 @@ object InstallGuard {
     const val LATE_LANDING_GRACE_MS = 5 * 60 * 1000L
 
     /**
+     * How many removal attempts a case survives before the phone is told to stop expecting it to
+     * work, and the parent is told instead.
+     *
+     * A Device Owner uninstall is silent but refusable — an app the OS itself protects, an OEM
+     * package, one another admin has pinned — and the retry is per reconciliation, so four
+     * attempts is already several passes and at least one heartbeat apart. Beyond that the
+     * removal is not late, it is not going to happen, and a parent waiting for it needs to hear
+     * so: the app is suspended and unusable either way, which is the promise this screen makes.
+     */
+    const val STUCK_REMOVAL_ATTEMPTS = 4
+
+    /**
+     * Whether the window open right now is a BLANKET one: a person standing at the phone with
+     * their PIN entered, installing things themselves.
+     *
+     * This used to be inferred from "no pushed install is pending", and the inference was wrong
+     * in the one case that costs a family an app. A pushed install stays pending until it lands
+     * — deliberately, so the child can tap the card an hour later — so a push nobody acted on
+     * sits on file indefinitely, and while it does, the parent's OWN window was read as that
+     * push's window: everything they installed in it was unapproved, suspended and silently
+     * uninstalled while they watched.
+     *
+     * So the window says what it is. The old inference is kept as the fallback for a window that
+     * was already open when this field arrived, and only ever ADDS blanket-ness: being wrong that
+     * way costs a window in which nothing is judged, and being wrong the other way costs the
+     * parent the apps they were standing there installing.
+     */
+    fun blanketOpen(
+        untilMs: Long,
+        nowMs: Long,
+        blanket: Boolean,
+        maintenance: Boolean,
+        pendingPackage: String,
+    ): Boolean {
+        if (untilMs <= nowMs || maintenance) return false
+        return blanket || pendingPackage.isEmpty()
+    }
+
+    /**
      * Whether new arrivals are judged at all right now.
      *
      * Two cases must go unjudged, and both would be disasters if they didn't:

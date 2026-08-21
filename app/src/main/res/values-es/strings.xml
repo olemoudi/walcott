@@ -1192,6 +1192,7 @@
     <string name="unauthorized_app_card_title">Se instaló «%1$s» sin aprobación</string>
     <string name="unauthorized_app_card_state">Está bloqueada en su móvil y se está eliminando.</string>
     <string name="unauthorized_app_card_state_unsuspended">Su móvil no ha podido bloquearla — elimínala desde aquí.</string>
+    <string name="unauthorized_app_card_stuck">Su móvil ha intentado eliminarla %1$d veces y sigue ahí. Continúa bloqueada y no se puede usar, pero solo se puede desinstalar desde ese móvil.</string>
     <string name="remote_result_removing">eliminándola</string>
     <string name="remote_result_not_installed">esa app no está instalada allí</string>
     <string name="remote_result_allowed">la app puede quedarse</string>
@@ -1754,6 +1755,12 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_89_0">
+        <item>La ventana que un padre abre en el móvil, con su PIN, es suya — y había dejado de serlo. Aprobar una app que el hijo nunca llegó a instalar deja esa aprobación pendiente indefinidamente, a propósito, para que se pueda tocar la tarjeta una hora después; mientras había una pendiente, el móvil leía la ventana del propio padre como la de esa aprobación, y cada app que instalaba allí de pie se trataba como no aprobada: suspendida, avisada y desinstalada en silencio delante de él. Ahora la ventana dice de qué tipo es en vez de adivinarse, y la primera instalación ya no la cierra de golpe dejando fuera las otras cuatro.</item>
+        <item>«Volver a bloquear» desde el recordatorio hace lo que dice. Volvía a armar el bloqueo pero nunca le decía al móvil que la ventana había terminado, así que el recordatorio volvía cada hora por una ventana ya cerrada — y en los móviles configurados para vigilar lo que aparece en vez de impedirlo, donde no hay bloqueo que rearmar, el botón no hacía absolutamente nada: la vigilancia seguía en pausa las ocho horas enteras.</item>
+        <item>Una app que el móvil no puede eliminar lo dice en la tarjeta. Una eliminación que el sistema rechaza una y otra vez se veía igual que una detectada hace un segundo, así que el padre seguía esperando algo que no iba a pasar. Tras cuatro intentos fallidos la tarjeta dice cuántas veces lo ha intentado — la app sigue bloqueada y sin poder usarse mientras tanto, que es la parte que ya era cierta y no se decía.</item>
+        <item>Compartir una app desde Play a un hijo que ya la tiene — y la tiene en cuarentena — ahora significa «dejarla». Antes respondía «ya instalada» y se desentendía, con la app suspendida y todavía en proceso de eliminarse. Y una app sin aprobar ya no llega por duplicado: levantaba el aviso urgente con sus dos botones y después un segundo aviso corriente de «app nueva instalada», cuyo interruptor solo se ofrece a las familias que no controlan las instalaciones.</item>
     </string-array>
     <string-array name="whats_new_0_88_0">
         <item>El mapa estaba tirando la mayor parte del rastro que tenía sitio para enviar. Un móvil que había registrado 197 posiciones publicaba 49, y las que faltaban no es que no cupieran: el adelgazado que separa las posiciones más antiguas se aplicaba antes de que nadie contara el presupuesto, así que un tramo reducido a un punto cada media hora se quedaba así habiendo sitio para cuatro veces más. Ahora el presupuesto se gasta, empezando por lo más cercano al presente, y el rastro llega con el detalle que el mensaje puede llevar de verdad. Las mismas 48 horas, varias veces la resolución.</item>

@@ -103,6 +103,12 @@ class ChildDevice(
 
     fun unblockUninstall(pkg: String) = seed("--es", "unblock_uninstall", pkg)
 
+    /**
+     * Opens the BLANKET window a parent opens at the phone with their PIN — the one in which
+     * everything installed is theirs — for [ms]. 0 ends whatever window is open.
+     */
+    fun allowInstallsFor(ms: Long) = seed("--es", "allow_installs_ms", ms.toString())
+
     /** Runs the install guard's reconciliation now. */
     fun reconcileInstalls() = seed("--es", "reconcile_installs", "now")
 

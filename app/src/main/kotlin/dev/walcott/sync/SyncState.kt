@@ -232,6 +232,21 @@ data class SyncState(
      */
     val installWindowMaintenance: Boolean = false,
     /**
+     * Whether the open window is a BLANKET one: a person at this phone with the parent PIN
+     * entered, installing whatever they came to install (see [SyncManager.allowInstallsFor]).
+     *
+     * Stored rather than inferred, and the inference it replaces is worth naming: "no pushed
+     * install is pending" was read as "this window is somebody's own". A pushed install stays
+     * pending until it lands — on purpose, so the child can tap the card an hour later — so one
+     * nobody ever acted on sits on file for good, and while it did, the parent's own PIN window
+     * was judged as that push's window: every app they installed in it was suspended and
+     * silently uninstalled while they stood there (see [InstallGuard.blanketOpen]).
+     *
+     * Like [installWindowMaintenance], only meaningful while [installExemptionUntilMs] is in the
+     * future, which is why nothing clears it.
+     */
+    val installWindowBlanket: Boolean = false,
+    /**
      * Deadline of a running close-tracking session, on the MONOTONIC clock (see [LiveTracking]).
      * 0 = no session.
      *

@@ -40,6 +40,9 @@ class InstallGuardScenarioTest : DeviceScenario() {
         // — especially one a previous scenario made un-removable — turns the NEXT scenario into a
         // story about the last one, and the failure it produces names the wrong feature.
         device.ensureRemoved(unapproved)
+        // An install window is device state too, and a blanket one left open would stand the
+        // guard down for the whole of the next scenario — which would then pass by not running.
+        device.allowInstallsFor(0)
         // The quarantine ledger outlives a re-pair (it is device state, not family state), so a
         // case left open would still be there. Removing the app closes it; this makes it happen
         // now rather than at some later reconciliation in the middle of an assertion.
@@ -51,6 +54,7 @@ class InstallGuardScenarioTest : DeviceScenario() {
         // Every path out of here must leave the device able to install things again, or the next
         // scenario fails during setup for a reason that has nothing to do with it.
         runCatching { device.seedPolicy(PolicyJson.minimal()) }
+        runCatching { device.allowInstallsFor(0) }
         runCatching { device.ensureRemoved(unapproved) }
     }
 
@@ -266,6 +270,32 @@ class InstallGuardScenarioTest : DeviceScenario() {
         // already changed its mind about.
         parent.pushPolicy(policy(version = 4, windowOn = false))
         awaitDevice("the block back once the family withdraws the window") { device.installBlocked() }
+    }
+
+    @Test
+    fun `a window the parent opened stays theirs, pushed install pending or not`() {
+        // The bug this exists for, and it is the one with the worst outcome in the file: a push
+        // nobody acted on stays pending FOR EVER (deliberately — the child can tap the card an
+        // hour later), and while one was on file, the window a parent opens with their PIN was
+        // read as that push's window. Everything they stood there installing was unapproved,
+        // suspended and silently uninstalled while they watched.
+        parent.pushPolicy(PolicyJson.build(version = 2, restrictions = installBlock))
+        awaitDevice("the install block armed") { device.installBlocked() }
+        // A push for an app that never arrives, left on file exactly as a real one would be.
+        device.openInstallWindow("com.approved.example")
+        // ...and then the parent, at the phone, opening their own window over the top of it.
+        device.allowInstallsFor(10 * 60 * 1000L)
+        awaitDevice("the parent's window lifted the block") { !device.installBlocked() }
+
+        assertTrue(device.install(fixture("unapproved-app.apk")).contains("Success"))
+        device.reconcileInstalls()
+
+        parent.assertNoChild(windowMs = 8_000) { it.unauthorized.any { e -> e.pkg == unapproved } }
+        assertTrue(device.isInstalled(unapproved), "an app the parent installed themselves was removed")
+        assertFalse(device.isSuspended(unapproved), "an app the parent installed themselves was suspended")
+        // And their window is still theirs after that install, rather than slammed shut by the
+        // pushed one closing on it.
+        assertFalse(device.installBlocked(), "the parent's own window closed on their first install")
     }
 
     @Test

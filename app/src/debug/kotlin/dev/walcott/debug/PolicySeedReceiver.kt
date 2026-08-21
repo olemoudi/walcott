@@ -148,6 +148,17 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     target.syncManager.openInstallForPush(pkg, "debug-cmd", pkg.substringAfterLast('.'))
                     DebugLog.i("WalcottSeed", "install window open for $pkg")
                 }
+                // `--es allow_installs_ms 600000`: the blanket window a parent opens at the phone
+                // with their PIN, without a PIN pad. 0 (or less) ends whatever window is open.
+                //
+                // The point of testing it is that a blanket window forgives what is installed in
+                // it — it is the parent doing the installing — and that promise has no other way
+                // of being exercised: nothing else on this device can enter the PIN.
+                intent.getStringExtra("allow_installs_ms")?.toLongOrNull()?.let { ms ->
+                    if (ms > 0) target.syncManager.allowInstallsFor(ms)
+                    else target.syncManager.endInstallExemption()
+                    DebugLog.i("WalcottSeed", "blanket install window: $ms ms")
+                }
                 // `--es reconcile_installs now`: runs the install guard's reconciliation on demand,
                 // instead of waiting for a package broadcast or the next heartbeat.
                 if (intent.getStringExtra("reconcile_installs") != null) {
