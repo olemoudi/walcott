@@ -22,6 +22,14 @@ import java.time.LocalTime
  * all really goes away when the window does. Those three are what these scenarios assert, and
  * they are asked of the OS — the tun interface and the device-policy dump — rather than of the
  * app's opinion of itself.
+ *
+ * One property is asserted at one remove, and it is worth naming: that the filter works this out
+ * for ITSELF, with no enforcement loop behind it, which is what stops a reboot being a way out.
+ * A reboot cannot be scripted here — the phone comes back at a secure lock screen and nothing in
+ * this suite can type a PIN (see the module README) — so what is asserted instead is that the
+ * filter derives the window half by its own call, at the moment of asking. The reboot itself was
+ * measured by hand: with the enforcement service not yet running, the filter still named the
+ * browser.
  */
 class CurfewScenarioTest : DeviceScenario() {
 
@@ -63,6 +71,19 @@ class CurfewScenarioTest : DeviceScenario() {
             device.walcottLog().any { "curfew:" in it && browser in it },
             "the window is running and the phone never named $browser as cut off",
         )
+        // Asked of the filter itself, by the call its packet loop makes. Everything above is the
+        // enforcement loop's account of what it decided; this is what a DNS query would actually
+        // meet — and it is derived from the rules and the clock at the moment of asking, which is
+        // what makes it survive the loop not being there at all (a reboot restores the always-on
+        // VPN long before it restores the enforcement service).
+        assertTrue(
+            browser in device.curfewNow(),
+            "the filter would still resolve for $browser while the phone is supposed to be shut",
+        )
+        assertTrue(
+            device.walcottLog().any { "window:" in it && browser in it },
+            "the filter never derived the window half for itself; it was only ever told",
+        )
 
         // Withdrawn: all of it goes, and goes on its own. There is no expiry to run here and
         // nothing to remember to undo — the window closing IS the lift.
@@ -71,6 +92,10 @@ class CurfewScenarioTest : DeviceScenario() {
         assertEquals(
             "", device.alwaysOnVpnPackage(),
             "the always-on VPN stayed pinned after the window that asked for it ended",
+        )
+        assertEquals(
+            emptySet<String>(), device.curfewNow(),
+            "the filter would still refuse to resolve for an app after the window that closed it",
         )
     }
 

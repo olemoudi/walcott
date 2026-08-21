@@ -53,6 +53,7 @@ class WalcottVpnService : VpnService() {
     @Volatile private var running = false
     private var tunnel: ParcelFileDescriptor? = null
     private lateinit var cm: ConnectivityManager
+    private lateinit var repository: dev.walcott.data.WalcottRepository
 
     /**
      * Where an allowed query is forwarded, newest network first (see [DnsUpstreams]). Followed
@@ -76,6 +77,7 @@ class WalcottVpnService : VpnService() {
         super.onCreate()
         cm = getSystemService(ConnectivityManager::class.java)
         val repo = (application as WalcottApplication).repository
+        repository = repo
         scope.launch {
             // Two inputs, one matcher: the rules (typed domains + the bundled lists) and the
             // public lists this device has downloaded (see BlocklistStore). Recompiled when
@@ -185,7 +187,7 @@ class WalcottVpnService : VpnService() {
         runCatching { output.close() }
     }
 
-    private fun handleDnsPacket(packet: ByteArray, output: FileOutputStream) {
+    private suspend fun handleDnsPacket(packet: ByteArray, output: FileOutputStream) {
         // IPv4 + UDP only; anything else shouldn't reach the tun given our routes.
         if (packet.size < 28) return
         val version = (packet[0].toInt() and 0xF0) shr 4
@@ -206,12 +208,12 @@ class WalcottVpnService : VpnService() {
         // app keeps trying X" is worth seeing even when X is already blocked. No-op otherwise.
         DomainMonitor.record(host, pkg)
 
-        // The curfew is read here rather than compiled into the matchers above: it changes on the
-        // clock, several times a day, and recompiling a million-domain list for it would be
-        // absurd. A StateFlow's value is a field read (see NetworkCurfew).
+        // The curfew is asked per query rather than compiled into the matchers above: it turns
+        // over on the clock, and this service can be running with no enforcement loop behind it
+        // to tell it (see NetworkCurfew). Cached there, so this costs a field read most times.
         if (DomainFilter.isBlocked(
                 host, pkg, familyDomains, lists, appRules, listExemptApps,
-                cutOff = NetworkCurfew.packages.value,
+                cutOff = NetworkCurfew.cutOffNow(repository),
             )
         ) {
             // Counted in memory and flushed elsewhere: this is the packet loop (see BlockCounters).

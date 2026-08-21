@@ -159,6 +159,18 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     else target.syncManager.endInstallExemption()
                     DebugLog.i("WalcottSeed", "blanket install window: $ms ms")
                 }
+                // `--es curfew now`: what the DNS filter would refuse right now, asked of the very
+                // code the packet loop asks (see NetworkCurfew.cutOffNow) — live rules, live
+                // clock, live app list.
+                //
+                // A probe rather than a real lookup because a real one cannot be relied on: the
+                // emulator this is exercised on has no external network and its browser sits on a
+                // first-run screen, so no app ever issues the query that would prove it. This is
+                // the same answer by the same path.
+                if (intent.getStringExtra("curfew") != null) {
+                    val cut = dev.walcott.net.NetworkCurfew.cutOffNow(target.repository)
+                    DebugLog.i("WalcottSeed", "curfew now: ${cut.sorted().joinToString(",").ifEmpty { "-" }}")
+                }
                 // `--es reconcile_installs now`: runs the install guard's reconciliation on demand,
                 // instead of waiting for a package broadcast or the next heartbeat.
                 if (intent.getStringExtra("reconcile_installs") != null) {

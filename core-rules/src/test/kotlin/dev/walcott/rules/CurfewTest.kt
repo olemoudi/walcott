@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.time.LocalDateTime
+import java.time.LocalTime
 
 /**
  * What a phone stops resolving while it is supposed to be shut, and — the half that matters more
@@ -101,6 +103,32 @@ class CurfewTest {
         assertEquals(
             Curfew.LINGER_SECONDS - 1, accrued["com.oem.news"],
             "the app closest to being cut off was the one evicted",
+        )
+    }
+
+    @Test
+    fun `the standing half is decided by the clock alone, so a reboot is not a way out`() {
+        // The half that needs no observing, and the reason it is its own entry point: the filter
+        // can be brought up by the system with no enforcement loop behind it (a reboot restores
+        // the always-on VPN), and it has to be able to work this out for itself.
+        val bedtime = FamilyConfig(
+            version = 1,
+            bedtime = DayType.entries.associateWith { TimeWindow(LocalTime.of(21, 0), LocalTime.of(7, 0)) },
+            essentialPackages = phone,
+        )
+        val night = LocalDateTime.of(2026, 3, 4, 23, 30)
+        assertEquals(browsers, Curfew.standing(bedtime, browsers + phone, night))
+
+        // And the lift needs nothing to run: the same question, asked at a different hour.
+        val morning = LocalDateTime.of(2026, 3, 4, 9, 30)
+        assertEquals(emptySet<String>(), Curfew.standing(bedtime, browsers + phone, morning))
+    }
+
+    @Test
+    fun `a family with no windows at all never cuts anything off`() {
+        assertEquals(
+            emptySet<String>(),
+            Curfew.standing(FamilyConfig(version = 1), browsers, LocalDateTime.of(2026, 3, 4, 23, 30)),
         )
     }
 

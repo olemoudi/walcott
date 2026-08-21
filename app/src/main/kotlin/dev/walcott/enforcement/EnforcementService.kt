@@ -354,11 +354,11 @@ class EnforcementService : LifecycleService() {
             // that cannot be suspended (see Curfew). Each drops back by itself — the session
             // expires, the window closes — so nothing here has to be turned off by hand.
             kotlinx.coroutines.flow.combine(
-                repo.settingsFlow.map { it.hasWebFilter() },
+                repo.settingsFlow,
                 dev.walcott.net.DomainMonitor.state,
                 dev.walcott.net.NetworkCurfew.packages,
-            ) { hasRules, monitor, curfew ->
-                hasRules || monitor.isActive(System.currentTimeMillis()) || curfew.isNotEmpty()
+            ) { settings, monitor, curfew ->
+                VpnController.wanted(settings, monitor.isActive(System.currentTimeMillis()), curfew)
             }
                 .distinctUntilChanged()
                 .collect { enabled -> VpnController.apply(this@EnforcementService, enabled) }

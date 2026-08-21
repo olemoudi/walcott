@@ -39,11 +39,19 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 // The DNS filter can be torn down without us: another VPN app takes the tun,
                 // or the system revokes it. Nothing else notices — the enforcement service only
                 // reacts to rule *changes* — so re-assert it here like every other policy.
+                //
+                // The curfew is computed here rather than read from the enforcement loop, and
+                // that is the point: this worker runs precisely when the loop is the thing that
+                // is missing (a reboot, an OEM kill). Taking the loop's answer would have this
+                // pass conclude that nothing is cut off and switch the filter off mid-bedtime.
+                val curfew = dev.walcott.net.NetworkCurfew.cutOffNow(app.repository)
                 dev.walcott.net.VpnController.apply(
                     applicationContext,
                     // A live monitoring session counts as a reason to be up, or the watchdog
                     // would pull the tunnel out from under the parent mid-look.
-                    settings.hasWebFilter() || dev.walcott.net.DomainMonitor.isActive(),
+                    dev.walcott.net.VpnController.wanted(
+                        settings, dev.walcott.net.DomainMonitor.isActive(), curfew,
+                    ),
                 )
                 // Same reasoning for the ringer: the broadcast that normally catches a phone being
                 // silenced arrives while the process is alive, and a process the OS killed missed

@@ -77,6 +77,30 @@ object Curfew {
         return next
     }
 
+    /**
+     * The half of the curfew that needs no observing: every browser, whenever a window is
+     * running, decided from the rules and the clock alone.
+     *
+     * Its own entry point because of who has to be able to ask it. The enforcement loop computes
+     * the whole curfew, but the loop is not always there — and the case where it is not is
+     * exactly the case that matters. A phone rebooted at midnight comes back with its always-on
+     * VPN restored (a device policy; it survives), so the tunnel is up within seconds while the
+     * enforcement service can be a watchdog period behind it. A curfew that only the loop could
+     * compute was therefore a curfew a child could reboot their way out of, for up to fifteen
+     * minutes, with the filter running the whole time and filtering nothing.
+     *
+     * So the filter answers this itself, from the clock, every time it is asked. That is also
+     * what keeps the lift exact: there is no stored deadline to honour, because the question is
+     * asked again.
+     */
+    fun standing(config: FamilyConfig, browsers: Set<String>, now: java.time.LocalDateTime): Set<String> =
+        cutOff(
+            windowOpen = RuleEngine.deviceWideBlock(config, now) != null,
+            browsers = browsers,
+            lingering = emptySet(),
+            spared = config.essentialPackages,
+        )
+
     /** The packages that have outstayed [LINGER_SECONDS] in this window. */
     fun lingering(accrued: Map<String, Long>): Set<String> =
         accrued.filterValues { it >= LINGER_SECONDS }.keys

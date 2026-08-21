@@ -109,6 +109,28 @@ class ChildDevice(
      */
     fun allowInstallsFor(ms: Long) = seed("--es", "allow_installs_ms", ms.toString())
 
+    /**
+     * Asks the DNS filter what it would refuse right now, and answers the packages it names.
+     *
+     * The filter's own live answer, by the same call the packet loop makes — not a re-derivation
+     * in the test. A real lookup would be better still and is not available: the emulator has no
+     * external network and its browser sits on a first-run screen, so no app on it ever issues
+     * the query that would prove it.
+     */
+    fun curfewNow(): Set<String> {
+        seed("--es", "curfew", "now")
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline) {
+            val line = walcottLog().lastOrNull { "curfew now: " in it }
+            if (line != null) {
+                return line.substringAfter("curfew now: ").trim()
+                    .split(',').map { it.trim() }.filter { it.isNotEmpty() && it != "-" }.toSet()
+            }
+            Thread.sleep(250)
+        }
+        return emptySet()
+    }
+
     /** Runs the install guard's reconciliation now. */
     fun reconcileInstalls() = seed("--es", "reconcile_installs", "now")
 
