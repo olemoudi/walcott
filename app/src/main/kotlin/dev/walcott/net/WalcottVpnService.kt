@@ -31,8 +31,12 @@ import java.net.InetSocketAddress
  * or forward to a real upstream (allow). Everything else stays on the normal network.
  *
  * Fail-open by design: any parsing/attribution problem forwards the query rather than
- * dropping it, so the child never loses DNS resolution because of a bug here. This blocks
- * plain DNS only — apps using DoH/QUIC or hard-coded IPs are not caught (see README).
+ * dropping it, so the child never loses DNS resolution because of a bug here. One exception,
+ * and it is not about a domain at all: an app the curfew has cut off resolves nothing, so a
+ * question this loop cannot parse is not a way round it (see [dev.walcott.rules.Curfew]).
+ * This blocks plain DNS only — apps using DoH/QUIC or hard-coded IPs are not caught (see
+ * README); the phone's own Private DNS setting is kept off strict mode by [VpnController],
+ * because that one would route every lookup past this service in two taps.
  */
 class WalcottVpnService : VpnService() {
 
@@ -201,19 +205,35 @@ class WalcottVpnService : VpnService() {
         val dnsStart = udp + 8
         if (dnsStart >= packet.size) return
 
-        val host = parseDnsQuestion(packet, dnsStart) ?: return forward(packet, dnsStart, srcIp, srcPort, output)
         val pkg = ownerPackage(srcPort)
+        // The curfew is asked per query rather than compiled into the matchers above: it turns
+        // over on the clock, and this service can be running with no enforcement loop behind it
+        // to tell it (see NetworkCurfew). Cached there, so this costs a field read most times.
+        //
+        // Asked BEFORE the question is parsed, because it does not depend on the question.
+        val cutOff = NetworkCurfew.cutOffNow(repository)
+        val host = parseDnsQuestion(packet, dnsStart)
+        if (host == null) {
+            // A question this loop cannot read is forwarded — fail-open is the rule here, and a
+            // parser that meets something it does not expect must never cost the child their
+            // DNS. An app that is supposed to resolve NOTHING is the one exception: that verdict
+            // is about the app and not about the name, so a name we cannot read is not a way
+            // round it. Uncounted, deliberately: there is no domain to count it against.
+            if (pkg != null && pkg in cutOff) {
+                writePacket(output, buildResponse(packet, dnsStart, nxDomain(packet, dnsStart)))
+            } else {
+                forward(packet, dnsStart, srcIp, srcPort, output)
+            }
+            return
+        }
         // Both halves are already in hand, so a monitoring session is only a window onto a
         // decision this loop was making anyway. Recorded before the verdict on purpose: "this
         // app keeps trying X" is worth seeing even when X is already blocked. No-op otherwise.
         DomainMonitor.record(host, pkg)
 
-        // The curfew is asked per query rather than compiled into the matchers above: it turns
-        // over on the clock, and this service can be running with no enforcement loop behind it
-        // to tell it (see NetworkCurfew). Cached there, so this costs a field read most times.
         if (DomainFilter.isBlocked(
                 host, pkg, familyDomains, lists, appRules, listExemptApps,
-                cutOff = NetworkCurfew.cutOffNow(repository),
+                cutOff = cutOff,
             )
         ) {
             // Counted in memory and flushed elsewhere: this is the packet loop (see BlockCounters).

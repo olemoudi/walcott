@@ -185,6 +185,9 @@ does not block, was always the faster way out anyway.
 - **Web filtering is DNS-based.** It catches ordinary domain lookups. Apps that ship their own
   encrypted DNS or hard-coded addresses — notably YouTube and some browsers — can get around
   it. Blocking those properly needs full traffic inspection, which Walcott does not do.
+  The phone's own **Private DNS** setting would get around it too, from Settings and in two
+  taps, so "Protect the web filter" locks that setting as well and puts a strict private
+  resolver back to automatic while the filter is running.
 - Per-app attribution of a domain lookup is best-effort; when a lookup can't be attributed,
   "only from this app" rules block rather than allow.
 - IPv4 DNS only, for now.

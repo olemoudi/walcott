@@ -21,6 +21,17 @@ class DeviceRestrictionsTest {
     }
 
     @Test
+    fun `protecting the filter locks private DNS too`() {
+        // The DNS filter is a tun that only routes the sentinel resolver, so "Private DNS: a
+        // hostname I typed" sends every lookup out over TLS to somebody else and the filter
+        // — and the bedtime curfew built on it — sees nothing. Locking the VPN and leaving
+        // that reachable is a lock with the window open.
+        val vpn = DeviceRestrictions.FEATURES.first { it.key == DeviceRestrictions.KEY_VPN }
+        assertTrue(android.os.UserManager.DISALLOW_CONFIG_PRIVATE_DNS in vpn.restrictions)
+        assertTrue(android.os.UserManager.DISALLOW_CONFIG_VPN in vpn.restrictions)
+    }
+
+    @Test
     fun `feature keys are unique`() {
         val allKeys = DeviceRestrictions.FEATURES.map { it.key }
         assertEquals(allKeys.size, allKeys.toSet().size)

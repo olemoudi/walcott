@@ -688,7 +688,7 @@
     <string name="nav_protection_subtitle">Impide que el hijo cambie ajustes críticos</string>
     <string name="protection_note">Estos bloqueos se aplican en móviles de hijo con protección total (Device Owner). Mientras Walcott esté en beta, los bloqueos que podrían dejar un dispositivo irrecuperable (restablecimiento de fábrica, modo seguro, APKs, depuración USB) no se ofrecen a propósito — el aviso de check-in cubre las manipulaciones.</string>
     <string name="restriction_vpn_title">Proteger el filtro web</string>
-    <string name="restriction_vpn_desc">Los ajustes de VPN quedan bloqueados: el filtro DNS no se puede quitar</string>
+    <string name="restriction_vpn_desc">Los ajustes de VPN y de DNS privado quedan bloqueados: el filtro no se puede quitar ni esquivar</string>
     <string name="restriction_location_title">Ubicación siempre activa</string>
     <string name="restriction_location_desc">La ubicación queda encendida y sus ajustes bloqueados</string>
     <string name="restriction_datetime_title">Bloquear fecha y hora</string>
@@ -1756,6 +1756,10 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_95_0">
+        <item>El bloqueo de la web a la hora de dormir estaba a una pantalla de Ajustes de quedarse en nada. El DNS privado de Android manda cada consulta directamente al resolutor que se le indique — por delante del filtro, y por delante de las horas en las que el navegador no debería resolver nada. «Proteger el filtro web» bloquea ahora también ese ajuste y devuelve el teléfono al resolutor automático siempre que el filtro esté funcionando.</item>
+        <item>Y el filtro se cuida solo entre comprobaciones: si algo tira el túnel dentro de una ventana de dormir o sin pantalla, vuelve en un par de minutos en lugar de tardar hasta quince, y un bloqueo ya no puede sobrevivir a la ventana que lo creó si el teléfono mata el servicio de control.</item>
     </string-array>
     <string-array name="whats_new_0_94_0">
         <item>Todavía más cerca en un paseo, y aquí se queda: alrededor de un tercio más que la versión de ayer, así que en la pantalla caben unos cuatrocientos metros. Lo bastante cerca para ver la acera, la entrada del parque, la esquina por la que giraron. Los tramos largos no cambian — el mapa se sigue alejando para un autobús y volviendo al detalle cuando se vuelve a andar.</item>

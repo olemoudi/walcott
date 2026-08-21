@@ -598,6 +598,10 @@ class EnforcementService : LifecycleService() {
         // Null until the first tick, for the same reason lastDeviceBlock is: a service restarting
         // mid-bedtime must not announce a curfew it merely re-derived.
         var lastCutOff: Set<String>? = null
+        // When the filter was last dragged back up from under a running window, and whether that
+        // outage has already been written down (see below).
+        var lastVpnHealAt = 0L
+        var healingFilter = false
 
         while (currentCoroutineContext().isActive) {
             val config = repo.configNow()
@@ -803,6 +807,33 @@ class EnforcementService : LifecycleService() {
                     )
                 }
                 lastCutOff = cutOff
+            }
+
+            // A tunnel can die with nobody asking it to: another VPN app takes it, the system
+            // revokes it, the read end returns end-of-stream. Nothing in this service noticed —
+            // the collector in observeWebFilter reacts to the REASONS to be up changing, and they
+            // have not changed — so the only thing that brought the filter back was the watchdog,
+            // on its fifteen-minute period, inside the very hours this curfew exists for. Here it
+            // is a couple of minutes instead, and only while the screen is on, which is the only
+            // time a filter that is down costs anything.
+            //
+            // settledDown() rather than tunnelUp: every process start has the tunnel down and the
+            // service still on its way up, and re-asserting into that would be a policy call per
+            // tick for the first minute and a half of every boot.
+            val filterDown = cutOff.isNotEmpty() && dev.walcott.net.VpnStatus.settledDown()
+            if (!filterDown) {
+                healingFilter = false
+            } else if (nowClock - lastVpnHealAt > VPN_HEAL_MILLIS) {
+                lastVpnHealAt = nowClock
+                // Said once per outage rather than once per attempt. On a phone that simply has
+                // no VPN consent — not a Device Owner, an enrolment nobody finished — this is a
+                // state that lasts, and a line a minute through a bedtime would push everything
+                // else out of the log that would explain why.
+                if (!healingFilter) {
+                    healingFilter = true
+                    DebugLog.w(TAG, "the filter is down inside a closed window; bringing it back")
+                }
+                VpnController.apply(this@EnforcementService, true)
             }
 
             if (!failingClosed) {
@@ -1094,6 +1125,10 @@ class EnforcementService : LifecycleService() {
          * LOW channel is deleted at start-up so installs that upgrade actually quiet down.
          */
         private const val STATUS_CHANNEL_ID = "walcott_enforcement_quiet"
+
+        /** How often at most the filter is dragged back up from under a running window. */
+        private const val VPN_HEAL_MILLIS = 60_000L
+
         private const val TICK_ACTIVE_MILLIS = 2000L
         private const val TICK_IDLE_MILLIS = 15_000L
         private const val MAX_CREDIT_SECONDS = 15L

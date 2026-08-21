@@ -93,13 +93,48 @@ object Curfew {
      * what keeps the lift exact: there is no stored deadline to honour, because the question is
      * asked again.
      */
-    fun standing(config: FamilyConfig, browsers: Set<String>, now: java.time.LocalDateTime): Set<String> =
-        cutOff(
-            windowOpen = RuleEngine.deviceWideBlock(config, now) != null,
-            browsers = browsers,
-            lingering = emptySet(),
-            spared = config.essentialPackages,
+    fun standing(config: FamilyConfig, browsers: Set<String>, now: java.time.LocalDateTime): Standing {
+        val windowOpen = RuleEngine.deviceWideBlock(config, now) != null
+        return Standing(
+            windowOpen = windowOpen,
+            packages = cutOff(
+                windowOpen = windowOpen,
+                browsers = browsers,
+                lingering = emptySet(),
+                spared = config.essentialPackages,
+            ),
         )
+    }
+
+    /**
+     * What the clock alone says at one instant: whether a window is running at all, and who it
+     * cuts off without anybody having to watch the screen.
+     *
+     * The flag is not a detail, and it is not the same as [packages] being empty — a window with
+     * no browser on the phone runs and cuts off nobody. It is what expires the OTHER half of the
+     * curfew, the one only the enforcement loop can know (see [with]).
+     */
+    data class Standing(val windowOpen: Boolean, val packages: Set<String>) {
+
+        /**
+         * The whole curfew: this half plus whatever the enforcement loop observed lingering —
+         * and nothing at all once the window is over, whoever observed what.
+         *
+         * That last clause is the point. The observed half is pushed in by a loop, so it is only
+         * as current as the loop is alive; a service an OEM killed mid-bedtime, or a device the
+         * parent released, leaves its last set behind in memory with nobody to clear it. Asked
+         * for it at ten the next morning, the filter would still be refusing every lookup that
+         * app made, for a window that ended hours ago and with no rule on any screen to explain
+         * it — the one failure this feature promises it cannot have. So the lift is derived here
+         * too, from the same clock, rather than trusted to arrive.
+         */
+        fun with(observed: Set<String>): Set<String> = when {
+            !windowOpen -> emptySet()
+            observed.isEmpty() -> packages
+            packages.isEmpty() -> observed
+            else -> packages + observed
+        }
+    }
 
     /** The packages that have outstayed [LINGER_SECONDS] in this window. */
     fun lingering(accrued: Map<String, Long>): Set<String> =

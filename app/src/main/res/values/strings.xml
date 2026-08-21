@@ -690,7 +690,7 @@
     <string name="nav_protection_subtitle">Stop the child from changing critical settings</string>
     <string name="protection_note">These locks apply on child phones with full protection (Device Owner). While Walcott is in beta, locks that could make a device unrecoverable (factory reset, safe mode, sideloading, USB debugging) are deliberately not offered — the check-in alert below covers tampering instead.</string>
     <string name="restriction_vpn_title">Protect the web filter</string>
-    <string name="restriction_vpn_desc">VPN settings are locked, so the DNS filter can\'t be removed</string>
+    <string name="restriction_vpn_desc">VPN and private DNS settings are locked, so the filter can\'t be removed or routed around</string>
     <string name="restriction_location_title">Keep location on</string>
     <string name="restriction_location_desc">Location stays enabled and its settings are locked</string>
     <string name="restriction_datetime_title">Lock date and time</string>
@@ -1764,6 +1764,10 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_95_0">
+        <item>Bedtime\'s web block was one screen of Settings away from being nothing at all. Android\'s own Private DNS sends every lookup straight to a resolver the phone was told to use — past the filter, and past the hours when the browser is supposed to resolve nothing. "Protect the web filter" now locks that setting too, and puts the phone back on the automatic resolver whenever the filter is running.</item>
+        <item>And the filter looks after itself between checks: if something takes the tunnel down inside a bedtime or a screen-free window it is back within a couple of minutes rather than up to fifteen, and a block can no longer outlive the window that made it if the phone kills the enforcement service.</item>
     </string-array>
     <string-array name="whats_new_0_94_0">
         <item>Closer still on a walk, and this is where it settles: about a third nearer again than yesterday\'s release, so a phone screen holds roughly four hundred metres. Near enough to see the side of the street, the entrance of the park, the corner they turned. Long stretches are untouched — the map still pulls back for a bus and comes back down when the walking resumes.</item>

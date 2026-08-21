@@ -96,7 +96,11 @@ object DeviceRestrictions {
     data class Feature(val key: String, val restrictions: List<String>, val group: Group = Group.TAMPER)
 
     val FEATURES = listOf(
-        Feature(KEY_VPN, listOf(UserManager.DISALLOW_CONFIG_VPN)),
+        // Private DNS belongs here and not in its own switch: "a VPN the child cannot remove" and
+        // "a resolver the child cannot redirect" are the same promise, and a filter that survives
+        // one and not the other is a filter with two lines of Settings between it and nothing
+        // (see [dev.walcott.net.VpnController]).
+        Feature(KEY_VPN, listOf(UserManager.DISALLOW_CONFIG_VPN, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)),
         Feature(KEY_LOCATION, listOf(UserManager.DISALLOW_CONFIG_LOCATION)),
         Feature(KEY_DATETIME, listOf(UserManager.DISALLOW_CONFIG_DATE_TIME)),
         Feature(KEY_BIOMETRICS, emptyList()), // keyguard feature, not a user restriction

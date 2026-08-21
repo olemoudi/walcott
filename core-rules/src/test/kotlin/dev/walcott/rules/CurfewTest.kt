@@ -117,19 +117,55 @@ class CurfewTest {
             essentialPackages = phone,
         )
         val night = LocalDateTime.of(2026, 3, 4, 23, 30)
-        assertEquals(browsers, Curfew.standing(bedtime, browsers + phone, night))
+        assertEquals(browsers, Curfew.standing(bedtime, browsers + phone, night).packages)
 
         // And the lift needs nothing to run: the same question, asked at a different hour.
         val morning = LocalDateTime.of(2026, 3, 4, 9, 30)
-        assertEquals(emptySet<String>(), Curfew.standing(bedtime, browsers + phone, morning))
+        assertEquals(emptySet<String>(), Curfew.standing(bedtime, browsers + phone, morning).packages)
     }
 
     @Test
     fun `a family with no windows at all never cuts anything off`() {
         assertEquals(
             emptySet<String>(),
-            Curfew.standing(FamilyConfig(version = 1), browsers, LocalDateTime.of(2026, 3, 4, 23, 30)),
+            Curfew.standing(FamilyConfig(version = 1), browsers, LocalDateTime.of(2026, 3, 4, 23, 30)).packages,
         )
+    }
+
+    @Test
+    fun `what the loop observed does not outlive the window it was observed in`() {
+        // The failure this rules out: the enforcement loop is killed mid-bedtime (an OEM battery
+        // saver, a released device) and its last set is left behind in memory with nobody to
+        // clear it. The filter outlives it — it is a device policy — so at ten the next morning
+        // it would still be refusing every lookup that app made, for a window that ended hours
+        // ago and with no rule on any screen to explain it. The clock lifts it, not the loop.
+        val observed = setOf("com.oem.news")
+        val open = Curfew.Standing(windowOpen = true, packages = browsers)
+        val closed = Curfew.Standing(windowOpen = false, packages = emptySet())
+
+        assertEquals(browsers + observed, open.with(observed))
+        assertEquals(emptySet<String>(), closed.with(observed))
+    }
+
+    @Test
+    fun `a window with no browser on the phone is still a window`() {
+        // Which is why the flag is a fact of its own and not "packages is empty": a phone whose
+        // only browser was uninstalled still has an open window, and whatever the loop caught
+        // lingering inside it is still cut off.
+        val open = Curfew.Standing(windowOpen = true, packages = emptySet())
+        assertEquals(setOf("com.oem.news"), open.with(setOf("com.oem.news")))
+    }
+
+    @Test
+    fun `the standing half says whether a window is running at all`() {
+        val bedtime = FamilyConfig(
+            version = 1,
+            bedtime = DayType.entries.associateWith { TimeWindow(LocalTime.of(21, 0), LocalTime.of(7, 0)) },
+            essentialPackages = phone,
+        )
+        // No browser on this phone, and the window is running all the same.
+        assertTrue(Curfew.standing(bedtime, emptySet(), LocalDateTime.of(2026, 3, 4, 23, 30)).windowOpen)
+        assertFalse(Curfew.standing(bedtime, browsers, LocalDateTime.of(2026, 3, 4, 9, 30)).windowOpen)
     }
 
     @Test

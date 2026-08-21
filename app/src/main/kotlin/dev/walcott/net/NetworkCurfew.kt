@@ -27,11 +27,27 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * Nothing is stored and no deadline is remembered. The window ending is simply the next answer,
  * which is what makes the lift exact and makes a stuck curfew impossible.
+ *
+ * That last promise is kept by the standing half on behalf of both: the observed set is pushed in
+ * by a loop, so it is only as current as the loop is alive, and it is the clock — not the loop —
+ * that decides when it stops counting (see [Curfew.Standing.with]).
  */
 object NetworkCurfew {
 
     /** How long the standing half is trusted before the clock is read again. */
     private const val STANDING_TTL_MS = 1_000L
+
+    /**
+     * How long the last answer survives while the rules cannot be read at all.
+     *
+     * Reading them is a DataStore read and can fail — a corrupt file, a disk that is full. Both
+     * ways of answering that are wrong for ever: forgetting the curfew hands the child the
+     * evening back on a failure they did not have to cause, and holding it hands them a browser
+     * that resolves nothing tomorrow afternoon with no rule anywhere to explain it. So the last
+     * answer is held for a few minutes — longer than any transient, far shorter than a night —
+     * and then let go, loudly.
+     */
+    private const val STALE_GRACE_MS = 10 * 60 * 1000L
 
     private val _packages = MutableStateFlow<Set<String>>(emptySet())
 
@@ -42,8 +58,14 @@ object NetworkCurfew {
      */
     val packages: StateFlow<Set<String>> = _packages.asStateFlow()
 
-    @Volatile private var standing: Set<String> = emptySet()
+    @Volatile private var standing = Curfew.Standing(windowOpen = false, packages = emptySet())
+
+    /** When the standing half was last worked out, and when it was last worked out SUCCESSFULLY. */
     @Volatile private var standingAt = 0L
+    @Volatile private var standingFreshAt = 0L
+
+    /** Whether the rules are currently unreadable, so the failure is logged once and not per query. */
+    @Volatile private var readFailing = false
 
     /** Replaces the observed set; logs only real changes, since the loop asserts this every tick. */
     fun set(value: Set<String>) {
@@ -65,6 +87,7 @@ object NetworkCurfew {
     suspend fun cutOffNow(repository: WalcottRepository): Set<String> {
         val since = android.os.SystemClock.elapsedRealtime()
         if (since - standingAt > STANDING_TTL_MS) {
+            standingAt = since
             val fresh = runCatching {
                 Curfew.standing(
                     repository.configNow(),
@@ -73,26 +96,43 @@ object NetworkCurfew {
                     repository.inventory.browserPackages(),
                     java.time.LocalDateTime.now(),
                 )
-            }.getOrDefault(emptySet())
-            // Said out loud, and only on a change. An app that silently stops resolving is the
-            // hardest kind of fault to explain afterwards, and on a phone whose enforcement loop
-            // is not running this line is the only record that it was a rule and not the network.
-            if (fresh != standing) {
-                DebugLog.i(
-                    TAG,
-                    if (fresh.isEmpty()) "window over: everything resolves again"
-                    else "window: ${fresh.sorted().joinToString()} resolve nothing",
-                )
+            }.onFailure {
+                // Once per outage, not once per lookup: this sits in the path of every DNS query.
+                if (!readFailing) {
+                    readFailing = true
+                    DebugLog.e(TAG, "could not read the rules; holding the last curfew for now", it)
+                }
+            }.getOrNull()
+            when {
+                fresh != null -> {
+                    readFailing = false
+                    // Said out loud, and only on a change. An app that silently stops resolving is
+                    // the hardest kind of fault to explain afterwards, and on a phone whose
+                    // enforcement loop is not running this line is the only record that it was a
+                    // rule and not the network.
+                    if (fresh != standing) {
+                        DebugLog.i(
+                            TAG,
+                            when {
+                                !fresh.windowOpen -> "window over: everything resolves again"
+                                fresh.packages.isEmpty() -> "window running, and no browser on this phone"
+                                else -> "window: ${fresh.packages.sorted().joinToString()} resolve nothing"
+                            },
+                        )
+                    }
+                    standing = fresh
+                    standingFreshAt = since
+                }
+                since - standingFreshAt > STALE_GRACE_MS -> {
+                    // Held long enough that it no longer proves anything about the hour.
+                    if (standing.windowOpen) {
+                        DebugLog.w(TAG, "rules unreadable for too long; lifting the curfew")
+                    }
+                    standing = Curfew.Standing(windowOpen = false, packages = emptySet())
+                }
             }
-            standing = fresh
-            standingAt = since
         }
-        val observed = _packages.value
-        return when {
-            standing.isEmpty() -> observed
-            observed.isEmpty() -> standing
-            else -> standing + observed
-        }
+        return standing.with(_packages.value)
     }
 
     private const val TAG = "WalcottCurfew"

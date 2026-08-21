@@ -40,7 +40,12 @@ class AppInventory(context: Context) {
      */
     fun alwaysReachablePackages(): Set<String> {
         val now = android.os.SystemClock.elapsedRealtime()
-        if (reachOut.isEmpty() || now - reachOutReadAt > REACH_OUT_TTL_MS) {
+        // Keyed on when it was READ, not on what it found. An empty answer is an answer — a phone
+        // whose dialer the platform will not name — and treating it as "not read yet" re-ran the
+        // query on every call for ever. Both these lists are read once a second from the DNS
+        // packet loop (see NetworkCurfew.cutOffNow), which is not the place to leave a
+        // PackageManager round trip that only ever fires on the phones that can least spare it.
+        if (reachOutReadAt == 0L || now - reachOutReadAt > REACH_OUT_TTL_MS) {
             reachOut = setOfNotNull(dialerPackage(), contactsPackage())
             reachOutReadAt = now
         }
@@ -69,7 +74,7 @@ class AppInventory(context: Context) {
      */
     fun browserPackages(): Set<String> {
         val now = android.os.SystemClock.elapsedRealtime()
-        if (browsers.isEmpty() || now - browsersReadAt > REACH_OUT_TTL_MS) {
+        if (browsersReadAt == 0L || now - browsersReadAt > REACH_OUT_TTL_MS) {
             browsers = readBrowsers()
             browsersReadAt = now
         }
@@ -127,6 +132,7 @@ class AppInventory(context: Context) {
         // acquires the app this list exists to name, and waiting out its TTL would leave a fresh
         // browser un-cut through tonight's window.
         browsers = emptySet()
+        browsersReadAt = 0L
     }
 
     private fun readLaunchableApps(): List<InstalledApp> {

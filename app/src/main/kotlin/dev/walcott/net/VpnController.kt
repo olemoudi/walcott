@@ -45,7 +45,43 @@ object VpnController {
                     /* lockdownEnabled = */ false,
                 )
             }.onFailure { dev.walcott.debug.DebugLog.e(TAG, "setAlwaysOnVpnPackage(enabled=$enabled) refused", it) }
+            if (enabled) clearStrictPrivateDns(dpm, admin)
         }
-        if (enabled) WalcottVpnService.start(context) else WalcottVpnService.stop(context)
+        // Wrapped, because this is a plain startService and the callers cannot afford it to
+        // throw. The watchdog would abandon the rest of its pass (the ringer, the pruning), and
+        // the enforcement service's collector — a single `collect` over the reasons to be up —
+        // would die for the life of the service, leaving the filter frozen at whatever it last
+        // did. A background-start refusal is a thing to log and be re-tried by the next pass.
+        runCatching {
+            if (enabled) WalcottVpnService.start(context) else WalcottVpnService.stop(context)
+        }.onFailure { dev.walcott.debug.DebugLog.e(TAG, "could not ${if (enabled) "start" else "stop"} the filter", it) }
+    }
+
+    /**
+     * Takes the phone off "Private DNS: a hostname I typed" — the one switch in Settings that
+     * walks straight past this filter without touching it.
+     *
+     * In strict mode the system resolver sends every lookup to a resolver of the child's choosing
+     * over TLS on port 853. That is not DNS to the sentinel address, so the tun does not route it
+     * and it leaves on the ordinary network: the filter stays up, reports itself healthy, blocks
+     * nothing and sees nothing. Two lines in Settings and bedtime is over — including the curfew,
+     * which is the same filter (see [dev.walcott.rules.Curfew]).
+     *
+     * Only ever pushed back to the platform default, and only while the filter is wanted:
+     * "automatic" still encrypts DNS wherever the network's own resolver supports it, and it is
+     * safe here because the sentinel does not answer on 853, so the resolver falls back to plain
+     * DNS through the tun. Nothing here turns encryption off for a family that chose it.
+     */
+    private fun clearStrictPrivateDns(dpm: DevicePolicyManager, admin: android.content.ComponentName) {
+        runCatching {
+            if (dpm.getGlobalPrivateDnsMode(admin) == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME) {
+                val result = dpm.setGlobalPrivateDnsModeOpportunistic(admin)
+                if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                    dev.walcott.debug.DebugLog.w(TAG, "private DNS pointed at its own resolver; put back to automatic")
+                } else {
+                    dev.walcott.debug.DebugLog.e(TAG, "private DNS is set to a hostname and would not reset ($result)")
+                }
+            }
+        }.onFailure { dev.walcott.debug.DebugLog.e(TAG, "could not read or reset the private DNS mode", it) }
     }
 }
