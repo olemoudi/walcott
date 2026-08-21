@@ -1765,6 +1765,9 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_94_0">
+        <item>Closer still on a walk, and this is where it settles: about a third nearer again than yesterday\'s release, so a phone screen holds roughly four hundred metres. Near enough to see the side of the street, the entrance of the park, the corner they turned. Long stretches are untouched — the map still pulls back for a bus and comes back down when the walking resumes.</item>
+    </string-array>
     <string-array name="whats_new_0_93_0">
         <item>The map\'s replay now watches a walk from closer in — about 1.8 times the scale it used yesterday. Where the pace is a few dozen metres between one position and the next, the screen was showing most of a kilometre of city and you could not tell which side of the street your child was on. It only affects the slow stretches: anything longer still gets framed to fit, so the map still pulls back for a bus and comes back down when the walking resumes.</item>
     </string-array>

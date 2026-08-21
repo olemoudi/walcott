@@ -47,13 +47,19 @@ internal object MapCamera {
      * Closest the replay will pull in, and therefore the level a walk is watched at: anything
      * whose window fits inside it asks for more and is capped here.
      *
-     * A little under a level above where it started, which is 1.8x the scale — asked for from a
-     * real phone, where a child moving sixty metres between fixes was being watched from too far
-     * up to see which side of the street they were on. It costs nothing elsewhere: only the
-     * stretches that already fit ask for this much, and the pixel speed it implies for a walk is
-     * still a stroll across the screen (about 135 a second at 1x).
+     * A shade over a level above where it started, which is 2.3x the scale — arrived at from a
+     * real phone in three goes, because "close enough to see which side of the street" is not a
+     * thing arithmetic can settle. A phone screen now holds about four hundred metres.
+     *
+     * It costs nothing elsewhere: only the stretches that already fit ask for this much, so it is
+     * the slow ones that move and a bus ride is framed exactly as it was. What it does spend is
+     * pace — a sixty-metre step is 155px here against 66px at the level this started at, which is
+     * still well under a fifth of the screen per step.
+     *
+     * There is room above this, but not much: osmdroid clamps the map to what the tile source
+     * has, and MAPNIK stops at 19.
      */
-    const val MAX_ZOOM = 17.85
+    const val MAX_ZOOM = 18.23
 
     /**
      * Widest the replay will pull back to. About 60km across a phone screen — a fix on the far
