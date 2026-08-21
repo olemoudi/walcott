@@ -43,8 +43,17 @@ internal object MapCamera {
      */
     const val LEAD = 0.4
 
-    /** Closest the replay will pull in: street level, a touch tighter than the map's own default. */
-    const val MAX_ZOOM = 17.0
+    /**
+     * Closest the replay will pull in, and therefore the level a walk is watched at: anything
+     * whose window fits inside it asks for more and is capped here.
+     *
+     * A little under a level above where it started, which is 1.8x the scale — asked for from a
+     * real phone, where a child moving sixty metres between fixes was being watched from too far
+     * up to see which side of the street they were on. It costs nothing elsewhere: only the
+     * stretches that already fit ask for this much, and the pixel speed it implies for a walk is
+     * still a stroll across the screen (about 135 a second at 1x).
+     */
+    const val MAX_ZOOM = 17.85
 
     /**
      * Widest the replay will pull back to. About 60km across a phone screen — a fix on the far

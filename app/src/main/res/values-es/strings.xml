@@ -1757,6 +1757,9 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_93_0">
+        <item>La reproducción del mapa mira ahora un paseo desde más cerca — alrededor de 1,8 veces la escala de ayer. Donde el ritmo son unas decenas de metros entre una posición y la siguiente, la pantalla enseñaba casi un kilómetro de ciudad y no se distinguía por qué acera iba tu hijo. Solo cambia en los tramos lentos: lo que es más largo se sigue encuadrando para que quepa, así que el mapa se sigue alejando para un autobús y volviendo al detalle cuando se vuelve a andar.</item>
+    </string-array>
     <string-array name="whats_new_0_92_0">
         <item>Reproducir un día en el mapa se mueve ya como el navegador de un coche, en vez de saltar de posición en posición. El mapa arranca hacia la posición siguiente antes de que el alfiler salte a ella, así que el sitio donde va a estar tu hijo ya está en pantalla cuando llega, y termina de centrarlo mientras el alfiler espera allí. Toda la reproducción es un único deslizamiento por el recorrido.</item>
         <item>Y va leyendo el resto del recorrido antes de llegar. Cuando lo que viene es un tramo largo — un autobús, un coche, cualquier cosa que recorra un kilómetro entre dos posiciones — el mapa empieza a alejarse varios pasos antes y poco a poco, de modo que la parte rápida se ve desde lo bastante lejos como para seguirla con la vista; cuando se vuelve a andar, se acerca otra vez al nivel de calle. Nada da saltos y nada se escapa por el borde de la pantalla.</item>
