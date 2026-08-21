@@ -67,6 +67,16 @@ object NetworkCurfew {
     /** Whether the rules are currently unreadable, so the failure is logged once and not per query. */
     @Volatile private var readFailing = false
 
+    /**
+     * The standing half alone, as of the last [cutOffNow].
+     *
+     * Told apart from the whole answer for the one question that cannot be asked any other way:
+     * WHICH half named a package. The two are indistinguishable in the sum, so a device test
+     * proving the filter derives the window for itself — rather than being handed it by an
+     * enforcement loop that may not be running — has nothing else to look at.
+     */
+    val standingNow: Set<String> get() = standing.packages
+
     /** Replaces the observed set; logs only real changes, since the loop asserts this every tick. */
     fun set(value: Set<String>) {
         if (value == _packages.value) return

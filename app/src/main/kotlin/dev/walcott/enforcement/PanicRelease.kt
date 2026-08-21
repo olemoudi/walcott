@@ -5,7 +5,6 @@ import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.WorkManager
 import dev.walcott.WalcottApplication
-import dev.walcott.data.AppInventory
 import dev.walcott.debug.DebugLog
 import dev.walcott.net.VpnController
 import dev.walcott.sync.HeartbeatAlarm
@@ -17,7 +16,7 @@ import kotlinx.coroutines.withContext
  *
  * Two ways in, both of them deliberate and both ending here — the parent PIN on the child's
  * device settings (instant, for a family that lost the parent phone but still knows the PIN),
- * and the child's own 24-hour panic request (see [dev.walcott.sync.PanicProtocol]) for when the
+ * and the child's own twelve-hour panic request (see [dev.walcott.sync.PanicProtocol]) for when the
  * PIN is gone too. Without either, a family whose parent device dies would be stuck with a
  * permanently locked-down phone whose only way out is a factory reset.
  *
@@ -25,6 +24,12 @@ import kotlinx.coroutines.withContext
  * we still have them, and giving up Device Owner is the very last step. Every step is
  * independently guarded, because a device half-released — apps still suspended, restrictions
  * still on, no way to ask again — is much worse than one that failed loudly at step one.
+ *
+ * The half that decides whether the phone that comes out of this is HEALTHY is [DeviceHandback]:
+ * every restriction the system will admit to, every installed package asked one at a time whether
+ * it is still suspended, hidden or undeletable, and every other Device Owner knob put back. It
+ * runs before Device Owner is given up because afterwards none of it is allowed — and anything
+ * still set at that moment is set for good, with a factory reset as the only remaining cure.
  */
 object PanicRelease {
 
@@ -43,32 +48,15 @@ object PanicRelease {
         runCatching { WorkManager.getInstance(context).cancelAllWork() }
         runCatching { VpnController.apply(context, false) }
 
-        // 2. Give the apps back. Computed BEFORE the policy is wiped: the managed set is
-        // derived from the assignments, and afterwards there would be nothing to unsuspend.
-        runCatching {
-            // The quarantine is in there explicitly: an app suspended by the install guard
-            // answers to no rule and may have no launcher icon, so neither of the other two
-            // sets is guaranteed to name it — and this is the last chance to give it back.
-            val inventory = app.repository.inventory
-            val managed = app.repository.managedPackagesNow() +
-                app.syncManager.quarantined.value +
-                withContext(Dispatchers.IO) {
-                    // Every user app, icon or not — the same list [finishIfInterrupted] falls back
-                    // to, and for the same reason. The three sets above SHOULD name everything this
-                    // device suspended, but "should" is doing a lot of work for the last chance a
-                    // released phone ever gets: after this there is no enforcement loop left to
-                    // unsuspend anything the sets happened to miss.
-                    inventory.launchableApps().map { it.packageName } + inventory.userPackages().orEmpty()
-                }
-            Enforcer(context).releaseAll(managed)
-        }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }
+        // 2. Give the phone back: every restriction, every suspended, hidden or undeletable
+        // package, every other Device Owner knob. All of it needs Device Owner rights, so it must
+        // precede step 6 — and it is the step that decides whether what comes out of this is a
+        // healthy phone (see [DeviceHandback]). Off the caller's thread: it is a binder call per
+        // installed package, three times over.
+        runCatching { withContext(Dispatchers.IO) { DeviceHandback.run(context) } }
+            .onFailure { DebugLog.e(TAG, "handing the device settings back failed", it) }
 
-        // 3. Give the device settings back (VPN, location, date/time, installs, biometrics…)
-        // and lift the self-uninstall block. Device Owner only, so it must precede step 6.
-        runCatching { DeviceRestrictions.clearAll(context) }
-            .onFailure { DebugLog.e(TAG, "clearing device restrictions failed", it) }
-
-        // 3b. And the lock screen, if the credential in force is one this app set remotely. Also
+        // 3. And the lock screen, if the credential in force is one this app set remotely. Also
         // Device Owner only, and the sharpest deadline of the lot: a release that steps over this
         // hands back a phone whose owner may never have been told the PIN, with nothing left on it
         // that could ever reset one — the factory reset this whole feature exists to avoid, handed
@@ -120,21 +108,11 @@ object PanicRelease {
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
         DebugLog.w(TAG, "released device is still Device Owner: finishing the interrupted release")
-        // Apps first, and from the installed list rather than the policy: the policy is gone by
-        // this point, and a released device that kept an app suspended has no enforcement loop
-        // left to ever unsuspend it.
-        runCatching {
-            val inventory = AppInventory(context)
-            // Every user app, not only the ones with an icon: the policy is gone, so this list
-            // is all there is to go on, and a suspended app missing from it stays suspended for
-            // ever on a device that no longer has an enforcement loop.
-            val installed = withContext(Dispatchers.IO) {
-                inventory.launchableApps().map { it.packageName }.toSet() + inventory.userPackages().orEmpty()
-            }
-            Enforcer(context).releaseAll(installed)
-        }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }
-        runCatching { DeviceRestrictions.clearAll(context) }
-            .onFailure { DebugLog.e(TAG, "clearing device restrictions failed", it) }
+        // The same handback, and it asks the SYSTEM rather than the policy — which is the only
+        // thing that could work here, since the policy was erased before the interruption. A
+        // released device that kept an app suspended has no enforcement loop left to lift it.
+        runCatching { withContext(Dispatchers.IO) { DeviceHandback.run(context) } }
+            .onFailure { DebugLog.e(TAG, "handing the device settings back failed", it) }
         releaseDeviceOwner(context)
     }
 

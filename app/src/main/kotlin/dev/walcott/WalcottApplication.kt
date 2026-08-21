@@ -183,13 +183,24 @@ class WalcottApplication : Application() {
      * by the time it flips the flag it has already done all of this.
      */
     private suspend fun standDown() {
+        // An emergency release has already done this, better, and is at that very moment in the
+        // middle of giving up Device Owner (it is what flipped the flag this reacts to). Running
+        // again here races that: a sweep of every installed package that starts while the phone
+        // is still owned and finishes after it is not, reporting a few hundred refusals for work
+        // that was already done. See PanicRelease.
+        if (syncManager.identity.value.released) return
         DebugLog.w(TAG, "this device no longer enforces: giving back apps and settings")
+        // The same handback the emergency release uses, and for the same reason: what has to come
+        // off is decided by asking the SYSTEM what is still set, not by remembering what this
+        // build once set. It asks per installed package rather than trusting a managed set that
+        // is derived from a policy nobody is applying any more. Device Owner is deliberately
+        // NOT given up here — pairing the device again restores everything without a factory
+        // reset — so everything below can simply be re-asserted the moment it is.
         runCatching {
-            val managed = repository.managedPackagesNow() + syncManager.quarantined.value
-            dev.walcott.enforcement.Enforcer(this).releaseAll(managed)
-        }.onFailure { DebugLog.e(TAG, "unsuspending apps failed", it) }
-        runCatching { dev.walcott.enforcement.DeviceRestrictions.clearAll(this) }
-            .onFailure { DebugLog.e(TAG, "clearing device restrictions failed", it) }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                dev.walcott.enforcement.DeviceHandback.run(this@WalcottApplication)
+            }
+        }.onFailure { DebugLog.e(TAG, "handing the device settings back failed", it) }
     }
 
     /**

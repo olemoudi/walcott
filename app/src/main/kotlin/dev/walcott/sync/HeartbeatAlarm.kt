@@ -104,11 +104,12 @@ object HeartbeatAlarm {
             .onFailure { DebugLog.e(TAG, "battery accounting failed", it) }
         runCatching { app.syncManager.publishHeartbeatIfStale(PUBLISH_MIN_INTERVAL_MS) }
             .onFailure { DebugLog.e(TAG, "heartbeat publish failed", it) }
-        // An emergency release must die the moment the channel fails on it. While the channel
-        // is down no message arrives to notice that, so the check rides on the one wakeup Doze
-        // always honours — otherwise a device could sit offline waiting the countdown out.
-        runCatching { app.syncManager.expirePanicIfOffline() }
-            .onFailure { DebugLog.e(TAG, "panic expiry check failed", it) }
+        // A live emergency release keeps its own alarm, and alarms do not survive a reboot or a
+        // process the OS killed before the boot receiver ran. This is the half-hourly pass that
+        // notices a countdown with nothing left to wake it — the one failure that feature must
+        // never produce, because it neither advances nor dies and nothing anywhere says so.
+        runCatching { PanicAlarm.sync(context) }
+            .onFailure { DebugLog.e(TAG, "re-arming the emergency-release step failed", it) }
         // The radio is already awake: the update check rides along for almost nothing. The
         // worker (not this receiver) does any actual download, which can outlive our budget.
         runCatching { UpdateWorker.runIfStale(context) }

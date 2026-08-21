@@ -81,7 +81,7 @@ class CurfewScenarioTest : DeviceScenario() {
             "the filter would still resolve for $browser while the phone is supposed to be shut",
         )
         assertTrue(
-            device.walcottLog().any { "window:" in it && browser in it },
+            browser in device.curfewWindowNow(),
             "the filter never derived the window half for itself; it was only ever told",
         )
 

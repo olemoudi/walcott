@@ -47,11 +47,13 @@ class ChannelHealthTest {
 
     @Test
     fun `a rebuild is attempted well before anything else gives up on the channel`() {
-        // The two deadlines this must stay inside: the child's own "you are offline" banner, and
-        // the connectivity failure that voids an emergency release. Both deserve a retry first.
+        // The deadline this must stay inside: the child's own "you are offline" banner. A socket
+        // presumed dead deserves a rebuild before anyone is told the family is unreachable.
+        //
+        // The emergency release used to be the other one, and deliberately is not any more. Its
+        // notices are HTTP publishes that a dead socket has no bearing on, and the one moment
+        // where a live socket decides something — the last three minutes, where a refusal must be
+        // heard — rebuilds unconditionally instead of waiting for this threshold.
         assertTrue(ChannelHealth.RECONNECT_AFTER_MS < ChannelHealth.OFFLINE_AFTER_MS)
-        val panicDeadlineMs =
-            (PanicProtocol.CHECKPOINT_INTERVAL_SEC + PanicProtocol.CHECKPOINT_GRACE_SEC) * 1000
-        assertTrue(ChannelHealth.RECONNECT_AFTER_MS < panicDeadlineMs)
     }
 }

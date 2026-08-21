@@ -30,6 +30,18 @@ class NtfyTransport(
 ) : SyncTransport {
 
     private val httpBase = server.trimEnd('/')
+
+    /**
+     * The client [publishForReceipt] waits on. OkHttp bounds each PHASE of a call and not the
+     * call, so a POST that connects, sends and then stalls can sit there for the better part of
+     * a minute — which would make a retry ladder measured in thirty-second steps meaningless.
+     * A whole-call ceiling is what lets the caller plan around it. Shares the pools.
+     */
+    private val receiptClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .callTimeout(RECEIPT_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
     private val wsUrl = httpBase.replaceFirst("http", "ws") + "/$topic/ws"
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -54,6 +66,44 @@ class NtfyTransport(
     @Volatile private var onMessage: ((String, Long) -> Unit)? = null
 
     override fun publish(message: String) = publish(message, attempt = 1)
+
+    /**
+     * The blocking half of [publish]: one POST, waited on, answering the server second the relay
+     * stamped on the message — or null if it did not take it.
+     *
+     * No retry ladder of its own, deliberately. The one caller that needs this ([PanicProtocol])
+     * has retry rules of its own, spread over minutes rather than seconds, and a failure it must
+     * be told about rather than have quietly papered over — the whole point is that the counter
+     * only moves for a message that really left the phone.
+     *
+     * ntfy answers a publish with the message it stored, `{"id":…,"time":<unix s>,…}`; the `time`
+     * field IS the relay's clock, which is what makes a receipt worth more than a bare 200.
+     */
+    override fun publishForReceipt(message: String): Long? {
+        val request = Request.Builder()
+            .url("$httpBase/$topic")
+            .post(message.toByteArray().toRequestBody())
+            .build()
+        return runCatching {
+            receiptClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    DebugLog.w(TAG, "receipted publish rejected: HTTP ${response.code}")
+                    PublishHealth.record(ok = false, code = response.code)
+                    return null
+                }
+                PublishHealth.record(ok = true)
+                // A relay that answers 200 and says nothing about when has still taken the
+                // message; zero says "no clock from this one" and the caller decides.
+                val body = runCatching { response.body?.string() }.getOrNull().orEmpty()
+                runCatching {
+                    json.parseToJsonElement(body).jsonObject["time"]?.jsonPrimitive?.content?.toLongOrNull()
+                }.getOrNull() ?: 0L
+            }
+        }.onFailure {
+            DebugLog.w(TAG, "receipted publish failed: ${it.javaClass.simpleName}: ${it.message}")
+            PublishHealth.record(ok = false)
+        }.getOrNull()
+    }
 
     /**
      * Publishes, retrying a transient failure a few times before giving up on this message.
@@ -236,6 +286,9 @@ class NtfyTransport(
 
         /** Attempts per message, including the first. Three spans ~5 s of transient trouble. */
         private const val MAX_PUBLISH_ATTEMPTS = 3
+
+        /** Ceiling on one receipted publish, so its caller's retry schedule means what it says. */
+        private const val RECEIPT_TIMEOUT_SEC = 15L
 
         /** First retry delay; doubles per attempt (1 s, then 2 s). */
         private const val PUBLISH_RETRY_BASE_MS = 1_000L

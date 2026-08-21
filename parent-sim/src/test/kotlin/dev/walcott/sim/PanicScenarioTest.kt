@@ -20,6 +20,14 @@ import org.junit.jupiter.api.Test
  */
 class PanicScenarioTest : DeviceScenario() {
 
+    private companion object {
+        /** An "hour" of the countdown, in real seconds, for the scenarios that need it to pass. */
+        const val COMPRESSED_HOUR_SECONDS = 10L
+
+        /** Long enough for a notice to come due and its three retries to be exhausted. */
+        const val NETWORK_OUTAGE_MS = 25_000L
+    }
+
     @AfterEach
     fun clearAnyRequest() {
         // A refusal leaves a three-day cooldown on the device. Left behind, it would make the
@@ -92,6 +100,30 @@ class PanicScenarioTest : DeviceScenario() {
         device.cancelPanic()
         val after = parent.awaitChild { it.panic == null }
         assertNull(after.panic)
+    }
+
+    @Test
+    fun `a notice that will not go out ends the request where it stands`() {
+        // The deal this feature offers, stated exactly: twelve hours of a phone that can be
+        // REACHED. A notice is retried three times and then, if it still will not leave the
+        // phone, the whole request dies wherever it had got to — which is a thing that can only
+        // be tested by taking the network away from a real device mid-countdown.
+        device.panicHourSeconds(COMPRESSED_HOUR_SECONDS)
+        device.panicReady()
+        device.startPanic()
+        parent.awaitChild { it.panic != null }
+        // At least one notice through first, so what follows is a failure and not a device that
+        // was never working.
+        parent.awaitChild(timeoutMs = 60_000) { (it.panic?.checkpoints ?: 0) >= 1 }
+
+        // Nothing this phone sends will go out from here on. Told, not silently dropped: being
+        // told is the whole basis of the counter, and it is what the retry ladder answers.
+        relay.refusePublishes()
+        Thread.sleep(NETWORK_OUTAGE_MS)
+        relay.acceptPublishes()
+
+        val after = childReports(timeoutMs = 60_000) { it.panic == null }
+        assertNull(after.panic, "a request whose notice never went out should be over")
     }
 
     @Test

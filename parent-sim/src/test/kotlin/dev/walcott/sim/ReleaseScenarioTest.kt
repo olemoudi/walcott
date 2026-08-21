@@ -37,7 +37,10 @@ class ReleaseScenarioTest : DeviceScenario() {
                 dailyMinutes = mapOf(pkg to 0),
             ),
         )
-        awaitDevice("the app suspended by its rules") { device.isSuspended(pkg) }
+        // Sixty seconds, not the default thirty. The rules land on the enforcement loop's tick,
+        // and the loop's own self-heal re-assert is every thirty — so a thirty-second wait sits
+        // exactly ON the documented worst case and fails for being slow rather than wrong.
+        awaitDevice("the app suspended by its rules", timeoutMs = 60_000) { device.isSuspended(pkg) }
         awaitDevice("the install block armed") { device.installBlocked() }
 
         val commandId = parent.sendCommand(deviceId, RemoteAction.RELEASE_DEVICE)

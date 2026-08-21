@@ -5,103 +5,166 @@ package dev.walcott.sync
  * parent PIN is lost, so nobody can free the device the normal way (see the PIN-gated release
  * on the child's device settings).
  *
- * It is deliberately slow and loud rather than secret: the child starts a request, and for the
- * next 24 hours the device must keep proving it can reach the family channel, sending the
- * parent a fresh notice every two hours. A parent who is still alive out there sees a dozen
- * alerts and can refuse with one tap, which also locks the child out of asking again for three
- * days. Only a request that survives the full 24 hours releases the device.
+ * It is deliberately slow and loud rather than secret. The child starts a request, and for the
+ * next twelve hours the device must get a notice out to the family channel every hour, twelve
+ * times. A parent who is still out there sees a dozen alerts and can refuse with one tap, which
+ * also locks the child out of asking again for three days. Only a request that lands all twelve
+ * notices releases the device.
  *
- * Time is counted in SERVER seconds (the sync server's timestamp on every message), never the
- * local clock: moving the device clock forward is the obvious attack and this makes it useless.
- * The local clock is only ever used to EXPIRE a request early, which can only hurt the child.
+ * **A notice counts when it was SENT, not when it was answered.** The device publishes and waits
+ * for the relay to say it took the message; that receipt — and nothing else — advances the
+ * counter. A notice that will not go out is retried three times ([RETRY_DELAYS_MS]) and, if it
+ * still will not go out, the whole request dies wherever it had got to. That is the deal this
+ * feature offers, stated exactly: twelve hours of a phone that can be reached, or nothing.
+ *
+ * Time is counted in SERVER seconds — the relay's own timestamp on the receipt for each notice —
+ * never the local clock: moving the device clock forward is the obvious attack, and this makes
+ * it useless. The local clock only decides WHEN to try, and trying early merely gets the notice
+ * refused as too soon.
  *
  * Pure (no Android, no clock of its own), so every rule here is unit-tested.
  */
 object PanicProtocol {
 
-    /** How often the device must prove it still has the channel, and notify the parent again. */
-    const val CHECKPOINT_INTERVAL_SEC = 2 * 60 * 60L
+    /** How long between notices, and therefore how long the whole window is. */
+    const val CHECKPOINT_INTERVAL_SEC = 60 * 60L
+
+    /** Notices needed to earn the release: 12 x 1 h = 12 h of proven, delivered notice. */
+    const val REQUIRED_CHECKPOINTS = 12
 
     /**
-     * How late a checkpoint may be before the request dies. A connectivity failure at the moment
-     * a notice is due cancels the process, but the device sleeps: Doze defers the child's
-     * check-in (~30 min nominal) and the ntfy socket reconnects on its own schedule, so a hard
-     * deadline would kill honest requests. An hour tolerates that and nothing else — airplane
-     * mode or a powered-off phone still ends the process.
+     * Waits before trying the SAME notice again, after the relay would not take it.
+     *
+     * Three retries and no more. A phone that cannot reach the family for four and a half
+     * minutes at the moment a notice is due has stopped meeting the one condition this whole
+     * feature rests on, and carrying on regardless would turn "twelve hours of a reachable
+     * phone" into "twelve hours of a phone", which is a different and much weaker promise.
      */
-    const val CHECKPOINT_GRACE_SEC = 60 * 60L
+    val RETRY_DELAYS_MS: List<Long> = listOf(30_000L, 60_000L, 3 * 60_000L)
 
-    /** Checkpoints needed to earn the release: 12 × 2 h = 24 h of proven connectivity. */
-    const val REQUIRED_CHECKPOINTS = 12
+    /**
+     * The same ladder on the same scale as [intervalSec] — a real hour gives the real thirty
+     * seconds, a minute and three minutes. Floored at a second so a compressed run still makes
+     * three distinct attempts rather than three in the same instant.
+     */
+    fun retryDelaysMs(intervalSec: Long): List<Long> =
+        RETRY_DELAYS_MS.map { (it * intervalSec / CHECKPOINT_INTERVAL_SEC).coerceAtLeast(1_000L) }
+
+    /**
+     * The pause after the twelfth notice: the parent's last chance to refuse.
+     *
+     * The twelfth notice is the loudest one — it is the alert that says the device is about to
+     * let itself go — and until now it was also the last thing that happened before it did. A
+     * parent reading it had already lost. Three minutes is not a new obstacle for the child (they
+     * have waited twelve hours) and it is the difference between an alert and a warning.
+     */
+    const val FINAL_GRACE_MS = 3 * 60 * 1000L
 
     /** How long a parent's refusal locks the child out of asking again. */
     const val DENIAL_COOLDOWN_SEC = 3 * 24 * 60 * 60L
 
-    /** What the device must do about an active request right now. */
-    enum class Step {
-        /** Nothing due yet. */
-        WAIT,
-
-        /** A notice is due and the channel is proven: record it and tell the parent. */
-        CHECKPOINT,
-
-        /** The last checkpoint: the 24 hours are complete, release the device. */
-        RELEASE,
-
-        /** The channel failed when a notice was due: the request is void. */
-        EXPIRED,
-    }
-
-    /** Server second at which the next notice becomes due. */
-    fun dueSec(request: PanicRequest): Long = request.lastCheckpointSec + CHECKPOINT_INTERVAL_SEC
-
-    /** Server second past which a missed notice voids the request. */
-    fun deadlineSec(request: PanicRequest): Long = dueSec(request) + CHECKPOINT_GRACE_SEC
+    /**
+     * How much of its hour a notice may be early and still count.
+     *
+     * Proportional rather than flat, because [CHECKPOINT_INTERVAL_SEC] is scaled down to seconds
+     * when this is exercised end to end: a flat minute of slack would wave through every notice
+     * of a compressed run and quietly stop testing the spacing at all. One part in sixty is a
+     * minute per hour — comfortably more than the skew between a phone's clock and the relay's,
+     * and far less than an hour.
+     */
+    fun toleranceSec(intervalSec: Long): Long = (intervalSec / 60).coerceAtLeast(1)
 
     /**
-     * Whether [request] has already served its full 24 hours. Such a request is spent: the
-     * device owes it a release and nothing else, and no later connectivity failure can take
-     * that back — see [evaluate].
+     * The final pause, on the same scale as [intervalSec].
+     *
+     * Compressed with the rest of the clock so an end-to-end run takes minutes rather than
+     * hours — and floored, because the pause has exactly one job and a pause too short to do it
+     * is not a smaller version of the feature, it is the absence of it. A refusal has to travel
+     * from a parent's tap, over the relay, to a phone that then has to notice; scaled naively, a
+     * ten-second hour left half a second for all of that and the compressed run stopped testing
+     * the one thing the pause exists for. The floor never applies to a real hour.
+     */
+    fun finalGraceMs(intervalSec: Long): Long =
+        (FINAL_GRACE_MS * intervalSec / CHECKPOINT_INTERVAL_SEC).coerceAtLeast(MIN_FINAL_GRACE_MS)
+
+    /** Floor under [finalGraceMs]; only ever reached by a compressed clock. */
+    const val MIN_FINAL_GRACE_MS = 5_000L
+
+    /**
+     * Whether [request] has landed all twelve of its notices. Such a request is spent: the device
+     * owes it a release once the final pause is over, and nothing can take that back except the
+     * parent refusing inside those three minutes.
      */
     fun earned(request: PanicRequest): Boolean = request.checkpoints >= REQUIRED_CHECKPOINTS
 
     /**
-     * The step for [request] at [serverNowSec] — the server timestamp of a message that just
-     * arrived, which is itself the proof that the channel works right now.
+     * Whether a notice the relay stamped [receiptSec] is far enough past the previous one to
+     * count.
      *
-     * [earned] is checked FIRST, ahead of the deadline: the release is recorded (and published,
-     * so the parent has the record) before it is carried out, and carrying it out can be
-     * interrupted — a process death, a failed step. A request that comes back with its twelve
-     * notices already banked has bought the release outright; expiring it there would make the
-     * child serve another 24 hours for a countdown they had already finished.
+     * This is the whole anti-tamper story, and it is one line: the counter advances on the
+     * RELAY's clock. A child who moves the phone forward makes the alarm fire early, the notice
+     * goes out early, and this says no — so the twelve hours cannot be compressed into a
+     * minute of fiddling with the date.
      */
-    fun evaluate(request: PanicRequest, serverNowSec: Long): Step = when {
-        earned(request) -> Step.RELEASE
-        serverNowSec > deadlineSec(request) -> Step.EXPIRED
-        serverNowSec < dueSec(request) -> Step.WAIT
-        request.checkpoints + 1 >= REQUIRED_CHECKPOINTS -> Step.RELEASE
-        else -> Step.CHECKPOINT
-    }
-
-    /** [request] with the notice due at [serverNowSec] recorded as sent. */
-    fun withCheckpoint(request: PanicRequest, serverNowSec: Long): PanicRequest =
-        request.copy(lastCheckpointSec = serverNowSec, checkpoints = request.checkpoints + 1)
+    fun banks(request: PanicRequest, receiptSec: Long, intervalSec: Long = CHECKPOINT_INTERVAL_SEC): Boolean =
+        receiptSec >= request.lastCheckpointSec + intervalSec - toleranceSec(intervalSec)
 
     /**
-     * Whether a request that hasn't heard from the channel for [msSinceChannelOk] is already
-     * void, judged on the LOCAL clock. Server time can't detect this case — the whole point is
-     * that no message is arriving — and being generous here would only let a child sit offline
-     * waiting out the clock. A local clock moved forward merely kills the request sooner.
+     * How long to wait before trying the next notice, judged from the relay's clock.
+     *
+     * Used after a notice the relay refused as too soon: the local clock is evidently wrong, so
+     * the wait is worked out from how much of the hour the SERVER says is still missing.
      */
-    fun expiredOffline(msSinceChannelOk: Long): Boolean =
-        msSinceChannelOk > (CHECKPOINT_INTERVAL_SEC + CHECKPOINT_GRACE_SEC) * 1000
+    fun sendAgainInMs(
+        request: PanicRequest,
+        serverNowSec: Long,
+        intervalSec: Long = CHECKPOINT_INTERVAL_SEC,
+    ): Long {
+        val dueSec = request.lastCheckpointSec + intervalSec
+        return ((dueSec - serverNowSec) * 1000).coerceIn(1_000L, intervalSec * 1000)
+    }
+
+    /** [request] with the notice the relay stamped [receiptSec] recorded as landed. */
+    fun withCheckpoint(request: PanicRequest, receiptSec: Long, sentAtMs: Long): PanicRequest =
+        request.copy(
+            lastCheckpointSec = receiptSec,
+            lastNoticeAtMs = sentAtMs,
+            checkpoints = request.checkpoints + 1,
+        )
+
+    /** Whether the twelfth notice's final pause is over and the device owes itself a release. */
+    fun releaseDue(
+        request: PanicRequest,
+        nowMs: Long,
+        intervalSec: Long = CHECKPOINT_INTERVAL_SEC,
+    ): Boolean = earned(request) && nowMs >= request.lastNoticeAtMs + finalGraceMs(intervalSec)
+
+    /**
+     * When the device should next wake up for this request, as a local wall-clock instant.
+     *
+     * The LOCAL clock decides when to try, because it is the only clock an alarm understands and
+     * the only one that keeps running with no network. Whether the attempt counts is a separate
+     * question, answered by [banks] against the relay's clock — so an early wake-up costs one
+     * refused notice and buys the child nothing.
+     */
+    fun nextWakeUpAtMs(
+        request: PanicRequest,
+        intervalSec: Long = CHECKPOINT_INTERVAL_SEC,
+    ): Long = if (earned(request)) {
+        request.lastNoticeAtMs + finalGraceMs(intervalSec)
+    } else {
+        request.lastNoticeAtMs + intervalSec * 1000
+    }
 
     /**
      * How recently the channel must have proven itself (a message actually received) for a new
      * request to be allowed to start. Requirement one: no connectivity, no request. The child
      * publishes at least every ~30 min, so this is "the channel works right now" without
-     * needing a bespoke round-trip handshake. It also keeps the request's server-time anchor
-     * fresh — starting from a stale anchor would make the first notice due in the past.
+     * needing a bespoke round-trip handshake.
+     *
+     * The request's own anchor no longer comes from here — it comes from the relay's receipt for
+     * the opening publish — so this is a pre-check that greys the button rather than a
+     * correctness condition.
      */
     const val START_CHANNEL_FRESH_MS = 30 * 60 * 1000L
 
@@ -118,12 +181,7 @@ object PanicProtocol {
      * Whether a message proves live connectivity. This is the difference between a device that
      * was reachable and one that merely came back: on reconnect the transport REPLAYS
      * everything published while the socket was down, and those old timestamps would otherwise
-     * pay, retroactively, for exactly the two-hourly notices the device failed to send. Only a
-     * message whose server timestamp matches the local clock is happening right now.
-     *
-     * Skewing the local clock to make a replayed message look live doesn't help: the checkpoints
-     * still have to march forward two hours of SERVER time each, so a stale message can't be
-     * reused, and the clock move is itself reported to the parent ([ClockGuard]).
+     * pay, retroactively, for connectivity the device did not have.
      */
     fun provesChannel(localNowMs: Long, serverTimeSec: Long): Boolean =
         serverTimeSec > 0 && kotlin.math.abs(localNowMs - serverTimeSec * 1000) <= MESSAGE_FRESH_MS
@@ -132,11 +190,10 @@ object PanicProtocol {
      * Server second until which a denial blocks new requests.
      *
      * [deniedAtServerSec] must be a real server second. Anchored on zero — which is what the
-     * device's cursor reads for the first message after a relay move, and what it reads for the
-     * whole message being handled, since the cursor only advances afterwards — this returns three
-     * days after the epoch: a lockout that expired in 1970 and stops nothing at all. Callers pass
-     * the newest server second they can vouch for, and the denied request's own last checkpoint
-     * is always one of them.
+     * device's cursor reads for the first message after a relay move — this returns three days
+     * after the epoch: a lockout that expired in 1970 and stops nothing at all. Callers pass the
+     * newest server second they can vouch for, and the denied request's own last checkpoint is
+     * always one of them.
      */
     fun cooldownUntilSec(deniedAtServerSec: Long): Long = deniedAtServerSec + DENIAL_COOLDOWN_SEC
 
@@ -144,23 +201,15 @@ object PanicProtocol {
     fun cooldownPassed(blockedUntilSec: Long, serverNowSec: Long): Boolean = serverNowSec >= blockedUntilSec
 
     /**
-     * Whether this device knows what time the server thinks it is.
-     *
-     * The cursor is reset to zero whenever the family moves relay: the old server's timestamps
-     * mean nothing on the new one. Until the first message lands there, this device has no server
-     * clock at all — and [channelProven] can still say yes, because the last proof of the channel
-     * predates the move by less than half an hour.
-     *
-     * A request started in that window is anchored to the epoch, so its deadline falls in January
-     * 1970 and the very next message [evaluate]s it as [Step.EXPIRED]. The child spends their one
-     * request on a countdown that was already over, which is the cruellest possible way to fail.
-     */
-    fun anchored(serverNowSec: Long): Boolean = serverNowSec > 0
-
-    /**
      * The whole gate on starting a request, in one testable place. This is the only door out of
      * enforcement, so it is checked in the UI (to explain why the button is grey) and again at
      * the moment the request is created — the two must not be able to disagree.
+     *
+     * What is NOT here any more is an anchor check. A request used to be anchored on the newest
+     * server second this device happened to have seen, so a family that had just moved relay
+     * anchored one to the epoch and watched it die on the next message. The anchor is now the
+     * relay's receipt for the opening publish, which cannot be stale by construction — and a
+     * publish that does not come back means no request was started at all.
      *
      * [parentSupported] is the least obvious condition: a parent build too old to understand the
      * field ignores it silently, which would turn a loud, refusable request into a quiet escape
@@ -173,7 +222,7 @@ object PanicProtocol {
         blockedUntilSec: Long,
         serverNowSec: Long,
     ): Boolean = !hasActiveRequest && parentSupported && channelProven(msSinceChannelOk) &&
-        anchored(serverNowSec) && cooldownPassed(blockedUntilSec, serverNowSec)
+        cooldownPassed(blockedUntilSec, serverNowSec)
 
     /** Notices still to come before the device releases itself. */
     fun remainingCheckpoints(request: PanicRequest): Int =
@@ -181,7 +230,7 @@ object PanicProtocol {
 
     /**
      * Progress as 0f..1f, for the child's countdown and the parent's alert card. Based on
-     * checkpoints, not on elapsed time, so it can never run ahead of what was actually proven.
+     * notices landed, not on elapsed time, so it can never run ahead of what was actually proven.
      */
     fun progress(request: PanicRequest): Float =
         (request.checkpoints.toFloat() / REQUIRED_CHECKPOINTS).coerceIn(0f, 1f)

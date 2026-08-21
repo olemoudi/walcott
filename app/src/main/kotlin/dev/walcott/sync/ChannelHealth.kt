@@ -25,8 +25,12 @@ object ChannelHealth {
      * rebuilt. The device publishes at least every ~30 min and receives its own echo, so an
      * hour is two missed heartbeats: long enough that Doze deferrals and a brief tunnel outage
      * don't churn the connection, short enough to be well inside both the "you are offline"
-     * banner ([OFFLINE_AFTER_MS]) and the deadline that kills an emergency release
-     * ([PanicProtocol.CHECKPOINT_INTERVAL_SEC] + grace).
+     * banner ([OFFLINE_AFTER_MS]).
+     *
+     * It used to be sized against the emergency release as well, and no longer is: a release
+     * notice is an HTTP publish that a dead socket has no bearing on, and the one moment where a
+     * live socket really does decide something — the last three minutes, where a refusal has to
+     * be heard — rebuilds unconditionally rather than waiting for this to call the socket stale.
      */
     const val RECONNECT_AFTER_MS = 60 * 60 * 1000L
 

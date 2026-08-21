@@ -172,25 +172,4 @@ object DeviceRestrictions {
             )
         }
     }
-
-    /**
-     * Gives every restriction back: clears the whole [FEATURES] set, re-enables biometrics and
-     * lifts the uninstall block on Walcott itself. Used by the emergency release
-     * ([dev.walcott.enforcement.PanicRelease]) — it must run BEFORE Device Owner is given up,
-     * since afterwards none of these calls are allowed any more. The forced-on side effects
-     * (location, automatic time) are deliberately left alone: they are ordinary settings the
-     * user can change, not traces of management.
-     */
-    fun clearAll(context: Context) {
-        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
-        if (!dpm.isDeviceOwnerApp(context.packageName)) return
-        val admin = WalcottAdminReceiver.componentName(context)
-        for (feature in FEATURES) {
-            for (restriction in feature.restrictions) {
-                runCatching { dpm.clearUserRestriction(admin, restriction) }
-            }
-        }
-        runCatching { dpm.setKeyguardDisabledFeatures(admin, DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE) }
-        runCatching { dpm.setUninstallBlocked(admin, context.packageName, false) }
-    }
 }

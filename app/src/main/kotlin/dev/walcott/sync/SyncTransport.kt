@@ -7,6 +7,22 @@ package dev.walcott.sync
  */
 interface SyncTransport {
     fun publish(message: String)
+
+    /**
+     * Publishes and WAITS for the relay to say it took the message, answering the server second
+     * it stamped on it — or null when the message did not go out.
+     *
+     * The ordinary [publish] is fire-and-forget on purpose: almost everything this app sends is
+     * a snapshot that the next re-emit would repeat anyway, and blocking a caller on the radio to
+     * learn that is a poor trade. The emergency release is the one thing where "did it actually
+     * leave the phone" IS the fact being established (see [PanicProtocol]) — its counter advances
+     * on receipts and on nothing else — and it needs the relay's clock with it, because that
+     * clock is what stops the twelve hours being compressed by moving the phone's own.
+     *
+     * Blocking, so callers must be off the main thread. Default: not supported.
+     */
+    fun publishForReceipt(message: String): Long? = null
+
     /** [onMessage] gets the body plus the server-side receive time in unix seconds (0 if unknown). */
     fun connect(onMessage: (body: String, timeSec: Long) -> Unit)
     fun close()

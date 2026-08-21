@@ -1418,22 +1418,23 @@
     <string name="panic_intro_title">Only for a real emergency</string>
     <string name="panic_intro_text">Use this if your parents lost their phone and can\'t unlock this device any more.</string>
     <string name="panic_how_title">How it works</string>
-    <string name="panic_how_1">1. Your parents are told right away, and again every 2 hours.</string>
-    <string name="panic_how_2">2. This phone must stay connected for 24 hours. If there is no connection when a notice is due, the request is cancelled.</string>
+    <string name="panic_how_1">1. Your parents are told right away, and again every hour.</string>
+    <string name="panic_how_2">2. This phone has to get 12 notices out, one an hour. If one won’t send it is retried 3 times, and if it still won’t, the request is cancelled.</string>
     <string name="panic_how_3">3. Your parents can refuse it from their phone. If they do, you can\'t ask again for 3 days.</string>
-    <string name="panic_how_4">4. After 24 hours Walcott stops managing this device and erases itself.</string>
+    <string name="panic_how_4">4. After the 12th notice your parents get 3 more minutes to refuse. Then Walcott stops managing this device and erases itself.</string>
     <string name="panic_start_action">Request release</string>
     <string name="panic_cancel_action">Cancel my request</string>
     <string name="panic_confirm_title">Request the release?</string>
-    <string name="panic_confirm_text">Your parents will be told immediately, and every 2 hours for the next 24 hours. They can refuse it.</string>
+    <string name="panic_confirm_text">Your parents will be told immediately, and every hour for the next 12 hours. They can refuse it at any point.</string>
     <string name="panic_confirm_button">Yes, request it</string>
     <string name="panic_blocked_offline">No connection with your family right now. This needs the family channel to work.</string>
     <string name="panic_blocked_denied">Your parents refused the last request. You can ask again in %1$s.</string>
     <string name="panic_blocked_old_parent">Your parents\' app is too old to receive this request.</string>
     <string name="panic_pin_hint">If your parents remember their PIN, they can release this device instantly from the settings.</string>
     <string name="panic_active_title">Emergency release in progress</string>
-    <string name="panic_active_notices">%1$d of %2$d notices sent</string>
+    <string name="panic_active_notices">%1$d of %2$d notices delivered</string>
     <string name="panic_active_next">Next notice in %1$s</string>
+    <string name="panic_active_releasing">Releasing in %1$s — your parents can still refuse</string>
     <plurals name="panic_active_left">
         <item quantity="one">About %d hour left</item>
         <item quantity="other">About %d hours left</item>
@@ -1446,8 +1447,8 @@
     </plurals>
     <string name="panic_child_denied_title">Your parents refused the release</string>
     <string name="panic_child_denied_text">The request was cancelled. You can ask again in 3 days.</string>
-    <string name="panic_child_expired_title">Release cancelled</string>
-    <string name="panic_child_expired_text">There was no connection when a notice was due, so the request ended. You can start again.</string>
+    <string name="panic_child_undelivered_title">Release cancelled</string>
+    <string name="panic_child_undelivered_text">A notice could not be sent to your parents, even after 3 more tries, so the request ended at %1$d of %2$d. You can start again once this phone has a connection.</string>
     <string name="panic_child_released_title">Device released</string>
     <string name="panic_child_released_text">Walcott no longer manages this device.</string>
     <string name="panic_alert_title">%1$s asked to remove Walcott</string>
@@ -1456,7 +1457,7 @@
         <item quantity="other">The device releases itself in %d hours unless you refuse.</item>
     </plurals>
     <string name="panic_released_title">%1$s\'s device released itself</string>
-    <string name="panic_released_text">The 24-hour emergency request completed. Walcott no longer manages that device.</string>
+    <string name="panic_released_text">The 12-hour emergency request completed. Walcott no longer manages that device.</string>
     <string name="panic_deny_action">Refuse</string>
     <string name="panic_deny_confirm">The request ends and this child can\'t ask again for 3 days. The refusal reaches the device on its next check-in.</string>
     <string name="panic_deny_confirm_button">Refuse the request</string>
@@ -1465,7 +1466,7 @@
         <item quantity="one">%d hour left before the device releases itself</item>
         <item quantity="other">%d hours left before the device releases itself</item>
     </plurals>
-    <string name="panic_card_done">The device completed the 24 hours and released itself.</string>
+    <string name="panic_card_done">The device completed the 12 hours and released itself.</string>
     <string name="panic_card_explain">It only continues while that phone keeps reaching the family channel. Refusing it also blocks new requests for 3 days.</string>
     <string name="event_panic_request">%1$s asked to remove Walcott (%2$d h left)</string>
     <string name="event_panic_released">%1$s\'s device released itself</string>
@@ -1764,6 +1765,12 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_96_0">
+        <item>The emergency release — the way out a child can start on their own, for when a parent\'s phone is gone and the PIN with it — is now twelve hours rather than twenty-four, and the phone has to get a notice out every hour instead of every two.</item>
+        <item>What the counter counts has changed, and it now counts what it always said it did: a notice only moves it when the phone actually got the message out and the relay took it. One that will not send is retried after 30 seconds, a minute and three minutes, and if it still will not send the whole request ends there and the child is told how far it had got. Twelve hours of a phone that can be reached is the deal, stated exactly.</item>
+        <item>And the twelfth notice no longer IS the release: it buys three more minutes to refuse. That alert used to be the last thing that happened before the phone let itself go, so a parent reading it had already lost. A phone that was switched off for those three minutes now listens for your answer before doing anything.</item>
+        <item>When a phone is handed back — by this, or by you freeing it from your own screen — it is now put back properly: every restriction the system will admit to, every installed app asked one at a time whether it is still suspended, hidden or undeletable, and every other setting management touches. All of it before the phone stops being managed, because afterwards none of it can be undone.</item>
     </string-array>
     <string-array name="whats_new_0_95_0">
         <item>Bedtime\'s web block was one screen of Settings away from being nothing at all. Android\'s own Private DNS sends every lookup straight to a resolver the phone was told to use — past the filter, and past the hours when the browser is supposed to resolve nothing. "Protect the web filter" now locks that setting too, and puts the phone back on the automatic resolver whenever the filter is running.</item>

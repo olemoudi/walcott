@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Notifications shown *on the child device* about its own emergency release: every notice
- * sent, the parent's refusal, the cancellation when connectivity fails, and the release
+ * sent, the parent's refusal, the cancellation when a notice would not go out, and the release
  * itself. The child needs to see this without keeping the app open for a day — a countdown
  * that only exists inside a screen nobody is looking at is not a countdown.
  *
@@ -29,11 +29,28 @@ object PanicNotifications {
     private const val CHANNEL = "walcott_panic"
     private const val NOTIF_ID = 4711
 
-    /** A two-hourly notice went out; [remaining] more to go before the device is freed. */
+    /** An hourly notice went out; [remaining] more to go before the device is freed. */
     fun notifyProgress(context: Context, remaining: Int) = post(
         context,
         context.getString(R.string.panic_child_progress_title),
         context.resources.getQuantityString(R.plurals.panic_child_progress_text, remaining, remaining),
+    )
+
+    /**
+     * A notice would not go out, so the request is over — at [delivered] of the twelve.
+     *
+     * The count is in the message on purpose. "It failed" tells the child nothing they can act
+     * on; "it failed after four of twelve" tells them how much they lose by starting again, and
+     * whether the phone's connection is the thing to fix first.
+     */
+    fun notifyUndelivered(context: Context, delivered: Int) = post(
+        context,
+        context.getString(R.string.panic_child_undelivered_title),
+        context.getString(
+            R.string.panic_child_undelivered_text,
+            delivered,
+            dev.walcott.sync.PanicProtocol.REQUIRED_CHECKPOINTS,
+        ),
     )
 
     /** The parent refused: the request is dead and locked out for three days. */
@@ -41,13 +58,6 @@ object PanicNotifications {
         context,
         context.getString(R.string.panic_child_denied_title),
         context.getString(R.string.panic_child_denied_text),
-    )
-
-    /** The channel failed when a notice was due, so the request is void. */
-    fun notifyExpired(context: Context) = post(
-        context,
-        context.getString(R.string.panic_child_expired_title),
-        context.getString(R.string.panic_child_expired_text),
     )
 
     /** The 24 hours are complete and the device is being released. */

@@ -229,6 +229,11 @@
             android:name=".sync.PanicDenyReceiver"
             android:exported="false" />
 
+        <!-- The hourly step of a live emergency release (see PanicAlarm). -->
+        <receiver
+            android:name=".sync.PanicStepReceiver"
+            android:exported="false" />
+
         <!-- Approve/Deny actions on a child's request notification. -->
         <receiver
             android:name=".sync.RequestActionReceiver"

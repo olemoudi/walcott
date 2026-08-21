@@ -409,6 +409,22 @@ class SyncManager(
     }
 
     /**
+     * Rebuilds the socket whatever its apparent health, and waits for the backlog it replays.
+     *
+     * For the one moment where "the socket looks fine" is not good enough: the three minutes
+     * before a device releases itself. A refusal published while this phone was away is sitting
+     * on the relay and only a fresh connection asks for it — and a socket that died fifty-nine
+     * minutes ago is not stale enough for [reconnectIfChannelStale] to touch, which would leave
+     * the parent's answer on the relay while the phone let itself go.
+     */
+    private suspend fun reconnectNow() {
+        val id = identityStore.current()
+        if (!id.isPaired || transport == null) return
+        dev.walcott.debug.DebugLog.w(TAG, "rebuilding the relay socket before releasing")
+        connect(id)
+    }
+
+    /**
      * Opens (or closes) the connection to the relay the family is moving away from.
      *
      * Idempotent and called from [connect], so a process restart mid-migration puts the second
@@ -882,6 +898,8 @@ class SyncManager(
          * so the child isn't allowed to start one at all.
          */
         val parentSupported: Boolean = false,
+        /** How long one "hour" of this request lasts here (see [SyncState.panicIntervalSec]). */
+        val intervalSec: Long = PanicProtocol.CHECKPOINT_INTERVAL_SEC,
     ) {
         fun channelProven(nowMs: Long): Boolean = PanicProtocol.channelProven(nowMs - lastChannelOkMs)
 
@@ -905,48 +923,85 @@ class SyncManager(
             blockedUntilSec = s.panicBlockedUntilSec,
             lastChannelOkMs = s.lastChannelOkMs,
             parentSupported = s.parentAppVersionCode >= PANIC_MIN_PARENT_VERSION,
+            intervalSec = s.panicIntervalSec,
         )
     }.stateIn(scope, SharingStarted.Eagerly, PanicStatus())
 
     /**
-     * Starts the 24-hour emergency release. Returns false when the gates say no (no channel,
-     * a standing refusal, a parent that couldn't be told, or a request already running) —
-     * re-checked here and not only in the UI, since this is the one door out of enforcement.
+     * The live request and the length of one of its "hours", for whoever has to schedule the
+     * next step (see [PanicAlarm]). Null request = nothing running.
      */
-    suspend fun startPanic(): Boolean = panicMutex.withLock {
-        // From the STORE, under the same lock as every other change to a request — not from
-        // `panicStatus`, which is a mapped flow and therefore lags the writes behind it. Read
-        // there, the gate could still see the request a refusal had just cleared, or miss the
-        // three-day lockout that refusal had just written, and let the request through anyway.
-        val s = syncStore.current()
-        val status = PanicStatus(
-            request = s.panic,
-            serverNowSec = s.ntfySinceSec,
-            blockedUntilSec = s.panicBlockedUntilSec,
-            lastChannelOkMs = s.lastChannelOkMs,
-            parentSupported = s.parentAppVersionCode >= PANIC_MIN_PARENT_VERSION,
-        )
-        if (!status.canStart(System.currentTimeMillis())) return@withLock false
-        val anchor = status.serverNowSec
-        syncStore.update {
-            it.copy(
-                panic = PanicRequest(
-                    id = UUID.randomUUID().toString(),
-                    startedAtSec = anchor,
-                    lastCheckpointSec = anchor,
-                ),
-                childVersion = it.childVersion + 1,
+    suspend fun panicStateNow(): Pair<PanicRequest?, Long> =
+        syncStore.current().let { it.panic to it.panicIntervalSec }
+
+    /**
+     * Starts the twelve-hour emergency release, and returns whether it started.
+     *
+     * The request is written down, then ANNOUNCED — published and waited on, so the relay's
+     * receipt is what says this phone can reach the family at all. No receipt, no request: the
+     * whole deal is twelve hours of a reachable phone, and starting one that could not send its
+     * own opening notice would be a countdown running on a phone that cannot be refused.
+     *
+     * The receipt is also the anchor. The twelve hours are counted on the relay's clock from
+     * here on (see [PanicProtocol.banks]), and taking the anchor from the same message that
+     * proves the channel means it cannot be stale — which is what a request anchored on the
+     * newest server second this device happened to have seen could always be.
+     */
+    suspend fun startPanic(): Boolean {
+        val opening = panicMutex.withLock {
+            // From the STORE, under the same lock as every other change to a request — not from
+            // `panicStatus`, which is a mapped flow and therefore lags the writes behind it. Read
+            // there, the gate could still see the request a refusal had just cleared, or miss the
+            // three-day lockout that refusal had just written, and let the request through anyway.
+            val s = syncStore.current()
+            val status = PanicStatus(
+                request = s.panic,
+                serverNowSec = s.ntfySinceSec,
+                blockedUntilSec = s.panicBlockedUntilSec,
+                lastChannelOkMs = s.lastChannelOkMs,
+                parentSupported = s.parentAppVersionCode >= PANIC_MIN_PARENT_VERSION,
+                intervalSec = s.panicIntervalSec,
             )
+            if (!status.canStart(System.currentTimeMillis())) return false
+            // Anchored provisionally on the newest server second this device has, and corrected
+            // to the receipt below. Nothing acts on the provisional value: it is replaced within
+            // the same call, or the request is deleted.
+            val request = PanicRequest(
+                id = UUID.randomUUID().toString(),
+                startedAtSec = s.ntfySinceSec,
+                lastCheckpointSec = s.ntfySinceSec,
+                lastNoticeAtMs = System.currentTimeMillis(),
+            )
+            syncStore.update { it.copy(panic = request, childVersion = it.childVersion + 1) }
+            request
         }
-        dev.walcott.debug.DebugLog.w(TAG, "emergency release requested by the child")
-        publishSelf()
-        true
+        val receipt = publishSelfForReceipt()
+        return panicMutex.withLock {
+            val live = syncStore.current().panic
+            // Withdrawn or refused while the announcement was in flight: that decision wins.
+            if (live == null || live.id != opening.id) return@withLock false
+            if (receipt == null) {
+                syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
+                dev.walcott.debug.DebugLog.w(TAG, "emergency release not started: the request would not send")
+                return@withLock false
+            }
+            val anchored = if (receipt > 0) {
+                live.copy(startedAtSec = receipt, lastCheckpointSec = receipt)
+            } else {
+                live
+            }
+            syncStore.update { it.copy(panic = anchored, childVersion = it.childVersion + 1) }
+            dev.walcott.debug.DebugLog.w(TAG, "emergency release requested by the child")
+            PanicAlarm.sync(context)
+            true
+        }
     }
 
-    /** The child withdraws their own request (starting again restarts the 24 hours). */
+    /** The child withdraws their own request (starting again restarts the twelve hours). */
     suspend fun cancelPanic() = panicMutex.withLock {
         if (syncStore.current().panic == null) return@withLock
         syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
+        PanicAlarm.cancel(context)
         dev.walcott.debug.DebugLog.w(TAG, "emergency release withdrawn by the child")
         publishSelf()
     }
@@ -957,8 +1012,8 @@ class SyncManager(
      * arrives after the child already withdrew must not punish a later, unrelated one.
      */
     private suspend fun denyPanic(requestId: String): Pair<Boolean, String> = panicMutex.withLock {
-        // Under the same lock as the checkpoints: a refusal landing at the same moment as the
-        // final notice must not lose the race to the release it is trying to prevent.
+        // Under the same lock as the notices: a refusal landing at the same moment as the final
+        // one must not lose the race to the release it is trying to prevent.
         val s = syncStore.current()
         val request = s.panic ?: return@withLock false to "no_request"
         if (requestId.isNotBlank() && requestId != request.id) return@withLock false to "stale_request"
@@ -966,7 +1021,7 @@ class SyncManager(
         // cursor only advances after the message carrying this refusal has been handled, and it
         // reads zero outright for the first message after a relay move — which would put the
         // three-day lockout three days after the epoch, i.e. nowhere. The request's own last
-        // checkpoint is a real server second by construction (see PanicProtocol.anchored).
+        // checkpoint is a real server second by construction.
         val deniedAt = maxOf(s.ntfySinceSec, request.lastCheckpointSec)
         syncStore.update {
             it.copy(
@@ -975,6 +1030,7 @@ class SyncManager(
                 childVersion = it.childVersion + 1,
             )
         }
+        PanicAlarm.cancel(context)
         dev.walcott.debug.DebugLog.w(TAG, "emergency release refused by the parent")
         PanicNotifications.notifyDenied(context)
         publishSelf()
@@ -982,82 +1038,157 @@ class SyncManager(
     }
 
     /**
-     * Moves an active request forward against [serverNowSec] — the timestamp of a live message,
-     * which is itself the proof that the channel works. Called on every incoming message, so the
-     * two-hourly notice rides on traffic that happens anyway.
+     * One step of a live request, driven by [PanicAlarm]: get the next notice out, or — once all
+     * twelve are out and the parent's last three minutes are up — hand the device back.
      *
-     * Serialized like [applyCommands], and for the same reason: every message is handled in its
-     * own coroutine, so a burst (our own echo landing beside a parent snapshot) would otherwise
-     * read the same request twice and bank the same notice twice.
+     * Deliberately NOT serialized with the whole step under [panicMutex]: a step can spend
+     * minutes on the radio, and a refusal arriving in the middle of that must not have to queue
+     * behind it. The lock is taken to read and to commit, and every commit re-checks that the
+     * request it started on is still the live one.
      */
-    private suspend fun evaluatePanic(serverNowSec: Long) = panicMutex.withLock {
-        val request = syncStore.current().panic ?: return@withLock
-        when (PanicProtocol.evaluate(request, serverNowSec)) {
-            PanicProtocol.Step.WAIT -> return@withLock
-            PanicProtocol.Step.CHECKPOINT -> {
-                val next = PanicProtocol.withCheckpoint(request, serverNowSec)
-                syncStore.update { it.copy(panic = next, childVersion = it.childVersion + 1) }
-                dev.walcott.debug.DebugLog.i(
-                    TAG, "emergency release notice ${next.checkpoints}/${PanicProtocol.REQUIRED_CHECKPOINTS}",
-                )
-                PanicNotifications.notifyProgress(context, PanicProtocol.remainingCheckpoints(next))
-                publishSelf()
-            }
-            PanicProtocol.Step.RELEASE -> completeRelease(request, serverNowSec)
-            PanicProtocol.Step.EXPIRED -> expirePanic()
+    suspend fun runPanicStep() {
+        val (request, intervalSec) = panicStateNow()
+        if (request == null) {
+            PanicAlarm.cancel(context)
+            return
         }
+        if (PanicProtocol.earned(request)) {
+            // Twelve notices are out; all that remains is the parent's last three minutes.
+            if (PanicProtocol.releaseDue(request, System.currentTimeMillis(), intervalSec)) {
+                releaseAfterListening(request, intervalSec)
+            } else {
+                PanicAlarm.sync(context)
+            }
+            return
+        }
+        sendNotice(request, intervalSec)
     }
 
     /**
-     * Banks the last notice and hands the device back. The request is recorded and published
-     * BEFORE the teardown: it is the parent's only record that the device let itself go, and a
-     * moment later there is no channel left to say so. That order is also what makes an
-     * interrupted release recoverable — the banked request reads as [PanicProtocol.earned] on
-     * the next pass, which is a RELEASE however long the interruption lasted.
+     * Gets one hourly notice out and acts on what happens.
+     *
+     * The count goes up BEFORE the message leaves, because the notice IS that message and the
+     * number on it is what the parent is being told. Nothing survives a failure to send — the
+     * request is cancelled outright — so the only rollback that ever happens is the one for a
+     * notice the relay stamps too early, which is the clock-tamper case and puts itself right.
+     *
+     * The one crack in "the counter only moves for a delivered notice" is a process death in the
+     * few hundred milliseconds between the two: the count is on disk and the message is not, so
+     * one of the twelve is banked without the parent hearing it. It cannot shorten the twelve
+     * hours — the next notice is still an hour of the relay's clock away — and closing it would
+     * mean either publishing a number this device has not claimed, or telling the parent a
+     * smaller one than it is acting on. Both are worse than one alert lost to a killed process.
      */
-    private suspend fun completeRelease(request: PanicRequest, serverNowSec: Long) {
-        if (!PanicProtocol.earned(request)) {
-            syncStore.update {
-                it.copy(
-                    panic = PanicProtocol.withCheckpoint(request, serverNowSec),
-                    childVersion = it.childVersion + 1,
-                )
-            }
-            runCatching { publishSelf() }
+    private suspend fun sendNotice(request: PanicRequest, intervalSec: Long) {
+        val sentAtMs = System.currentTimeMillis()
+        panicMutex.withLock {
+            val live = syncStore.current().panic
+            if (live == null || live.id != request.id) return
+            val claimed = live.copy(checkpoints = live.checkpoints + 1, lastNoticeAtMs = sentAtMs)
+            syncStore.update { it.copy(panic = claimed, childVersion = it.childVersion + 1) }
         }
+        val receipt = publishNoticeWithRetries(request.id, intervalSec)
+        panicMutex.withLock {
+            val live = syncStore.current().panic
+            // Withdrawn or refused while we were on the radio: that decision wins, and there is
+            // nothing left to roll back or advance.
+            if (live == null || live.id != request.id) return@withLock
+            if (receipt == null) {
+                syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
+                PanicAlarm.cancel(context)
+                dev.walcott.debug.DebugLog.w(
+                    TAG,
+                    "emergency release cancelled at ${request.checkpoints}/" +
+                        "${PanicProtocol.REQUIRED_CHECKPOINTS}: the notice would not go out",
+                )
+                PanicNotifications.notifyUndelivered(context, request.checkpoints)
+                return@withLock
+            }
+            if (receipt > 0 && !PanicProtocol.banks(request, receipt, intervalSec)) {
+                // Early by the relay's clock — the phone's own is wrong, or somebody moved it.
+                // Put the count back and wait out the rest of the hour the SERVER is counting.
+                syncStore.update { it.copy(panic = request, childVersion = it.childVersion + 1) }
+                dev.walcott.debug.DebugLog.w(TAG, "emergency release notice was early by the relay's clock")
+                PanicAlarm.schedule(context, PanicProtocol.sendAgainInMs(request, receipt, intervalSec))
+                // Put the corrected number in front of the parent rather than leaving them the
+                // one this device claimed a moment ago and did not earn.
+                publishSelf()
+                return@withLock
+            }
+            val banked = live.copy(lastCheckpointSec = if (receipt > 0) receipt else live.lastCheckpointSec + intervalSec)
+            syncStore.update { it.copy(panic = banked, childVersion = it.childVersion + 1) }
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "emergency release notice ${banked.checkpoints}/${PanicProtocol.REQUIRED_CHECKPOINTS} delivered",
+            )
+            PanicNotifications.notifyProgress(context, PanicProtocol.remainingCheckpoints(banked))
+            PanicAlarm.sync(context)
+        }
+        // The twelfth notice landing does not release anything by itself: the alarm armed above
+        // is the parent's last three minutes, and it is what comes back for the release.
+    }
+
+    /**
+     * Publishes the notice and waits for the relay to take it, retrying on the schedule this
+     * feature promises ([PanicProtocol.RETRY_DELAYS_MS]). Null means it never went out.
+     *
+     * Null is also what a request withdrawn mid-ladder returns; the caller re-checks the id
+     * under the lock before acting on it, so a withdrawal is not reported as a failure.
+     */
+    private suspend fun publishNoticeWithRetries(requestId: String, intervalSec: Long): Long? {
+        val delays = PanicProtocol.retryDelaysMs(intervalSec)
+        for (attempt in 0..delays.size) {
+            publishSelfForReceipt()?.let { return it }
+            if (attempt == delays.size) break
+            val wait = delays[attempt]
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "emergency release notice did not go out; trying again in ${wait / 1000}s " +
+                    "(${attempt + 1} of ${delays.size})",
+            )
+            delay(wait)
+            if (syncStore.current().panic?.id != requestId) return null
+        }
+        return null
+    }
+
+    /**
+     * Lets the socket speak before the device lets itself go.
+     *
+     * The three minutes after the twelfth notice are the parent's last chance, and normally the
+     * phone spends them listening. It does not when it was switched off for them: a phone that
+     * comes back an hour later finds its alarm already overdue and would release on the spot —
+     * stepping straight over a refusal that has been sitting on the relay the whole time, because
+     * the relay replays from the cursor only once the socket is back up. So the socket is brought
+     * back first and given a bounded moment, and the request is read again afterwards. A phone
+     * with no network waits the same moment and then goes, which is what it earned.
+     */
+    private suspend fun releaseAfterListening(request: PanicRequest, intervalSec: Long) {
+        runCatching { reconnectNow() }
+        delay(PanicProtocol.finalGraceMs(intervalSec).coerceAtMost(RELEASE_LISTEN_MS))
+        val live = syncStore.current().panic
+        if (live == null || live.id != request.id) {
+            dev.walcott.debug.DebugLog.w(TAG, "emergency release called off while the device listened")
+            PanicAlarm.cancel(context)
+            return
+        }
+        completeRelease()
+    }
+
+    /**
+     * Hands the device back. The parent already has the record — the twelfth notice carried it —
+     * so nothing here depends on a channel that is about to stop existing.
+     */
+    private suspend fun completeRelease() {
+        PanicAlarm.cancel(context)
         PanicNotifications.notifyReleased(context)
         dev.walcott.enforcement.PanicRelease.releaseDevice(context)
         // Again, and this is not belt-and-braces: the teardown ends by cancelling every
         // notification this app ever posted, which included the one above — so the single
-        // message this whole 24 hours exists to deliver was being shown for about a second and
+        // message this whole countdown exists to deliver was being shown for about a second and
         // then wiped. Posted before as well, because between the two the process is ordinary
         // and killable, and a child who is told nothing at all is the worse failure.
         PanicNotifications.notifyReleased(context)
-    }
-
-    /**
-     * Ends a request whose device went quiet when a notice was due. Also called from the
-     * heartbeat: while the channel is down no message arrives to notice it, and a request
-     * that survived an offline stretch would be exactly the connectivity gap this must catch.
-     *
-     * A request that already served its full 24 hours is the exception, and it is why this
-     * runs on the heartbeat at all rather than only on incoming messages: an interrupted
-     * release leaves exactly that behind, and the device has no channel to be judged by any
-     * more. Finish it instead of voiding it.
-     */
-    suspend fun expirePanicIfOffline() = panicMutex.withLock {
-        val s = syncStore.current()
-        val request = s.panic ?: return@withLock
-        if (PanicProtocol.earned(request)) return@withLock completeRelease(request, s.ntfySinceSec)
-        if (!PanicProtocol.expiredOffline(System.currentTimeMillis() - s.lastChannelOkMs)) return@withLock
-        expirePanic()
-    }
-
-    private suspend fun expirePanic() {
-        syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
-        dev.walcott.debug.DebugLog.w(TAG, "emergency release cancelled: the channel failed when a notice was due")
-        PanicNotifications.notifyExpired(context)
-        runCatching { publishSelf() }
     }
 
     /** PIN-gated manual exemption: allow installs on this device for [durationMs] (blanket). */
@@ -2586,6 +2717,20 @@ class SyncManager(
     }
 
     /**
+     * The same snapshot, published and WAITED on: the server second the relay stamped it with, or
+     * null if it did not go out. The emergency release is the one caller (see [PanicProtocol]) —
+     * everything else is content with fire-and-forget and a re-emit behind it.
+     */
+    private suspend fun publishSelfForReceipt(): Long? = try {
+        publishSelfOrThrow(forReceipt = true)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (t: Throwable) {
+        dev.walcott.debug.DebugLog.e(TAG, "receipted publish failed", t)
+        null
+    }
+
+    /**
      * Drops the resolutions and bonuses that have stopped meaning anything (see [ParentFit]).
      *
      * Runs on every parent publish, which is the only place that needs them to be small and the
@@ -2606,9 +2751,10 @@ class SyncManager(
         syncStore.update { it.copy(resolutions = keptResolutions, bonuses = liveBonuses) }
     }
 
-    private suspend fun publishSelfOrThrow() {
+    private suspend fun publishSelfOrThrow(forReceipt: Boolean = false): Long? {
+        var receipt: Long? = null
         val id = identityStore.current()
-        val transport = transport ?: return
+        val transport = transport ?: return null
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         when (id.role) {
             Role.PARENT -> {
@@ -2859,11 +3005,17 @@ class SyncManager(
                     dev.walcott.debug.DebugLog.w(TAG, "snapshot over size budget; degraded: ${fitted.degraded}")
                 }
                 awaitedEcho = nonce to System.currentTimeMillis()
-                transport.publish(fitted.encoded)
+                if (forReceipt) {
+                    // Blocking, so off this caller's thread — and the one place in this class
+                    // that finds out whether a message really left the phone (see PanicProtocol).
+                    receipt = withContext(Dispatchers.IO) { transport.publishForReceipt(fitted.encoded) }
+                } else {
+                    transport.publish(fitted.encoded)
+                }
                 // Count the round only when slices actually went out, and only after the publish
                 // succeeded: charging a retry to a message that was never sent would burn the
                 // give-up budget on this device's own connectivity rather than on the parent.
-                if (snapshot.domainChunks.isNotEmpty()) {
+                if (snapshot.domainChunks.isNotEmpty() && (!forReceipt || receipt != null)) {
                     syncStore.update { st ->
                         st.copy(domainBatch = st.domainBatch?.let { DomainDelivery.published(it) })
                     }
@@ -2871,7 +3023,10 @@ class SyncManager(
             }
             Role.UNPAIRED -> Unit
         }
-        if (id.role != Role.UNPAIRED) lastPublishAtMs = System.currentTimeMillis()
+        if (id.role != Role.UNPAIRED && (!forReceipt || receipt != null)) {
+            lastPublishAtMs = System.currentTimeMillis()
+        }
+        return receipt
     }
 
     /**
@@ -3201,13 +3356,11 @@ class SyncManager(
                 applyNotificationPayload(message.payload)
         }
 
-        // The emergency release runs on the server's clock, and a LIVE message proves both that
-        // the channel works and what time the server thinks it is (see PanicProtocol.provesChannel
-        // for why a replayed one proves neither). Deliberately AFTER the parent snapshot above: a
-        // refusal arriving in the same message must beat the notice — or the release — it refuses.
-        if (id.role == Role.CHILD && PanicProtocol.provesChannel(System.currentTimeMillis(), timeSec)) {
-            evaluatePanic(maxOf(timeSec, syncStore.current().ntfySinceSec))
-        }
+        // Nothing about an emergency release rides on an incoming message any more. It used to:
+        // a notice was banked when a message ARRIVED, which made the countdown a measure of what
+        // the family channel happened to deliver rather than of what this phone managed to send.
+        // The notices are now sent on an alarm and counted by the relay's receipts (see
+        // PanicAlarm), so a refusal arriving here reaches it the ordinary way, as a command.
     }
 
     /** Parent: file the health report, newest first, for the child's health-reports screen. */
@@ -4239,6 +4392,9 @@ class SyncManager(
          * so in practice a child new enough to offer this already has a parent new enough.
          */
         const val PANIC_MIN_PARENT_VERSION = 53
+
+        /** Ceiling on the moment a device gives the relay to hand over a refusal before releasing. */
+        const val RELEASE_LISTEN_MS = 10_000L
 
         /** [NoticeEntry.kind] for a request that ran out of time unanswered. */
         const val NOTICE_EXPIRED = "expired"

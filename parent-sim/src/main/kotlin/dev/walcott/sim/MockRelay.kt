@@ -64,6 +64,27 @@ class MockRelay(
     private val topics = ConcurrentHashMap<String, Topic>()
 
     /**
+     * Whether the relay is refusing to take anything at all right now.
+     *
+     * A different failure from [dropNext], and the one the emergency release turns on: there the
+     * sender is TOLD, and the whole countdown hangs on being told (see PanicProtocol). Answering
+     * 503 rather than cutting the socket on purpose — pulling `adb reverse` out from under the
+     * device does not work, because OkHttp keeps the pooled connection and the already-open
+     * route carries on serving publishes as if nothing had happened.
+     */
+    @Volatile private var refusing = false
+
+    /** Makes every publish fail with a 503 until [acceptPublishes]. */
+    fun refusePublishes() {
+        refusing = true
+    }
+
+    /** Takes messages again. */
+    fun acceptPublishes() {
+        refusing = false
+    }
+
+    /**
      * How many of the next publishes to accept-and-discard, per topic. The relay still answers
      * 200, because the interesting case is the one the sender cannot see: a message that was
      * taken and never arrived, which is exactly what the periodic re-emit exists to heal.
@@ -239,8 +260,12 @@ class MockRelay(
 
         return when {
             endpoint == null && request.method == "POST" -> {
-                publish(topic, request.body.readUtf8())
-                MockResponse().setResponseCode(200).setBody("""{"id":"sim","time":${nowSec()}}""")
+                if (refusing) {
+                    MockResponse().setResponseCode(503).setBody("relay refusing publishes")
+                } else {
+                    publish(topic, request.body.readUtf8())
+                    MockResponse().setResponseCode(200).setBody("""{"id":"sim","time":${nowSec()}}""")
+                }
             }
             endpoint == "ws" -> webSocketFor(topic, sinceOf(query))
             // The parent app polls this when its socket has been down; the sim doesn't use it,

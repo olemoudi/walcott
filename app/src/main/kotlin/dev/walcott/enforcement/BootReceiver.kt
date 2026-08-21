@@ -46,6 +46,10 @@ class BootReceiver : BroadcastReceiver() {
                         .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
                     // Alarms don't survive a reboot: re-arm the 30-min check-in chain.
                     runCatching { dev.walcott.sync.HeartbeatAlarm.schedule(context) }
+                    // And an emergency release in progress, which is the one countdown on this
+                    // phone that a reboot could otherwise stop for ever (see PanicAlarm). Its
+                    // request is on disk; only the alarm that drives it is not.
+                    runCatching { dev.walcott.sync.PanicAlarm.sync(context) }
                     runCatching { AppUpdateWindowAlarm.sync(context) }
                 }
                 // Same for the parent's catch-up chain, and for the same reason: without this a

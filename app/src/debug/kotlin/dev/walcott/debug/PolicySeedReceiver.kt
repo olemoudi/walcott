@@ -53,7 +53,15 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (policyJson != null) {
                     val decoded = Json { ignoreUnknownKeys = true }
                         .decodeFromString(PolicySettings.serializer(), policyJson)
-                    target.repository.updateSettings { decoded }
+                    // Handed over one version BELOW the one asked for, because the write bumps it:
+                    // `updateSettings` sets `current.version + 1` on every edit, which is right for
+                    // the parent's own editor and wrong for a seed, whose whole job is to put this
+                    // device into a stated state. Without this the seeded version is ignored and
+                    // simply climbs — so a device that has been through a few scenarios silently
+                    // stops accepting a policy pushed at a low version, and the scenario that
+                    // pushes the LOWEST one fails first, months after it was written, for a reason
+                    // that has nothing to do with what it tests.
+                    target.repository.updateSettings { decoded.copy(version = decoded.version - 1) }
                 }
                 when (mode) {
                     // Mark it a paired child (role=CHILD) so child-only UI (requests, asks) shows;
@@ -170,6 +178,13 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (intent.getStringExtra("curfew") != null) {
                     val cut = dev.walcott.net.NetworkCurfew.cutOffNow(target.repository)
                     DebugLog.i("WalcottSeed", "curfew now: ${cut.sorted().joinToString(",").ifEmpty { "-" }}")
+                    // And the standing half on its own. The sum cannot say which half named a
+                    // package, and the difference is the whole reason the standing half exists:
+                    // it is what the filter works out for ITSELF, from the rules and the clock,
+                    // on a phone whose enforcement loop is not running (a reboot restores the
+                    // always-on VPN long before it restores the service).
+                    val window = dev.walcott.net.NetworkCurfew.standingNow
+                    DebugLog.i("WalcottSeed", "curfew window now: ${window.sorted().joinToString(",").ifEmpty { "-" }}")
                 }
                 // `--es reconcile_installs now`: runs the install guard's reconciliation on demand,
                 // instead of waiting for a package broadcast or the next heartbeat.
@@ -394,9 +409,27 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         )
                     }
                 }
-                // `--ez panic_clear true` drops a seeded request and any standing lockout.
+                // `--ez panic_clear true` puts the emergency release back to how it ships: no
+                // request, no standing lockout, no alarm, and an hour that is an hour again — a
+                // scenario that compressed the clock must not leave it compressed for the next one.
                 if (intent.getBooleanExtra("panic_clear", false)) {
-                    target.syncStore.update { it.copy(panic = null, panicBlockedUntilSec = 0) }
+                    target.syncStore.update {
+                        it.copy(
+                            panic = null,
+                            panicBlockedUntilSec = 0,
+                            panicIntervalSec = dev.walcott.sync.PanicProtocol.CHECKPOINT_INTERVAL_SEC,
+                        )
+                    }
+                    dev.walcott.sync.PanicAlarm.cancel(context)
+                }
+                // `--el panic_hour_sec <n>` makes one "hour" of an emergency release last n real
+                // seconds on this device. The twelve-hour window is the one rule whose end-to-end
+                // test would otherwise take twelve hours, and a rule nobody can afford to exercise
+                // is a rule nobody exercises. Debug builds only — this receiver is not in a
+                // release APK, and nothing else ever writes that field.
+                intent.getLongExtra("panic_hour_sec", 0L).takeIf { it > 0 }?.let { seconds ->
+                    target.syncStore.update { it.copy(panicIntervalSec = seconds) }
+                    DebugLog.i("WalcottSeed", "an emergency-release hour is now ${seconds}s here")
                 }
                 // `--ez panic_ready true` just satisfies the start gates (channel + parent build),
                 // for exercising the child's "Request release" button itself.

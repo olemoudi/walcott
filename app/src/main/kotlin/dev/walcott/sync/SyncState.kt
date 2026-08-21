@@ -379,6 +379,17 @@ data class SyncState(
      * time, like the request itself, so moving the device clock can't wait out the lockout.
      */
     val panicBlockedUntilSec: Long = 0,
+    /**
+     * How many real seconds one "hour" of an emergency release lasts on this device.
+     *
+     * [PanicProtocol.CHECKPOINT_INTERVAL_SEC] — a real hour — in every build anyone can install.
+     * Nothing in the release build can write anything else here: the only writer is the debug
+     * source set's seed receiver, which does not exist in a release APK. It is here rather than
+     * in a constant because the twelve-hour window is the one behaviour whose end-to-end test
+     * would otherwise take twelve hours to run, and a rule nobody can afford to exercise is a
+     * rule nobody exercises.
+     */
+    val panicIntervalSec: Long = PanicProtocol.CHECKPOINT_INTERVAL_SEC,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),

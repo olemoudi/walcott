@@ -264,17 +264,29 @@ data class InstalledAppInfo(val packageName: String, val label: String)
 /**
  * A child's pending emergency-release request (see [PanicProtocol]). Travels in every
  * [ChildSnapshot] while it is alive, so the parent sees it on any check-in — not only on the
- * two-hourly notice — and can refuse it with [RemoteAction.DENY_PANIC].
+ * hourly notice — and can refuse it with [RemoteAction.DENY_PANIC].
  */
 @Serializable
 data class PanicRequest(
     val id: String,
     /** Server second when the child started it (the local clock is never trusted here). */
     val startedAtSec: Long,
-    /** Server second of the last proven connectivity checkpoint. */
+    /**
+     * Server second the relay stamped on the last notice it took — the clock the twelve hours
+     * are counted on, and the reason moving the device's own clock buys nothing.
+     */
     val lastCheckpointSec: Long,
-    /** Checkpoints proven so far; [PanicProtocol.REQUIRED_CHECKPOINTS] releases the device. */
+    /** Notices the relay has taken; [PanicProtocol.REQUIRED_CHECKPOINTS] releases the device. */
     val checkpoints: Int = 0,
+    /**
+     * Local wall clock when that notice went out. Scheduling only — an alarm understands no
+     * other clock, and a device with no network has no other clock either.
+     *
+     * It is also what the final three minutes are measured from, so they survive a process death:
+     * a phone killed between the twelfth notice and its own release comes back knowing how much
+     * of the parent's last chance is left, instead of starting the pause again or skipping it.
+     */
+    val lastNoticeAtMs: Long = 0,
 )
 
 /**

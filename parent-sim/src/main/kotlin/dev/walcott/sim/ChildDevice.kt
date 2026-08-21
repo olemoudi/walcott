@@ -117,13 +117,31 @@ class ChildDevice(
      * external network and its browser sits on a first-run screen, so no app on it ever issues
      * the query that would prove it.
      */
-    fun curfewNow(): Set<String> {
+    fun curfewNow(): Set<String> = askCurfew("curfew now: ")
+
+    /**
+     * The STANDING half alone: who the filter cuts off from the rules and the clock, with nobody
+     * having told it anything.
+     *
+     * Its own probe because the sum cannot answer it. A package in [curfewNow] may have been put
+     * there by the enforcement loop, and the property worth asserting is the other one — that the
+     * filter works the window out for itself, which is what stops a reboot being a way out.
+     */
+    fun curfewWindowNow(): Set<String> = askCurfew("curfew window now: ")
+
+    private fun askCurfew(marker: String): Set<String> {
+        // Counted before asking, and waited on afterwards. Logcat still holds every answer this
+        // device has given since the last clear, so taking "the last matching line" reads a
+        // PREVIOUS scenario's answer whenever this one is slow — which is a probe that passes
+        // while proving nothing, and is exactly how this assertion came to be flaky in a long
+        // run and solid on its own.
+        val before = walcottLog().count { marker in it }
         seed("--es", "curfew", "now")
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
-            val line = walcottLog().lastOrNull { "curfew now: " in it }
-            if (line != null) {
-                return line.substringAfter("curfew now: ").trim()
+            val lines = walcottLog().filter { marker in it }
+            if (lines.size > before) {
+                return lines.last().substringAfter(marker).trim()
                     .split(',').map { it.trim() }.filter { it.isNotEmpty() && it != "-" }.toSet()
             }
             Thread.sleep(250)
@@ -148,8 +166,19 @@ class ChildDevice(
     /** Satisfies the emergency release's start gates without waiting a day of real time. */
     fun panicReady() = seed("--ez", "panic_ready", "true")
 
-    /** The child requests the 24-hour emergency release, through its own gated call. */
+    /** The child requests the twelve-hour emergency release, through its own gated call. */
     fun startPanic() = seed("--ez", "start_panic", "true")
+
+    /**
+     * Makes one "hour" of an emergency release last [seconds] real seconds on the device.
+     *
+     * The twelve-hour window is the one rule in this product whose end-to-end test would
+     * otherwise take twelve hours, so nobody would ever run it — and it is also the rule with the
+     * most consequential ending. Ten seconds an hour puts the whole countdown, the final pause
+     * and the release inside a couple of minutes, on the real alarms, the real retry ladder and
+     * the real receipts. Debug builds only; nothing in a release APK can write that field.
+     */
+    fun panicHourSeconds(seconds: Long) = seed("--el", "panic_hour_sec", seconds.toString())
 
     /** The child withdraws its own request. */
     fun cancelPanic() = seed("--ez", "cancel_panic", "true")

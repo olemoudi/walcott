@@ -1416,22 +1416,23 @@
     <string name="panic_intro_title">Solo para una emergencia real</string>
     <string name="panic_intro_text">Úsalo si tus padres han perdido su móvil y ya no pueden desbloquear este dispositivo.</string>
     <string name="panic_how_title">Cómo funciona</string>
-    <string name="panic_how_1">1. Tus padres reciben un aviso ahora mismo, y otro cada 2 horas.</string>
-    <string name="panic_how_2">2. Este móvil debe seguir conectado 24 horas. Si no hay conexión cuando toca un aviso, la solicitud se cancela.</string>
+    <string name="panic_how_1">1. Tus padres reciben un aviso ahora mismo, y otro cada hora.</string>
+    <string name="panic_how_2">2. Este móvil tiene que sacar 12 avisos, uno cada hora. Si uno no sale se reintenta 3 veces, y si aun así no sale, la solicitud se cancela.</string>
     <string name="panic_how_3">3. Tus padres pueden rechazarla desde su móvil. Si lo hacen, no podrás volver a pedirlo en 3 días.</string>
-    <string name="panic_how_4">4. Pasadas las 24 horas, Walcott deja de gestionar este dispositivo y se borra.</string>
+    <string name="panic_how_4">4. Tras el aviso 12, tus padres tienen 3 minutos más para rechazarla. Después Walcott deja de gestionar este dispositivo y se borra.</string>
     <string name="panic_start_action">Solicitar la liberación</string>
     <string name="panic_cancel_action">Cancelar mi solicitud</string>
     <string name="panic_confirm_title">¿Solicitar la liberación?</string>
-    <string name="panic_confirm_text">Tus padres recibirán un aviso inmediatamente, y otro cada 2 horas durante las próximas 24 horas. Pueden rechazarla.</string>
+    <string name="panic_confirm_text">Tus padres recibirán un aviso inmediatamente, y otro cada hora durante las próximas 12 horas. Pueden rechazarla en cualquier momento.</string>
     <string name="panic_confirm_button">Sí, solicitarla</string>
     <string name="panic_blocked_offline">Ahora mismo no hay conexión con tu familia. Esto necesita que funcione el canal familiar.</string>
     <string name="panic_blocked_denied">Tus padres rechazaron la última solicitud. Podrás volver a pedirlo dentro de %1$s.</string>
     <string name="panic_blocked_old_parent">La app de tus padres es demasiado antigua para recibir esta solicitud.</string>
     <string name="panic_pin_hint">Si tus padres recuerdan su PIN, pueden liberar este dispositivo al instante desde los ajustes.</string>
     <string name="panic_active_title">Liberación de emergencia en curso</string>
-    <string name="panic_active_notices">%1$d de %2$d avisos enviados</string>
+    <string name="panic_active_notices">%1$d de %2$d avisos entregados</string>
     <string name="panic_active_next">Siguiente aviso en %1$s</string>
+    <string name="panic_active_releasing">Se libera en %1$s — tus padres aún pueden rechazarlo</string>
     <plurals name="panic_active_left">
         <item quantity="one">Queda %d hora aproximadamente</item>
         <item quantity="other">Quedan %d horas aproximadamente</item>
@@ -1444,8 +1445,8 @@
     </plurals>
     <string name="panic_child_denied_title">Tus padres han rechazado la liberación</string>
     <string name="panic_child_denied_text">La solicitud se ha cancelado. Podrás volver a pedirlo dentro de 3 días.</string>
-    <string name="panic_child_expired_title">Liberación cancelada</string>
-    <string name="panic_child_expired_text">No había conexión cuando tocaba un aviso, así que la solicitud ha terminado. Puedes empezar de nuevo.</string>
+    <string name="panic_child_undelivered_title">Liberación cancelada</string>
+    <string name="panic_child_undelivered_text">Un aviso no ha podido enviarse a tus padres, ni siquiera tras 3 reintentos, así que la solicitud ha terminado en %1$d de %2$d. Puedes empezar de nuevo cuando este móvil tenga conexión.</string>
     <string name="panic_child_released_title">Dispositivo liberado</string>
     <string name="panic_child_released_text">Walcott ya no gestiona este dispositivo.</string>
     <string name="panic_alert_title">%1$s ha pedido quitar Walcott</string>
@@ -1454,7 +1455,7 @@
         <item quantity="other">El dispositivo se liberará solo en %d horas si no lo rechazas.</item>
     </plurals>
     <string name="panic_released_title">El dispositivo de %1$s se ha liberado</string>
-    <string name="panic_released_text">La solicitud de emergencia ha completado sus 24 horas. Walcott ya no gestiona ese dispositivo.</string>
+    <string name="panic_released_text">La solicitud de emergencia ha completado sus 12 horas. Walcott ya no gestiona ese dispositivo.</string>
     <string name="panic_deny_action">Rechazar</string>
     <string name="panic_deny_confirm">La solicitud termina y este hijo no podrá volver a pedirlo en 3 días. El rechazo llega al dispositivo en su siguiente conexión.</string>
     <string name="panic_deny_confirm_button">Rechazar la solicitud</string>
@@ -1463,7 +1464,7 @@
         <item quantity="one">Queda %d hora para que el dispositivo se libere solo</item>
         <item quantity="other">Quedan %d horas para que el dispositivo se libere solo</item>
     </plurals>
-    <string name="panic_card_done">El dispositivo ha completado las 24 horas y se ha liberado.</string>
+    <string name="panic_card_done">El dispositivo ha completado las 12 horas y se ha liberado.</string>
     <string name="panic_card_explain">Solo continúa mientras ese móvil siga alcanzando el canal familiar. Rechazarla también bloquea nuevas solicitudes durante 3 días.</string>
     <string name="event_panic_request">%1$s ha pedido quitar Walcott (quedan %2$d h)</string>
     <string name="event_panic_released">El dispositivo de %1$s se ha liberado</string>
@@ -1756,6 +1757,12 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_96_0">
+        <item>La liberación de emergencia — la salida que un hijo puede iniciar solo, para cuando el móvil de los padres ya no está y el PIN tampoco — pasa de veinticuatro horas a doce, y el móvil tiene que sacar un aviso cada hora en vez de cada dos.</item>
+        <item>Lo que cuenta el contador ha cambiado, y ahora cuenta lo que siempre dijo que contaba: un aviso solo lo mueve si el móvil consiguió sacar el mensaje y el relay lo aceptó. El que no sale se reintenta a los 30 segundos, al minuto y a los tres minutos, y si aun así no sale la solicitud termina ahí y se le dice al hijo por dónde iba. Doce horas de un móvil localizable es el trato, dicho con exactitud.</item>
+        <item>Y el aviso número doce ya no ES la liberación: da tres minutos más para rechazarla. Ese aviso era antes lo último que pasaba antes de que el móvil se soltara, así que el padre que lo leía ya había perdido. Un móvil que estuvo apagado durante esos tres minutos escucha ahora tu respuesta antes de hacer nada.</item>
+        <item>Y cuando un móvil se devuelve — por esto, o porque tú lo liberas desde tu pantalla — ahora se deja bien: todas las restricciones que el sistema reconozca, todas las apps instaladas preguntadas una a una si siguen suspendidas, ocultas o sin poder desinstalarse, y todos los demás ajustes que toca la gestión. Todo antes de dejar de gestionar el móvil, porque después ya no hay forma de deshacerlo.</item>
     </string-array>
     <string-array name="whats_new_0_95_0">
         <item>El bloqueo de la web a la hora de dormir estaba a una pantalla de Ajustes de quedarse en nada. El DNS privado de Android manda cada consulta directamente al resolutor que se le indique — por delante del filtro, y por delante de las horas en las que el navegador no debería resolver nada. «Proteger el filtro web» bloquea ahora también ese ajuste y devuelve el teléfono al resolutor automático siempre que el filtro esté funcionando.</item>

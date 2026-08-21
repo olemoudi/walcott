@@ -1,128 +1,169 @@
 package dev.walcott.sync
 
-import dev.walcott.sync.PanicProtocol.Step
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+/**
+ * The twelve hours, and what they are counted on.
+ *
+ * The counter advances for a notice the RELAY took and for nothing else, so almost everything
+ * here is about the difference between the phone's clock and the relay's: one decides when to
+ * try, the other decides whether trying counted.
+ */
 class PanicProtocolTest {
 
     private val start = 1_700_000_000L
-    private val twoHours = PanicProtocol.CHECKPOINT_INTERVAL_SEC
-    private val grace = PanicProtocol.CHECKPOINT_GRACE_SEC
+    private val hour = PanicProtocol.CHECKPOINT_INTERVAL_SEC
+    private val nowMs = 1_700_000_000_000L
 
-    private fun request(checkpoints: Int = 0, lastCheckpointSec: Long = start) =
-        PanicRequest("req", startedAtSec = start, lastCheckpointSec = lastCheckpointSec, checkpoints = checkpoints)
+    private fun request(
+        checkpoints: Int = 0,
+        lastCheckpointSec: Long = start,
+        lastNoticeAtMs: Long = nowMs,
+    ) = PanicRequest(
+        "req",
+        startedAtSec = start,
+        lastCheckpointSec = lastCheckpointSec,
+        checkpoints = checkpoints,
+        lastNoticeAtMs = lastNoticeAtMs,
+    )
 
     @Test
-    fun `nothing is due before the two-hour mark`() {
-        assertEquals(Step.WAIT, PanicProtocol.evaluate(request(), start))
-        assertEquals(Step.WAIT, PanicProtocol.evaluate(request(), start + twoHours - 1))
+    fun `a notice the relay stamps an hour on counts`() {
+        assertTrue(PanicProtocol.banks(request(), start + hour))
+        assertTrue(PanicProtocol.banks(request(), start + hour + 5 * 60))
     }
 
     @Test
-    fun `a notice is due at two hours`() {
-        assertEquals(Step.CHECKPOINT, PanicProtocol.evaluate(request(), start + twoHours))
+    fun `a notice the relay stamps early does not`() {
+        // The whole anti-tamper story: a phone whose clock was moved forward wakes early, sends
+        // early, and buys nothing at all. Twelve hours cannot be fiddled down to twelve minutes.
+        assertFalse(PanicProtocol.banks(request(), start))
+        assertFalse(PanicProtocol.banks(request(), start + hour / 2))
+        assertFalse(PanicProtocol.banks(request(), start + hour - PanicProtocol.toleranceSec(hour) - 1))
     }
 
     @Test
-    fun `a late-but-within-grace notice still counts`() {
-        assertEquals(Step.CHECKPOINT, PanicProtocol.evaluate(request(), start + twoHours + grace))
+    fun `a minute of slack per hour absorbs ordinary clock skew`() {
+        // A phone and a relay disagreeing by seconds is normal; refusing a notice for that would
+        // cost the child an hour every time it happened.
+        assertEquals(60L, PanicProtocol.toleranceSec(hour))
+        assertTrue(PanicProtocol.banks(request(), start + hour - 60))
     }
 
     @Test
-    fun `a notice past the grace window voids the request`() {
-        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(request(), start + twoHours + grace + 1))
+    fun `the slack scales with a compressed hour instead of swallowing it`() {
+        // An end-to-end run makes an hour ten seconds. A flat minute of slack there would wave
+        // every notice through and quietly stop testing the spacing at all.
+        assertEquals(1L, PanicProtocol.toleranceSec(10))
+        assertFalse(PanicProtocol.banks(request(), start + 5, intervalSec = 10))
+        assertTrue(PanicProtocol.banks(request(), start + 10, intervalSec = 10))
     }
 
     @Test
-    fun `the request expires even when the twelfth notice is the late one`() {
-        // Reaching the end doesn't excuse a connectivity failure: the last notice must land too.
-        val last = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)
-        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(last, start + twoHours + grace + 1))
+    fun `an early notice reschedules on what the relay says is left`() {
+        // Not on the phone's clock, which has just been shown to be wrong.
+        val soFar = request()
+        assertEquals(hour * 1000 / 2, PanicProtocol.sendAgainInMs(soFar, start + hour / 2))
+        // Never zero, so a wrong clock cannot spin this into a publish loop.
+        assertEquals(1_000L, PanicProtocol.sendAgainInMs(soFar, start + hour))
+        // And never more than one whole interval, whatever the clock claims.
+        assertEquals(hour * 1000, PanicProtocol.sendAgainInMs(soFar, start - 10 * hour))
     }
 
     @Test
-    fun `the twelfth checkpoint releases the device`() {
-        val eleven = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)
-        assertEquals(Step.RELEASE, PanicProtocol.evaluate(eleven, start + twoHours))
-    }
-
-    @Test
-    fun `twelve checkpoints span twenty-four hours of proven connectivity`() {
-        var current = request()
-        var now = start
-        var steps = 0
-        while (true) {
-            now += twoHours
-            val step = PanicProtocol.evaluate(current, now)
-            if (step == Step.RELEASE) break
-            assertEquals(Step.CHECKPOINT, step)
-            current = PanicProtocol.withCheckpoint(current, now)
-            steps++
-        }
-        assertEquals(PanicProtocol.REQUIRED_CHECKPOINTS - 1, steps)
-        assertEquals(24 * 60 * 60L, now - start)
-    }
-
-    @Test
-    fun `a checkpoint advances the clock and the count`() {
-        val next = PanicProtocol.withCheckpoint(request(), start + twoHours)
+    fun `a landed notice re-anchors on the relay's stamp, not on a grid`() {
+        val next = PanicProtocol.withCheckpoint(request(), start + hour + 90, sentAtMs = nowMs + 1_000)
         assertEquals(1, next.checkpoints)
-        assertEquals(start + twoHours, next.lastCheckpointSec)
-        // The countdown re-anchors on the notice that was actually sent, not on a fixed grid.
-        assertEquals(start + 2 * twoHours, PanicProtocol.dueSec(next))
+        assertEquals(start + hour + 90, next.lastCheckpointSec)
+        assertEquals(nowMs + 1_000, next.lastNoticeAtMs)
+        // The next hour is counted from the notice that actually went out.
+        assertTrue(PanicProtocol.banks(next, start + 2 * hour + 90))
+        assertFalse(PanicProtocol.banks(next, start + 2 * hour))
     }
 
     @Test
-    fun `going silent past a due notice voids the request on the local clock too`() {
-        assertFalse(PanicProtocol.expiredOffline((twoHours + grace) * 1000))
-        assertTrue(PanicProtocol.expiredOffline((twoHours + grace) * 1000 + 1))
+    fun `twelve notices span twelve hours`() {
+        var current = request()
+        var serverNow = start
+        repeat(PanicProtocol.REQUIRED_CHECKPOINTS) {
+            serverNow += hour
+            assertTrue(PanicProtocol.banks(current, serverNow), "notice ${it + 1} should have counted")
+            current = PanicProtocol.withCheckpoint(current, serverNow, sentAtMs = nowMs)
+        }
+        assertTrue(PanicProtocol.earned(current))
+        assertEquals(12 * 60 * 60L, serverNow - start)
+    }
+
+    @Test
+    fun `eleven notices are not twelve`() {
+        assertFalse(PanicProtocol.earned(request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)))
+        assertTrue(PanicProtocol.earned(request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS)))
+    }
+
+    @Test
+    fun `the twelfth notice buys three minutes, not the release`() {
+        // The loudest alert of the twelve used to be the last thing that happened before the
+        // device let itself go: a parent reading it had already lost.
+        val done = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS)
+        assertFalse(PanicProtocol.releaseDue(done, nowMs))
+        assertFalse(PanicProtocol.releaseDue(done, nowMs + PanicProtocol.FINAL_GRACE_MS - 1))
+        assertTrue(PanicProtocol.releaseDue(done, nowMs + PanicProtocol.FINAL_GRACE_MS))
+    }
+
+    @Test
+    fun `nothing releases before all twelve are in`() {
+        val nearly = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)
+        assertFalse(PanicProtocol.releaseDue(nearly, nowMs + 30 * 24 * 60 * 60 * 1000L))
+    }
+
+    @Test
+    fun `a phone that was switched off comes back to an overdue alarm, not a lost countdown`() {
+        // Being off is not a connectivity failure — nothing was attempted, so nothing failed. The
+        // wake-up is simply in the past, which fires at once and can only LENGTHEN the window.
+        val current = request(checkpoints = 4, lastNoticeAtMs = nowMs)
+        val wakeUp = PanicProtocol.nextWakeUpAtMs(current)
+        assertEquals(nowMs + hour * 1000, wakeUp)
+        assertTrue(wakeUp < nowMs + 6 * 60 * 60 * 1000L, "a five-hour outage leaves this overdue")
+        // And the relay's clock then confirms the hour really passed, so it banks.
+        assertTrue(PanicProtocol.banks(current, start + 5 * 60 * 60))
+    }
+
+    @Test
+    fun `an earned request wakes up for its release, not for another notice`() {
+        val done = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS)
+        assertEquals(nowMs + PanicProtocol.FINAL_GRACE_MS, PanicProtocol.nextWakeUpAtMs(done))
+    }
+
+    @Test
+    fun `the retry ladder is thirty seconds, a minute and three minutes`() {
+        assertEquals(listOf(30_000L, 60_000L, 180_000L), PanicProtocol.retryDelaysMs(hour))
+        // Compressed with the rest of the clock, and never collapsed into the same instant.
+        assertEquals(listOf(1_000L, 1_000L, 1_000L), PanicProtocol.retryDelaysMs(10))
+        assertEquals(3, PanicProtocol.retryDelaysMs(hour).size)
+    }
+
+    @Test
+    fun `the final pause is compressed too, and never shrinks past being useful`() {
+        assertEquals(PanicProtocol.FINAL_GRACE_MS, PanicProtocol.finalGraceMs(hour))
+        // A refusal has to travel from a parent's tap to a phone that then has to notice. Scaled
+        // naively, a ten-second hour would leave half a second for all of it — which is not a
+        // smaller version of the pause, it is the absence of the only thing it is for.
+        assertEquals(PanicProtocol.MIN_FINAL_GRACE_MS, PanicProtocol.finalGraceMs(10))
+        assertTrue(PanicProtocol.MIN_FINAL_GRACE_MS < PanicProtocol.FINAL_GRACE_MS)
     }
 
     @Test
     fun `only a live message proves the channel`() {
-        val nowMs = 1_700_000_000_000L
-        // The device's own echo, seconds old: proof.
         assertTrue(PanicProtocol.provesChannel(nowMs, nowMs / 1000))
         assertTrue(PanicProtocol.provesChannel(nowMs, nowMs / 1000 - 60))
         // A message replayed after a reconnect carries an old server timestamp: it says nothing
-        // about connectivity now, and must never pay for a notice the device failed to send.
+        // about connectivity now.
         assertFalse(PanicProtocol.provesChannel(nowMs, nowMs / 1000 - 3 * 60 * 60))
-        // Nor a timestamp from a server that is somehow ahead of us, or a missing one.
         assertFalse(PanicProtocol.provesChannel(nowMs, nowMs / 1000 + 3 * 60 * 60))
         assertFalse(PanicProtocol.provesChannel(nowMs, 0))
-    }
-
-    @Test
-    fun `an offline stretch cannot be paid for by the replay that follows it`() {
-        // Six hours offline: the replayed backlog is stale, so nothing advances; the first live
-        // message (the child's own publish on reconnect) lands past the deadline and voids it.
-        val request = request()
-        val reconnectSec = start + 6 * 60 * 60
-        assertFalse(PanicProtocol.provesChannel(reconnectSec * 1000, start + 60 * 60))
-        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(request, reconnectSec))
-    }
-
-    @Test
-    fun `a request that already served its 24 hours is a release, not an expiry`() {
-        // What an interrupted release leaves behind: the twelfth notice is banked and published,
-        // and the teardown then failed or was killed. However long the device is then away, the
-        // countdown it finished must not have to be served again.
-        val done = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS)
-        assertTrue(PanicProtocol.earned(done))
-        assertEquals(Step.RELEASE, PanicProtocol.evaluate(done, start))
-        assertEquals(Step.RELEASE, PanicProtocol.evaluate(done, start + twoHours + grace + 1))
-        assertEquals(Step.RELEASE, PanicProtocol.evaluate(done, start + 30 * 24 * 60 * 60))
-    }
-
-    @Test
-    fun `a request one notice short of the end is not earned yet`() {
-        // The boundary the case above turns on: eleven banked notices still expire normally.
-        val nearly = request(checkpoints = PanicProtocol.REQUIRED_CHECKPOINTS - 1)
-        assertFalse(PanicProtocol.earned(nearly))
-        assertEquals(Step.EXPIRED, PanicProtocol.evaluate(nearly, start + twoHours + grace + 1))
     }
 
     @Test
@@ -140,64 +181,6 @@ class PanicProtocolTest {
     }
 
     @Test
-    fun `starting needs a channel that proved itself within the last half hour`() {
-        assertTrue(PanicProtocol.channelProven(0))
-        assertTrue(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS))
-        // One heartbeat missed is already too stale: the request's server-time anchor comes from
-        // that last message, and a stale anchor makes the first notice due in the past.
-        assertFalse(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS + 1))
-    }
-
-    @Test
-    fun `every condition is required to start a request`() {
-        fun gate(
-            hasActiveRequest: Boolean = false,
-            parentSupported: Boolean = true,
-            msSinceChannelOk: Long = 0,
-            blockedUntilSec: Long = 0,
-        ) = PanicProtocol.mayStart(
-            hasActiveRequest, parentSupported, msSinceChannelOk, blockedUntilSec, serverNowSec = start,
-        )
-
-        assertTrue(gate())
-        // One request at a time: starting again would restart the 24 hours, not shorten them.
-        assertFalse(gate(hasActiveRequest = true))
-        // A parent build that can't display the request would make this a silent escape hatch.
-        assertFalse(gate(parentSupported = false))
-        // No connectivity, no request — the whole design is "keep proving you can be seen".
-        assertFalse(gate(msSinceChannelOk = PanicProtocol.START_CHANNEL_FRESH_MS + 1))
-        // A standing refusal.
-        assertFalse(gate(blockedUntilSec = start + 1))
-    }
-
-    @Test
-    fun `a device with no server clock yet may not start a request`() {
-        // The cursor is zeroed when the family moves relay, and the last proof of the channel
-        // predates the move by less than half an hour — so every OTHER condition still says yes.
-        // A request anchored at zero has its deadline in January 1970 and is expired by the very
-        // next message, which spends the child's one request on a countdown already over.
-        assertFalse(
-            PanicProtocol.mayStart(
-                hasActiveRequest = false,
-                parentSupported = true,
-                msSinceChannelOk = 60_000,
-                blockedUntilSec = 0,
-                serverNowSec = 0,
-            ),
-            "a request with no server anchor must not be allowed to start",
-        )
-        assertTrue(PanicProtocol.anchored(1L))
-        assertFalse(PanicProtocol.anchored(0L))
-    }
-
-    @Test
-    fun `a request anchored at the epoch would be dead on arrival`() {
-        // Why the gate above exists, stated as the behaviour it prevents.
-        val stillborn = PanicRequest(id = "x", startedAtSec = 0, lastCheckpointSec = 0)
-        assertEquals(PanicProtocol.Step.EXPIRED, PanicProtocol.evaluate(stillborn, start))
-    }
-
-    @Test
     fun `a cooldown anchored at the epoch would block nothing`() {
         // Why the caller must pass a server second it can vouch for rather than a bare cursor.
         assertTrue(
@@ -208,7 +191,55 @@ class PanicProtocolTest {
     }
 
     @Test
-    fun `progress and remaining notices follow the proven checkpoints`() {
+    fun `starting needs a channel that proved itself within the last half hour`() {
+        assertTrue(PanicProtocol.channelProven(0))
+        assertTrue(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS))
+        assertFalse(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS + 1))
+    }
+
+    @Test
+    fun `every condition is required to start a request`() {
+        fun gate(
+            hasActiveRequest: Boolean = false,
+            parentSupported: Boolean = true,
+            msSinceChannelOk: Long = 0,
+            blockedUntilSec: Long = 0,
+            serverNowSec: Long = start,
+        ) = PanicProtocol.mayStart(
+            hasActiveRequest, parentSupported, msSinceChannelOk, blockedUntilSec, serverNowSec,
+        )
+
+        assertTrue(gate())
+        // One request at a time: starting again would restart the twelve hours, not shorten them.
+        assertFalse(gate(hasActiveRequest = true))
+        // A parent build that can't display the request would make this a silent escape hatch.
+        assertFalse(gate(parentSupported = false))
+        // No connectivity, no request — the whole design is "keep proving you can be seen".
+        assertFalse(gate(msSinceChannelOk = PanicProtocol.START_CHANNEL_FRESH_MS + 1))
+        // A standing refusal.
+        assertFalse(gate(blockedUntilSec = start + 1))
+    }
+
+    @Test
+    fun `a device with no server clock yet may still start a request`() {
+        // It could not before, and that was a bug rather than a guard: the cursor is zeroed
+        // whenever the family moves relay, and a request used to be anchored on it. The anchor
+        // is now the relay's receipt for the opening notice, which cannot be stale — so having
+        // heard nothing from the new relay YET is no longer a reason to refuse the one door out
+        // of enforcement.
+        assertTrue(
+            PanicProtocol.mayStart(
+                hasActiveRequest = false,
+                parentSupported = true,
+                msSinceChannelOk = 60_000,
+                blockedUntilSec = 0,
+                serverNowSec = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `progress and remaining notices follow the delivered notices`() {
         assertEquals(0f, PanicProtocol.progress(request()))
         assertEquals(12, PanicProtocol.remainingCheckpoints(request()))
         assertEquals(0.5f, PanicProtocol.progress(request(checkpoints = 6)))

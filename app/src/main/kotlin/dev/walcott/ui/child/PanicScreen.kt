@@ -154,12 +154,9 @@ fun PanicScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
 /** Why the button is greyed out, or null when it isn't. Ordered by what the child can fix. */
 @Composable
 private fun blockedReason(status: SyncManager.PanicStatus, nowMs: Long): String? = when {
-    // "No server clock yet" is told as being offline, because for the child that is exactly what
-    // it is: the family has just moved relay and this phone has not heard from the new one. It has
-    // to come BEFORE the lockout line as well as before the grey button — measured against a clock
-    // of zero, three days of cooldown reads as fifty-seven years of it.
-    !status.channelProven(nowMs) || !PanicProtocol.anchored(status.serverNowSec) ->
-        stringResource(R.string.panic_blocked_offline)
+    // Offline comes first, and before the lockout line in particular: measured against a server
+    // clock this phone has not heard from, three days of cooldown reads as fifty-seven years.
+    !status.channelProven(nowMs) -> stringResource(R.string.panic_blocked_offline)
     !PanicProtocol.cooldownPassed(status.blockedUntilSec, status.serverNowSec) -> stringResource(
         R.string.panic_blocked_denied,
         Duration.ofSeconds(status.cooldownRemainingSec).humanize(),
@@ -217,7 +214,10 @@ private fun ActiveRequestCard(status: SyncManager.PanicStatus, nowMs: Long) {
     val request = status.request ?: return
     val remaining = PanicProtocol.remainingCheckpoints(request)
     val nextSec = secondsToNextNotice(status, nowMs)
-    val leftSec = (remaining - 1).coerceAtLeast(0) * PanicProtocol.CHECKPOINT_INTERVAL_SEC + nextSec
+    // All twelve are out: what is counting down now is the parent's last three minutes, not
+    // another notice, and saying "next notice in 2 min" there would be a lie about both.
+    val releasing = PanicProtocol.earned(request)
+    val leftSec = (remaining - 1).coerceAtLeast(0) * status.intervalSec + nextSec
     val progress by animateFloatAsState(PanicProtocol.progress(request), tween(Tokens.motion.medium), label = "panic")
 
     WalcottCard(color = MaterialTheme.colorScheme.primaryContainer) {
@@ -245,27 +245,34 @@ private fun ActiveRequestCard(status: SyncManager.PanicStatus, nowMs: Long) {
                 )
             }
             Text(
-                stringResource(R.string.panic_active_next, Duration.ofSeconds(nextSec).humanize()),
+                stringResource(
+                    if (releasing) R.string.panic_active_releasing else R.string.panic_active_next,
+                    Duration.ofSeconds(nextSec).humanize(),
+                ),
                 style = MaterialTheme.typography.bodySmall,
             )
-            // Rounded, not truncated: 23 h 58 m left is "about 24 hours", not "about 23".
-            val hoursLeft = ((leftSec + 1800) / 3600).toInt()
-            Text(
-                pluralStringResource(R.plurals.panic_active_left, hoursLeft, hoursLeft),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (!releasing) {
+                // Rounded, not truncated: 11 h 58 m left is "about 12 hours", not "about 11".
+                val hoursLeft = ((leftSec + 1800) / 3600).toInt()
+                Text(
+                    pluralStringResource(R.plurals.panic_active_left, hoursLeft, hoursLeft),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
 
 /**
- * Seconds until the next notice is due: the server-clock gap, extrapolated with the time
- * elapsed locally since that clock was last confirmed. Server-anchored so it can't be gamed,
- * locally ticked so it doesn't freeze between messages.
+ * Seconds until the device next does something about this request — send the next notice, or
+ * carry out the release once the last three minutes are up.
+ *
+ * The LOCAL clock, because that is the clock the alarm behind it runs on (see [PanicAlarm]).
+ * Whether an early notice actually COUNTS is a separate question, and the relay answers it (see
+ * [PanicProtocol.banks]); a countdown that disagreed with the alarm was simply a wrong one.
  */
 private fun secondsToNextNotice(status: SyncManager.PanicStatus, nowMs: Long): Long {
     val request = status.request ?: return 0
-    val sinceProofSec = ((nowMs - status.lastChannelOkMs) / 1000).coerceAtLeast(0)
-    return (PanicProtocol.dueSec(request) - status.serverNowSec - sinceProofSec).coerceAtLeast(0)
+    return ((PanicProtocol.nextWakeUpAtMs(request, status.intervalSec) - nowMs) / 1000).coerceAtLeast(0)
 }
