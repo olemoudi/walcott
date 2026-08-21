@@ -349,12 +349,17 @@ class EnforcementService : LifecycleService() {
     private fun observeWebFilter() {
         val repo = (application as WalcottApplication).repository
         lifecycleScope.launch {
-            // Either reason keeps the tunnel up: rules to enforce, or a parent watching which
-            // domains an app resolves. When the session expires the flow drops back by itself.
+            // Any of three reasons keeps the tunnel up: rules to enforce, a parent watching which
+            // domains an app resolves, or a phone that is supposed to be shut with something on it
+            // that cannot be suspended (see Curfew). Each drops back by itself — the session
+            // expires, the window closes — so nothing here has to be turned off by hand.
             kotlinx.coroutines.flow.combine(
                 repo.settingsFlow.map { it.hasWebFilter() },
                 dev.walcott.net.DomainMonitor.state,
-            ) { hasRules, monitor -> hasRules || monitor.isActive(System.currentTimeMillis()) }
+                dev.walcott.net.NetworkCurfew.packages,
+            ) { hasRules, monitor, curfew ->
+                hasRules || monitor.isActive(System.currentTimeMillis()) || curfew.isNotEmpty()
+            }
                 .distinctUntilChanged()
                 .collect { enabled -> VpnController.apply(this@EnforcementService, enabled) }
         }
@@ -586,6 +591,13 @@ class EnforcementService : LifecycleService() {
         // so a child idling all evening doesn't hammer DataStore. Screen-off counts as idle.
         var idleAccumSeconds = 0L
         var lastEarnFlushAt = SystemClock.elapsedRealtime()
+        // The apps this device cannot suspend but can silence (see Curfew): every browser on the
+        // phone, and how long each app has outstayed its welcome inside the current window.
+        var browsers: Set<String> = emptySet()
+        var lingerSeconds: Map<String, Long> = emptyMap()
+        // Null until the first tick, for the same reason lastDeviceBlock is: a service restarting
+        // mid-bedtime must not announce a curfew it merely re-derived.
+        var lastCutOff: Set<String>? = null
 
         while (currentCoroutineContext().isActive) {
             val config = repo.configNow()
@@ -648,6 +660,9 @@ class EnforcementService : LifecycleService() {
             if (inventoryDirty || nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS) {
                 managed = repo.managedPackagesNow()
                 tracked = repo.trackedPackagesNow()
+                // Read on the same event as the rest: a browser arrives and leaves by being
+                // installed and uninstalled, which is exactly what invalidates this block.
+                browsers = repo.inventory.browserPackages()
                 managedFetchedAt = nowClock
                 inventoryDirty = false
             }
@@ -733,8 +748,64 @@ class EnforcementService : LifecycleService() {
             // every managed app as having run out of time at the same instant.
             val failingClosed = (!usageAccessOk && RuleEngine.requiresUsageCounting(config)) ||
                 (!clockTrusted && RuleEngine.requiresTrustedClock(config))
+
+            // --- What the suspension cannot reach (see Curfew) ---
+            //
+            // Bedtime suspends the managed apps, and the managed set is the non-system ones, so
+            // the browser that ships with the phone was never in it. The window closes everything
+            // the child installed and leaves open the one thing that was already there — plus
+            // whatever else holds a WebView. Those keep their icons and lose their DNS.
+            //
+            // Deliberately NOT extended to the fail-closed state above. That one suspends every
+            // managed app too, but it can last for days on a revoked permission, and a browser
+            // that resolves nothing for days — with no rule on any screen that would explain it —
+            // is a worse failure than the one it would be covering.
+            val deviceBlock = RuleEngine.deviceWideBlock(config, now)
+            val curfewWindow = deviceBlock != null
+            // The same guard the usage counters use: consecutive sightings only, so the slow tick
+            // cannot charge one app for time spent in another. `creditedUsage` also carries
+            // `in tracked`, which is what keeps the launcher and Walcott itself out of this.
+            lingerSeconds = dev.walcott.rules.Curfew.accrue(
+                lingerSeconds,
+                foreground.takeIf { creditedUsage },
+                deltaSeconds,
+                windowOpen = curfewWindow,
+            )
+            val lingering = dev.walcott.rules.Curfew.lingering(lingerSeconds)
+            val cutOff = dev.walcott.rules.Curfew.cutOff(
+                windowOpen = curfewWindow,
+                browsers = browsers,
+                lingering = lingering,
+                // Never the phone and contacts: reaching a person is the one promise that
+                // outranks every rule here, and half of reaching them is resolving a name.
+                spared = config.essentialPackages,
+            )
+            if (cutOff != lastCutOff) {
+                dev.walcott.net.NetworkCurfew.set(cutOff)
+                // Only the lingering ones are news. A browser losing its DNS at bedtime is the
+                // rule working as written; an app that kept going for two minutes inside a phone
+                // that is supposed to be shut is the thing this watch exists to notice, and the
+                // parent is the one who can decide whether it is a limit they want to set.
+                val noticed = (cutOff - lastCutOff.orEmpty()).filter { it in lingering && it !in browsers }
+                if (noticed.isNotEmpty()) {
+                    DebugLog.w(TAG, "still going inside a closed window: ${noticed.joinToString()}")
+                    val stampedAt = System.currentTimeMillis()
+                    app.syncManager.recordRuleEvents(
+                        noticed.sorted().map { pkg ->
+                            dev.walcott.sync.ChildEvent(
+                                id = java.util.UUID.randomUUID().toString(),
+                                atMs = stampedAt,
+                                kind = dev.walcott.sync.ChildEvent.KIND_CURFEW_CUT,
+                                pkg = pkg,
+                                label = repo.inventory.label(pkg) ?: pkg,
+                            )
+                        },
+                    )
+                }
+                lastCutOff = cutOff
+            }
+
             if (!failingClosed) {
-                val deviceBlock = RuleEngine.deviceWideBlock(config, now)
                 // On the first tick there is no "before", so nothing is new.
                 val newlyBlocked = blocked - (lastAppliedBlocked ?: blocked)
                 val budgetOut = newlyBlocked.filter {

@@ -206,7 +206,14 @@ class WalcottVpnService : VpnService() {
         // app keeps trying X" is worth seeing even when X is already blocked. No-op otherwise.
         DomainMonitor.record(host, pkg)
 
-        if (DomainFilter.isBlocked(host, pkg, familyDomains, lists, appRules, listExemptApps)) {
+        // The curfew is read here rather than compiled into the matchers above: it changes on the
+        // clock, several times a day, and recompiling a million-domain list for it would be
+        // absurd. A StateFlow's value is a field read (see NetworkCurfew).
+        if (DomainFilter.isBlocked(
+                host, pkg, familyDomains, lists, appRules, listExemptApps,
+                cutOff = NetworkCurfew.packages.value,
+            )
+        ) {
             // Counted in memory and flushed elsewhere: this is the packet loop (see BlockCounters).
             dev.walcott.data.BlockCounters.recordNetworkBlock(host, pkg)
             writePacket(output, buildResponse(packet, dnsStart, nxDomain(packet, dnsStart)))

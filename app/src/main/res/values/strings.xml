@@ -1589,6 +1589,7 @@
     <string name="dashboard_default_limit">Limit per app</string>
     <string name="event_app_time_out">%1$s ran out of time in %2$s</string>
     <string name="event_bedtime">Bedtime started for %1$s</string>
+    <string name="event_curfew_cut">%1$s kept using %2$s while the phone was closed — it has been cut off from the internet until the window ends</string>
     <string name="event_screen_free">A screen-free time started for %1$s</string>
     <!-- Heads-up on the child device before something closes (30 and 5 minutes ahead). -->
     <!-- The fleeting banner shown as a child opens an app after a while away. -->
@@ -1763,6 +1764,11 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_90_0">
+        <item>Bedtime closed every app your child installed and left the one that came with the phone wide open. What Walcott suspends is the non-system apps — that is the half the platform lets it suspend — and on nearly every phone the browser is a system app, so at nine o\'clock the evening simply moved into it. Anything else carrying a web view is the same hole. From now on, while bedtime or a screen-free window is running, every browser on the phone resolves nothing at all: the icon is still there and it reaches no site. The phone and contacts are never touched, and the whole thing lifts by itself the moment the window ends — there is nothing to remember to undo.</item>
+        <item>And for the ones nobody can list in advance — an OEM\'s news feed, a shop, whatever else has a web view inside it — the phone watches rather than guesses. Any app still on screen after two minutes inside a closed window loses its connection for the rest of it, and your activity wall says which app it was, by name, so you can decide whether that is a limit worth setting. The two minutes are cumulative: a minute here and a minute there is the same evening. The phone app is never one of them.</item>
+        <item>Worth being plain about what this is: it works the way the web filter already works, by refusing to look addresses up. A phone whose owner has switched on a private DNS provider in Android\'s own settings, or an app carrying hard-coded addresses of its own, is outside it — the same limit the filter has always had.</item>
     </string-array>
     <string-array name="whats_new_0_89_0">
         <item>A window a parent opens at the phone, with their PIN, is theirs — and it had stopped being. Approving an app the child never got round to installing leaves that approval pending indefinitely, on purpose, so the card can be tapped an hour later; while one was pending, the phone read the parent\'s own window as that approval\'s, and every app they stood there installing was treated as unapproved: suspended, reported and silently uninstalled while they watched. The window now says which kind it is instead of being guessed at, and the first install no longer slams it shut on the other four.</item>

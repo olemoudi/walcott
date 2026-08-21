@@ -49,6 +49,41 @@ class AppInventory(context: Context) {
 
     private fun dialerPackage(): String? = runCatching { telecom?.defaultDialerPackage }.getOrNull()
 
+    @Volatile private var browsers: Set<String> = emptySet()
+    @Volatile private var browsersReadAt = 0L
+
+    /**
+     * Every app on this phone that is a BROWSER — not every app that can open a link.
+     *
+     * The difference is the whole reliability of this answer, and it is one line of it: the
+     * intent carries a scheme and no host (`http:`), which is what the platform itself resolves
+     * a default browser with. An app with a deep link declares `scheme="https" host="x.example"`
+     * and does not match a host-less URI; a browser declares the scheme alone and does. Ask with
+     * a real URL instead and half the phone answers — the video app, the shop, the bank — and
+     * "the browser" stops meaning anything.
+     *
+     * All of them rather than only the default, because "the system browser" is not always one
+     * app: OEMs ship their own beside Chrome, and the one the child opens at midnight is
+     * whichever has an icon. Cached like [alwaysReachablePackages] and re-read on the same terms;
+     * this is asked from the enforcement loop.
+     */
+    fun browserPackages(): Set<String> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (browsers.isEmpty() || now - browsersReadAt > REACH_OUT_TTL_MS) {
+            browsers = readBrowsers()
+            browsersReadAt = now
+        }
+        return browsers
+    }
+
+    private fun readBrowsers(): Set<String> = runCatching {
+        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.fromParts("http", "", null))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        pm.queryIntentActivities(intent, 0)
+            .mapNotNull { it.activityInfo?.packageName }
+            .filterTo(mutableSetOf()) { it != RESOLVER_PACKAGE && it != ownPackage }
+    }.getOrDefault(emptySet())
+
     /**
      * Whoever answers "open contacts". There is no contacts *role* to ask for the way there is
      * for the dialer, so this resolves the intent a launcher would fire. With several handlers
@@ -85,9 +120,13 @@ class AppInventory(context: Context) {
         return fresh
     }
 
-    /** Drops the cached app list; call when a package is added or removed. */
+    /** Drops the cached app lists; call when a package is added or removed. */
     fun invalidate() {
         launchable = null
+        // The browsers too, and for the same event: installing one is exactly how a phone
+        // acquires the app this list exists to name, and waiting out its TTL would leave a fresh
+        // browser un-cut through tonight's window.
+        browsers = emptySet()
     }
 
     private fun readLaunchableApps(): List<InstalledApp> {

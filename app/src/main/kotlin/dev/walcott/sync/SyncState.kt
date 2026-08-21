@@ -114,6 +114,12 @@ data class ParentEvent(
         const val TYPE_LIVE_TRACKING_ENDED = "live_tracking_ended"
 
         /**
+         * An app the suspension could not reach kept going inside a closed window and lost its
+         * connection ([detail] names it; see [dev.walcott.rules.Curfew]).
+         */
+        const val TYPE_CURFEW_CUT = "curfew_cut"
+
+        /**
          * The wall entry for something the child reported its rules doing, or null when this
          * build doesn't know the kind (a newer child; skipped rather than shown as a blank
          * line). The event keeps its own id, which is what makes folding it in idempotent
@@ -125,6 +131,7 @@ data class ParentEvent(
                 ChildEvent.KIND_BEDTIME -> TYPE_BEDTIME
                 ChildEvent.KIND_SCREEN_FREE -> TYPE_SCREEN_FREE
                 ChildEvent.KIND_LIVE_TRACKING_ENDED -> TYPE_LIVE_TRACKING_ENDED
+                ChildEvent.KIND_CURFEW_CUT -> TYPE_CURFEW_CUT
                 else -> return null
             }
             return ParentEvent(

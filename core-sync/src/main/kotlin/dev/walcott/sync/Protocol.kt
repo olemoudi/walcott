@@ -313,6 +313,16 @@ data class ChildEvent(
          * watching a map that quietly stopped moving and drawing their own conclusion from it.
          */
         const val KIND_LIVE_TRACKING_ENDED = "live_tracking_ended"
+
+        /**
+         * An app kept going for minutes inside a window that had shut the phone, and lost its
+         * connection for the rest of it (see `Curfew`). [pkg]/[label] name it.
+         *
+         * Worth a line precisely because it is an app the suspension could not reach — a system
+         * package, or one the OS refused to suspend. The phone answered it on its own; what the
+         * parent gets is the name, which is what a limit would have to be set against.
+         */
+        const val KIND_CURFEW_CUT = "curfew_cut"
     }
 }
 

@@ -1587,6 +1587,7 @@
     <string name="dashboard_default_limit">Límite por app</string>
     <string name="event_app_time_out">A %1$s se le acabó el tiempo de %2$s</string>
     <string name="event_bedtime">Empezó la hora de dormir de %1$s</string>
+    <string name="event_curfew_cut">%1$s siguió usando %2$s con el móvil cerrado — se le ha cortado el acceso a internet hasta que acabe el horario</string>
     <string name="event_screen_free">Empezó un horario sin pantalla para %1$s</string>
     <!-- Heads-up on the child device before something closes (30 and 5 minutes ahead). -->
     <!-- The fleeting banner shown as a child opens an app after a while away. -->
@@ -1755,6 +1756,11 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_90_0">
+        <item>La hora de dormir cerraba todas las apps que tu hijo había instalado y dejaba abierta de par en par la que venía con el móvil. Lo que Walcott suspende son las apps que no son del sistema — es la mitad que la plataforma le deja suspender — y en casi todos los móviles el navegador es del sistema, así que a las nueve la tarde simplemente se mudaba ahí. Cualquier otra cosa que lleve un WebView dentro es el mismo agujero. A partir de ahora, mientras corre la hora de dormir o un horario sin pantallas, todos los navegadores del móvil no resuelven absolutamente nada: el icono sigue ahí y no llega a ningún sitio. El teléfono y los contactos no se tocan nunca, y todo se levanta solo en cuanto acaba el horario — no hay nada que acordarse de deshacer.</item>
+        <item>Y para las que nadie puede enumerar de antemano — el feed de noticias del fabricante, una tienda, lo que sea que lleve un WebView dentro — el móvil vigila en vez de adivinar. Cualquier app que siga en pantalla a los dos minutos dentro de un horario cerrado pierde la conexión durante el resto, y tu muro de actividad dice cuál era, por su nombre, para que decidas si es un límite que quieres poner. Los dos minutos son acumulativos: un minuto aquí y otro allá es la misma tarde. La app de teléfono nunca es una de ellas.</item>
+        <item>Conviene decir claramente qué es esto: funciona como ya funciona el filtro web, negándose a resolver direcciones. Un móvil en el que se haya activado un DNS privado en los ajustes de Android, o una app que lleve sus propias direcciones fijas, queda fuera — el mismo límite que el filtro ha tenido siempre.</item>
     </string-array>
     <string-array name="whats_new_0_89_0">
         <item>La ventana que un padre abre en el móvil, con su PIN, es suya — y había dejado de serlo. Aprobar una app que el hijo nunca llegó a instalar deja esa aprobación pendiente indefinidamente, a propósito, para que se pueda tocar la tarjeta una hora después; mientras había una pendiente, el móvil leía la ventana del propio padre como la de esa aprobación, y cada app que instalaba allí de pie se trataba como no aprobada: suspendida, avisada y desinstalada en silencio delante de él. Ahora la ventana dice de qué tipo es en vez de adivinarse, y la primera instalación ya no la cierra de golpe dejando fuera las otras cuatro.</item>

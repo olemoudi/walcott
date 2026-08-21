@@ -44,6 +44,9 @@ object DomainFilter {
      * An exemption needs the lookup attributed to an app, and attribution is best-effort (see
      * `WalcottVpnService.ownerPackage`). An unattributed query is therefore NOT exempt: the same
      * fail-closed rule the allow-only-from-app case follows, and for the same reason.
+     *
+     * [cutOff] is the one input here that is not about a domain at all (see [Curfew]): the phone
+     * is shut, and these apps resolve nothing until it opens again.
      */
     fun isBlocked(
         host: String,
@@ -52,7 +55,18 @@ object DomainFilter {
         lists: DomainMatcher,
         appRules: List<DomainAppRule>,
         listExemptApps: Set<String> = emptySet(),
+        cutOff: Set<String> = emptySet(),
     ): Boolean {
+        // First, and above the exemptions in particular. Everything below this line is a
+        // judgement about a destination; this is a judgement about the hour. An app waived from
+        // the public lists is waived from a list somebody downloaded — it was never permission
+        // to carry on browsing at one in the morning.
+        //
+        // Attributed queries only, like every other per-app rule here. Cutting off what could
+        // not be attributed would take the whole phone's DNS down with it, including the calls
+        // and the apps this app promises never to limit.
+        if (packageName != null && packageName in cutOff) return true
+
         val h = DomainMatcher.normalize(host)
 
         val allowOnlyForHost = appRules.filter { it.allowOnlyFromApp && matches(h, it.domain) }

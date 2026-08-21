@@ -59,6 +59,13 @@ class HealthFlagsScenarioTest : DeviceScenario() {
         // close tracking checks before deciding whether to throttle itself. Faked at the OS level
         // rather than in the app, so what is being tested is the read and not the mock.
         device.run("shell", "dumpsys", "battery", "set", "ac", "1")
+        // And the charging STATUS, which is the half the app actually reads
+        // (`BatteryManager.isCharging`, i.e. status is CHARGING or FULL). Faking the plug alone
+        // is not enough on this image: `set ac 1` leaves the status at NOT_CHARGING whatever the
+        // level, so the phone reports "on the charger and not charging" — a state the app reads
+        // correctly and the scenario was calling a bug. What is under test is the app's read, so
+        // the fixture has to arrange the state the read is about.
+        device.run("shell", "dumpsys", "battery", "set", "status", "2")
         try {
             val charging = childEventuallyReports { it.charging }
             assertTrue(charging.charging, "the phone is on the charger and the snapshot denies it")

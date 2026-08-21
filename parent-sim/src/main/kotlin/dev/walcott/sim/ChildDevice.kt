@@ -432,6 +432,41 @@ class ChildDevice(
         run("shell", "cmd", "notification", "post", "-t", shellQuote(title), shellQuote(tag), shellQuote(text))
     }
 
+    /**
+     * Whether the DNS tunnel is really up, asked of the kernel rather than of the app.
+     *
+     * The app publishes its own opinion (`webFilterOn`), and the whole reason a scenario runs on
+     * a device is that the two can differ: `establish()` can be refused, another VPN can take
+     * the slot, and a filter that is not filtering looks identical from the inside.
+     */
+    fun tunnelUp(): Boolean = run("shell", "ip", "addr", "show", "tun0").contains(TUN_ADDRESS)
+
+    /** The package the OS has pinned as the always-on VPN, or "" for none. */
+    fun alwaysOnVpnPackage(): String =
+        run("shell", "dumpsys", "device_policy")
+            .lineSequence()
+            .firstOrNull { "mAlwaysOnVpnPackage=" in it }
+            ?.substringAfter("mAlwaysOnVpnPackage=")
+            ?.trim()
+            ?.takeIf { it != "null" }
+            .orEmpty()
+
+    /**
+     * This phone's default browser, as the platform itself resolves one: a `http:` URI with no
+     * host at all, so the answer is a browser and not every app that happens to claim a link.
+     * "" when the device has none, which is a reason to skip a scenario rather than fail it.
+     */
+    fun defaultBrowser(): String =
+        run(
+            "shell", "cmd", "package", "resolve-activity", "--brief",
+            "-a", "android.intent.action.VIEW", "-c", "android.intent.category.BROWSABLE", "-d", "http:",
+        )
+            .lineSequence()
+            .map { it.trim() }
+            .firstOrNull { "/" in it && !it.startsWith("priority=") }
+            ?.substringBefore('/')
+            .orEmpty()
+
     fun installBlocked(): Boolean =
         userRestrictions().substringAfter("Device policy restrictions:", "")
             .substringBefore("Effective restrictions:")
@@ -507,6 +542,9 @@ class ChildDevice(
         logcat().lineSequence().filter { "Walcott" in it }.toList()
 
     // --- Plumbing ---
+
+    /** The tun's own address (see WalcottVpnService.TUN_ADDR): what proves it is OUR tunnel. */
+    private val TUN_ADDRESS = "10.111.222.1"
 
     private fun base64(text: String): String =
         java.util.Base64.getEncoder().encodeToString(text.toByteArray())
