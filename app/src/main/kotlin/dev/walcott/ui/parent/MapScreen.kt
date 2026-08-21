@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -81,6 +82,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -207,31 +210,6 @@ private fun TrailMap(
     val pinned = selectedMs == PINNED_TO_NEWEST
     val selected = remember(points, selectedMs) { MapTrail.indexAt(points, selectedMs) }
 
-    // Playback: step through the trail one fix at a time, then stop at the end.
-    //
-    // Keyed on the controls alone. Keyed on the trail's length as well, a session sampling every
-    // minute cancelled the replay the parent was watching every time a fix landed; the trail
-    // itself comes in through [rememberUpdatedState] so playback simply walks into whatever has
-    // arrived since it started.
-    val trail by rememberUpdatedState(points)
-    LaunchedEffect(playing, speedIndex) {
-        if (!playing) return@LaunchedEffect
-        val stepMs = MapTrail.stepMs(speedIndex)
-        // Play pressed at the end of the trail replays it from the beginning.
-        val oldest = trail.firstOrNull()
-        if (oldest != null && MapTrail.indexAt(trail, selectedMs) >= trail.lastIndex) {
-            selectedMs = oldest.epochMs
-        }
-        while (true) {
-            delay(stepMs)
-            val next = MapTrail.indexAt(trail, selectedMs) + 1
-            if (next > trail.lastIndex) break
-            selectedMs = trail[next].epochMs
-        }
-        selectedMs = PINNED_TO_NEWEST // done replaying: follow the child again
-        playing = false
-    }
-
     val mapView = remember {
         // osmdroid needs a user agent, and its default cache path targets external
         // storage (fails under scoped storage); keep everything in app-private cache.
@@ -347,16 +325,81 @@ private fun TrailMap(
         val point = points[selected.coerceIn(0, points.lastIndex)]
         mapView.controller.animateTo(GeoPoint(point.lat, point.lng))
     }
-    // A replay follows too, for the same reason close tracking does: pressing play is asking to
-    // be shown the movement, and a child who walks off the edge in the first four seconds is a
+    // Playback: the pin steps from fix to fix, and the camera glides ahead of it.
+    //
+    // A replay follows, for the same reason close tracking does: pressing play is asking to be
+    // shown the movement, and a child who walks off the edge in the first four seconds is a
     // replay of an empty street. Dragging the scrubber deliberately does NOT follow — that is a
     // parent reading a particular moment, and moving the map under them would be taking it away.
-    // Centred rather than animated: the steps are small and a second-long animation per fix would
-    // still be catching up with the one after it.
-    LaunchedEffect(selected, playing) {
+    //
+    // One loop drives the pin AND the camera, off the frame clock rather than a delay, because
+    // they are one movement: the camera has to sit a known fraction of a step ahead of the pin at
+    // every instant (see [MapCamera]), and a stepping effect beside an animating one could only
+    // agree about that by accident. Each frame asks where the camera should be by now; the pin
+    // moves on when the step's time is up, by which point the fix it lands on has been on screen
+    // for the best part of half a second.
+    //
+    // Keyed on the controls alone. Keyed on the trail's length as well, a session sampling every
+    // minute cancelled the replay the parent was watching every time a fix landed; the trail
+    // itself comes in through [rememberUpdatedState] so playback simply walks into whatever has
+    // arrived since it started.
+    val trail by rememberUpdatedState(points)
+    LaunchedEffect(playing, speedIndex) {
         if (!playing) return@LaunchedEffect
-        val point = points.getOrNull(selected) ?: return@LaunchedEffect
-        mapView.controller.setCenter(GeoPoint(point.lat, point.lng))
+        val stepMs = MapTrail.stepMs(speedIndex).toDouble()
+        // Play pressed at the end of the trail replays it from the beginning.
+        val oldest = trail.firstOrNull()
+        if (oldest != null && MapTrail.indexAt(trail, selectedMs) >= trail.lastIndex) {
+            selectedMs = oldest.epochMs
+        }
+        // Where the parent had left the map. The first step eases out of it rather than cutting,
+        // so a replay does not open with a lurch — but only from somewhere the eye can follow it
+        // from. Replaying a finished trail starts it again at the far end, which can be a city
+        // away: panning that in one step is a blur, and a cut is at least honest about being one.
+        val leftAt = MapCamera.Center(mapView.mapCenter.latitude, mapView.mapCenter.longitude)
+        var zoomFrom = mapView.zoomLevelDouble
+        var easingIn = MapCamera.withinOneScreen(
+            leftAt,
+            MapCamera.centerAt(trail, MapTrail.indexAt(trail, selectedMs), 0.0),
+            zoomFrom,
+            min(mapView.width, mapView.height),
+        )
+        var zoomTo = zoomFrom
+        var plannedFor = -1
+        var appliedZoom = zoomFrom
+        var stepStart = withFrameNanos { it }
+        while (true) {
+            val frameNanos = withFrameNanos { it }
+            val index = MapTrail.indexAt(trail, selectedMs)
+            if (index != plannedFor) {
+                plannedFor = index
+                zoomFrom = zoomTo
+                // The viewport is re-read every step: the map is only measured after its first
+                // layout, and a phone turned half way through a replay changes what fits on it.
+                zoomTo = MapCamera.zoomFor(trail, index, zoomFrom, min(mapView.width, mapView.height))
+            }
+            val progress = ((frameNanos - stepStart) / NANOS_PER_MS / stepMs).coerceIn(0.0, 1.0)
+            val heading = MapCamera.centerAt(trail, index, progress)
+            val center = if (easingIn) MapCamera.ease(leftAt, heading, progress) else heading
+            // Set, not animated: this loop IS the animation, one position and one zoom per frame,
+            // and osmdroid's own animator would be a second thing moving the same camera. The
+            // zoom is only touched when it has actually moved — most steps hold one level, and
+            // osmdroid rebuilds its projection and tells its listeners on every call.
+            val zoom = zoomFrom + (zoomTo - zoomFrom) * progress
+            if (abs(zoom - appliedZoom) > ZOOM_EPSILON) {
+                mapView.controller.setZoom(zoom)
+                appliedZoom = zoom
+            }
+            mapView.controller.setCenter(GeoPoint(center.lat, center.lng))
+            if (progress < 1.0) continue
+            val next = index + 1
+            if (next > trail.lastIndex) break
+            selectedMs = trail[next].epochMs
+            easingIn = false
+            stepStart = frameNanos
+        }
+        selectedMs = PINNED_TO_NEWEST // done replaying: follow the child again
+        playing = false
     }
 
     Column(modifier) {
@@ -695,6 +738,12 @@ private const val PINNED_TO_NEWEST = Long.MAX_VALUE
 
 /** How often the close-tracking countdown is recomputed. */
 private const val LIVE_TICK_MS = 30_000L
+
+/** Zoom change too small to be worth redrawing the map for: a thousandth of a level. */
+private const val ZOOM_EPSILON = 0.001
+
+/** Frame timestamps arrive in nanoseconds; playback thinks in milliseconds. */
+private const val NANOS_PER_MS = 1_000_000.0
 
 /** Trail stroke, in pixels: wide enough to read over map tiles at the faded end. */
 private const val TRAIL_WIDTH_PX = 8f
