@@ -129,7 +129,25 @@ data class TimeWindow(
      * axis the parent is already using, so the section could go.
      */
     val specialDays: SpecialDays = SpecialDays.ALWAYS,
+    /**
+     * The apps this window LEAVES OPEN. Empty — the default, and what every window written
+     * before this field existed means — closes everything non-essential.
+     *
+     * The rule a family actually has and could not write down. "Homework, 17:00 to 19:00" is
+     * almost never "nothing at all": it is nothing except the dictionary, the calculator and
+     * whatever they are listening to. Without this the choice was between a window that took the
+     * homework tools away with everything else, or no window at all — and every family that met
+     * that choice picked the second one.
+     *
+     * A list of what stays OPEN rather than what closes, because the open list is the short one
+     * and the one a parent can hold in their head; the closed list is "everything else", which
+     * is also what it must keep meaning as apps are installed.
+     */
+    val allowedPackages: Set<String> = emptySet(),
 ) {
+
+    /** Whether this window leaves [packageName] open (see [allowedPackages]). */
+    fun allows(packageName: String): Boolean = packageName in allowedPackages
     operator fun contains(time: LocalTime): Boolean =
         if (start <= end) time >= start && time < end
         else time >= start || time < end

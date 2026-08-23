@@ -101,8 +101,12 @@ object Curfew {
                 windowOpen = windowOpen,
                 browsers = browsers,
                 lingering = emptySet(),
-                spared = config.essentialPackages,
+                // What the window itself leaves open is spared, and this is the half of an
+                // allow-list that would be silently missing without it: a homework window that
+                // permits the dictionary and then takes its DNS away has permitted nothing.
+                spared = config.essentialPackages + RuleEngine.windowExemptions(config, now),
             ),
+            exempt = RuleEngine.windowExemptions(config, now),
         )
     }
 
@@ -114,7 +118,18 @@ object Curfew {
      * no browser on the phone runs and cuts off nobody. It is what expires the OTHER half of the
      * curfew, the one only the enforcement loop can know (see [with]).
      */
-    data class Standing(val windowOpen: Boolean, val packages: Set<String>) {
+    data class Standing(
+        val windowOpen: Boolean,
+        val packages: Set<String>,
+        /**
+         * What the running window leaves open (see [TimeWindow.allowedPackages]).
+         *
+         * Carried so the OTHER half of the curfew — the apps the enforcement loop watches
+         * outstay their welcome — is spared too: an app the family allowed cannot be cut off
+         * for having been used, which is the only thing the loop is watching for.
+         */
+        val exempt: Set<String> = emptySet(),
+    ) {
 
         /**
          * The whole curfew: this half plus whatever the enforcement loop observed lingering —
@@ -131,8 +146,8 @@ object Curfew {
         fun with(observed: Set<String>): Set<String> = when {
             !windowOpen -> emptySet()
             observed.isEmpty() -> packages
-            packages.isEmpty() -> observed
-            else -> packages + observed
+            packages.isEmpty() -> observed - exempt
+            else -> packages + (observed - exempt)
         }
     }
 

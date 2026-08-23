@@ -128,6 +128,9 @@ data class ParentEvent(
          */
         const val TYPE_CURFEW_CUT = "curfew_cut"
 
+        /** A rescue code was typed into a phone and opened it (see [dev.walcott.sync.RescueCode]). */
+        const val TYPE_RESCUE = "rescue"
+
         /**
          * The wall entry for something the child reported its rules doing, or null when this
          * build doesn't know the kind (a newer child; skipped rather than shown as a blank
@@ -141,6 +144,7 @@ data class ParentEvent(
                 ChildEvent.KIND_SCREEN_FREE -> TYPE_SCREEN_FREE
                 ChildEvent.KIND_LIVE_TRACKING_ENDED -> TYPE_LIVE_TRACKING_ENDED
                 ChildEvent.KIND_CURFEW_CUT -> TYPE_CURFEW_CUT
+                ChildEvent.KIND_RESCUE -> TYPE_RESCUE
                 else -> return null
             }
             return ParentEvent(
@@ -278,6 +282,27 @@ data class SyncState(
     val liveUntilElapsedMs: Long = 0,
     /** Wall-clock ms the session began: shown to the parent, and a sanity bound on the above. */
     val liveStartedAtMs: Long = 0,
+    /**
+     * A rescue code typed into this phone (see [dev.walcott.sync.RescueCode]): when the grant
+     * ends, on both clocks. 0 = none running.
+     *
+     * Both, because each covers the other's blind spot — a wall clock the child can edit, and a
+     * monotonic one that restarts at zero on every boot. The rescue ends at whichever comes
+     * first (see [RescueCode.isRunning]).
+     */
+    val rescueUntilWallMs: Long = 0,
+    val rescueUntilElapsedMs: Long = 0,
+    /**
+     * The newest slot a rescue code has been accepted from, and what makes a code single-use.
+     * [Long.MIN_VALUE] on a device that has never taken one, so the first code is not refused
+     * for being "not newer" than a zero that means nothing.
+     */
+    val rescueLastSlot: Long = Long.MIN_VALUE,
+    /** Consecutive wrong codes, and the lockout they have earned (see [dev.walcott.data.PinLockout]). */
+    val rescueFails: Int = 0,
+    val rescueLockedUntilMs: Long = 0,
+    /** Wall-clock ms of the last accepted code, for the parent's wall. 0 = never. */
+    val rescueUsedAtMs: Long = 0,
     /**
      * The battery level when the running session started, so its cost can be closed out when it
      * ends (see [dev.walcott.sync.BatteryDrain]). -1 = not measured.

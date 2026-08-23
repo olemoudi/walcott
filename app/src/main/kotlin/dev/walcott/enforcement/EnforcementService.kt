@@ -810,16 +810,22 @@ class EnforcementService : LifecycleService() {
                 lastClockTrusted = clockTrusted
             }
             // The single control decision (fail-closed included) lives in the tested rule engine.
+            // A rescue code typed into this phone opens everything for as long as it was worth,
+            // and it outranks the fail-closed branches below — the phone that has nothing else
+            // left is the case it exists for (see RescueCode).
+            val rescued = app.syncManager.rescueOpenNow()
             val blocked = RuleEngine.blockedPackages(
                 config, managed, now, usage, extra,
                 usageCountingAvailable = usageAccessOk,
                 clockTrusted = clockTrusted,
+                rescued = rescued,
             )
             // What the rules just did, for the parent's activity wall. Skipped entirely while
             // failing closed: that already has its own alert, and it would otherwise report
             // every managed app as having run out of time at the same instant.
-            val failingClosed = (!usageAccessOk && RuleEngine.requiresUsageCounting(config)) ||
-                (!clockTrusted && RuleEngine.requiresTrustedClock(config))
+            val failingClosed = !rescued &&
+                ((!usageAccessOk && RuleEngine.requiresUsageCounting(config)) ||
+                    (!clockTrusted && RuleEngine.requiresTrustedClock(config)))
 
             // --- What the suspension cannot reach (see Curfew) ---
             //
@@ -1040,6 +1046,12 @@ class EnforcementService : LifecycleService() {
                 val status = StatusLine.of(
                     config, foreground, managed, now, usage, extra,
                     failClosed = failingClosed,
+                    rescuedUntil = if (rescued) {
+                        java.time.Instant.ofEpochMilli(app.syncManager.rescueDeadlines.value.first)
+                            .atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+                    } else {
+                        null
+                    },
                 )
                 updateStatusNotification(status) { repo.inventory.label(it) }
             }.onFailure { DebugLog.w(TAG, "status notification failed", it) }
@@ -1158,6 +1170,7 @@ class EnforcementService : LifecycleService() {
         )
         is PhoneStatus.ScreenRemaining -> getString(R.string.status_screen_left, status.left.humanize())
         PhoneStatus.ScreenSpent -> getString(R.string.status_screen_spent)
+        is PhoneStatus.Rescued -> getString(R.string.status_rescued, status.until.hhmm())
         PhoneStatus.FailClosed -> getString(R.string.status_fail_closed)
         PhoneStatus.Quiet -> getString(R.string.service_notif_text)
     }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.HorizontalDivider
@@ -325,6 +326,15 @@ internal fun BlockedWindowsCard(
      * them the stored schedule genuinely disagreed with itself about which rules existed, which
      * is what made rules flicker in and out while a parent was changing one.
      */
+    /**
+     * The apps a window may be told to leave OPEN, for the picker (see
+     * [dev.walcott.rules.TimeWindow.allowedPackages]). Empty hides the whole idea, which is what
+     * a per-app window wants: "everything except this app" is not a sentence about one app.
+     */
+    exceptionApps: List<dev.walcott.ui.components.PickableApp> = emptyList(),
+    /** Parent-side icon cache for [exceptionApps]; the apps belong to the children. */
+    exceptionIcons: ((String) -> ByteArray?)? = null,
+    exceptionInventory: dev.walcott.data.AppInventory? = null,
     onChange: (List<WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -340,6 +350,9 @@ internal fun BlockedWindowsCard(
             WindowsForDay(
                 windows = windows,
                 editable = enabled,
+                exceptionApps = exceptionApps,
+                exceptionIcons = exceptionIcons,
+                exceptionInventory = exceptionInventory,
                 onChange = onChange,
             )
             if (enabled) ScheduleReview(windows, onChange)
@@ -446,13 +459,19 @@ private fun applied(windows: List<WindowDto>, finding: RuleReview.Finding): List
 
 /** The schedule's rules. Read-only when [editable] is false — it is then inherited, not owned. */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun WindowsForDay(
     windows: List<WindowDto>,
     editable: Boolean,
+    exceptionApps: List<dev.walcott.ui.components.PickableApp> = emptyList(),
+    exceptionIcons: ((String) -> ByteArray?)? = null,
+    exceptionInventory: dev.walcott.data.AppInventory? = null,
     onChange: (List<WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
     var editing by remember { mutableStateOf<WindowEdit?>(null) }
+    // Which window is having an app added to it; null when the picker is closed.
+    var pickingFor by remember { mutableStateOf<Int?>(null) }
 
     if (windows.isEmpty()) {
         Text(
@@ -516,6 +535,20 @@ private fun WindowsForDay(
                 )
             },
         )
+        if (exceptionApps.isNotEmpty() && exceptionInventory != null) {
+            AllowedApps(
+                allowed = window.allowedPackages,
+                apps = exceptionApps,
+                onRemove = { pkg ->
+                    onChange(
+                        windows.mapIndexed { i, w ->
+                            if (i == index) w.copy(allowedPackages = w.allowedPackages - pkg) else w
+                        },
+                    )
+                },
+                onAdd = { pickingFor = index },
+            )
+        }
     }
     if (editable) {
         Spacer(Modifier.size(spacing.sm))
@@ -543,6 +576,74 @@ private fun WindowsForDay(
         is WindowEdit.NewEnd -> WindowTimePicker(17 * 60, R.string.to) { picked ->
             if (picked != null) onChange(windows + WindowDto(edit.start.toMinute(), picked.toMinute()))
             editing = null
+        }
+    }
+
+    pickingFor?.let { index ->
+        val inventory = exceptionInventory ?: return@let
+        dev.walcott.ui.components.AppPickerSheet(
+            apps = exceptionApps.filterNot { it.packageName in windows[index].allowedPackages },
+            inventory = inventory,
+            iconBytes = exceptionIcons,
+            onDismiss = { pickingFor = null },
+            onPick = { app ->
+                onChange(
+                    windows.mapIndexed { i, w ->
+                        if (i == index) w.copy(allowedPackages = w.allowedPackages + app.packageName) else w
+                    },
+                )
+                pickingFor = null
+            },
+        )
+    }
+}
+
+/**
+ * The apps one window leaves open, as removable chips plus a way to add another.
+ *
+ * Under the window's own hours and days, because it is the same rule speaking: "no screens from
+ * five to seven — except the dictionary" is one sentence, and splitting the exception onto
+ * another screen is how a parent ends up with a homework window that takes the homework away.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AllowedApps(
+    allowed: List<String>,
+    apps: List<dev.walcott.ui.components.PickableApp>,
+    onRemove: (String) -> Unit,
+    onAdd: () -> Unit,
+) {
+    val spacing = Tokens.spacing
+    Column(Modifier.padding(top = spacing.sm)) {
+        Text(
+            stringResource(R.string.window_allowed_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            allowed.forEach { pkg ->
+                val label = apps.firstOrNull { it.packageName == pkg }?.display ?: pkg
+                androidx.compose.material3.InputChip(
+                    selected = true,
+                    onClick = { onRemove(pkg) },
+                    label = { Text(label) },
+                    trailingIcon = {
+                        Icon(
+                            Icons.Outlined.Close,
+                            contentDescription = stringResource(R.string.window_allowed_remove, label),
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                )
+            }
+            ActionChip(stringResource(R.string.window_allowed_add), onClick = onAdd)
+        }
+        if (allowed.isEmpty()) {
+            Text(
+                stringResource(R.string.window_allowed_none),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

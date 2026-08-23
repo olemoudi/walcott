@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.PhonelinkSetup
@@ -186,6 +187,22 @@ fun ChildStatusScreen(
     // Straight from the ringer: this phone is the one making the noise, so there is nothing to
     // ask anybody. Zero when it is quiet.
     val ringingUntilMs by dev.walcott.enforcement.Ringer.ringingUntilMs.collectAsStateWithLifecycle()
+    // How much of a rescue code's grant is left. Recomputed on this screen's own ten-second
+    // tick, because nothing else on the phone changes while it drains.
+    val rescueDeadlines by viewModel.rescueDeadlines.collectAsStateWithLifecycle()
+    val rescueLeftMs = remember(rescueDeadlines, nowMs) {
+        dev.walcott.sync.RescueCode.remainingMs(
+            rescueDeadlines.first, rescueDeadlines.second, nowMs, android.os.SystemClock.elapsedRealtime(),
+        )
+    }
+    var showRescue by remember { mutableStateOf(false) }
+    if (showRescue) {
+        RescueCodeDialog(
+            viewModel,
+            onDismiss = { showRescue = false },
+            onOpened = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() },
+        )
+    }
 
     // Everything this phone needs switched on — usage access, the accessibility blocker, location,
     // the DNS filter, notifications, battery optimisation — in one place that re-checks itself on
@@ -225,6 +242,11 @@ fun ChildStatusScreen(
             // hand — the app they have just opened is where they look first.
             if (ringingUntilMs > 0L) {
                 item { RingingCard(onStop = { dev.walcott.enforcement.Ringer.stop(context, "stopped here") }) }
+            }
+            // A rescue code is holding this phone open: say so, and say until when. A child who
+            // was given an hour and cannot see it draining has been given an hour of wondering.
+            if (rescueLeftMs > 0L) {
+                item { RescueRunningCard(Duration.ofMillis(rescueLeftMs)) }
             }
             if (identity.role == Role.UNPAIRED) {
                 item {
@@ -360,6 +382,18 @@ fun ChildStatusScreen(
                 // a card, because neither is what this screen is FOR.
                 item { QuietRow(Icons.Outlined.Rule, stringResource(R.string.child_rules_entry), onOpenRules) }
                 item { AskOtherRow(onClick = { showAskOther = true }) }
+                // A quiet row like the two above it, and quiet on purpose: a code is not
+                // something a child asks for, it is something they are given when everything
+                // else has already failed. It has to be findable then, and forgettable now.
+                if (rescueLeftMs <= 0L) {
+                    item {
+                        QuietRow(
+                            Icons.Outlined.VpnKey,
+                            stringResource(R.string.rescue_have_code),
+                            onClick = { showRescue = true },
+                        )
+                    }
+                }
             }
             // Everything sent and still unanswered, so "did it go through?" has an answer.
             // Kept with the cards that send them rather than with the apps.
@@ -663,6 +697,34 @@ private fun RingingCard(onStop: () -> Unit) {
             ) {
                 Text(stringResource(R.string.ring_home_stop), style = MaterialTheme.typography.titleMedium)
             }
+        }
+    }
+}
+
+/**
+ * A rescue code is holding this phone open, and this is how long is left of it.
+ *
+ * Said out loud on the home screen because the alternative is a child who was given an hour and
+ * cannot see it draining — which is an hour of wondering whether it worked at all, on a phone
+ * that by definition cannot ask anybody.
+ */
+@Composable
+private fun RescueRunningCard(left: Duration) {
+    val spacing = Tokens.spacing
+    WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.VpnKey,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                stringResource(R.string.rescue_running, left.humanize()),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
         }
     }
 }
@@ -1165,6 +1227,11 @@ private fun HeroCard(
     // just stop", and without it this card went on reporting the day's app limits — which are
     // not what stopped anything — over a screen where nothing would open.
     val closed: Pair<Int, java.time.LocalTime>? = when {
+        // A rescue outranks all three, because the device already agrees: the loop has opened
+        // everything, and drawing the bedtime a child was rescued FROM would tell them their
+        // phone is shut while they are holding it open. The card above says why and for how
+        // long, so this one goes back to being the day it now is.
+        state.rescued -> null
         // A pause outranks both: it is the newest thing to have happened, it ends soonest, and
         // it is the only one of the three that a person decided a minute ago.
         state.pausedUntil != null -> R.string.paused_title to state.pausedUntil.toLocalTime()
@@ -1214,6 +1281,19 @@ private fun HeroCard(
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
+                        // What this window leaves open, if anything. Without it the card says
+                        // "everything is closed" over a homework window with three apps in it —
+                        // and hides the very thing the window was set up to permit.
+                        if (state.openDuringWindow.isNotEmpty()) {
+                            Text(
+                                stringResource(
+                                    R.string.hero_still_open,
+                                    state.openDuringWindow.joinToString(", "),
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
                         Text(
                             // When it ends, rather than "until tomorrow" — which was a guess
                             // about the shape of the window, and wrong for every one that ends

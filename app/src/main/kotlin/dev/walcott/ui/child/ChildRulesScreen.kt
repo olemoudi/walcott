@@ -107,7 +107,17 @@ fun ChildRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                     detail = stringResource(R.string.window_range, window.start.hhmm(), window.end.hhmm()),
                     // Which days, spelled out: a window that only bites on school days is a very
                     // different rule from one that bites every day, and the times alone hide that.
-                    footnote = daysLabel(window),
+                    // And what it leaves open, which is the half a child most needs from this
+                    // screen: "no screens at five" and "no screens at five except the dictionary"
+                    // are different afternoons.
+                    footnote = listOfNotNull(
+                        daysLabel(window),
+                        window.allowedPackages
+                            .mapNotNull { viewModel.repository.inventory.label(it) }
+                            .sorted()
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { stringResource(R.string.window_still_open, it.joinToString(", ")) },
+                    ).joinToString(" · ").takeIf { it.isNotBlank() },
                 )
             }
             // The phone's own day, before the per-app limits: it is the one that governs.

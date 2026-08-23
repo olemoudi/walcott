@@ -1789,6 +1789,33 @@
     <string name="status_paused">Paused until %1$s</string>
     <string name="status_bedtime">Bedtime until %1$s</string>
     <string name="status_screen_free">Screen-free until %1$s</string>
+    <string name="rescue_child_title">Enter a code</string>
+    <string name="rescue_child_desc">If somebody at home has given you a six-digit code, type it here. It opens this phone for a while — no internet needed.</string>
+    <string name="rescue_child_label">Six digits</string>
+    <string name="rescue_child_use">Use it</string>
+    <string name="rescue_child_wrong">That code does not work. Ask for a new one — each code can only be used once.</string>
+    <string name="rescue_child_no_family">This phone does not belong to a family, so there is nothing to unlock.</string>
+    <string name="rescue_locked">Too many tries. Wait %1$d min.</string>
+    <string name="rescue_opened">Your phone is open for a while</string>
+    <string name="rescue_have_code">I have a code</string>
+    <string name="rescue_running">Open with a code · %1$s left</string>
+    <string name="event_rescue">%1$s used a rescue code</string>
+    <string name="hero_still_open">Still open: %1$s</string>
+    <string name="window_still_open">still open: %1$s</string>
+    <string name="window_allowed_label">Still open during this window</string>
+    <string name="window_allowed_add">Add an app</string>
+    <string name="window_allowed_none">Nothing: this window closes every app.</string>
+    <string name="window_allowed_remove">Remove %1$s</string>
+    <string name="rescue_title">Rescue code</string>
+    <string name="rescue_desc">Opens a phone that cannot be reached — no data, no Wi-Fi, nothing arriving. Read it out; they type it into their own Walcott. Your PIN stays yours.</string>
+    <string name="rescue_show">Show a code</string>
+    <string name="rescue_action_1h">Open 1 h</string>
+    <string name="rescue_action_3h">Open 3 h</string>
+    <string name="rescue_action_install">Let them install (30 min)</string>
+    <string name="rescue_changes_in">A new code in %1$d min</string>
+    <string name="rescue_once">Works once. Overheard or remembered, it is worth nothing a second time.</string>
+    <string name="rescue_no_family">This phone does not belong to a family yet, so there is no code to give.</string>
+    <string name="status_rescued">Open with a code until %1$s</string>
     <string name="status_screen_left">%1$s of phone left today</string>
     <string name="status_screen_spent">Today\'s screen time is used up</string>
     <string name="status_app_left">%1$s · %2$s left</string>
@@ -1809,6 +1836,11 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_100_0">
+        <item>There is now a way to open a child\'s phone when nothing can reach it — no data, no Wi-Fi, a phone abroad, or one that has locked itself down because its clock or its permissions went wrong. In Settings, beside your PIN, "Rescue code" shows six digits. You read them out; they type them into their own Walcott, with no PIN, and the phone opens for an hour, or three, or long enough to install something. Nothing is sent, so nothing has to arrive.</item>
+        <item>That code is not your PIN, and that is the point. Your PIN releases a child\'s phone for ever, so typing it in front of them to buy an hour was spending the wrong thing — and a PIN you had just changed did not even work until the new rules arrived, which is exactly what a phone with no signal has not got. A rescue code works once, changes every half hour, and is worth nothing to anybody who overhears it a second time.</item>
+        <item>Screen-free windows can now leave some apps open. "Homework, five to seven" was almost never "nothing at all" — it was nothing except the dictionary, the calculator and whatever they are listening to — and without a way to say so, the choice was a window that took the homework tools away or no window at all. Add the apps that stay open under the window\'s own hours. Their phone says which they are, on the home screen and in their rules, so a child inside a homework window can see what they are still allowed.</item>
     </string-array>
     <string-array name="whats_new_0_99_0">
         <item>A phone can now have a limit of its own: <b>total screen time a day</b>, in Limits. Until now every app had its own clock, so ten apps with an hour each was a ten-hour day — and the parent who set those ten hours believed they had set one. Set a total and every minute spends the same one, whatever it was spent on, including apps you have never given a limit to. Calls and contacts still work, and so does anything you marked "never limit this" — that one is your own way out and a ceiling must not close it. Each member can have a shorter day than the family\'s.</item>

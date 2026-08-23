@@ -61,6 +61,15 @@ data class WindowDto(
      * there rather than trusted.
      */
     val onlySpecialDays: Boolean = false,
+    /**
+     * Packages this window leaves open (see [dev.walcott.rules.TimeWindow.allowedPackages]);
+     * empty closes everything, which is what every window written before this field meant.
+     *
+     * Additive in the strict direction, like [onlySpecialDays]: a child on an older build never
+     * sees it and closes the allowed apps too — more blocking than the parent asked for, never
+     * less, and only until that phone takes the update.
+     */
+    val allowedPackages: List<String> = emptyList(),
 ) {
     /** The three-state rule these two flags encode (see [SpecialDays]). */
     val specialDays: SpecialDays
@@ -89,6 +98,7 @@ data class WindowDto(
             // enforcement loop, same reasoning as [byDayType].
             days = days.mapNotNullTo(mutableSetOf()) { runCatching { DayOfWeek.of(it) }.getOrNull() },
             specialDays = specialDays,
+            allowedPackages = allowedPackages.toSet(),
         )
     }
 

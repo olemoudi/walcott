@@ -64,7 +64,9 @@ change automatically. A special day can apply to the whole family or to one chil
 birthday belongs to whoever's it is.
 
 **Screen-free windows.** Block every app during homework, dinner or class, family-wide or per
-app, on the days you choose.
+app, on the days you choose — and name the apps that stay open, because "homework, five to
+seven" is almost never "nothing at all". The child's phone says which those are, so they can see
+what they are still allowed.
 
 **Asking for more.** The child can request extra time from their phone; you get a
 notification and approve or deny with one tap. You can also hand out bonus time unprompted.
@@ -202,6 +204,21 @@ And if your phone is the one that is gone, there are two ways out from the child
 That second route is a deliberate trade-off: a determined child can free their phone in half a day,
 but only by telling their parents a dozen times first — and a factory reset, which Walcott
 does not block, was always the faster way out anyway.
+
+## When there is no network at all
+
+A rescue code opens a child's phone with nothing arriving: no data, no Wi-Fi, a phone abroad, or
+one that has locked itself down because its clock or its permissions went wrong. The parent's
+settings show six digits; the child types them into their own Walcott, with no PIN, and the phone
+opens for an hour, three hours, or long enough to install something.
+
+It is deliberately not the parent's PIN. That PIN releases a device permanently, so spending it
+to buy an hour — in front of the person it exists to keep out — is spending the wrong thing, and
+a PIN just changed does not work offline until the new policy arrives anyway. The code is derived
+from the family key both phones already hold (HMAC-SHA256, truncated the way an authenticator
+app does it) over a thirty-minute slot: nothing is sent, nothing is enrolled, and no new secret
+exists. It works once — the phone remembers the newest slot it accepted — so a code overheard or
+remembered is worth nothing twice, and a clock moved backwards only reaches slots already spent.
 
 ## Honest limitations
 

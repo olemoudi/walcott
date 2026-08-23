@@ -35,13 +35,22 @@ object RuleEngine {
         // standing rule and no granted minute is an answer to that.
         if (config.todayException.pausedAt(now)) return Verdict.Blocked(BlockReason.PAUSED)
 
+        // A bedtime can name exceptions too — the same field, the same meaning. The editor only
+        // offers it on screen-free windows today, but the engine has no business knowing which
+        // screen a window was written on.
         config.bedtimeAt(now)?.let { window ->
-            if (time in window) return Verdict.Blocked(BlockReason.BEDTIME)
+            if (time in window && !window.allows(packageName)) return Verdict.Blocked(BlockReason.BEDTIME)
         }
         // Family-wide screen-free windows: like bedtime, a hard block on every non-essential
         // app — checked before any budget, so an app with no limit is inside them too. Extra
         // time never lifts a window.
-        if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
+        //
+        // Unless the window says otherwise about THIS app: a homework window that takes the
+        // dictionary away with everything else is a window nobody sets (see
+        // TimeWindow.allowedPackages).
+        if (config.blockedWindows[dayType].orEmpty()
+                .any { it.appliesAt(now, specialDay) && !it.allows(packageName) }
+        ) {
             return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
         }
 
@@ -109,6 +118,29 @@ object RuleEngine {
     }
 
     /**
+     * The apps a window running at [now] leaves open — what "device-wide" does NOT reach.
+     *
+     * Its own question because [deviceWideBlock] answers about the PHONE and this is about the
+     * exceptions: the DNS filter must not cut off an app the window itself allows, and a screen
+     * that says "nothing opens" over a homework window with three apps in it is wrong.
+     */
+    fun windowExemptions(config: FamilyConfig, now: LocalDateTime): Set<String> {
+        val dayType = config.calendar.dayTypeOf(now)
+        val specialDay = dayType == DayType.HOLIDAY
+        // The INTERSECTION of what each running rule allows, not the union: two rules running at
+        // once are two rules, and an app the homework window leaves open is still shut by a
+        // bedtime that says nothing about it. A pause allows nothing, which the empty set says.
+        val running = mutableListOf<Set<String>>()
+        if (config.todayException.pausedAt(now)) running.add(emptySet())
+        config.bedtimeAt(now)?.let { if (now.toLocalTime() in it) running.add(it.allowedPackages) }
+        config.blockedWindows[dayType].orEmpty()
+            .filter { it.appliesAt(now, specialDay) }
+            .forEach { running.add(it.allowedPackages) }
+        if (running.isEmpty()) return emptySet()
+        return running.reduce { a, b -> a intersect b }
+    }
+
+    /**
      * Whether this config must fail CLOSED when screen-time counting is unavailable (usage
      * access revoked). Budgets depend on the counter: without it they never run out, so
      * revoking the permission would mean unlimited time — the opposite of what the parent
@@ -161,7 +193,14 @@ object RuleEngine {
          * makes moving it self-defeating instead of profitable.
          */
         clockTrusted: Boolean = true,
+        /**
+         * A rescue code has been typed into this phone and has not run out yet (see
+         * `RescueCode`). Everything opens — including the two branches below, which is the whole
+         * case it exists for: a phone failing closed with no network has no other way back.
+         */
+        rescued: Boolean = false,
     ): Set<String> {
+        if (rescued) return emptySet()
         if (!usageCountingAvailable && requiresUsageCounting(config)) return managed.toSet()
         if (!clockTrusted && requiresTrustedClock(config)) return managed.toSet()
         return managed.filterTo(mutableSetOf()) {

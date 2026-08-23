@@ -150,6 +150,12 @@ class ScheduleScenarioTest : DeviceScenario() {
     }
 
     private companion object {
+        /**
+         * Room for the managed set to be re-read, which is what decides whether a window can
+         * touch an app at all: `EnforcementService.INVENTORY_TTL_MILLIS` (60 s) plus a loop tick
+         * and the reconcile. A shorter window here would be a question about which path answered.
+         */
+        const val WINDOW_APPLY_TIMEOUT_MS = 120_000L
         /** Comfortably past the enforcement loop's idle tick (15s), so it has run at least once. */
         const val LOOP_SETTLE_MS = 20_000L
 
@@ -160,5 +166,47 @@ class ScheduleScenarioTest : DeviceScenario() {
          * about the product.
          */
         const val APPLY_TIMEOUT_MS = 60_000L
+    }
+
+    @Test
+    fun `a window can leave named apps open, and closes everything else`() {
+        // The rule every family has and could not write down: "homework from five to seven" is
+        // almost never "nothing at all", it is nothing except the dictionary and whatever they
+        // are listening to. Asked of the OS, because an allow-list that the engine honours and
+        // the suspension does not is an allow-list that permits nothing.
+        // Both apps on the phone BEFORE the window is written, so what is being timed is the
+        // rule arriving and not an app arriving: the managed set is re-read on a package change
+        // or every `EnforcementService.INVENTORY_TTL_MILLIS` (60 s), and an app installed after
+        // the policy can be outside it for that long — which reads exactly like a window that
+        // does not close anything.
+        settleAllowed()
+        // A DIFFERENT fixture from the one settleAllowed installs, which is Fixture.FIRST. The
+        // first draft asked here for the allowed app to close itself, and the control above is
+        // the only reason that was ever noticed.
+        val other = installFixtureApp(Fixture.SECOND)
+        try {
+            val (from, to) = windowAround(-30, 30)
+            parent.pushPolicy(
+                PolicyJson.build(
+                    version = 3,
+                    screenFree = listOf(from to to),
+                    screenFreeAllowing = setOf(app),
+                ),
+            )
+            childEventuallyReports { it.appliedPolicyVersion >= parent.currentVersion() }
+            // The control first: the window really is running, and it really does close things.
+            // Without it, "the allowed app stayed open" passes just as well on a phone where the
+            // window never bit at all.
+            awaitDevice(
+                "the window shutting an app it was not told to spare " +
+                    "(still installed: ${device.isInstalled(other)})",
+                timeoutMs = WINDOW_APPLY_TIMEOUT_MS,
+            ) { device.isSuspended(other) }
+            assertDeviceNever("the window closed the app it was told to leave open") {
+                device.isSuspended(app)
+            }
+        } finally {
+            runCatching { device.ensureRemoved(other) }
+        }
     }
 }

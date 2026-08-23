@@ -4,6 +4,7 @@ import dev.walcott.sync.Bonus
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DiagPayload
 import dev.walcott.sync.FamilyCrypto
+import dev.walcott.sync.RescueCode
 import dev.walcott.sync.IconPayload
 import dev.walcott.sync.IncomingMessage
 import dev.walcott.sync.LocationRequest
@@ -62,6 +63,16 @@ class ParentSim(
 ) {
 
     private var familyKey = FamilyCrypto.generateFamilyKey()
+
+    /**
+     * The rescue code this parent would read out right now (see `RescueCode`).
+     *
+     * The sim holds the family key because it created the family, which is the whole point of
+     * the feature: nothing is sent, so nothing has to arrive — a scenario can compute the code
+     * with the relay in pieces.
+     */
+    fun rescueCode(action: String, nowMs: Long = System.currentTimeMillis()): String =
+        RescueCode.codeFor(familyKey, action, RescueCode.slotOf(nowMs))
 
     /**
      * The key this parent signs with, and the hand-over it presents when that is no longer the key

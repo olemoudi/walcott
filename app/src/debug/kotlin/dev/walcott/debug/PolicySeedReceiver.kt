@@ -248,6 +248,21 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 // nobody has used has no screen time to report, so the reporting path — the one
                 // that silently shipped empty stats to every parent for six releases — could not
                 // otherwise be exercised at all.
+                // `--es rescue_code 123456`: types a rescue code into this phone, through the
+                // very call the dialog makes. The dialog itself is Compose and unreachable from
+                // adb; everything below it — the verification, the grant, the single-use slot —
+                // is what a scenario needs to be able to reach.
+                intent.getStringExtra("rescue_code")?.let { code ->
+                    val result = target.syncManager.redeemRescueCode(code)
+                    DebugLog.i("WalcottSeed", "rescue code: $result")
+                }
+                // `--es rescue_clear now`: ends a running rescue grant the way its own expiry
+                // would, so a scenario can prove a code is spent without waiting out the hour it
+                // bought.
+                intent.getStringExtra("rescue_clear")?.let {
+                    target.syncManager.clearRescueGrant()
+                    DebugLog.i("WalcottSeed", "rescue grant cleared")
+                }
                 intent.getStringExtra("add_usage")?.let { spec ->
                     for (entry in spec.split(",").filter { it.isNotBlank() }) {
                         val pkg = entry.substringBefore('=')

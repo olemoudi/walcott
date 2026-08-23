@@ -36,6 +36,8 @@ fun RuleEngine.appStatus(
      * block, because the child can't tell whether the phone is broken or the rules are.
      */
     failClosed: Boolean = false,
+    /** A rescue code is running (see `RescueCode`): every card reads as open, because it is. */
+    rescued: Boolean = false,
 ): AppStatus {
     val dayType = config.calendar.dayTypeOf(now)
     val time = now.toLocalTime()
@@ -44,13 +46,23 @@ fun RuleEngine.appStatus(
 
     fun blocked(reason: BlockReason) = AppStatus(packageName, AppState.BLOCKED, used, budget, null, reason)
 
+    // Before the fail-closed branch, deliberately: a rescue exists precisely for a phone that
+    // has nothing else left, and a card that still read "Blocked" would be this screen
+    // disagreeing with the phone the child is holding.
+    if (rescued) return AppStatus(packageName, AppState.ALLOWED, used, budget, null, null)
     if (failClosed) return blocked(BlockReason.FAIL_CLOSED)
     if (config.todayException.pausedAt(now)) return blocked(BlockReason.PAUSED)
 
-    config.bedtimeAt(now)?.let { window -> if (time in window) return blocked(BlockReason.BEDTIME) }
+    // Both windows can name what they leave open, and this screen has to agree with the engine
+    // about it or a child looks at "Blocked" on an app they can open (see TimeWindow.allows).
+    config.bedtimeAt(now)?.let { window ->
+        if (time in window && !window.allows(packageName)) return blocked(BlockReason.BEDTIME)
+    }
 
     val specialDay = dayType == DayType.HOLIDAY
-    if (config.blockedWindows[dayType].orEmpty().any { it.appliesAt(now, specialDay) }) {
+    if (config.blockedWindows[dayType].orEmpty()
+            .any { it.appliesAt(now, specialDay) && !it.allows(packageName) }
+    ) {
         return blocked(BlockReason.BLOCKED_WINDOW)
     }
     val own = config.perAppPolicies[packageName]

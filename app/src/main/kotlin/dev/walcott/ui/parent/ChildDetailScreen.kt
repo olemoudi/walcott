@@ -753,6 +753,14 @@ fun ChildDetailScreen(
                             windowsByDay = entry.overrides.allAppsBlockedWindows ?: settings.allAppsBlockedWindows,
                             enabled = entry.overrides.allAppsBlockedWindows != null,
                             position = CardPosition.Last,
+                            // This member's own apps: the picker for "still open during this
+                            // window" should offer what is actually on their phone.
+                            exceptionApps = remember(snapshot) {
+                                snapshot?.apps.orEmpty()
+                                    .map { dev.walcott.ui.components.PickableApp(it.packageName, it.label) }
+                            },
+                            exceptionIcons = { viewModel.childAppIcon(it) },
+                            exceptionInventory = viewModel.repository.inventory,
                             specialDaysOwnRules = settings.specialDaysOwnRules,
                             onOpenSpecialDays = onOpenSpecialDays,
                             onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,

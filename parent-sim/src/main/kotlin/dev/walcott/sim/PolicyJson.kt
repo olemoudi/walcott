@@ -47,6 +47,8 @@ object PolicyJson {
      *   names the same package here AND in [dailyMinutes]
      * @param bedtime start/end minute-of-day of the family's bedtime, on every day type
      * @param screenFree family-wide screen-free windows (start/end minute-of-day), every day type
+     * @param screenFreeAllowing packages those windows leave OPEN
+     *   (`TimeWindow.allowedPackages`); empty closes everything, as a window always did
      * @param children the family's member entries (see [childEntry]) — the only place the
      *   per-member fields live, today's pause among them
      * @param extra further raw keys, for exercising fields this helper doesn't model
@@ -65,6 +67,7 @@ object PolicyJson {
         screenBudgetMinutes: Int? = null,
         bedtime: Pair<Int, Int>? = null,
         screenFree: List<Pair<Int, Int>> = emptyList(),
+        screenFreeAllowing: Set<String> = emptySet(),
         children: List<JsonObject> = emptyList(),
         newAppAlerts: Boolean = true,
         // Any JSON value, not only objects: the fields worth reaching for by hand are as often a
@@ -117,7 +120,9 @@ object PolicyJson {
                 put("bedtime", JsonObject(dayTypes.associateWith { window(start, end) }))
             }
             if (screenFree.isNotEmpty()) {
-                val windows = JsonArray(screenFree.map { (start, end) -> window(start, end) })
+                val windows = JsonArray(
+                    screenFree.map { (start, end) -> window(start, end, screenFreeAllowing) },
+                )
                 put("allAppsBlockedWindows", JsonObject(dayTypes.associateWith { windows }))
             }
             if (children.isNotEmpty()) put("children", JsonArray(children))
@@ -174,8 +179,15 @@ object PolicyJson {
      * `days` — the default — is every day, and a window whose end is before its start crosses
      * midnight, which is what a bedtime normally does.
      */
-    private fun window(startMinute: Int, endMinute: Int): JsonObject = buildJsonObject {
+    private fun window(
+        startMinute: Int,
+        endMinute: Int,
+        allowedPackages: Set<String> = emptySet(),
+    ): JsonObject = buildJsonObject {
         put("startMinute", startMinute)
         put("endMinute", endMinute)
+        if (allowedPackages.isNotEmpty()) {
+            put("allowedPackages", JsonArray(allowedPackages.map { JsonPrimitive(it) }))
+        }
     }
 }

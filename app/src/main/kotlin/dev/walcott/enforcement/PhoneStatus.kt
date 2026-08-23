@@ -49,6 +49,9 @@ sealed interface PhoneStatus {
     /** The phone's time for today is spent; nothing non-essential opens until tomorrow. */
     data object ScreenSpent : PhoneStatus
 
+    /** A rescue code is holding this phone open until [until] (see `RescueCode`). */
+    data class Rescued(val until: LocalTime) : PhoneStatus
+
     /** The rules can't be trusted (no usage counter, or a clock this phone can't rely on). */
     data object FailClosed : PhoneStatus
 
@@ -74,7 +77,12 @@ object StatusLine {
         usageToday: Map<String, Duration> = emptyMap(),
         extraTime: Map<String, Duration> = emptyMap(),
         failClosed: Boolean = false,
+        /** A rescue code is running, and when it ends (see `RescueCode`); null = none. */
+        rescuedUntil: LocalTime? = null,
     ): PhoneStatus {
+        // Above the fail-closed line, because a phone with nothing else left is what a rescue is
+        // for: the child is owed the hour they were given and the moment it ends.
+        if (rescuedUntil != null) return PhoneStatus.Rescued(rescuedUntil)
         if (failClosed) return PhoneStatus.FailClosed
         when (RuleEngine.deviceWideBlock(config, now)) {
             BlockReason.PAUSED ->

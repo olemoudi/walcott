@@ -2820,6 +2820,108 @@ class SyncManager(
     }
 
     /** PIN check with escalating brute-force lockout (device-local state). */
+    /**
+     * The two deadlines of a rescue code typed into this phone (wall, monotonic); both 0 when
+     * none is running (see [RescueCode]).
+     *
+     * The DEADLINES rather than a boolean, because a boolean derived here would be computed once
+     * when the state changed and then never again — it would go on saying "open" for as long as
+     * nothing else happened. Whoever asks brings their own clock.
+     */
+    val rescueDeadlines: StateFlow<Pair<Long, Long>> =
+        syncStore.state.map { it.rescueUntilWallMs to it.rescueUntilElapsedMs }
+            .stateIn(scope, SharingStarted.Eagerly, 0L to 0L)
+
+    /** Whether a rescue code is holding this phone open at this instant. */
+    fun rescueOpenNow(): Boolean {
+        val (wall, elapsed) = rescueDeadlines.value
+        return RescueCode.isRunning(
+            wall, elapsed, System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(),
+        )
+    }
+
+    /**
+     * Types a rescue code into this phone.
+     *
+     * The clock is CORRECTED by the skew this device already measured against the server (see
+     * [ClockGuard]) before working out which slot it is in, and that is not a nicety: one of the
+     * two things that makes a phone fail closed IS a clock the server disagrees with, so the
+     * rescue would otherwise be broken in half the cases it exists for. A device that has never
+     * measured a skew corrects by zero, which is what it did before.
+     */
+    suspend fun redeemRescueCode(entered: String): PinResult {
+        val s = syncStore.current()
+        val nowWall = System.currentTimeMillis()
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        val remaining = PinLockout.remainingMs(s.rescueLockedUntilMs, nowWall)
+        if (remaining > 0) return PinResult.Locked(remaining)
+
+        val keyB64 = identity.value.familyKeyB64
+        // A phone that belongs to no family has no key to check a code against — a different
+        // answer from a wrong code, and one the screen can explain instead of counting it as a
+        // guess (see PinResult.NotSet).
+        if (keyB64.isBlank()) return PinResult.NotSet
+        val key = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(keyB64))
+        val accepted = RescueCode.verify(key, entered, nowWall - s.clockSkewMs, s.rescueLastSlot)
+        if (accepted == null) {
+            val attempts = s.rescueFails + 1
+            val lockMs = PinLockout.lockoutMs(attempts)
+            syncStore.update {
+                it.copy(
+                    rescueFails = attempts,
+                    rescueLockedUntilMs = if (lockMs > 0) nowWall + lockMs else it.rescueLockedUntilMs,
+                )
+            }
+            return PinResult.Wrong
+        }
+
+        val minutes = RescueCode.grantMinutes(accepted.action)
+        // An action this build has never heard of buys nothing rather than a default hour: a
+        // newer parent must not be able to talk an older child into opening for longer than it
+        // understands (see RescueCode.grantMinutes).
+        if (minutes <= 0) return PinResult.Wrong
+        val untilWall = nowWall + minutes * 60_000L
+        syncStore.update {
+            it.copy(
+                // The slot is burnt whatever the action was, so a code cannot be typed twice.
+                rescueLastSlot = accepted.slot,
+                rescueFails = 0,
+                rescueLockedUntilMs = 0,
+                rescueUsedAtMs = nowWall,
+                rescueUntilWallMs = if (RescueCode.opensRules(accepted.action)) untilWall else it.rescueUntilWallMs,
+                rescueUntilElapsedMs = if (RescueCode.opensRules(accepted.action)) {
+                    nowElapsed + minutes * 60_000L
+                } else {
+                    it.rescueUntilElapsedMs
+                },
+                ruleEvents = ChildEventLog.plus(
+                    it.ruleEvents,
+                    listOf(ChildEvent(UUID.randomUUID().toString(), nowWall, ChildEvent.KIND_RESCUE)),
+                    nowWall,
+                ),
+                childVersion = it.childVersion + 1,
+            )
+        }
+        if (!RescueCode.opensRules(accepted.action)) {
+            allowInstallsFor(minutes * 60_000L)
+        }
+        dev.walcott.debug.DebugLog.w(TAG, "rescue code accepted: ${accepted.action} for $minutes min")
+        // Best effort, and expected to fail: the whole point of this door is a phone with no
+        // channel. It lands whenever one comes back, which is when the parent can read it.
+        runCatching { publishSelf() }
+        return PinResult.Ok
+    }
+
+    /**
+     * Ends a running rescue grant now, as its own deadline would.
+     *
+     * The slot it was bought with stays spent: that is the point of it, and a way to un-spend a
+     * code would be a way to use one twice.
+     */
+    suspend fun clearRescueGrant() {
+        syncStore.update { it.copy(rescueUntilWallMs = 0, rescueUntilElapsedMs = 0) }
+    }
+
     suspend fun verifyPinGuarded(pin: String): PinResult {
         val s = syncStore.current()
         val now = System.currentTimeMillis()
@@ -3188,6 +3290,7 @@ class SyncManager(
                     setupUnmet = setupUnmet,
                     lostMode = s.lostMode,
                     ringingSeconds = dev.walcott.enforcement.Ringer.secondsLeft(System.currentTimeMillis()),
+                    rescueUntilMs = if (rescueOpenNow()) s.rescueUntilWallMs else 0L,
                     lastGasp = s.lastGasp,
                     blocks = blockReport(today),
                 )

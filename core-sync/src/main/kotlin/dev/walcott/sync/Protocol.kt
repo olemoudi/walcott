@@ -375,6 +375,16 @@ data class ChildEvent(
          * parent gets is the name, which is what a limit would have to be set against.
          */
         const val KIND_CURFEW_CUT = "curfew_cut"
+
+        /**
+         * A rescue code was typed into this phone and opened it (see [RescueCode]).
+         *
+         * On the wall because it has to be: the parent read the code out over a phone line to a
+         * device with no network, so this is the only record that anything happened — and a
+         * rescue that opened a phone for three hours is exactly the kind of thing a parent
+         * should be able to find again a week later.
+         */
+        const val KIND_RESCUE = "rescue"
     }
 }
 
@@ -1129,6 +1139,15 @@ data class ChildSnapshot(
      * report it never appears to be ringing, so the button it could not obey is never offered.
      */
     val ringingSeconds: Int = 0,
+    /**
+     * When a rescue code opened this phone until, on the phone's own clock; 0 = none running.
+     *
+     * Reported so the parent's screens can say the phone is open and until when — a code they
+     * read out over a bad line, into a phone with no network, otherwise leaves them with no way
+     * of knowing it was even typed. It arrives late by definition: the phone had no channel when
+     * it mattered, so this lands whenever one comes back.
+     */
+    val rescueUntilMs: Long = 0,
     /** The phone's last word before going quiet, while it still applies (see [LastGasp]). */
     val lastGasp: LastGasp? = null,
 )

@@ -120,6 +120,9 @@ fun AppSettingsScreen(
                 // Parent-only, and for the same reason PinGateScreen refuses to create a PIN on
                 // a child device: the PIN is what releases a child's phone.
                 ParentPinCard(viewModel)
+                // Beside the PIN, because it is the answer to the question the PIN was being
+                // misused for: opening a phone that cannot be reached.
+                RescueCodeCard(viewModel)
                 FamilyBackupCard(viewModel)
                 // Where the family's phones meet. Only worth a parent's attention when it stops
                 // working — which, until now, was invisible.

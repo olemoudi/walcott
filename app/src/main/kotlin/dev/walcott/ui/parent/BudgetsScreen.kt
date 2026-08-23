@@ -52,6 +52,12 @@ fun BudgetsScreen(
 ) {
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    // The children's apps, for the "still open during this window" picker. They belong to the
+    // children, so their icons come from the sync cache or the row is a monogram.
+    val appRows by viewModel.appRows.collectAsStateWithLifecycle()
+    val exceptionApps = remember(appRows) {
+        appRows.map { dev.walcott.ui.components.PickableApp(it.app.packageName, it.app.label) }
+    }
 
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_limits_title), onBack)
@@ -85,6 +91,12 @@ fun BudgetsScreen(
                 BlockedWindowsCard(
                     title = stringResource(R.string.all_apps_windows_title),
                     hint = stringResource(R.string.all_apps_windows_hint),
+                    // Only here and on a member's own copy of this rule: an allow-list belongs to
+                    // a window that closes EVERYTHING, and "everything except this app" is not a
+                    // sentence about the app whose own window you are editing.
+                    exceptionApps = exceptionApps,
+                    exceptionIcons = { viewModel.childAppIcon(it) },
+                    exceptionInventory = viewModel.repository.inventory,
                     windowsByDay = settings.allAppsBlockedWindows,
                     specialDaysOwnRules = settings.specialDaysOwnRules,
                     onOpenSpecialDays = onOpenSpecialDays,

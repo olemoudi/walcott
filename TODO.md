@@ -278,6 +278,41 @@ goes red again, check `adb shell dumpsys power | grep mWakefulness` before suspe
 
 ## Emulator notes that cost time
 
+One from the 0.100.0 work, and it is not the emulator at all — it is the fixtures:
+
+- **`ScheduleScenarioTest.settleAllowed()` installs `Fixture.FIRST`.** A scenario that adds "a
+  second app" and reaches for `Fixture.FIRST` gets the SAME package, and then asks it to do two
+  contradictory things at once. It cost two device runs here: the allow-list scenario permitted
+  an app and then waited for that same app to close itself. Use `Fixture.SECOND` for the second
+  app, and note that the control assertion beside the silence is what made it visible at all.
+
+### Still open: `TimeWarningScenarioTest` and the three causes that are NOT it
+
+Left unfixed at 0.100.0 deliberately, and written down so it is not diagnosed a fourth time. The
+class fails intermittently and **which of its scenarios fails changes every sweep**: full sweep
+one was 131/131; full sweep two failed `bedtime is announced once`; three isolated runs straight
+after failed `an app close to its limit`, the one both sweeps had passed. The same APK was
+installed throughout, so nothing in 0.100.0 causes it.
+
+The assertion that fails is always `assertShown`'s `mIsInterruptive` — the PLATFORM's record that
+it put the banner on screen. In every failure the product had posted the right warning with the
+right title; only Android's verdict on whether it peeked differed. All three explanations this
+repo has previously reached for were measured on the AVD that day and are **ruled out**:
+
+- heads-up snooze — `heads_up_snooze_length_ms` is `0` and SystemUI's dump agrees
+  (`mSnoozeLengthMs=0`, `snoozed packages: 0`). The `ChildDevice.keepAwake` fix works.
+- a demoted channel — `walcott_time_warning` is `mImportance=4`, `mDemoted=false`, and other
+  records on that channel in the same dump are `mIsInterruptive=true`.
+- a sleeping screen — 90 seconds untouched and `mWakefulness=Awake` throughout. The comment in
+  `keepAwake` about dozing within a minute despite a 24-hour timeout no longer describes this AVD.
+
+The lead worth trying next, unconfirmed: `bedtime is announced once` separates its two rungs by
+`RUNG_GAP_MS` (60 s) and `an app close to its limit` separates its two by **nothing at all** — so
+its second rung lands on a heads-up that may still be on screen, and Android does not peek what is
+already peeking. The rungs a child actually meets are 30, 5 and 1 minutes apart, so the
+compression belongs to the scenario and not to the product. Do NOT loosen `assertShown` to make
+this green: a generous assertion passes just as happily on a phone that never warned anybody.
+
 One from the 0.99.0 work, and it is about the AVD's own memory rather than the platform:
 
 - **Extra time granted by an earlier scenario is still there.** Bonus minutes live in Room until

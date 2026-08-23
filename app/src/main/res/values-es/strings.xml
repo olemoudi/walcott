@@ -1781,6 +1781,33 @@
     <string name="status_paused">En pausa hasta las %1$s</string>
     <string name="status_bedtime">Hora de dormir hasta las %1$s</string>
     <string name="status_screen_free">Sin pantalla hasta las %1$s</string>
+    <string name="rescue_child_title">Meter un código</string>
+    <string name="rescue_child_desc">Si en casa te han dado un código de seis cifras, tecléalo aquí. Abre este móvil un rato, y no hace falta internet.</string>
+    <string name="rescue_child_label">Seis cifras</string>
+    <string name="rescue_child_use">Usarlo</string>
+    <string name="rescue_child_wrong">Ese código no vale. Pide otro: cada código sirve una sola vez.</string>
+    <string name="rescue_child_no_family">Este móvil no pertenece a ninguna familia, así que no hay nada que abrir.</string>
+    <string name="rescue_locked">Demasiados intentos. Espera %1$d min.</string>
+    <string name="rescue_opened">Tu móvil está abierto un rato</string>
+    <string name="rescue_have_code">Tengo un código</string>
+    <string name="rescue_running">Abierto con un código · queda %1$s</string>
+    <string name="event_rescue">%1$s usó un código de rescate</string>
+    <string name="hero_still_open">Sigue abierto: %1$s</string>
+    <string name="window_still_open">sigue abierto: %1$s</string>
+    <string name="window_allowed_label">Abiertas durante este horario</string>
+    <string name="window_allowed_add">Añadir una app</string>
+    <string name="window_allowed_none">Nada: este horario cierra todas las apps.</string>
+    <string name="window_allowed_remove">Quitar %1$s</string>
+    <string name="rescue_title">Código de rescate</string>
+    <string name="rescue_desc">Abre un móvil al que no llegas: sin datos, sin wifi, sin que llegue nada. Se lo dictas y lo teclea en su Walcott. Tu PIN sigue siendo tuyo.</string>
+    <string name="rescue_show">Ver un código</string>
+    <string name="rescue_action_1h">Abrir 1 h</string>
+    <string name="rescue_action_3h">Abrir 3 h</string>
+    <string name="rescue_action_install">Dejar instalar (30 min)</string>
+    <string name="rescue_changes_in">Código nuevo en %1$d min</string>
+    <string name="rescue_once">Vale una vez. Si alguien lo oye o lo recuerda, no le sirve una segunda.</string>
+    <string name="rescue_no_family">Este móvil todavía no pertenece a una familia, así que no hay código que dar.</string>
+    <string name="status_rescued">Abierto con un código hasta las %1$s</string>
     <string name="status_screen_left">Quedan %1$s de móvil hoy</string>
     <string name="status_screen_spent">El tiempo de pantalla de hoy se ha acabado</string>
     <string name="status_app_left">%1$s · quedan %2$s</string>
@@ -1801,6 +1828,11 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_100_0">
+        <item>Ya hay forma de abrir el móvil de un hijo cuando no llega nada: sin datos, sin wifi, un móvil en el extranjero, o uno que se ha cerrado solo porque su reloj o sus permisos fallaron. En Ajustes, al lado de tu PIN, «Código de rescate» enseña seis cifras. Se las dictas, las teclea en su Walcott sin ningún PIN, y el móvil se abre una hora, o tres, o lo justo para instalar algo. No se manda nada, así que no hace falta que llegue nada.</item>
+        <item>Ese código no es tu PIN, y ahí está la gracia. Tu PIN libera el móvil de un hijo para siempre, así que teclearlo delante de él para comprar una hora era gastar lo que no tocaba — y un PIN recién cambiado ni siquiera valía hasta que llegaran las reglas nuevas, que es justo lo que un móvil sin cobertura no tiene. Un código de rescate vale una vez, cambia cada media hora, y a quien lo oiga por encima del hombro no le sirve de nada una segunda vez.</item>
+        <item>Los horarios sin pantalla pueden dejar algunas apps abiertas. «Deberes, de cinco a siete» casi nunca era «nada de nada»: era nada excepto el diccionario, la calculadora y lo que estén escuchando — y sin poder decirlo, la elección era un horario que se llevaba por delante las herramientas de estudiar, o ningún horario. Añade las apps que siguen abiertas debajo de las horas del propio horario. Su móvil dice cuáles son, en el inicio y en sus reglas, para que un hijo dentro del rato de deberes vea qué tiene permitido.</item>
     </string-array>
     <string-array name="whats_new_0_99_0">
         <item>Un móvil puede tener por fin un límite propio: <b>tiempo de pantalla total al día</b>, en Límites. Hasta ahora cada app tenía su reloj, así que diez apps con una hora cada una eran un día de diez horas — y quien puso esas diez horas creía haber puesto una. Pon un total y cada minuto gasta el mismo, sea en lo que sea, incluidas las apps a las que nunca les pusiste límite. Las llamadas y los contactos siguen funcionando, y también lo que hayas marcado como «no limitar nunca»: esa es tu salida y un techo no puede cerrarla. Cada miembro puede tener un día más corto que el de la familia.</item>

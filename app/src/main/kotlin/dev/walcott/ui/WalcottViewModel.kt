@@ -101,6 +101,23 @@ data class ChildUiState(
      * dark. The same computation, on the phone it is about.
      */
     val ruleContext: dev.walcott.rules.RuleContext? = null,
+    /**
+     * The apps a window running right now leaves OPEN, by name (see
+     * [dev.walcott.rules.TimeWindow.allowedPackages]).
+     *
+     * Carried to the screen because without it the phone says "everything is closed" over a
+     * homework window with three apps in it — which is the screen disagreeing with the phone,
+     * and worse, hiding the very thing the window was set up to permit.
+     */
+    val openDuringWindow: List<String> = emptyList(),
+    /**
+     * A rescue code is holding this phone open (see [dev.walcott.sync.RescueCode]).
+     *
+     * Carried because every rule below it has already been overruled on the device, and a screen
+     * that still drew the bedtime it was rescued FROM would be telling a child their phone is
+     * shut while they are using it.
+     */
+    val rescued: Boolean = false,
 )
 
 /** One app in the parent's list, with whatever was set for it (null = the family default). */
@@ -1183,10 +1200,22 @@ class WalcottViewModel(
         repository.usageTodayAllFlow,
         repository.effectiveExtraTodayFlow,
         sync.earnedTodayMinutes,
-        combine(clock, clockTampered) { now, tampered -> Pair(now, tampered) },
-    ) { config, usage, effectiveExtra, earnedMinutes, clockPair ->
-        val now = clockPair.first
-        val clockTampered = clockPair.second
+        // The rescue deadlines ride along with the clock, because combine takes five sources and
+        // this is the fifth: a grant starting or ending has to redraw these cards then, not
+        // whenever the next tick happens to come round.
+        combine(clock, clockTampered, sync.rescueDeadlines) { now, tampered, rescue ->
+            Triple(now, tampered, rescue)
+        },
+    ) { config, usage, effectiveExtra, earnedMinutes, tick ->
+        val now = tick.first
+        val clockTampered = tick.second
+        // A rescue code holding this phone open outranks every rule below it: the enforcement
+        // loop has already opened everything, so a card still reading "Blocked" would be this
+        // screen disagreeing with the phone in the child's hand (see RescueCode).
+        val rescued = dev.walcott.sync.RescueCode.isRunning(
+            tick.third.first, tick.third.second,
+            System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(),
+        )
         val dayType = config.calendar.dayTypeOf(now)
         // Tonight's, not the rule's: a bedtime the parent moved or lifted for tonight has to
         // read as moved here too, or the child is looking at an hour that is not going to happen.
@@ -1203,7 +1232,7 @@ class WalcottViewModel(
         }
         val appCards = childCardPackages(config, usage.keys, dayType, managed) { repository.inventory.label(it) }
             .map { (pkg, label) ->
-                val status = RuleEngine.appStatus(config, pkg, now, usage, effectiveExtra, failClosed)
+                val status = RuleEngine.appStatus(config, pkg, now, usage, effectiveExtra, failClosed, rescued)
                 AppStatusUi(
                     packageName = pkg,
                     label = label,
@@ -1233,6 +1262,10 @@ class WalcottViewModel(
                 dayType, dev.walcott.rules.ScreenTime.of(usage), effectiveExtra,
             ),
             ruleContext = RuleEngine.ruleContext(config, now),
+            openDuringWindow = RuleEngine.windowExemptions(config, now)
+                .mapNotNull { repository.inventory.label(it) }
+                .sorted(),
+            rescued = rescued,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 
@@ -1469,6 +1502,28 @@ class WalcottViewModel(
 
     /** The PIN in the clear on this parent phone, "" if it has never been held here. */
     val readablePin: StateFlow<String> get() = sync.readablePin
+
+    /**
+     * The rescue code for [action] right now, and the moment it stops being the current one
+     * (see [dev.walcott.sync.RescueCode]). Null on a phone with no family key.
+     *
+     * Computed on demand rather than held in a flow: it changes on a half-hour boundary that
+     * nothing else on this phone cares about, and the screen showing it is already ticking to
+     * count it down.
+     */
+    fun rescueCodeNow(action: String, nowMs: Long): Pair<String, Long>? {
+        val keyB64 = sync.identity.value.familyKeyB64.takeIf { it.isNotBlank() } ?: return null
+        val key = dev.walcott.sync.FamilyCrypto.familyKeyFromBytes(dev.walcott.sync.FamilyCrypto.fromB64(keyB64))
+        val slot = dev.walcott.sync.RescueCode.slotOf(nowMs)
+        return dev.walcott.sync.RescueCode.codeFor(key, action, slot) to
+            dev.walcott.sync.RescueCode.slotEndsAtMs(slot)
+    }
+
+    /** The child types a rescue code (see [dev.walcott.sync.RescueCode]); no PIN, by design. */
+    suspend fun redeemRescueCode(code: String): dev.walcott.data.PinResult = sync.redeemRescueCode(code)
+
+    /** The two deadlines of a rescue holding this phone open; both 0 when none is. */
+    val rescueDeadlines: StateFlow<Pair<Long, Long>> get() = sync.rescueDeadlines
 
     class Factory(
         private val repository: WalcottRepository,
