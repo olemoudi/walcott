@@ -437,6 +437,22 @@ data class SyncState(
      * rule nobody exercises.
      */
     val panicIntervalSec: Long = PanicProtocol.CHECKPOINT_INTERVAL_SEC,
+    /**
+     * A notice has been counted but the relay has not taken it yet (see [PanicProtocol]).
+     *
+     * The count goes up before the message leaves, because the notice IS that message and the
+     * number on it is what the parent is being told. That left two things wrong for as long as
+     * the retry ladder ran — about four and a half minutes on a real hour. The child's screen
+     * said the notice had been DELIVERED and that the next one was an hour away, at the one
+     * moment when the truth is that nothing is going out and the request is minutes from dying;
+     * and a process killed anywhere in that window left the claim on disk with nothing to say it
+     * had never been acknowledged, so the countdown carried on having banked a notice the parent
+     * never received.
+     *
+     * This is what makes the claim provisional: the screens subtract it until it lands, and a
+     * step that finds it still set knows the ladder it belongs to never finished.
+     */
+    val panicNoticeUnconfirmed: Boolean = false,
     // Parent side
     val parentVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),

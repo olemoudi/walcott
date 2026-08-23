@@ -1454,6 +1454,7 @@
     <string name="panic_pin_hint">If your parents remember their PIN, they can release this device instantly from the settings.</string>
     <string name="panic_active_title">Emergency release in progress</string>
     <string name="panic_active_notices">%1$d of %2$d notices delivered</string>
+    <string name="panic_active_sending">Sending notice %1$d of %2$d… if it will not go out after 3 more tries, the request ends.</string>
     <string name="panic_active_next">Next notice in %1$s</string>
     <string name="panic_active_releasing">Releasing in %1$s — your parents can still refuse</string>
     <plurals name="panic_active_left">
@@ -1836,6 +1837,10 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_101_0">
+        <item>The emergency release now only counts a notice your family\'s relay really took. A hotel or airport wi-fi that answers everything with a sign-in page — or any proxy that says "OK" and quietly swallows the message — used to pass for the relay: the notice was counted, a delivery time was invented for it, and the check that stops the countdown being rushed was skipped along with it. A notice you were never sent can no longer count towards releasing a phone.</item>
+        <item>And while a notice is still trying to go out, the phone says so. It used to say the notice had been DELIVERED and that the next one was an hour away — for the four and a half minutes it was actually still retrying, which is the one moment when nothing is leaving the phone and the request is minutes from ending. If the phone is switched off or restarted in the middle of that, the notice is not counted either. The deal is twelve hours of a phone that can be reached, and only a notice your relay confirms counts towards it.</item>
     </string-array>
     <string-array name="whats_new_0_100_0">
         <item>There is now a way to open a child\'s phone when nothing can reach it — no data, no Wi-Fi, a phone abroad, or one that has locked itself down because its clock or its permissions went wrong. In Settings, beside your PIN, "Rescue code" shows six digits. You read them out; they type them into their own Walcott, with no PIN, and the phone opens for an hour, or three, or long enough to install something. Nothing is sent, so nothing has to arrive.</item>

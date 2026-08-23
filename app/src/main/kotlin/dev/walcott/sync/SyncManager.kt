@@ -900,7 +900,22 @@ class SyncManager(
         val parentSupported: Boolean = false,
         /** How long one "hour" of this request lasts here (see [SyncState.panicIntervalSec]). */
         val intervalSec: Long = PanicProtocol.CHECKPOINT_INTERVAL_SEC,
+        /**
+         * The newest notice is claimed but not yet acknowledged by the relay (see
+         * [SyncState.panicNoticeUnconfirmed]). While this is true nothing is going out, and the
+         * screens must not say otherwise.
+         */
+        val noticeUnconfirmed: Boolean = false,
     ) {
+
+        /**
+         * Notices the relay has actually taken.
+         *
+         * The claimed one is subtracted until it lands, because "delivered" is the only word this
+         * screen is allowed to use for it and it is not true yet.
+         */
+        val deliveredNotices: Int
+            get() = ((request?.checkpoints ?: 0) - if (noticeUnconfirmed) 1 else 0).coerceAtLeast(0)
         fun channelProven(nowMs: Long): Boolean = PanicProtocol.channelProven(nowMs - lastChannelOkMs)
 
         /** Whether the child may start a request right now (the rule itself is in [PanicProtocol]). */
@@ -924,6 +939,7 @@ class SyncManager(
             lastChannelOkMs = s.lastChannelOkMs,
             parentSupported = s.parentAppVersionCode >= PANIC_MIN_PARENT_VERSION,
             intervalSec = s.panicIntervalSec,
+            noticeUnconfirmed = s.panicNoticeUnconfirmed,
         )
     }.stateIn(scope, SharingStarted.Eagerly, PanicStatus())
 
@@ -972,7 +988,9 @@ class SyncManager(
                 lastCheckpointSec = s.ntfySinceSec,
                 lastNoticeAtMs = System.currentTimeMillis(),
             )
-            syncStore.update { it.copy(panic = request, childVersion = it.childVersion + 1) }
+            syncStore.update {
+                it.copy(panic = request, panicNoticeUnconfirmed = false, childVersion = it.childVersion + 1)
+            }
             request
         }
         val receipt = publishSelfForReceipt()
@@ -985,11 +1003,7 @@ class SyncManager(
                 dev.walcott.debug.DebugLog.w(TAG, "emergency release not started: the request would not send")
                 return@withLock false
             }
-            val anchored = if (receipt > 0) {
-                live.copy(startedAtSec = receipt, lastCheckpointSec = receipt)
-            } else {
-                live
-            }
+            val anchored = live.copy(startedAtSec = receipt, lastCheckpointSec = receipt)
             syncStore.update { it.copy(panic = anchored, childVersion = it.childVersion + 1) }
             dev.walcott.debug.DebugLog.w(TAG, "emergency release requested by the child")
             PanicAlarm.sync(context)
@@ -1000,7 +1014,9 @@ class SyncManager(
     /** The child withdraws their own request (starting again restarts the twelve hours). */
     suspend fun cancelPanic() = panicMutex.withLock {
         if (syncStore.current().panic == null) return@withLock
-        syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
+        syncStore.update {
+            it.copy(panic = null, panicNoticeUnconfirmed = false, childVersion = it.childVersion + 1)
+        }
         PanicAlarm.cancel(context)
         dev.walcott.debug.DebugLog.w(TAG, "emergency release withdrawn by the child")
         publishSelf()
@@ -1026,6 +1042,7 @@ class SyncManager(
         syncStore.update {
             it.copy(
                 panic = null,
+                panicNoticeUnconfirmed = false,
                 panicBlockedUntilSec = PanicProtocol.cooldownUntilSec(deniedAt),
                 childVersion = it.childVersion + 1,
             )
@@ -1052,6 +1069,17 @@ class SyncManager(
             PanicAlarm.cancel(context)
             return
         }
+        // A claim still marked unconfirmed when the NEXT step comes round is one whose retry
+        // ladder never ran to an answer — this process was killed somewhere inside it, or the
+        // phone rebooted. The relay never acknowledged that notice, and an unacknowledged notice
+        // is the one thing this feature refuses to count: the deal is twelve hours of a phone
+        // that can be REACHED, so the request dies here rather than carrying a notice the parent
+        // never received. No alarm can land inside a live ladder to trip this by mistake — the
+        // next one is only armed once a notice lands, an hour of the relay's clock later.
+        if (syncStore.current().panicNoticeUnconfirmed) {
+            abandonUnconfirmedNotice(request)
+            return
+        }
         if (PanicProtocol.earned(request)) {
             // Twelve notices are out; all that remains is the parent's last three minutes.
             if (PanicProtocol.releaseDue(request, System.currentTimeMillis(), intervalSec)) {
@@ -1065,6 +1093,30 @@ class SyncManager(
     }
 
     /**
+     * Ends a request whose last notice was claimed and never acknowledged.
+     *
+     * The same ending an undelivered notice gets, and told the same way: the child is owed the
+     * reason, and the number they are told is the one that was actually PROVEN — the claimed
+     * notice is subtracted, because it is the one that did not happen.
+     */
+    private suspend fun abandonUnconfirmedNotice(request: PanicRequest) = panicMutex.withLock {
+        val live = syncStore.current().panic
+        if (live == null || live.id != request.id) return@withLock
+        val proven = (live.checkpoints - 1).coerceAtLeast(0)
+        syncStore.update {
+            it.copy(panic = null, panicNoticeUnconfirmed = false, childVersion = it.childVersion + 1)
+        }
+        PanicAlarm.cancel(context)
+        dev.walcott.debug.DebugLog.w(
+            TAG,
+            "emergency release cancelled at $proven/${PanicProtocol.REQUIRED_CHECKPOINTS}: " +
+                "a notice was never acknowledged and this phone stopped before it could be retried",
+        )
+        PanicNotifications.notifyUndelivered(context, proven)
+        runCatching { publishSelf() }
+    }
+
+    /**
      * Gets one hourly notice out and acts on what happens.
      *
      * The count goes up BEFORE the message leaves, because the notice IS that message and the
@@ -1072,12 +1124,16 @@ class SyncManager(
      * request is cancelled outright — so the only rollback that ever happens is the one for a
      * notice the relay stamps too early, which is the clock-tamper case and puts itself right.
      *
-     * The one crack in "the counter only moves for a delivered notice" is a process death in the
-     * few hundred milliseconds between the two: the count is on disk and the message is not, so
-     * one of the twelve is banked without the parent hearing it. It cannot shorten the twelve
-     * hours — the next notice is still an hour of the relay's clock away — and closing it would
-     * mean either publishing a number this device has not claimed, or telling the parent a
-     * smaller one than it is acting on. Both are worse than one alert lost to a killed process.
+     * The claim is marked provisional while it is in the air ([SyncState.panicNoticeUnconfirmed])
+     * and that is not bookkeeping — it is what stops the count being a lie in the two ways it
+     * used to be. The window is not "a few hundred milliseconds": the retry ladder below runs
+     * for about four and a half minutes on a real hour, and for all of it the phone used to tell
+     * the child that the notice had been DELIVERED and that the next one was an hour away, at
+     * the one moment when nothing is going out and the request is minutes from dying. And a
+     * process killed anywhere in that window left the claim on disk with nothing to say it had
+     * never been acknowledged, so the countdown carried on having banked a notice the parent
+     * never received. The screens now subtract a provisional claim, and the next step refuses to
+     * inherit one (see [runPanicStep]).
      */
     private suspend fun sendNotice(request: PanicRequest, intervalSec: Long) {
         val sentAtMs = System.currentTimeMillis()
@@ -1085,7 +1141,11 @@ class SyncManager(
             val live = syncStore.current().panic
             if (live == null || live.id != request.id) return
             val claimed = live.copy(checkpoints = live.checkpoints + 1, lastNoticeAtMs = sentAtMs)
-            syncStore.update { it.copy(panic = claimed, childVersion = it.childVersion + 1) }
+            // Provisional until the relay takes it: the screens subtract it, and a step that
+            // finds this still set knows the ladder below never finished (see runPanicStep).
+            syncStore.update {
+                it.copy(panic = claimed, panicNoticeUnconfirmed = true, childVersion = it.childVersion + 1)
+            }
         }
         val receipt = publishNoticeWithRetries(request.id, intervalSec)
         panicMutex.withLock {
@@ -1094,7 +1154,9 @@ class SyncManager(
             // nothing left to roll back or advance.
             if (live == null || live.id != request.id) return@withLock
             if (receipt == null) {
-                syncStore.update { it.copy(panic = null, childVersion = it.childVersion + 1) }
+                syncStore.update {
+                    it.copy(panic = null, panicNoticeUnconfirmed = false, childVersion = it.childVersion + 1)
+                }
                 PanicAlarm.cancel(context)
                 dev.walcott.debug.DebugLog.w(
                     TAG,
@@ -1104,10 +1166,12 @@ class SyncManager(
                 PanicNotifications.notifyUndelivered(context, request.checkpoints)
                 return@withLock
             }
-            if (receipt > 0 && !PanicProtocol.banks(request, receipt, intervalSec)) {
+            if (!PanicProtocol.banks(request, receipt, intervalSec)) {
                 // Early by the relay's clock — the phone's own is wrong, or somebody moved it.
                 // Put the count back and wait out the rest of the hour the SERVER is counting.
-                syncStore.update { it.copy(panic = request, childVersion = it.childVersion + 1) }
+                syncStore.update {
+                    it.copy(panic = request, panicNoticeUnconfirmed = false, childVersion = it.childVersion + 1)
+                }
                 dev.walcott.debug.DebugLog.w(TAG, "emergency release notice was early by the relay's clock")
                 PanicAlarm.schedule(context, PanicProtocol.sendAgainInMs(request, receipt, intervalSec))
                 // Put the corrected number in front of the parent rather than leaving them the
@@ -1115,8 +1179,12 @@ class SyncManager(
                 publishSelf()
                 return@withLock
             }
-            val banked = live.copy(lastCheckpointSec = if (receipt > 0) receipt else live.lastCheckpointSec + intervalSec)
-            syncStore.update { it.copy(panic = banked, childVersion = it.childVersion + 1) }
+            // The relay's own second, never a computed one: a notice this device dated itself
+            // would be a notice whose spacing nothing can check (see PanicProtocol.banks).
+            val banked = live.copy(lastCheckpointSec = receipt)
+            syncStore.update {
+                it.copy(panic = banked, panicNoticeUnconfirmed = false, childVersion = it.childVersion + 1)
+            }
             dev.walcott.debug.DebugLog.w(
                 TAG,
                 "emergency release notice ${banked.checkpoints}/${PanicProtocol.REQUIRED_CHECKPOINTS} delivered",

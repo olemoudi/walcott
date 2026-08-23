@@ -279,8 +279,8 @@ fun ChildStatusScreen(
                 }
                 // A running emergency release is the most important thing on this phone: it
                 // ends with Walcott gone, and it dies if the channel does. Never buried.
-                panicStatus.request?.let { request ->
-                    item { PanicProgressRow(request, onOpen = onOpenPanic) }
+                if (panicStatus.request != null) {
+                    item { PanicProgressRow(panicStatus, onOpen = onOpenPanic) }
                 }
             }
             // The parents' latest answer: approvals celebrate, denials are said out loud
@@ -520,7 +520,7 @@ private fun ChannelOfflineCard(sinceMs: Long) {
 
 /** Compact live status of an emergency release; tapping opens the full screen. */
 @Composable
-private fun PanicProgressRow(request: dev.walcott.sync.PanicRequest, onOpen: () -> Unit) {
+private fun PanicProgressRow(status: dev.walcott.sync.SyncManager.PanicStatus, onOpen: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
     WalcottCard(onClick = onOpen, color = color.copy(alpha = 0.12f)) {
@@ -530,9 +530,19 @@ private fun PanicProgressRow(request: dev.walcott.sync.PanicRequest, onOpen: () 
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.panic_active_title), style = MaterialTheme.typography.titleMedium, color = color)
                 Text(
+                    // The claimed notice is subtracted until the relay takes it, so this row
+                    // cannot say "delivered" about one that is still trying to go out.
                     stringResource(
-                        R.string.panic_active_notices,
-                        request.checkpoints,
+                        if (status.noticeUnconfirmed) {
+                            R.string.panic_active_sending
+                        } else {
+                            R.string.panic_active_notices
+                        },
+                        if (status.noticeUnconfirmed) {
+                            status.deliveredNotices + 1
+                        } else {
+                            status.deliveredNotices
+                        },
                         dev.walcott.sync.PanicProtocol.REQUIRED_CHECKPOINTS,
                     ),
                     style = MaterialTheme.typography.bodySmall,

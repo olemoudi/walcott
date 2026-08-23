@@ -1452,6 +1452,7 @@
     <string name="panic_pin_hint">Si tus padres recuerdan su PIN, pueden liberar este dispositivo al instante desde los ajustes.</string>
     <string name="panic_active_title">Liberación de emergencia en curso</string>
     <string name="panic_active_notices">%1$d de %2$d avisos entregados</string>
+    <string name="panic_active_sending">Enviando el aviso %1$d de %2$d… si no sale tras 3 intentos más, la petición se acaba.</string>
     <string name="panic_active_next">Siguiente aviso en %1$s</string>
     <string name="panic_active_releasing">Se libera en %1$s — tus padres aún pueden rechazarlo</string>
     <plurals name="panic_active_left">
@@ -1828,6 +1829,10 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_101_0">
+        <item>La liberación de emergencia ya solo cuenta un aviso que el relay de tu familia haya recibido de verdad. Un wifi de hotel o de aeropuerto que contesta a todo con su página de acceso — o cualquier proxy que dice «OK» y se traga el mensaje — colaba como si fuera el relay: el aviso se contaba, se le inventaba una hora de entrega, y con ella se saltaba la comprobación que impide acelerar la cuenta atrás. Un aviso que nunca te llegó ya no puede contar para liberar un móvil.</item>
+        <item>Y mientras un aviso sigue intentando salir, el móvil lo dice. Antes decía que el aviso estaba ENTREGADO y que el siguiente tardaba una hora — durante los cuatro minutos y medio en que en realidad seguía reintentando, que es justo el momento en que no sale nada del móvil y la petición está a minutos de acabarse. Si el móvil se apaga o se reinicia en mitad de eso, el aviso tampoco cuenta. El trato es doce horas de un móvil localizable, y solo cuenta el aviso que tu relay confirma.</item>
     </string-array>
     <string-array name="whats_new_0_100_0">
         <item>Ya hay forma de abrir el móvil de un hijo cuando no llega nada: sin datos, sin wifi, un móvil en el extranjero, o uno que se ha cerrado solo porque su reloj o sus permisos fallaron. En Ajustes, al lado de tu PIN, «Código de rescate» enseña seis cifras. Se las dictas, las teclea en su Walcott sin ningún PIN, y el móvil se abre una hora, o tres, o lo justo para instalar algo. No se manda nada, así que no hace falta que llegue nada.</item>

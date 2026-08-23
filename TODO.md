@@ -286,6 +286,26 @@ One from the 0.100.0 work, and it is not the emulator at all — it is the fixtu
   an app and then waited for that same app to close itself. Use `Fixture.SECOND` for the second
   app, and note that the control assertion beside the silence is what made it visible at all.
 
+### The e2e cannot take the network away from the child, and it matters
+
+Found chasing the 0.101.0 bug, and worth knowing before the next person tries: **there is no way
+to make the child's relay unreachable in this harness.** The device reaches `MockRelay` over
+`adb reverse` on 127.0.0.1, which travels the adb transport rather than the guest's network
+stack — deliberately, because that stack vanishes under long runs (see `MockRelay.loopbackUrl`).
+So `cmd connectivity airplane-mode enable` cuts the phone off from everything EXCEPT the relay,
+and a scenario that uses it proves nothing. It looks like it works: the countdown runs, the
+notices land, and if it is the emergency release the phone releases itself and the AVD comes out
+the other side no longer Device Owner.
+
+Pulling the reverse out does not work either, and that is already written down in
+`MockRelay.refusePublishes`: OkHttp keeps the pooled connection and the open route goes on
+serving publishes as if nothing had happened.
+
+What the harness CAN express is every failure the relay itself can answer with, and there are now
+three: `refusePublishes()` (503 — told), `dropNext` (200, taken and discarded) and
+`answerLikeCaptivePortal()` (200 with a body that is not this relay's, stored nowhere). The third
+was added for 0.101.0 and immediately caught a real bug, which is the argument for it.
+
 ### Still open: `TimeWarningScenarioTest` and the three causes that are NOT it
 
 Left unfixed at 0.100.0 deliberately, and written down so it is not diagnosed a fourth time. The

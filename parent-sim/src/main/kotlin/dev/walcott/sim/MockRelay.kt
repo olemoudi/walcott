@@ -79,9 +79,26 @@ class MockRelay(
         refusing = true
     }
 
-    /** Takes messages again. */
+    /** Takes messages again, however it had stopped. */
     fun acceptPublishes() {
         refusing = false
+        captivePortal = false
+    }
+
+    /**
+     * Whether publishes are being answered the way something that is NOT this relay would.
+     *
+     * The third kind of failure, and the one nothing here could express before: a captive portal
+     * at a hotel or an airport, a carrier's block page, a corporate proxy. Every one of them
+     * answers a POST with a cheerful 200 and a page of HTML, and swallows the message. A sender
+     * that reads "200" as "delivered" has been told a lie by something that is not its relay —
+     * which for the emergency release means banking a notice the family never received.
+     */
+    @Volatile private var captivePortal = false
+
+    /** Answers every publish 200 with a body that is not this relay's, and stores nothing. */
+    fun answerLikeCaptivePortal() {
+        captivePortal = true
     }
 
     /**
@@ -262,6 +279,10 @@ class MockRelay(
             endpoint == null && request.method == "POST" -> {
                 if (refusing) {
                     MockResponse().setResponseCode(503).setBody("relay refusing publishes")
+                } else if (captivePortal) {
+                    // Taken nowhere, and answered the way a portal answers everything.
+                    MockResponse().setResponseCode(200)
+                        .setBody("<html><body>Sign in to continue</body></html>")
                 } else {
                     publish(topic, request.body.readUtf8())
                     MockResponse().setResponseCode(200).setBody("""{"id":"sim","time":${nowSec()}}""")

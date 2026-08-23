@@ -77,7 +77,8 @@ class NtfyTransport(
      * only moves for a message that really left the phone.
      *
      * ntfy answers a publish with the message it stored, `{"id":…,"time":<unix s>,…}`; the `time`
-     * field IS the relay's clock, which is what makes a receipt worth more than a bare 200.
+     * field IS the relay's clock, which is what makes a receipt worth more than a bare 200 — and
+     * why a 200 without one is answered here as no receipt at all.
      */
     override fun publishForReceipt(message: String): Long? {
         val request = Request.Builder()
@@ -92,12 +93,23 @@ class NtfyTransport(
                     return null
                 }
                 PublishHealth.record(ok = true)
-                // A relay that answers 200 and says nothing about when has still taken the
-                // message; zero says "no clock from this one" and the caller decides.
+                // A 200 is NOT enough on its own, and this is the difference between a delivered
+                // notice and a fabricated one. The only caller counts twelve hours on the
+                // RELAY's clock, so a response with no usable `time` is a response from
+                // something that is not the family's relay: a captive portal at a hotel or an
+                // airport, a carrier's block page, a proxy — every one of which answers 200 to a
+                // POST and swallows it. Returning a receipt there would bank a notice nobody
+                // ever received, and there is no timestamp to check its spacing against either,
+                // so the whole anti-tamper rule would be skipped with it. No clock, no receipt.
                 val body = runCatching { response.body?.string() }.getOrNull().orEmpty()
-                runCatching {
+                val stamped = runCatching {
                     json.parseToJsonElement(body).jsonObject["time"]?.jsonPrimitive?.content?.toLongOrNull()
-                }.getOrNull() ?: 0L
+                }.getOrNull()
+                if (stamped == null || stamped <= 0) {
+                    DebugLog.w(TAG, "receipted publish answered 200 with no relay clock; not a receipt")
+                    return null
+                }
+                stamped
             }
         }.onFailure {
             DebugLog.w(TAG, "receipted publish failed: ${it.javaClass.simpleName}: ${it.message}")

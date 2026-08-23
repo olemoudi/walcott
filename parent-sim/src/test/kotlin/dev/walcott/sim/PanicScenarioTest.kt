@@ -127,6 +127,33 @@ class PanicScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `a 200 from something that is not the relay is not a delivered notice`() {
+        // The failure that has no exception in it, and the one this feature was blind to. A
+        // captive portal, a carrier block page or a proxy answers a POST with a cheerful 200 and
+        // swallows the message: the phone believes it sent a notice, the family never hears it.
+        // The counter runs on the RELAY's clock, so a 200 carrying no clock is not the relay —
+        // and a notice this device dated itself would have no spacing anybody could check
+        // either, which is the whole anti-tamper rule gone with it.
+        device.panicHourSeconds(COMPRESSED_HOUR_SECONDS)
+        device.panicReady()
+        device.startPanic()
+        parent.awaitChild { it.panic != null }
+        val delivered = parent.awaitChild(timeoutMs = 60_000) { (it.panic?.checkpoints ?: 0) >= 1 }
+        val banked = delivered.panic!!.checkpoints
+
+        relay.answerLikeCaptivePortal()
+        Thread.sleep(NETWORK_OUTAGE_MS)
+        relay.acceptPublishes()
+
+        val after = childReports(timeoutMs = 60_000) { it.panic == null }
+        assertNull(
+            after.panic,
+            "notices answered 200 by something that is not the relay were banked: " +
+                "started from $banked, ended at ${after.panic?.checkpoints}",
+        )
+    }
+
+    @Test
     fun `a refused child cannot immediately ask again`() {
         // The cooldown is what stops a refusal being a formality the child can simply re-issue.
         val request = startedRequest()

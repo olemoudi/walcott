@@ -214,11 +214,19 @@ private fun ActiveRequestCard(status: SyncManager.PanicStatus, nowMs: Long) {
     val request = status.request ?: return
     val remaining = PanicProtocol.remainingCheckpoints(request)
     val nextSec = secondsToNextNotice(status, nowMs)
+    // While a notice is still trying to leave the phone, NOTHING below may count it: this card
+    // used to say it had been delivered and that the next one was an hour away, at the one
+    // moment when the request is minutes from dying for want of a connection.
+    val sending = status.noticeUnconfirmed
     // All twelve are out: what is counting down now is the parent's last three minutes, not
     // another notice, and saying "next notice in 2 min" there would be a lie about both.
     val releasing = PanicProtocol.earned(request)
     val leftSec = (remaining - 1).coerceAtLeast(0) * status.intervalSec + nextSec
-    val progress by animateFloatAsState(PanicProtocol.progress(request), tween(Tokens.motion.medium), label = "panic")
+    val progress by animateFloatAsState(
+        status.deliveredNotices.toFloat() / PanicProtocol.REQUIRED_CHECKPOINTS,
+        tween(Tokens.motion.medium),
+        label = "panic",
+    )
 
     WalcottCard(color = MaterialTheme.colorScheme.primaryContainer) {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -230,7 +238,7 @@ private fun ActiveRequestCard(status: SyncManager.PanicStatus, nowMs: Long) {
             Text(
                 stringResource(
                     R.string.panic_active_notices,
-                    request.checkpoints,
+                    status.deliveredNotices,
                     PanicProtocol.REQUIRED_CHECKPOINTS,
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -244,14 +252,26 @@ private fun ActiveRequestCard(status: SyncManager.PanicStatus, nowMs: Long) {
                         .background(MaterialTheme.colorScheme.primary),
                 )
             }
-            Text(
-                stringResource(
-                    if (releasing) R.string.panic_active_releasing else R.string.panic_active_next,
-                    Duration.ofSeconds(nextSec).humanize(),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            if (!releasing) {
+            if (sending) {
+                Text(
+                    stringResource(
+                        R.string.panic_active_sending,
+                        status.deliveredNotices + 1,
+                        PanicProtocol.REQUIRED_CHECKPOINTS,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else {
+                Text(
+                    stringResource(
+                        if (releasing) R.string.panic_active_releasing else R.string.panic_active_next,
+                        Duration.ofSeconds(nextSec).humanize(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (!releasing && !sending) {
                 // Rounded, not truncated: 11 h 58 m left is "about 12 hours", not "about 11".
                 val hoursLeft = ((leftSec + 1800) / 3600).toInt()
                 Text(
