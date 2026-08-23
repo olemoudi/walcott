@@ -278,6 +278,41 @@ goes red again, check `adb shell dumpsys power | grep mWakefulness` before suspe
 
 ## Emulator notes that cost time
 
+Four from the 0.97.0 work, all of which made a working feature look broken:
+
+- **An ongoing notification mints an auto-group SUMMARY on its own channel, and the summary
+  outlives it.** Cancelling the ring's notification (id 7001) leaves a record with
+  `id=2147483647 tag=ranker_group ... GROUP_SUMMARY` on `channel=walcott_ring`, ongoing and
+  uncleared. So "is anything of ours posted on that channel?" answers yes for ever, and a scenario
+  written that way reads a ring that stopped as a ring that never did. Match the record's own
+  flags (`!contains("GROUP_SUMMARY")`), or assert on the effect instead — the ring scenario now
+  waits on the alarm stream's volume going back where it was, which is the audio service's own
+  record that the ring is over.
+- **`dumpsys battery set level N` does not move `BatteryManager.BATTERY_PROPERTY_CAPACITY`.** It
+  moves the sticky `ACTION_BATTERY_CHANGED` (and `dumpsys battery` agrees with itself), while the
+  HAL property the app reads went on answering 100 — so a last word said "at 100%" while the phone
+  was being told it was dying. The fix is right on a real phone too: the level for a last word is
+  read from the sticky broadcast, which is the one that carries the level that crossed the mark.
+- **`cmd media_session volume --stream 4 --set 2` reports success and changes nothing.** It prints
+  "will set volume to index=2" and "Connecting to AudioService", and `dumpsys audio` shows the
+  stream exactly where it was. There is no `media` binary on this image either. Setting a known
+  volume needs a debug hook inside the app (`--ei alarm_volume N`).
+- **A phone with no lock screen cannot be seen to lock.** `locksettings set-disabled true` is how
+  earlier scenarios leave the AVD, and with it `lockNow()` blanks the screen and comes straight
+  back to the launcher — nothing shows in `dumpsys window policy`. Turn the swipe keyguard on for
+  the scenario (`locksettings set-disabled false`) and put it back in the `finally`. Two traps
+  behind that one: `set-disabled` is a **no-op while a credential is set** (it only moves between
+  Swipe and None), so a scenario that leaves a PIN behind leaves the keyguard behind too; and
+  "is it locked?" has to be asserted as a **transition** (unlocked, then locked), because a
+  keyguard shows whenever a screen times out and an already-locked phone would satisfy it without
+  the command doing anything.
+- **The line lost mode writes on the lock screen cannot be read back from adb.**
+  `setDeviceOwnerLockScreenInfo` does not go to `Settings.Secure.device_owner_info` on this image
+  (it answers null), does not appear in `dumpsys device_policy`, and `locksettings` has no getter.
+  It really is written — with lost mode on, the text turns up in `/data/system/locksettings.db`
+  under `adb root` — but rooting to assert it breaks `cmd notification post` for everything after,
+  so the scenario asserts the lock instead and says why.
+
 - **`adb root` silently breaks `cmd notification post`.** With adbd running as root the command
   still prints `posting: Notification(...)` and returns success, and the notification never lands —
   it is not in `dumpsys notification` and no listener is told about it. `adb unroot` (shell uid

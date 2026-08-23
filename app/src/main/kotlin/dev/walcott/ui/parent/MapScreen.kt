@@ -129,6 +129,14 @@ fun MapScreen(viewModel: WalcottViewModel, childId: String, onBack: () -> Unit) 
         if (liveLeftMs > 0) {
             LiveTrackingBanner(liveLeftMs)
         }
+        // "This is where it was when it died" — the one question a parent brings to this map
+        // about a phone that has gone quiet (see LastGasp).
+        snapshot?.lastGasp?.let { gasp ->
+            dev.walcott.sync.LastGaspText.describe(LocalContext.current, gasp)?.let { word ->
+                val line = if (gasp.fix != null) R.string.map_last_gasp_with_fix else R.string.map_last_gasp
+                MapWarning(stringResource(line, word))
+            }
+        }
 
         if (points.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(spacing.screen), contentAlignment = Alignment.Center) {

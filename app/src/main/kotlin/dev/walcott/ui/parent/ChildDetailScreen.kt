@@ -169,6 +169,8 @@ fun ChildDetailScreen(
     // The unlock PINs this phone has set, so the card can read one back to somebody who cannot get
     // into their own phone (see SyncState.lastLockPin). Device-local; it never travels.
     val lastLockPins by viewModel.lastLockPins.collectAsStateWithLifecycle()
+    val lostModeAsked by viewModel.lostModeAsked.collectAsStateWithLifecycle()
+    val screenSnackbar = LocalSnackbar.current
 
     // Minute tick so the dashboard and feed ages stay fresh without new data arriving.
     val nowMs by androidx.compose.runtime.produceState(System.currentTimeMillis()) {
@@ -303,6 +305,33 @@ fun ChildDetailScreen(
                 onSetPin = { pin -> snapshot?.let { viewModel.setChildLockPin(it.deviceId, pin) } },
                 onRemoveLock = { snapshot?.let { viewModel.setChildLockPin(it.deviceId, "") } },
                 onLockNow = { snapshot?.let { viewModel.lockChildNow(it.deviceId) } },
+            )
+            // Finding the phone, beside the lock it rides on: the ring, and lost mode.
+            val ringing = stringResource(R.string.find_ringing, entry.name)
+            val lostAsked = stringResource(R.string.lost_done, entry.name)
+            val lostCleared = stringResource(R.string.lost_cleared, entry.name)
+            FindPhoneCard(
+                snapshot = snapshot,
+                asked = snapshot?.deviceId?.let { lostModeAsked[it] },
+                position = CardPosition.Middle,
+                onRing = {
+                    snapshot?.let {
+                        viewModel.ringChild(it.deviceId)
+                        screenSnackbar.show(ringing)
+                    }
+                },
+                onLost = { message ->
+                    snapshot?.let {
+                        viewModel.setChildLostMode(it.deviceId, true, message)
+                        screenSnackbar.show(lostAsked)
+                    }
+                },
+                onFound = {
+                    snapshot?.let {
+                        viewModel.setChildLostMode(it.deviceId, false)
+                        screenSnackbar.show(lostCleared)
+                    }
+                },
             )
             NotificationLogCard(
                 snapshot = snapshot,

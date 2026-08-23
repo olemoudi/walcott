@@ -1766,6 +1766,11 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_97_0">
+        <item>Your family can now make a phone ring. From a member\'s page, or the lightning button on your home, "Make it ring" plays the alarm tone at full volume for a minute — on silent, on vibrate, and through Do Not Disturb, which are exactly the states a phone nobody can find is in. It stops by itself, when the phone is unlocked, or when whoever picked it up taps "Found it".</item>
+        <item>And a phone that is really gone has a lost mode. It locks at once, puts a line you write on its lock screen — a number to call — and reports where it is every minute for as long as the battery lasts, with no floor: the floor that stops close tracking at 15% exists so a session does not kill a phone you will see tonight, and a lost phone that dies with its last fix unsent is lost for good. A reboot puts it straight back into lost mode. "I\'ve got it back" undoes all of it in one tap.</item>
+        <item>A phone about to go quiet now leaves a last word. When the battery reaches the system\'s low mark, or the phone is being switched off, it sends one more message — with its position, if you track that member — and your screen says "its battery ran out at 17:42" or "it was switched off at 18:42" instead of counting hours of silence. The map marks the last position it reported. Close tracking also takes one last fix before it stops for a low battery, and a "locate now" the phone could not answer is retried sooner than its own backoff would have.</item>
+    </string-array>
     <string-array name="whats_new_0_96_0">
         <item>The emergency release — the way out a child can start on their own, for when a parent\'s phone is gone and the PIN with it — is now twelve hours rather than twenty-four, and the phone has to get a notice out every hour instead of every two.</item>
         <item>What the counter counts has changed, and it now counts what it always said it did: a notice only moves it when the phone actually got the message out and the relay took it. One that will not send is retried after 30 seconds, a minute and three minutes, and if it still will not send the whole request ends there and the child is told how far it had got. Twelve hours of a phone that can be reached is the deal, stated exactly.</item>
@@ -1912,4 +1917,47 @@
     <string name="panic_start_refused">Couldn\'t start the request just now. Check the connection and try again.</string>
     <string name="backup_local_needs_pin">Nightly copies on this phone are off until the family PIN is set and entered once — they are sealed with it.</string>
     <string name="backup_local_failed">The nightly copy into %1$s could not be written last time it ran.</string>
+
+    <!-- Finding the phone: ring on request, lost mode, and the phone's last word (0.97.0) -->
+    <string name="ring_channel_name">Ringing on request</string>
+    <string name="ring_channel_desc">The sound this phone makes when your family asks it to ring.</string>
+    <string name="ring_notif_title">Your family is ringing this phone</string>
+    <string name="ring_notif_text">Someone is looking for it. Unlock it, or tap Found it, to stop the sound.</string>
+    <string name="ring_found_it">Found it</string>
+    <string name="status_lost_mode">This phone is in lost mode — its family is looking for it</string>
+    <string name="find_title">Find this phone</string>
+    <string name="find_ring">Make it ring</string>
+    <string name="find_ringing">Ringing %1$s\'s phone for a minute, even on silent</string>
+    <string name="find_needs_update">This phone has to update before it can be rung or put into lost mode.</string>
+    <string name="lost_title">Lost mode</string>
+    <string name="lost_off_line">If this phone goes missing, lost mode locks it, puts a way to reach you on its lock screen and keeps reporting where it is until you switch it off.</string>
+    <string name="lost_asked_line">Lost mode asked for — waiting for the phone to confirm.</string>
+    <string name="lost_on_line">Lost mode is on. Its lock screen says: “%1$s”</string>
+    <string name="lost_on_line_plain">Lost mode is on.</string>
+    <string name="lost_on_short">Lost mode is on</string>
+    <string name="lost_tracking_line">Reporting its position every minute, for as long as the battery lasts.</string>
+    <string name="lost_tracking_off">Not reporting its position right now — close tracking was stopped.</string>
+    <string name="lost_enable">I\'ve lost this phone</string>
+    <string name="lost_disable">I\'ve got it back</string>
+    <string name="lost_dialog_body">The phone locks at once and shows this line on its lock screen, so whoever finds it knows how to reach you. It keeps reporting where it is every minute, and does not stop for a low battery.</string>
+    <string name="lost_message_label">Line on the lock screen</string>
+    <string name="lost_message_hint">Finish it with a number to call.</string>
+    <!-- The trailing space is load-bearing: the parent finishes this with a number, and AAPT
+         strips trailing whitespace unless the value is quoted. -->
+    <string name="lost_message_default">"This phone is lost. If you have found it, please call "</string>
+    <string name="lost_confirm">Lock it and start looking</string>
+    <string name="lost_done">Lost mode asked for — %1$s\'s phone locks the moment it hears</string>
+    <string name="lost_cleared">Lost mode off on %1$s\'s phone</string>
+    <string name="event_lost_mode_on">%1$s\'s phone is in lost mode</string>
+    <string name="event_lost_mode_off">%1$s\'s phone is out of lost mode</string>
+    <string name="last_gasp_title">%1$s\'s phone</string>
+    <string name="last_gasp_text_with_fix">%1$s. Its last position is on the map.</string>
+    <string name="last_gasp_battery_at">Its battery was about to run out at %1$s</string>
+    <string name="last_gasp_battery_on">Its battery was about to run out on %1$s</string>
+    <string name="last_gasp_shutdown_at">It was switched off at %1$s</string>
+    <string name="last_gasp_shutdown_on">It was switched off on %1$s</string>
+    <string name="map_last_gasp_with_fix">%1$s — this is the last position it reported.</string>
+    <string name="map_last_gasp">%1$s — location was off, so it could not say where.</string>
+    <string name="event_last_gasp_battery">%1$s\'s phone was about to run out of battery</string>
+    <string name="event_last_gasp_shutdown">%1$s\'s phone was switched off</string>
 </resources>

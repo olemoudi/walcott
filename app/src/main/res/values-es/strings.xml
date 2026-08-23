@@ -1758,6 +1758,11 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_97_0">
+        <item>Tu familia ya puede hacer sonar un móvil. Desde la ficha de un miembro, o desde el botón del rayo en tu inicio, «Hacerlo sonar» reproduce el tono de alarma a todo volumen durante un minuto — en silencio, en vibración y con «No molestar», que son justo los estados en los que está un móvil que nadie encuentra. Se para solo, al desbloquearlo, o cuando quien lo recoge toca «Lo tengo».</item>
+        <item>Y un móvil que de verdad se ha perdido tiene un modo perdido. Se bloquea al instante, pone en su pantalla de bloqueo una línea que escribes tú — un número al que llamar — y comunica dónde está cada minuto mientras dure la batería, sin suelo: el suelo que detiene el seguimiento estrecho al 15 % existe para que una sesión no mate un móvil que verás esta noche, y un móvil perdido que muere sin enviar su última posición está perdido para siempre. Un reinicio lo devuelve directamente al modo perdido. «Lo he recuperado» lo deshace todo de un toque.</item>
+        <item>Un móvil a punto de quedarse callado deja ahora una última palabra. Cuando la batería llega al aviso de batería baja del sistema, o el móvil se está apagando, manda un mensaje más — con su posición, si a ese miembro lo localizas — y tu pantalla dice «se quedó sin batería a las 17:42» o «se apagó a las 18:42» en vez de contar horas de silencio. El mapa marca la última posición que comunicó. El seguimiento estrecho toma además una última posición antes de detenerse por batería baja, y un «localizar ahora» que el móvil no pudo responder se reintenta antes de lo que marcaría su propia espera.</item>
+    </string-array>
     <string-array name="whats_new_0_96_0">
         <item>La liberación de emergencia — la salida que un hijo puede iniciar solo, para cuando el móvil de los padres ya no está y el PIN tampoco — pasa de veinticuatro horas a doce, y el móvil tiene que sacar un aviso cada hora en vez de cada dos.</item>
         <item>Lo que cuenta el contador ha cambiado, y ahora cuenta lo que siempre dijo que contaba: un aviso solo lo mueve si el móvil consiguió sacar el mensaje y el relay lo aceptó. El que no sale se reintenta a los 30 segundos, al minuto y a los tres minutos, y si aun así no sale la solicitud termina ahí y se le dice al hijo por dónde iba. Doce horas de un móvil localizable es el trato, dicho con exactitud.</item>
@@ -1904,4 +1909,47 @@
     <string name="panic_start_refused">Ahora mismo no se ha podido iniciar la solicitud. Comprueba la conexión e inténtalo de nuevo.</string>
     <string name="backup_local_needs_pin">Las copias diarias en este móvil están desactivadas hasta que se ponga el PIN de la familia y se introduzca una vez: se cifran con él.</string>
     <string name="backup_local_failed">La copia diaria en %1$s no se pudo escribir la última vez que se intentó.</string>
+
+    <!-- Encontrar el teléfono: sonar a petición, modo perdido y la última palabra del móvil (0.97.0) -->
+    <string name="ring_channel_name">Sonar a petición</string>
+    <string name="ring_channel_desc">El sonido que hace este teléfono cuando tu familia le pide que suene.</string>
+    <string name="ring_notif_title">Tu familia está haciendo sonar este teléfono</string>
+    <string name="ring_notif_text">Alguien lo está buscando. Desbloquéalo, o toca «Lo tengo», para parar el sonido.</string>
+    <string name="ring_found_it">Lo tengo</string>
+    <string name="status_lost_mode">Este teléfono está en modo perdido: su familia lo está buscando</string>
+    <string name="find_title">Encontrar este teléfono</string>
+    <string name="find_ring">Hacerlo sonar</string>
+    <string name="find_ringing">Haciendo sonar el móvil de %1$s durante un minuto, aunque esté en silencio</string>
+    <string name="find_needs_update">Este teléfono tiene que actualizarse antes de poder hacerlo sonar o ponerlo en modo perdido.</string>
+    <string name="lost_title">Modo perdido</string>
+    <string name="lost_off_line">Si este teléfono desaparece, el modo perdido lo bloquea, pone en su pantalla de bloqueo cómo contactarte y sigue comunicando dónde está hasta que lo desactives.</string>
+    <string name="lost_asked_line">Modo perdido pedido: esperando a que el teléfono lo confirme.</string>
+    <string name="lost_on_line">El modo perdido está activo. Su pantalla de bloqueo dice: «%1$s»</string>
+    <string name="lost_on_line_plain">El modo perdido está activo.</string>
+    <string name="lost_on_short">Modo perdido activo</string>
+    <string name="lost_tracking_line">Comunica su posición cada minuto, mientras dure la batería.</string>
+    <string name="lost_tracking_off">Ahora mismo no comunica su posición: el seguimiento estrecho se detuvo.</string>
+    <string name="lost_enable">He perdido este teléfono</string>
+    <string name="lost_disable">Lo he recuperado</string>
+    <string name="lost_dialog_body">El teléfono se bloquea al instante y muestra esta línea en su pantalla de bloqueo, para que quien lo encuentre sepa cómo contactarte. Sigue comunicando dónde está cada minuto, y no se detiene por poca batería.</string>
+    <string name="lost_message_label">Línea en la pantalla de bloqueo</string>
+    <string name="lost_message_hint">Termínala con un número al que llamar.</string>
+    <!-- El espacio final importa: el padre lo termina con un número, y AAPT recorta el espacio
+         final salvo que el valor vaya entrecomillado. -->
+    <string name="lost_message_default">"Este teléfono se ha perdido. Si lo has encontrado, por favor llama al "</string>
+    <string name="lost_confirm">Bloquearlo y empezar a buscar</string>
+    <string name="lost_done">Modo perdido pedido: el móvil de %1$s se bloqueará en cuanto lo reciba</string>
+    <string name="lost_cleared">Modo perdido desactivado en el móvil de %1$s</string>
+    <string name="event_lost_mode_on">El móvil de %1$s está en modo perdido</string>
+    <string name="event_lost_mode_off">El móvil de %1$s ha salido del modo perdido</string>
+    <string name="last_gasp_title">El móvil de %1$s</string>
+    <string name="last_gasp_text_with_fix">%1$s. Su última posición está en el mapa.</string>
+    <string name="last_gasp_battery_at">Estaba a punto de quedarse sin batería a las %1$s</string>
+    <string name="last_gasp_battery_on">Estaba a punto de quedarse sin batería el %1$s</string>
+    <string name="last_gasp_shutdown_at">Se apagó a las %1$s</string>
+    <string name="last_gasp_shutdown_on">Se apagó el %1$s</string>
+    <string name="map_last_gasp_with_fix">%1$s: esta es la última posición que comunicó.</string>
+    <string name="map_last_gasp">%1$s: la localización estaba apagada, así que no pudo decir dónde.</string>
+    <string name="event_last_gasp_battery">El móvil de %1$s estaba a punto de quedarse sin batería</string>
+    <string name="event_last_gasp_shutdown">El móvil de %1$s se apagó</string>
 </resources>

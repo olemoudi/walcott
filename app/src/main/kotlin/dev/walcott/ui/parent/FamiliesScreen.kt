@@ -704,9 +704,17 @@ private fun ChildRow(
     // The one line under the name, when there is something to say: no phone yet, or a phone that
     // has gone quiet. Everything else about this member is a number or a chip below.
     val silence = Duration.ofMillis(Staleness.silenceMs(lastSeenMs, nowMs) ?: 0).humanize()
+    // The phone's own account of why it is quiet, when it left one (see LastGasp): "its battery
+    // ran out at 17:42" outranks any silence counted from here.
+    val lastWord = snapshot?.lastGasp?.let { dev.walcott.sync.LastGaspText.describe(LocalContext.current, it) }
     val subtitle: Pair<String, Color>? = when {
         snapshot == null ->
             stringResource(R.string.device_not_linked) to MaterialTheme.colorScheme.onSurfaceVariant
+        lastWord != null -> lastWord to if (tier == Staleness.Tier.SILENT) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
         tier == Staleness.Tier.SILENT ->
             stringResource(R.string.child_stale_line, silence) to MaterialTheme.colorScheme.error
         tier != Staleness.Tier.FRESH ->

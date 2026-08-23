@@ -34,7 +34,12 @@ class TimeWarningScenarioTest : DeviceScenario() {
 
     @Test
     fun `an app close to its limit warns the child, over whatever is on screen`() {
-        settleAllowed(headroomMinutes = 20)
+        // Enough headroom to walk DOWN from twenty-five, which the paragraph below depends on and
+        // twenty minutes could not deliver: `burnTo` never removes time, so with twenty of
+        // headroom the first step was a no-op that left the app sitting at twenty — the very
+        // value the previous run of this scenario had already announced. It then read as "the
+        // phone said nothing", which is what a re-run of this class did, twice.
+        settleAllowed(headroomMinutes = 40)
         // Both rungs, in order, and that is not thoroughness — it is what makes this scenario
         // independent of the last one. A countdown is recognised by its DEADLINE, and for an
         // app's own time the deadline IS the minutes left, so a run that ended at four minutes
@@ -199,10 +204,21 @@ class TimeWarningScenarioTest : DeviceScenario() {
         device.timeWarnings().filter { it.postedAtMs >= since }
 
     /** Waits for a warning matching [predicate], keeping the phone awake as the loop needs. */
+    /**
+     * Waits for a warning posted after [since].
+     *
+     * The default is deliberately longer than a minute. Seeded usage reaches the loop by its
+     * counter subscription, which is normally instant — but the subscription has a safety net
+     * behind it precisely because it can stop delivering (`EnforcementService`'s
+     * `COUNTER_RESYNC_MILLIS`, 60 s), and when the net is what answers, a 45-second window is
+     * under the product's own documented worst case. That is not contention, it is a mis-sized
+     * window: it failed once in a full sweep with "20 minutes left" — the state before the burn,
+     * i.e. a loop that had not seen the new counter yet — and passed everywhere else.
+     */
     private fun awaitWarning(
         what: String,
         since: Long,
-        timeoutMs: Long = 45_000,
+        timeoutMs: Long = 90_000,
         predicate: (ChildDevice.Posted) -> Boolean,
     ): ChildDevice.Posted {
         val deadline = System.currentTimeMillis() + timeoutMs
@@ -219,8 +235,18 @@ class TimeWarningScenarioTest : DeviceScenario() {
         /** Several ticks of the two-second enforcement loop, so a silence is a real silence. */
         const val QUIET_WINDOW_MS = 12_000L
 
-        /** Space between two rungs, so the second is a banner rather than a throttled re-alert. */
-        const val RUNG_GAP_MS = 30_000L
+        /**
+         * Space between two rungs, so the second is a banner rather than a throttled re-alert.
+         *
+         * A minute rather than thirty seconds: the product posts the second rung correctly (right
+         * text, own id, cancelled before re-notifying) and Android still declined to peek for it
+         * once, in a full sweep, on an emulator that had been working for half an hour — and
+         * passed on the same device immediately afterwards. The rungs a child actually meets are
+         * minutes apart (30 → 5 → 1), so compressing them is the test's convenience and the
+         * throttle is the platform's answer to it. Widen the gap rather than teach the product to
+         * shout past a heads-up limit it will never meet in a house.
+         */
+        const val RUNG_GAP_MS = 60_000L
         const val DAY_MINUTES = 24 * 60
     }
 }

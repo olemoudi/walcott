@@ -1873,6 +1873,27 @@ class SyncManager(
         publishSelf()
     }
 
+    /** Parent: rings [deviceId] out loud for [seconds] (see [RemoteAction.RING_NOW]). */
+    suspend fun ringChildDevice(deviceId: String, seconds: Int = RemoteAction.RING_DEFAULT_SECONDS) =
+        sendCommand(deviceId, RemoteAction.RING_NOW, arg = seconds.toString())
+
+    /**
+     * Parent: lost mode on [deviceId], with [message] for its lock screen, or off (see
+     * [RemoteAction.LOST_MODE]). What was asked is remembered here so the card can say "asked,
+     * not yet there" until the phone's own snapshot confirms it.
+     */
+    suspend fun setChildLostMode(deviceId: String, on: Boolean, message: String) {
+        val line = message.trim().take(RemoteAction.LOST_MESSAGE_MAX_CHARS)
+        syncStore.update { s ->
+            s.copy(lostModeAsked = if (on) s.lostModeAsked + (deviceId to line) else s.lostModeAsked - deviceId)
+        }
+        sendCommand(
+            deviceId, RemoteAction.LOST_MODE,
+            arg = if (on) RemoteAction.LOST_ON else RemoteAction.LOST_OFF,
+            label = if (on) line else "",
+        )
+    }
+
     /**
      * Parent queues a remote fix for a child device (see [RemoteAction]). Applied when the child
      * receives the snapshot carrying it, and acknowledged back in the child's own.
@@ -2406,6 +2427,12 @@ class SyncManager(
     /** Slack on the wall-clock sanity bound for a live session, for a slow start or a paused CPU. */
     private val LIVE_SANITY_SLACK_MS = 10 * 60 * 1000L
 
+    /** A low-battery last word is repeated no sooner than this (see [recordLastGasp]). */
+    private val LAST_GASP_REPEAT_MS = 6 * 60 * 60 * 1000L
+
+    /** How old a cached fix may be to stand in for a fresh one in a last word. */
+    private val LAST_GASP_CACHE_MS = 60 * 1000L
+
     // --- Close tracking (see LiveTracking) ---
 
     /**
@@ -2430,6 +2457,115 @@ class SyncManager(
         val longestPossible = LiveTracking.MAX_MINUTES * 60_000L + LIVE_SANITY_SLACK_MS
         if (age < 0L || age > longestPossible) return 0L
         return state.liveUntilElapsedMs
+    }
+
+    // --- Lost mode (see RemoteAction.LOST_MODE) ---
+
+    /** Whether this phone is in lost mode; the enforcement service follows it for its status line. */
+    val lostMode: StateFlow<Boolean> =
+        syncStore.state.map { it.lostMode }.stateIn(scope, SharingStarted.Eagerly, false)
+
+    /**
+     * Child: lost mode on. Locks the screen at once, writes [message] on the lock screen for
+     * whoever finds the phone, and starts close tracking with NO battery floor: the floor exists
+     * so a session does not kill a phone its family will see again tonight, and a lost phone is
+     * the one case where the last fix is worth the last percent (see the service's session loop).
+     *
+     * Persisted before anything else, so a reboot — the first thing a finder tries — lands the
+     * phone straight back here (see [resumeLostModeAfterBoot]). The tracking session publishes.
+     */
+    suspend fun enableLostMode(message: String) {
+        val line = message.trim().take(RemoteAction.LOST_MESSAGE_MAX_CHARS)
+        val now = System.currentTimeMillis()
+        syncStore.update {
+            it.copy(
+                lostMode = true,
+                lostModeMessage = line,
+                lostModeSinceMs = if (it.lostMode && it.lostModeSinceMs > 0) it.lostModeSinceMs else now,
+            )
+        }
+        dev.walcott.enforcement.LostMode.apply(context, on = true, message = line)
+        dev.walcott.debug.DebugLog.w(TAG, "lost mode ON")
+        startLiveTracking(LiveTracking.MAX_MINUTES)
+    }
+
+    /** Child: lost mode off — the line comes off the lock screen and the tracking stops. Publishes. */
+    suspend fun disableLostMode() {
+        val wasLost = syncStore.current().lostMode
+        syncStore.update { it.copy(lostMode = false, lostModeMessage = "", lostModeSinceMs = 0L) }
+        dev.walcott.enforcement.LostMode.apply(context, on = false, message = "")
+        if (wasLost) dev.walcott.debug.DebugLog.w(TAG, "lost mode OFF")
+        // Ending the session publishes; with no session to end, say it here instead.
+        val running = LiveTracking.isRunning(
+            liveDeadlineOf(syncStore.current()),
+            android.os.SystemClock.elapsedRealtime(),
+        )
+        if (running) endLiveTracking(stoppedForBattery = false) else publishSelf()
+    }
+
+    /**
+     * Child, after a boot: a phone in lost mode goes straight back to reporting where it is. The
+     * line on the lock screen survives a reboot on its own (the platform keeps it); the tracking
+     * session does not (see [liveDeadlineOf]), and this is what starts it again.
+     */
+    suspend fun resumeLostModeAfterBoot() {
+        val s = syncStore.current()
+        if (!s.lostMode) return
+        dev.walcott.enforcement.LostMode.apply(context, on = true, message = s.lostModeMessage)
+        dev.walcott.debug.DebugLog.w(TAG, "lost mode resumed after a restart")
+        startLiveTracking(LiveTracking.MAX_MINUTES)
+    }
+
+    // --- The last word (see LastGasp) ---
+
+    /**
+     * Child: the phone is about to go quiet — record why, with the best position it can offer, and
+     * say so at once. [freshFix] asks for a new fix (there is time when the battery is merely
+     * low); without it the newest recorded position is sent (there is no time on the way to a
+     * shutdown). Either way, only for a member whose location the family tracks: a dying phone
+     * is no reason to start locating somebody who is not located.
+     *
+     * A low battery is said once per discharge: the system repeats its broadcast on every
+     * level change below the mark, and every repeat would otherwise cost a fix and a publish.
+     */
+    suspend fun recordLastGasp(kind: String, freshFix: Boolean) {
+        val id = identityStore.current()
+        if (!id.enforcesLocally) return
+        val now = System.currentTimeMillis()
+        val previous = syncStore.current().lastGasp
+        if (kind == LastGasp.KIND_BATTERY && previous?.kind == LastGasp.KIND_BATTERY &&
+            now - previous.atMs < LAST_GASP_REPEAT_MS
+        ) {
+            return
+        }
+        val tracked = settingsStore.current().resolveForChild(id.childId).trackingIntervalMinutes > 0
+        val fix: LocationPoint? = when {
+            !tracked -> null
+            freshFix -> runCatching { LocationSampler(context).currentFix(maxCacheAgeMs = LAST_GASP_CACHE_MS) }
+                .getOrNull()
+                ?.also { repository.recordLocation(it) }
+                ?: repository.latestLocation().firstOrNull()
+            else -> repository.latestLocation().firstOrNull()
+        }
+        val gasp = LastGasp(kind = kind, atMs = now, fix = fix, batteryPercent = batteryLevelNow())
+        syncStore.update { it.copy(lastGasp = gasp) }
+        dev.walcott.debug.DebugLog.w(TAG, "last word: $kind at ${gasp.batteryPercent}%, fix=${fix != null}")
+        publishSelfOrThrow()
+    }
+
+    /**
+     * Child: the phone is back to normal — charged past the low mark, or booted — so the last
+     * word no longer applies. [kind] limits it to one kind (a charge does not undo a shutdown
+     * that is about to happen); null forgets whatever is there.
+     */
+    suspend fun clearLastGasp(kind: String?) {
+        val current = syncStore.current().lastGasp ?: return
+        if (kind != null && current.kind != kind) return
+        syncStore.update { it.copy(lastGasp = null) }
+        dev.walcott.debug.DebugLog.i(TAG, "last word withdrawn: the phone is back")
+        // Said at once, like the word itself was: the parent's screens read "its battery ran
+        // out" off the last snapshot they have until one arrives without it.
+        publishSelf()
     }
 
     /** Child: begin (or extend) a close-tracking session of [minutes]; 0 ends one. */
@@ -2534,6 +2670,13 @@ class SyncManager(
                     it.ruleEvents
                 },
             )
+        }
+        // Lost mode has no deadline of its own: a session that RAN OUT under it (rather than being
+        // stopped by the parent, which passes no deadline) starts again at once.
+        if (onlyIfDeadline != 0L && !stoppedForBattery && state.lostMode) {
+            dev.walcott.debug.DebugLog.w(TAG, "lost mode: close tracking ran out, starting again")
+            startLiveTracking(LiveTracking.MAX_MINUTES)
+            return
         }
         publishSelf()
     }
@@ -2995,6 +3138,8 @@ class SyncManager(
                     lastCrashMs = crashes.lastAtMs,
                     unauthorized = s.unauthorizedApps,
                     setupUnmet = setupUnmet,
+                    lostMode = s.lostMode,
+                    lastGasp = s.lastGasp,
                     blocks = blockReport(today),
                 )
                 // Fit-or-degrade: an oversized message would be rejected (HTTP 413) and the
@@ -3306,6 +3451,20 @@ class SyncManager(
             context.getSystemService(android.os.BatteryManager::class.java)?.isCharging ?: false
         }.getOrDefault(false)
 
+    /**
+     * The level for a last word, read from the sticky [Intent.ACTION_BATTERY_CHANGED] rather than
+     * the capacity property. At the moment a phone reports its battery low, the broadcast that
+     * announced it carries the level that crossed the mark, while the HAL property has been seen
+     * to lag — and does not move at all on the emulator, where the low-battery broadcast is faked.
+     * Falls back to the property, then to -1.
+     */
+    private fun batteryLevelNow(): Int = runCatching {
+        val sticky = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+        val level = sticky?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = sticky?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+        if (level >= 0 && scale > 0) level * 100 / scale else batteryPercent()
+    }.getOrDefault(batteryPercent())
+
     /** The active parent signing key: software (new/restored families) or the legacy Keystore. */
     private fun signingKey(id: FamilyIdentity): java.security.PrivateKey =
         if (id.parentPrivateKeyB64.isNotBlank()) {
@@ -3572,7 +3731,12 @@ class SyncManager(
                     lastLocateFailedMs = if (fix == null) System.currentTimeMillis() else it.lastLocateFailedMs,
                 )
             }
-            if (fix == null) dev.walcott.debug.DebugLog.w(TAG, "could not answer a locate request with a fix")
+            if (fix == null) {
+                dev.walcott.debug.DebugLog.w(TAG, "could not answer a locate request with a fix")
+                // The parent is waiting, so the sampler's own backoff (up to sixteen minutes
+                // after a run of misses) is the wrong pace for the next try.
+                dev.walcott.location.LocationAlarm.retrySoon(context)
+            }
             publishSelf()
         }
 
@@ -3681,6 +3845,11 @@ class SyncManager(
                 publishNotifications = { arg -> publishNotifications(arg) },
                 setLiveTracking = { minutes -> startLiveTracking(minutes) },
                 endInstallWindow = { endInstallExemption() },
+                // MediaPlayer and its timers live on the main thread; the command does not.
+                ringNow = { seconds ->
+                    withContext(Dispatchers.Main) { dev.walcott.enforcement.Ringer.start(context, seconds) }
+                },
+                setLostMode = { on, message -> if (on) enableLostMode(message) else disableLostMode() },
             )
         }
         for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
@@ -4107,6 +4276,44 @@ class SyncManager(
             }
         } else if (alreadyLow && HealthAlerts.clearsLowBattery(snapshot.batteryPercent, snapshot.charging)) {
             syncStore.update { it.copy(lowBatteryNotified = it.lowBatteryNotified - snapshot.deviceId) }
+        }
+
+        // The phone's last word before going quiet (see LastGasp): said once per word, however
+        // many times the snapshot carrying it is re-emitted, and forgotten once the phone is back.
+        val gasp = snapshot.lastGasp
+        if (gasp != null && before.lastGaspNoted[snapshot.deviceId] != gasp.atMs) {
+            // Only a SHUTDOWN is announced on its own. A battery word arrives alongside the level
+            // that produced it, so the low-battery alert below is already telling the parent about
+            // that phone in the same breath — two notifications a minute apart about one battery
+            // is how an alert stops being read. Nothing announces a phone being switched off,
+            // and that is the one a family cannot otherwise tell from a phone that broke.
+            if (gasp.kind == LastGasp.KIND_SHUTDOWN) {
+                LastGaspText.describe(context, gasp)?.let { word ->
+                    SyncNotifications.notifyLastGasp(
+                        context, who, word, snapshot.deviceId, snapshot.childId, hasFix = gasp.fix != null,
+                    )
+                }
+            }
+            syncStore.update {
+                it.copy(lastGaspNoted = it.lastGaspNoted + (snapshot.deviceId to gasp.atMs))
+                    .plusEvent(
+                        event(
+                            ParentEvent.TYPE_LAST_GASP, snapshot,
+                            detail = gasp.kind, count = gasp.batteryPercent,
+                        ),
+                    )
+            }
+        } else if (gasp == null && snapshot.deviceId in before.lastGaspNoted) {
+            syncStore.update { it.copy(lastGaspNoted = it.lastGaspNoted - snapshot.deviceId) }
+        }
+
+        // Lost mode as the PHONE reports it. The command's ack says a command ran; this says the
+        // phone is locked down (or free again), which is what the wall should record.
+        val wasLost = before.children.firstOrNull { it.deviceId == snapshot.deviceId }?.lostMode == true
+        if (snapshot.lostMode != wasLost) {
+            syncStore.update {
+                it.plusEvent(event(ParentEvent.TYPE_LOST_MODE, snapshot, count = if (snapshot.lostMode) 1 else 0))
+            }
         }
 
         // Enforcement self-test gap: the child looked healthy but the OS wasn't actually

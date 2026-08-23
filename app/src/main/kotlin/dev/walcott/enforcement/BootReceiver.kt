@@ -42,6 +42,13 @@ class BootReceiver : BroadcastReceiver() {
                     // after a reboot nobody asked for is the outcome worth ruling out.
                     val app = context.applicationContext as dev.walcott.WalcottApplication
                     runCatching { app.syncManager.endLiveTracking(stoppedForBattery = false) }
+                    // A phone that has just booted is not dying and not being switched off: its
+                    // last word, if it left one, no longer applies (see LastGasp).
+                    runCatching { app.syncManager.clearLastGasp(kind = null) }
+                    // Unless it is lost, in which case the one session worth keeping starts
+                    // again — a restart is the first thing a finder tries (see LostMode).
+                    runCatching { app.syncManager.resumeLostModeAfterBoot() }
+                        .onFailure { DebugLog.e(TAG, "could not resume lost mode", it) }
                     runCatching { EnforcementService.start(context) }
                         .onFailure { DebugLog.e(TAG, "enforcement restart failed", it) }
                     // Alarms don't survive a reboot: re-arm the 30-min check-in chain.

@@ -74,6 +74,15 @@ data class ParentEvent(
          * rather than as news about every phone that ever slept (see [Staleness.recoveryKeys]).
          */
         const val TYPE_BACK = "back_online"
+
+        /**
+         * A phone's last word before going quiet (see [LastGasp]): [detail] is the kind,
+         * [count] the battery level it reported with it.
+         */
+        const val TYPE_LAST_GASP = "last_gasp"
+
+        /** Lost mode switched on ([count] = 1) or off (0) on a member's phone. */
+        const val TYPE_LOST_MODE = "lost_mode"
         const val TYPE_TIME_REQUEST = "time_request"
         const val TYPE_ASK = "ask"
         const val TYPE_REQUEST_APPROVED = "request_approved"
@@ -301,6 +310,19 @@ data class SyncState(
     /** Wall-clock ms of the last "locate now" this device could not answer with a fix. */
     val lastLocateFailedMs: Long = 0,
     /**
+     * Child: lost mode (see [RemoteAction.LOST_MODE]) — whether it is on, the line on the lock
+     * screen, and since when. Persisted so a reboot puts the phone straight back into it: a
+     * restart is one of the first things a finder tries.
+     */
+    val lostMode: Boolean = false,
+    val lostModeMessage: String = "",
+    val lostModeSinceMs: Long = 0,
+    /**
+     * Child: the last word this phone managed before going quiet, carried in every snapshot until
+     * it is back to normal (see [LastGasp]). Cleared on boot and once the battery recovers.
+     */
+    val lastGasp: LastGasp? = null,
+    /**
      * Target package of a parent-pushed install, while its self-closing window is open.
      * Non-empty means "one install allowed, then re-arm the block"; "" for the blanket
      * PIN-gated window. See [SyncManager.openInstallForPush]/[SyncManager.closeInstallWindow].
@@ -413,6 +435,13 @@ data class SyncState(
     val mockLocationNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for low battery (cleared when charged/plugged in — see HealthAlerts). */
     val lowBatteryNotified: Set<String> = emptySet(),
+    /** deviceId -> the [LastGasp.atMs] already announced, so a re-emitted snapshot says it once. */
+    val lastGaspNoted: Map<String, Long> = emptyMap(),
+    /**
+     * deviceId -> the lock-screen line this phone asked to be put on that device, while lost mode
+     * is asked for. What the device has actually done is read from its snapshot ([ChildSnapshot.lostMode]).
+     */
+    val lostModeAsked: Map<String, String> = emptyMap(),
     /** deviceIds already alerted for network location off (cleared when it recovers). */
     val networkLocationNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for a failed enforcement self-test (cleared when it passes). */

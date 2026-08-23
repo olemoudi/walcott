@@ -24,6 +24,7 @@ import dev.walcott.location.LocationPolicy
 import dev.walcott.location.LocationSampler
 import dev.walcott.net.VpnController
 import dev.walcott.rules.RuleEngine
+import dev.walcott.sync.LastGasp
 import dev.walcott.sync.LiveTracking
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.format.humanize
@@ -41,6 +42,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
 
 /**
@@ -117,6 +119,41 @@ class EnforcementService : LifecycleService() {
         }
     }
 
+    /**
+     * The phone's last word (see [LastGasp]): the battery reaching the system's low mark, its
+     * recovery, and a shutdown in progress. None of the three is on the manifest-receiver
+     * exemption list, so they are caught here, by the one process a managed phone always has.
+     */
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val app = application as WalcottApplication
+            when (intent?.action) {
+                Intent.ACTION_BATTERY_LOW -> lifecycleScope.launch {
+                    runCatching { app.syncManager.recordLastGasp(LastGasp.KIND_BATTERY, freshFix = true) }
+                        .onFailure { DebugLog.e(TAG, "could not record the low-battery word", it) }
+                }
+                Intent.ACTION_BATTERY_OKAY -> lifecycleScope.launch {
+                    runCatching { app.syncManager.clearLastGasp(LastGasp.KIND_BATTERY) }
+                }
+                Intent.ACTION_SHUTDOWN -> {
+                    // Seconds at most before the power goes: no new fix, just the newest recorded
+                    // position and the fact, and the receiver held open for as long as that takes.
+                    val pending = goAsync()
+                    lifecycleScope.launch {
+                        try {
+                            withTimeoutOrNull(SHUTDOWN_WORD_BUDGET_MILLIS) {
+                                runCatching { app.syncManager.recordLastGasp(LastGasp.KIND_SHUTDOWN, freshFix = false) }
+                                    .onFailure { DebugLog.e(TAG, "could not record the shutdown word", it) }
+                            }
+                        } finally {
+                            pending.finish()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         enforcer = Enforcer(this)
@@ -146,6 +183,17 @@ class EnforcementService : LifecycleService() {
             },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        // System broadcasts again (see powerReceiver); NOT_EXPORTED is fine for those.
+        ContextCompat.registerReceiver(
+            this,
+            powerReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_BATTERY_LOW)
+                addAction(Intent.ACTION_BATTERY_OKAY)
+                addAction(Intent.ACTION_SHUTDOWN)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         // Grant location before startForeground so the service can claim the location FGS type.
         LocationPolicy.ensureEnforced(this)
         // Same idea, for the permission every warning and every answer has to pass through:
@@ -161,6 +209,7 @@ class EnforcementService : LifecycleService() {
         scheduleUpdateChecks()
         scheduleLocationSampling()
         observeLiveTracking()
+        observeLostMode()
         observeUpdateWindow()
         // Catch up on whatever happened while this service wasn't running. The package receiver
         // lives in this process, so a device that was off — or a service an OEM battery saver
@@ -174,6 +223,7 @@ class EnforcementService : LifecycleService() {
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(packageReceiver) }
+        runCatching { unregisterReceiver(powerReceiver) }
         ringerGuard?.let { runCatching { unregisterReceiver(it) } }
         super.onDestroy()
     }
@@ -288,8 +338,19 @@ class EnforcementService : LifecycleService() {
                 // they switched it on for.
                 val battery = batteryPercent()
                 val charging = batteryCharging()
-                if (LiveTracking.batteryTooLow(battery, charging)) {
+                // The floor does not apply to a LOST phone: it exists so a session does not kill a
+                // phone the family will see again tonight, and a lost phone that dies with its
+                // last fix unsent is lost for good. Below the floor the interval is already at its
+                // slowest (see LiveTracking.sampleIntervalMs), which is as gentle as still reporting
+                // gets.
+                if (!app.syncManager.lostMode.value && LiveTracking.batteryTooLow(battery, charging)) {
                     DebugLog.w(LOC_TAG, "close tracking stopping: battery below the floor")
+                    // One last fix on the way out: "it stopped here" is worth more to the parent
+                    // than the percent it costs, and the session was bought to answer exactly that.
+                    runCatching {
+                        sampler.currentFix(maxCacheAgeMs = LIVE_CACHE_MAX_AGE_MILLIS)?.let { app.repository.recordLocation(it) }
+                        app.syncManager.publishLocationUpdate()
+                    }.onFailure { DebugLog.e(LOC_TAG, "the last fix before the floor failed", it) }
                     stoppedForBattery = true
                     break
                 }
@@ -1010,10 +1071,39 @@ class EnforcementService : LifecycleService() {
      */
     @Volatile private var liveTrackingActive = false
 
+    @Volatile private var lostModeActive = false
+
+    /**
+     * Lost mode on the child's own notification: the one line a finder who pulls the shade down
+     * reads, beside the one on the lock screen (see LostMode). Followed from the sync state so a
+     * restart shows it without waiting for anything to happen.
+     */
+    private fun observeLostMode() {
+        val app = application as WalcottApplication
+        lifecycleScope.launch {
+            app.syncManager.lostMode.collect { lost ->
+                lostModeActive = lost
+                val text = when {
+                    lost -> getString(R.string.status_lost_mode)
+                    liveTrackingActive -> getString(R.string.status_live_tracking)
+                    else -> getString(R.string.service_notif_text)
+                }
+                statusText = text
+                runCatching {
+                    getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification(text))
+                }
+            }
+        }
+    }
+
     /** Puts the close-tracking sentence on the ongoing notification, or takes it back off. */
     private fun setLiveTrackingBanner(active: Boolean) {
         liveTrackingActive = active
-        val text = if (active) getString(R.string.status_live_tracking) else getString(R.string.service_notif_text)
+        val text = when {
+            lostModeActive -> getString(R.string.status_lost_mode)
+            active -> getString(R.string.status_live_tracking)
+            else -> getString(R.string.service_notif_text)
+        }
         statusText = text
         runCatching {
             getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification(text))
@@ -1022,6 +1112,8 @@ class EnforcementService : LifecycleService() {
 
     /** The sentence for [status], in the phone's own language. */
     private fun statusTextOf(status: PhoneStatus, appLabel: (String) -> String?): String = when {
+        // A lost phone says so before anything else, to whoever is holding it.
+        lostModeActive -> getString(R.string.status_lost_mode)
         // Outranks everything else: for as long as it is running it is the most surprising
         // thing this phone is doing, and the one its user is most entitled to be told about.
         liveTrackingActive -> getString(R.string.status_live_tracking)
@@ -1165,6 +1257,9 @@ class EnforcementService : LifecycleService() {
          * so somebody else's minute-old fix is worth taking and nothing older is.
          */
         private const val LIVE_CACHE_MAX_AGE_MILLIS = 20_000L
+
+        /** How long a shutdown in progress is held open for the last word to go out. */
+        private const val SHUTDOWN_WORD_BUDGET_MILLIS = 3_000L
         /** Screen-off checkpoint publish, skipped if anything published this recently. */
         private const val SCREEN_OFF_PUBLISH_MIN_MS = 5 * 60_000L
 

@@ -94,6 +94,17 @@ object LocationAlarm {
         }.onFailure { DebugLog.e(TAG, "could not schedule the location alarm", it) }
     }
 
+    /**
+     * Forgets the run of misses and tries again soon — for a "locate now" the phone could not
+     * answer. The backoff is the right pace for nobody in particular; it is the wrong one for a
+     * parent who just asked. Does nothing when the family does not track this phone.
+     */
+    suspend fun retrySoon(context: Context) {
+        failures = 0
+        val app = context.applicationContext as? WalcottApplication ?: return
+        if (app.repository.settingsFlow.first().trackingIntervalMinutes > 0) schedule(context, RETRY_MS)
+    }
+
     fun cancel(context: Context) {
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return
         runCatching { alarms.cancel(pendingIntent(context)) }

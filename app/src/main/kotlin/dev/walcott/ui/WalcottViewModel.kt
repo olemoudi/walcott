@@ -249,6 +249,21 @@ class WalcottViewModel(
         sync.state.map { it.lastLockPin }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /** Ring a member's phone out loud for a minute (see [dev.walcott.sync.RemoteAction.RING_NOW]). */
+    fun ringChild(deviceId: String) = viewModelScope.launch { sync.ringChildDevice(deviceId) }
+
+    /**
+     * Lost mode on, with the line for the lock screen, or off (see
+     * [dev.walcott.sync.RemoteAction.LOST_MODE]).
+     */
+    fun setChildLostMode(deviceId: String, on: Boolean, message: String = "") =
+        viewModelScope.launch { sync.setChildLostMode(deviceId, on, message) }
+
+    /** deviceId -> the lock-screen line asked for, while lost mode is asked for on that phone. */
+    val lostModeAsked: StateFlow<Map<String, String>> =
+        sync.state.map { it.lostModeAsked }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /**
      * Corrects who a member is, long after enrollment (see [dev.walcott.data.MemberKind]).
      *

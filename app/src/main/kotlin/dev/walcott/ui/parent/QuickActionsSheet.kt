@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.MyLocation
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.walcott.sync.RemoteAction
 import dev.walcott.R
 import dev.walcott.rules.ExtraTime
 import dev.walcott.rules.nightOf
@@ -133,9 +135,22 @@ fun QuickActionsSheet(
     // undoable, which is why none of it confirms; close tracking is neither — it holds the
     // child's phone awake and drinks its battery, so the parent is told the price first.
     var askLive by remember { mutableStateOf(false) }
+    var askLost by remember { mutableStateOf(false) }
+    val lostAskedAll by viewModel.lostModeAsked.collectAsStateWithLifecycle()
     // The template rather than the finished sentence, because the duration is only known at the
     // tap — resolved up here like `undo` and `locating` for the same reason they are.
     val liveStartedFmt = stringResource(R.string.quick_live_started)
+    if (askLost && snapshot != null) {
+        val lostAsked = stringResource(R.string.lost_done, entry.name)
+        LostModeDialog(
+            onDismiss = { askLost = false },
+            onConfirm = { message ->
+                askLost = false
+                viewModel.setChildLostMode(snapshot.deviceId, true, message)
+                done(lostAsked)
+            },
+        )
+    }
     if (askLive && snapshot != null) {
         val interval = remember(settings, childId) {
             settings.resolveForChild(childId).trackingIntervalMinutes
@@ -322,6 +337,41 @@ fun QuickActionsSheet(
                 if (!understandsLive && liveUntilMs == null) {
                     Text(
                         stringResource(R.string.quick_live_needs_update),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // --- Finding the phone: ring it, or lock it down and keep it reporting. ---
+                val canFind = RemoteAction.canFind(snapshot.appVersionCode)
+                val lostAskedHere = lostAskedAll.containsKey(snapshot.deviceId)
+                val ringing = stringResource(R.string.find_ringing, entry.name)
+                val lostCleared = stringResource(R.string.lost_cleared, entry.name)
+                QuickRow(
+                    Icons.Outlined.NotificationsActive,
+                    stringResource(R.string.find_title),
+                    detail = when {
+                        snapshot.lostMode -> stringResource(R.string.lost_on_short)
+                        lostAskedHere -> stringResource(R.string.lost_asked_line)
+                        else -> null
+                    },
+                ) {
+                    ActionChip(stringResource(R.string.find_ring), enabled = canFind) {
+                        viewModel.ringChild(snapshot.deviceId)
+                        done(ringing)
+                    }
+                    if (snapshot.lostMode || lostAskedHere) {
+                        ActionChip(stringResource(R.string.lost_disable), enabled = canFind) {
+                            viewModel.setChildLostMode(snapshot.deviceId, false)
+                            done(lostCleared)
+                        }
+                    } else {
+                        ActionChip(stringResource(R.string.lost_enable), enabled = canFind) { askLost = true }
+                    }
+                }
+                if (!canFind) {
+                    Text(
+                        stringResource(R.string.find_needs_update),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

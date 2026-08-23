@@ -106,6 +106,15 @@ class AssistedScenarioTest : DeviceScenario() {
             runCatching {
                 parent.awaitAck(parent.sendCommand(deviceId, RemoteAction.SET_LOCK_PIN, arg = ""))
             }
+            // And then again over adb, because the route above is the one under test and can fail
+            // exactly when it matters: removing a credential needs the platform's reset token,
+            // which is the thing this scenario exists to find unreliable. Without this backstop
+            // "unconditionally" was a comment rather than a fact — a PIN survived a run and the
+            // scenario it broke was one about a lost phone, three classes later.
+            runCatching { device.run("shell", "locksettings", "clear", "--old", PIN) }
+            runCatching { device.run("shell", "locksettings", "set-disabled", "true") }
+            device.nudgeAwake()
+            device.dismissSwipeKeyguard()
         }
     }
 

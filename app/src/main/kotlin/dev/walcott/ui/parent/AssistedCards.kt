@@ -25,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,10 +41,12 @@ import dev.walcott.R
 import dev.walcott.data.MemberKind
 import dev.walcott.enforcement.LockScreen
 import dev.walcott.sync.ChildSnapshot
+import dev.walcott.sync.RemoteAction
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
+import kotlinx.coroutines.delay
 
 /**
  * The cards for supporting somebody's phone from a distance rather than limiting it: is the ringer
@@ -451,3 +454,131 @@ fun NotificationLogCard(
         }
     }
 }
+
+/**
+ * Finding the phone: ring it, or lock it down and keep it reporting (see [RemoteAction.RING_NOW]
+ * and [RemoteAction.LOST_MODE]).
+ *
+ * The state line reads what the PHONE says ([ChildSnapshot.lostMode]) and says "asked for" in
+ * between: a command still in the queue is a phone that is not yet locked, and on the day this
+ * card is used the difference is the whole question. The line on the lock screen is what this
+ * phone asked for ([asked]) — it never travels back.
+ */
+@Composable
+fun FindPhoneCard(
+    snapshot: ChildSnapshot?,
+    /** The lock-screen line this phone asked for, while lost mode is asked for; null otherwise. */
+    asked: String?,
+    onRing: () -> Unit,
+    onLost: (message: String) -> Unit,
+    onFound: () -> Unit,
+    position: CardPosition = CardPosition.Single,
+) {
+    val spacing = Tokens.spacing
+    var askingLost by remember { mutableStateOf(false) }
+    val supported = snapshot != null && RemoteAction.canFind(snapshot.appVersionCode)
+    val lost = snapshot?.lostMode == true
+    // Ticked rather than read off the clock while drawing. This card's inputs only change when a
+    // snapshot lands, so a deadline compared during composition would keep saying "reporting its
+    // position" for as long as nothing else happened — the same freeze the map's own countdown
+    // was fixed for. Alive only while there is something to count.
+    val until = snapshot?.liveTrackingUntilMs ?: 0L
+    val tracking by produceState(initialValue = until > System.currentTimeMillis(), until) {
+        while (until > System.currentTimeMillis()) {
+            value = true
+            delay(TRACKING_TICK_MS)
+        }
+        value = false
+    }
+
+    WalcottCard(position = position) {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Text(stringResource(R.string.find_title), style = MaterialTheme.typography.titleSmall)
+            Text(
+                when {
+                    lost && !asked.isNullOrBlank() -> stringResource(R.string.lost_on_line, asked)
+                    lost -> stringResource(R.string.lost_on_line_plain)
+                    asked != null -> stringResource(R.string.lost_asked_line)
+                    else -> stringResource(R.string.lost_off_line)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (lost || asked != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+            if (lost) {
+                Text(
+                    stringResource(if (tracking) R.string.lost_tracking_line else R.string.lost_tracking_off),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(onClick = onRing, enabled = supported, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.find_ring))
+            }
+            if (lost || asked != null) {
+                OutlinedButton(onClick = onFound, enabled = supported, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.lost_disable))
+                }
+            } else {
+                OutlinedButton(onClick = { askingLost = true }, enabled = supported, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.lost_enable))
+                }
+            }
+            if (snapshot != null && !supported) {
+                Text(
+                    stringResource(R.string.find_needs_update),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+    if (askingLost) {
+        LostModeDialog(
+            onDismiss = { askingLost = false },
+            onConfirm = { message ->
+                askingLost = false
+                onLost(message)
+            },
+        )
+    }
+}
+
+/**
+ * What lost mode does and the one thing it needs from the parent: the line a finder reads on the
+ * lock screen. Prefilled with the shape of a sentence and left for them to finish with a number,
+ * because the app does not know theirs and must not guess.
+ */
+@Composable
+fun LostModeDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    val template = stringResource(R.string.lost_message_default)
+    var message by remember { mutableStateOf(template) }
+    val valid = message.isNotBlank() && message.trim() != template.trim()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.lost_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.sm)) {
+                Text(stringResource(R.string.lost_dialog_body))
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { entered -> message = entered.take(RemoteAction.LOST_MESSAGE_MAX_CHARS) },
+                    minLines = 2,
+                    label = { Text(stringResource(R.string.lost_message_label)) },
+                    supportingText = { Text(stringResource(R.string.lost_message_hint)) },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { onConfirm(message.trim()) }) {
+                Text(stringResource(R.string.lost_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+/** How often the find card re-asks whether a lost phone's tracking session is still running. */
+private const val TRACKING_TICK_MS = 30_000L

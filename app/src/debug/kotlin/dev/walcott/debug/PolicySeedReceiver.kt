@@ -273,6 +273,16 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     }
                     DebugLog.i("WalcottSeed", "ringer lowered (silent=$silenced)")
                 }
+                // `--ei alarm_volume N`: the alarm stream at a known level, from inside the app.
+                // The shell's own `cmd media_session volume` reports success on the emulator and
+                // changes nothing, and a ring-on-request scenario needs "turned up to full" to
+                // be something that happened here rather than the image's default.
+                val alarmVolume = intent.getIntExtra("alarm_volume", -1)
+                if (alarmVolume >= 0) {
+                    val audio = context.getSystemService(android.media.AudioManager::class.java)
+                    runCatching { audio.setStreamVolume(android.media.AudioManager.STREAM_ALARM, alarmVolume, 0) }
+                    DebugLog.i("WalcottSeed", "alarm volume set to $alarmVolume")
+                }
                 // `--es assert_ringer now`: the watchdog's ringer pass on demand. The periodic one
                 // runs on WorkManager's own schedule, which a test cannot wait out, and it is the
                 // pass that matters most — the one that notices a phone silenced while the process
@@ -301,6 +311,29 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (intent.getStringExtra("heartbeat") != null) {
                     dev.walcott.sync.HeartbeatAlarm.runCheckIn(context)
                     DebugLog.i("WalcottSeed", "heartbeat check-in done")
+                }
+                // `--es last_gasp battery|shutdown`: the phone's last word, without faking the
+                // battery or pulling the plug (see LastGasp). `--es ring_stop now` ends a ring.
+                intent.getStringExtra("last_gasp")?.let { kind ->
+                    target.syncManager.recordLastGasp(kind, freshFix = kind == dev.walcott.sync.LastGasp.KIND_BATTERY)
+                    DebugLog.i("WalcottSeed", "last word recorded: $kind")
+                }
+                // `--es lost_mode on|off [--es lost_message "..."]`: lost mode without a parent to
+                // ask for it, so the child's own half — the line on the lock screen, the sentence
+                // on its notification — can be looked at on a single emulator.
+                intent.getStringExtra("lost_mode")?.let { state ->
+                    if (state == "on") {
+                        val message = intent.getStringExtra("lost_message") ?: "Lost phone - call 600 000 000"
+                        target.syncManager.enableLostMode(message)
+                    } else {
+                        target.syncManager.disableLostMode()
+                    }
+                    DebugLog.i("WalcottSeed", "lost mode seeded: $state")
+                }
+                if (intent.getStringExtra("ring_stop") != null) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        dev.walcott.enforcement.Ringer.stop(context, "seed")
+                    }
                 }
                 // `--es ntfy_server http://10.0.2.2:8099`: points this device's channel at a local
                 // sink, so a parent->child exchange can be exercised when ntfy.sh is rate-limiting.
@@ -550,6 +583,31 @@ class PolicySeedReceiver : BroadcastReceiver() {
             enforcementGaps = intent.getStringExtra("child_gaps")?.split(",")?.filter { it.isNotBlank() }
                 ?: emptyList(),
             clockSkewMs = intent.getLongExtra("child_skew_ms", 0),
+            // `--ez child_lost true`: this fake child reports it is in lost mode, so the parent's
+            // "Find this phone" card can be seen in its locked-down state on one emulator.
+            lostMode = intent.getBooleanExtra("child_lost", false),
+            // `--es child_gasp battery|shutdown`: a last word, so the map, home row and card can
+            // be seen saying where a phone was when it went quiet without waiting for one to die.
+            lastGasp = intent.getStringExtra("child_gasp")?.let { kind ->
+                val saidAt = System.currentTimeMillis() - 20 * 60_000L
+                dev.walcott.sync.LastGasp(
+                    kind = kind,
+                    atMs = saidAt,
+                    // The first of the seeded coordinates, so the word's position and the trail's
+                    // head are the same place — which is what a real one would be.
+                    fix = intent.getStringExtra("child_locations")?.substringBefore(";")?.split(",")
+                        ?.takeIf { it.size == 2 }
+                        ?.let {
+                            dev.walcott.sync.LocationPoint(
+                                lat = it[0].trim().toDouble(),
+                                lng = it[1].trim().toDouble(),
+                                epochMs = saidAt,
+                                accuracyM = 14f,
+                            )
+                        },
+                    batteryPercent = if (kind == dev.walcott.sync.LastGasp.KIND_BATTERY) 3 else -1,
+                )
+            },
             updateError = intent.getStringExtra("child_update_error") ?: "",
             // `--ei child_app_version N`: report an app build for this fake child (N below the
             // parent's own drives the "outdated" chip and the Update-now emphasis).

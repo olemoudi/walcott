@@ -377,6 +377,35 @@ data class LocationPoint(
 data class LocationRequest(val deviceId: String, val requestedAtMs: Long)
 
 /**
+ * A phone's last word before it goes quiet: it is about to die, or it is being switched off.
+ *
+ * The twelve-hour silence alert only ever said "not heard from"; this is what lets it say "its
+ * battery ran out at 17:42, here" instead, which is the difference between a parent who knows
+ * where to look and one who does not. Carried in every snapshot until the phone is back to
+ * normal (charged past the low mark, or rebooted), so a parent who missed the message still
+ * reads it off the last snapshot they have.
+ *
+ * [fix] is the newest position the phone could offer — a fresh one when there was time for it,
+ * the last recorded one when there was not — and null when location is off for this member: a
+ * dying phone is not a reason to start tracking somebody who is not tracked.
+ */
+@Serializable
+data class LastGasp(
+    /** One of [KIND_BATTERY] / [KIND_SHUTDOWN]; a parent skips a kind it does not know. */
+    val kind: String,
+    val atMs: Long,
+    val fix: LocationPoint? = null,
+    val batteryPercent: Int = -1,
+) {
+    companion object {
+        /** The battery fell to the system's low mark while unplugged. */
+        const val KIND_BATTERY = "battery"
+        /** The phone was being switched off (a deliberate act, or a battery already at zero). */
+        const val KIND_SHUTDOWN = "shutdown"
+    }
+}
+
+/**
  * A one-shot instruction the parent sends to a specific child device, acknowledged in
  * [ChildSnapshot.lastCommand]. Applied idempotently by [id], like bonuses and resolutions, so a
  * replayed parent snapshot can't run it twice.
@@ -490,6 +519,36 @@ object RemoteAction {
     const val LIVE_TRACKING = "live_tracking"
 
     /**
+     * Make this phone ring out loud for [RemoteCommand.arg] seconds — the phone down the side
+     * of the sofa, or the one its owner cannot hear. It plays over the ALARM stream at full
+     * volume whatever the ringer is set to (silent and vibrate are exactly the states this is
+     * for, and alarms are the one sound Do Not Disturb lets through by default), stops by itself
+     * when the time is up, and stops early when the phone is unlocked or its holder taps "Found
+     * it". A blank arg rings for [RING_DEFAULT_SECONDS]; see [ringSeconds].
+     *
+     * TTL'd like [LIVE_TRACKING]: a ring delivered tomorrow morning is not a late version of
+     * what the parent wanted, it is a phone going off in a classroom.
+     */
+    const val RING_NOW = "ring_now"
+
+    /**
+     * Lost mode, on or off: [RemoteCommand.arg] is [LOST_ON] or [LOST_OFF], and for "on" the
+     * line to put on the lock screen — a way to reach the family — travels in
+     * [RemoteCommand.label]. The child locks the screen at once, writes the line, and keeps
+     * reporting where it is until told otherwise (see `LostMode`).
+     *
+     * Deliberately NOT TTL'd, in either direction. A phone that was off for two days and comes
+     * back should still lock itself and still say whose it is: the parent has not stopped wanting
+     * it found. And an "off" must always land, or a recovered phone stays locked down.
+     */
+    const val LOST_MODE = "lost_mode"
+    const val LOST_ON = "on"
+    const val LOST_OFF = "off"
+
+    /** Longest lock-screen line: the platform shows about two lines of it, and a finder reads one. */
+    const val LOST_MESSAGE_MAX_CHARS = 140
+
+    /**
      * Publish the notifications this device received (see `NotificationLog`), newest first.
      * [RemoteCommand.arg] carries the query — which app, and where to page from (see
      * [NotificationQuery]).
@@ -582,6 +641,7 @@ object RemoteAction {
         SET_LOCK_PIN -> nowMs - issuedAtMs > LOCK_PIN_TTL_MS
         RELEASE_DEVICE -> nowMs - issuedAtMs > RELEASE_TTL_MS
         LIVE_TRACKING -> nowMs - issuedAtMs > LIVE_TRACKING_TTL_MS
+        RING_NOW -> nowMs - issuedAtMs > RING_TTL_MS
         else -> false
     }
 
@@ -591,6 +651,36 @@ object RemoteAction {
      * never begins long after everybody stopped looking.
      */
     const val LIVE_TRACKING_TTL_MS = 15 * 60 * 1000L
+
+    /** How long a [RING_NOW] stays worth running (see there). */
+    const val RING_TTL_MS = 15 * 60 * 1000L
+
+    /** Longest ring a parent can ask for: long enough to walk to it, short enough to stop being one. */
+    const val RING_MAX_SECONDS = 120
+
+    /** Shortest; below this the tone has not finished once. */
+    const val RING_MIN_SECONDS = 5
+
+    /** What a blank [RING_NOW] arg means. */
+    const val RING_DEFAULT_SECONDS = 60
+
+    /** The seconds a [RING_NOW] asks for, or null when the arg is not a number at all. */
+    fun ringSeconds(arg: String): Int? {
+        if (arg.isBlank()) return RING_DEFAULT_SECONDS
+        return arg.trim().toIntOrNull()?.coerceIn(RING_MIN_SECONDS, RING_MAX_SECONDS)
+    }
+
+    /** The first child build that can ring on request and enter lost mode. */
+    const val FIND_MIN_CHILD_VERSION = 150
+
+    /** Whether a child reporting [childAppVersionCode] can be rung and put into lost mode. */
+    fun canFind(childAppVersionCode: Int): Boolean = childAppVersionCode >= FIND_MIN_CHILD_VERSION
+
+    /** [CommandAck.detail] outcomes of [RING_NOW] and [LOST_MODE]. */
+    const val DETAIL_RINGING = "ringing"
+    const val DETAIL_RING_REFUSED = "ring_refused"
+    const val DETAIL_LOST_ON = "lost_on"
+    const val DETAIL_LOST_OFF = "lost_off"
 
     /** How long a [SET_LOCK_PIN] stays valid after the parent issued it. */
     const val LOCK_PIN_TTL_MS = 30 * 60 * 1000L
@@ -911,6 +1001,14 @@ data class ChildSnapshot(
      * device never looks unfinished.
      */
     val setupUnmet: List<String> = emptyList(),
+    /**
+     * Whether this phone is in lost mode right now (see [RemoteAction.LOST_MODE]). The parent's
+     * card reads the truth from here, not from what it asked: a command still in the queue is a
+     * phone that is not yet locked.
+     */
+    val lostMode: Boolean = false,
+    /** The phone's last word before going quiet, while it still applies (see [LastGasp]). */
+    val lastGasp: LastGasp? = null,
 )
 
 /** Enforcement backend a child reports so the parent knows if blocking is actually active. */

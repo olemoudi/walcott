@@ -61,6 +61,7 @@ class StaleChildWorker(context: Context, params: WorkerParameters) : CoroutineWo
             SyncNotifications.notifyStaleChild(
                 context, SyncNotifications.who(name, label), silence.humanize(), deviceId,
                 snapshot?.childId.orEmpty(),
+                lastWord = snapshot?.lastGasp?.let { LastGaspText.describe(context, it) },
             )
             feedEvent(ParentEvent.TYPE_STALE, snapshot?.childId.orEmpty(), name, detail = silence.toMillis().toString())
         }

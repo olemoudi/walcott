@@ -48,6 +48,10 @@ class RemoteCommandRunner(
     private val setLiveTracking: suspend (minutes: Int) -> Unit = { },
     /** Ends any open install window (see [RemoteAction.REAPPLY_POLICY]). */
     private val endInstallWindow: suspend () -> Unit = { },
+    /** Rings this phone for N seconds (see [RemoteAction.RING_NOW]); false when nothing could play. */
+    private val ringNow: suspend (seconds: Int) -> Boolean = { false },
+    /** Puts this phone into, or takes it out of, lost mode (see [RemoteAction.LOST_MODE]). */
+    private val setLostMode: suspend (on: Boolean, message: String) -> Unit = { _, _ -> },
 ) {
 
     suspend fun run(command: RemoteCommand): CommandAck {
@@ -68,6 +72,8 @@ class RemoteCommandRunner(
                 RemoteAction.RELEASE_DEVICE -> release(command)
                 RemoteAction.SET_RELAY -> setRelay(command.arg)
                 RemoteAction.LIVE_TRACKING -> liveTracking(command)
+                RemoteAction.RING_NOW -> ringNow(command)
+                RemoteAction.LOST_MODE -> lostMode(command)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -288,6 +294,32 @@ class RemoteCommandRunner(
         }
         setLiveTracking(minutes)
         return true to if (minutes > 0) LiveTracking.DETAIL_STARTED else LiveTracking.DETAIL_STOPPED
+    }
+
+    /**
+     * Rings the phone. Refuses an old command like [liveTracking] does: a ring that lands
+     * tomorrow is a phone going off in a classroom, not a late version of what was wanted.
+     */
+    private suspend fun ringNow(command: RemoteCommand): Pair<Boolean, String> {
+        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
+            DebugLog.w(TAG, "ignoring a ring that is too old to still be meant")
+            return false to RemoteAction.DETAIL_EXPIRED
+        }
+        val seconds = RemoteAction.ringSeconds(command.arg) ?: return false to "bad_duration"
+        return if (ringNow(seconds)) true to RemoteAction.DETAIL_RINGING else false to RemoteAction.DETAIL_RING_REFUSED
+    }
+
+    /** Lost mode on or off; never refused for age (see [RemoteAction.LOST_MODE]). */
+    private suspend fun lostMode(command: RemoteCommand): Pair<Boolean, String> = when (command.arg) {
+        RemoteAction.LOST_ON -> {
+            setLostMode(true, command.label)
+            true to RemoteAction.DETAIL_LOST_ON
+        }
+        RemoteAction.LOST_OFF -> {
+            setLostMode(false, "")
+            true to RemoteAction.DETAIL_LOST_OFF
+        }
+        else -> false to "bad_arg"
     }
 
     private fun lockNow(): Pair<Boolean, String> {

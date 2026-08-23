@@ -60,7 +60,7 @@ class CurfewScenarioTest : DeviceScenario() {
         // A real tun, on a real kernel, for a family with not one domain in its rules. There is
         // no other reason this device could want one — which is what makes the interface itself
         // the assertion: the curfew found something to cut off and needs a filter to do it.
-        awaitDevice("the DNS tunnel up while the phone is shut", timeoutMs = 60_000) { device.tunnelUp() }
+        awaitDevice("the DNS tunnel up while the phone is shut", timeoutMs = TUNNEL_UP_TIMEOUT_MS) { device.tunnelUp() }
         assertEquals(
             ChildDevice.PACKAGE, device.alwaysOnVpnPackage(),
             "the filter came up without being pinned as always-on, so the child could turn it off",
@@ -108,7 +108,7 @@ class CurfewScenarioTest : DeviceScenario() {
         assumeTrue(device.isInstalled(SYSTEM_APP), "this phone has no $SYSTEM_APP to keep open")
 
         parent.pushPolicy(shutPhone(version = 2))
-        awaitDevice("the DNS tunnel up while the phone is shut", timeoutMs = 60_000) { device.tunnelUp() }
+        awaitDevice("the DNS tunnel up while the phone is shut", timeoutMs = TUNNEL_UP_TIMEOUT_MS) { device.tunnelUp() }
 
         // Now keep it on screen, the way a child would. Nudged awake throughout: the enforcement
         // loop parks while the screen is off, so a dozing emulator accrues nothing and the whole
@@ -142,5 +142,21 @@ class CurfewScenarioTest : DeviceScenario() {
          * number, and a scenario that proved a different one would prove nothing.
          */
         const val LINGER_TIMEOUT_MS = 4 * 60 * 1000L
+
+        /**
+         * How long the tunnel gets to come up, and why it is not a round minute.
+         *
+         * In the ordinary path the enforcement loop's collector reacts to the policy landing and
+         * the tun is there in a second or two. But when the tunnel is down at that moment — which
+         * it often is, because the scenario before this one just tore a family down — what brings
+         * it back is the loop's self-heal, and that waits for `VpnStatus.GRACE_MS` (90 s) to pass
+         * before it will call the tunnel down at all, then re-asserts at most once every
+         * `EnforcementService.VPN_HEAL_MILLIS` (60 s). So the product's own documented worst case
+         * is about two and a half minutes, and a 60-second window sat under it: this scenario
+         * passed or failed on which path happened to answer, which is the shape of a mis-sized
+         * window rather than of contention (it failed once in a full sweep and passed alone
+         * minutes later).
+         */
+        const val TUNNEL_UP_TIMEOUT_MS = 180_000L
     }
 }

@@ -171,12 +171,12 @@ And if your phone is the one that is gone, there are two ways out from the child
   gives back every setting, erases the rules and history and drops out of management. Nothing
   is left to suggest the phone was ever enrolled.
 - **Without the PIN** — the child can request the same release from their home screen, and it
-  takes 24 hours of being *loud*: parents are notified immediately and again every two hours,
+  takes 12 hours of being *loud*: parents are notified immediately and again every hour,
   each alert carrying a one-tap refusal. The phone must keep reaching the family channel the
   whole time, and the countdown runs on the relay's clock, so moving the phone's clock does
   nothing. A refusal ends the request and blocks new ones for three days.
 
-That second route is a deliberate trade-off: a determined child can free their phone in a day,
+That second route is a deliberate trade-off: a determined child can free their phone in half a day,
 but only by telling their parents a dozen times first — and a factory reset, which Walcott
 does not block, was always the faster way out anyway.
 

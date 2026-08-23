@@ -79,12 +79,25 @@ object SyncNotifications {
     fun who(childName: String, family: String?): String =
         if (family.isNullOrBlank()) childName else "$childName · $family"
 
-    /** Alert when a child device has been silent for a long time (see [Staleness]). */
-    fun notifyStaleChild(context: Context, childName: String, silence: String, deviceId: String, childId: String = "") =
+    /**
+     * Alert when a child device has been silent for a long time (see [Staleness]).
+     *
+     * [lastWord] is the phone's own account of why it went quiet, when it left one (see
+     * [LastGaspText]); it replaces "hasn't checked in for 12 hours", which is true and useless
+     * beside "its battery was about to run out at 22:41".
+     */
+    fun notifyStaleChild(
+        context: Context,
+        childName: String,
+        silence: String,
+        deviceId: String,
+        childId: String = "",
+        lastWord: String? = null,
+    ) =
         post(
             context, STATUS_CHANNEL, R.string.status_channel_name,
             title = context.getString(R.string.stale_alert_title, childName),
-            text = context.getString(R.string.stale_alert_text, silence),
+            text = lastWord ?: context.getString(R.string.stale_alert_text, silence),
             notifId = deviceId.hashCode(),
             dest = childDest(childId),
         )
@@ -269,6 +282,27 @@ object SyncNotifications {
             title = context.getString(R.string.low_battery_title, childName),
             text = context.getString(R.string.low_battery_text, percent),
             notifId = "batt".hashCode() + deviceId.hashCode(),
+            dest = childDest(childId),
+        )
+
+    /**
+     * A phone's last word before going quiet (see [LastGasp]): [word] is the sentence
+     * ([LastGaspText]), and the text says where to look when the word came with a position.
+     * On the status channel like the low-battery alert it follows: news, not an alarm.
+     */
+    fun notifyLastGasp(
+        context: Context,
+        childName: String,
+        word: String,
+        deviceId: String,
+        childId: String = "",
+        hasFix: Boolean = false,
+    ) =
+        post(
+            context, STATUS_CHANNEL, R.string.status_channel_name,
+            title = context.getString(R.string.last_gasp_title, childName),
+            text = if (hasFix) context.getString(R.string.last_gasp_text_with_fix, word) else word,
+            notifId = "gasp".hashCode() + deviceId.hashCode(),
             dest = childDest(childId),
         )
 
