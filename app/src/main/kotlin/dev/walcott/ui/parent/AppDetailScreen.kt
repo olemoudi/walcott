@@ -73,7 +73,27 @@ fun AppDetailScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val rows by viewModel.appRows.collectAsStateWithLifecycle()
     val iconRefresh by viewModel.iconRefresh.collectAsStateWithLifecycle()
-    val label = rows.firstOrNull { it.app.packageName == packageName }?.app?.label ?: packageName
+    val row = rows.firstOrNull { it.app.packageName == packageName }
+    val label = row?.app?.label ?: packageName
+    val isSystemApp = row?.app?.isSystem == true
+    val children by viewModel.children.collectAsStateWithLifecycle()
+    // The members who have this app on a build that cannot manage a preinstalled one. Named
+    // rather than counted: with two phones in a family, "one of them" is not an answer.
+    val tooOldFor = remember(children, settings, packageName, childId, isSystemApp) {
+        if (!isSystemApp) {
+            emptyList()
+        } else {
+            children
+                .filter { childId == null || it.childId == childId }
+                .filter { snap -> snap.apps.any { it.packageName == packageName } }
+                .filterNot { dev.walcott.sync.RemoteAction.canManageSystemApps(it.appVersionCode) }
+                // The name the parent gave them, not the one the phone calls itself.
+                .map { snap ->
+                    settings.children.firstOrNull { it.childId == snap.childId }?.name ?: snap.displayName
+                }
+                .distinct()
+        }
+    }
     val appPolicy = if (childId == null) {
         settings.appPolicies[packageName]
     } else {
@@ -118,12 +138,50 @@ fun AppDetailScreen(
                 }
             }
 
+            if (isSystemApp) {
+                item {
+                    WalcottCard {
+                        Column(Modifier.padding(spacing.lg)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        stringResource(R.string.app_manage_system),
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
+                                    Text(
+                                        stringResource(R.string.app_manage_system_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                androidx.compose.material3.Switch(
+                                    checked = appPolicy?.manageSystemApp == true,
+                                    onCheckedChange = { viewModel.setAppManageSystem(packageName, it, childId) },
+                                )
+                            }
+                            if (appPolicy?.manageSystemApp == true && tooOldFor.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.app_manage_system_old_child, tooOldFor.joinToString(", ")),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(top = spacing.sm),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             item { SectionTitle(stringResource(R.string.app_own_limit), AppRestriction.OWN_BUDGET, restrictions) }
             item {
+                // A limit on a preinstalled app nobody opted into is a preference, not a rule:
+                // it saves, it shows on this screen, and the phone goes on opening the app. Said
+                // here rather than only by the switch above, because this is where the parent is
+                // when they set it.
+                val idle = isSystemApp && appPolicy?.manageSystemApp != true
                 Text(
-                    stringResource(R.string.app_own_limit_hint),
+                    stringResource(if (idle) R.string.app_limit_not_applied else R.string.app_own_limit_hint),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (idle) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             // The third state, and the only way to say "never cut this one off" without turning

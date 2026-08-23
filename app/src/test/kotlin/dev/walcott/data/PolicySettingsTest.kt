@@ -14,6 +14,18 @@ import java.time.LocalDate
 
 class PolicySettingsTest {
 
+    @Test
+    fun `the preinstalled opt-in reaches the engine, and an entry holding only it is not empty`() {
+        // Two halves of the same promise. The flag has to survive the mapping, or the switch is
+        // a preference nothing reads; and an entry carrying nothing BUT the flag has to count as
+        // set, or the pruning of empty entries would quietly undo the parent's tap.
+        val dto = AppPolicyDto(manageSystemApp = true)
+        assertFalse(dto.isEmpty)
+        val config = PolicySettings(version = 1, appPolicies = mapOf("com.android.chrome" to dto))
+            .toFamilyConfig(emptySet())
+        assertEquals(setOf("com.android.chrome"), config.managedSystemPackages())
+    }
+
     private val settings = PolicySettings(
         version = 3,
         defaultAppBudget = mapOf("SCHOOL" to 30, "WEEKEND" to 120),

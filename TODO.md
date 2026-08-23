@@ -278,6 +278,41 @@ goes red again, check `adb shell dumpsys power | grep mWakefulness` before suspe
 
 ## Emulator notes that cost time
 
+Four from the 0.98.0 work, all of them platform facts rather than emulator quirks — measured on
+the AVD and worth not re-deriving:
+
+- **SystemUI snoozes heads-ups PER PACKAGE for a minute** after one of that package's heads-ups
+  goes away: `adb shell dumpsys activity service com.android.systemui/.SystemUIService` prints
+  `HeadsUpManagerPhone state: ... mSnoozeLengthMs=60000`. While it runs, the next notification
+  from that package is filed in the shade with `mIsInterruptive=false` — the product posted the
+  right thing and the platform declined to show it. This is what made `TimeWarningScenarioTest`
+  fail intermittently in full sweeps and pass alone, twice diagnosed as "load" before it was
+  measured. Turn it off with `settings put global heads_up_snooze_length_ms 0` (note the key:
+  `heads_up_notification_snooze` is a DIFFERENT setting and does nothing here). It takes effect
+  live — SystemUI has an observer on it — and the dump above is how you check it took.
+
+- **A device owner CAN suspend most preinstalled apps, and the platform itself refuses the
+  dangerous ones.** `pm suspend` (which shares `canSuspendPackageForUser` with the DPM path)
+  accepted Chrome, YouTube, Photos, Camera, Clock and even Play Store, and refused the default
+  home, the default dialer, Settings and the permission controller. It also accepted the
+  KEYBOARD and SystemUI, which is why Walcott keeps a denylist of its own: neither has a
+  launcher icon, so neither reaches the list a parent reads, but a phone with no keyboard cannot
+  type its own unlock PIN.
+- **A suspension by a device owner is attributed to the PLATFORM, not to the admin app.**
+  `dumpsys package <pkg>` shows `Suspend params: suspendingPackage=<0>android dialogInfo=null`,
+  so tapping the app opens `com.android.settings/...ActionDisabledByAdminDialog` ("Blocked by
+  work policy") rather than the `SuspendedAppActivity` that would have named Walcott. Two
+  consequences, both dead ends worth writing down: `SuspendDialogInfo` needs `SUSPEND_APPS`,
+  which a device owner does not hold, and the "More details" button `SuspendedAppActivity` can
+  offer resolves against the SUSPENDING package — the platform — so no activity of ours can ever
+  be behind it.
+- **`setShortSupportMessage` reaches the restriction dialogs but NOT the suspended-app one.**
+  With the message set, Settings ▸ Date & time ▸ "Set time automatically" shows it in place of
+  "For more info, contact your IT admin"; the blocked-app dialog keeps the generic line. Also
+  note the message is not readable from adb (`dumpsys device_policy` does not print it, like
+  `setDeviceOwnerLockScreenInfo`) — it is asserted from inside the app in
+  `PolicyEnforcementDeviceTest`.
+
 Four from the 0.97.0 work, all of which made a working feature look broken:
 
 - **An ongoing notification mints an auto-group SUMMARY on its own channel, and the summary

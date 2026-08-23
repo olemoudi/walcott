@@ -4,6 +4,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.os.Build
 import android.os.UserManager
+import dev.walcott.R
 import dev.walcott.WalcottAdminReceiver
 
 /**
@@ -141,6 +142,17 @@ object DeviceRestrictions {
 
         // Self-protection: as Device Owner, Walcott can't be uninstalled (always on).
         runCatching { dpm.setUninstallBlocked(admin, context.packageName, true) }
+
+        // What the phone says on its own behalf wherever Android tells somebody an action is
+        // "managed by your administrator" — changing the date, installing something, resetting
+        // the phone. Until now those screens named an administrator and nothing else, which is
+        // the least useful true sentence a phone can produce: the person reading it is the one
+        // holding the phone, and what they need is which app to open and what it can do for
+        // them. Cleared again on handback (see DeviceHandback).
+        runCatching {
+            dpm.setShortSupportMessage(admin, context.getString(R.string.admin_support_short))
+            dpm.setLongSupportMessage(admin, context.getString(R.string.admin_support_long))
+        }
 
         for (feature in FEATURES) {
             val enabled = feature.key in effective

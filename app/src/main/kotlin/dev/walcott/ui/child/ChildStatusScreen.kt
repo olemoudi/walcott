@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.PhonelinkSetup
@@ -179,6 +180,9 @@ fun ChildStatusScreen(
     }
 
     val context = LocalContext.current
+    // Straight from the ringer: this phone is the one making the noise, so there is nothing to
+    // ask anybody. Zero when it is quiet.
+    val ringingUntilMs by dev.walcott.enforcement.Ringer.ringingUntilMs.collectAsStateWithLifecycle()
 
     // Everything this phone needs switched on — usage access, the accessibility blocker, location,
     // the DNS filter, notifications, battery optimisation — in one place that re-checks itself on
@@ -212,6 +216,13 @@ fun ChildStatusScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             item { Header(identity, settings.familyName, onOpenParent) }
+            // Above everything, including the hero: while the phone is making that noise it is
+            // the only thing anybody holding it wants. The notification has "Found it" on it,
+            // but a notification is where a person looks LAST when a phone is howling in their
+            // hand — the app they have just opened is where they look first.
+            if (ringingUntilMs > 0L) {
+                item { RingingCard(onStop = { dev.walcott.enforcement.Ringer.stop(context, "stopped here") }) }
+            }
             if (identity.role == Role.UNPAIRED) {
                 item {
                     JoinFamilyCard(onLink = {
@@ -604,6 +615,50 @@ private fun InstallWindowCard(remainingMs: Long) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * The phone is ringing and this is how it stops — one tap, on the screen of whoever is holding it.
+ *
+ * Deliberately a whole button rather than a line of text with an action buried in it. The person
+ * reading this is standing in a room with an alarm going off; what they need is a target big
+ * enough to hit without reading anything.
+ */
+@Composable
+private fun RingingCard(onStop: () -> Unit) {
+    val spacing = Tokens.spacing
+    WalcottCard(color = MaterialTheme.colorScheme.errorContainer) {
+        Column(Modifier.padding(spacing.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.NotificationsActive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(Modifier.width(spacing.md))
+                Column {
+                    Text(
+                        stringResource(R.string.ring_home_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        stringResource(R.string.ring_home_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+            Spacer(Modifier.height(spacing.md))
+            androidx.compose.material3.Button(
+                onClick = onStop,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Text(stringResource(R.string.ring_home_stop), style = MaterialTheme.typography.titleMedium)
             }
         }
     }

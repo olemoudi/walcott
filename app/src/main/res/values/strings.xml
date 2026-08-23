@@ -1585,6 +1585,23 @@
     <string name="app_limit_default">Family default: %1$s a day</string>
     <string name="app_limit_none">No limit</string>
     <string name="app_limit_none_ever">No limit, ever</string>
+    <!-- Preinstalled apps: the opt-in that makes a limit on the browser or the video app real. -->
+    <!-- What Android shows wherever it says an action is managed by an administrator. -->
+    <string name="ring_active_title">%1$s\'s phone is ringing</string>
+    <string name="ring_active_title_unnamed">A phone in this family is ringing</string>
+    <string name="ring_active_stop">Stop</string>
+    <string name="ring_active_dismiss">Hide this</string>
+    <string name="ring_home_title">This phone is ringing</string>
+    <string name="ring_home_desc">Your family asked it to, so you could find it.</string>
+    <string name="ring_home_stop">Stop the sound</string>
+    <string name="admin_support_short">Walcott is keeping your family\'s rules on this phone. Open it to see what is limited and to ask for more time.</string>
+    <string name="admin_support_long">This phone is set up by your family with Walcott. Open Walcott to see what is limited right now, how long is left today, and to ask for more time.</string>
+    <string name="apps_preinstalled_tag">From the phone</string>
+    <string name="apps_limit_idle_tag">Not applied</string>
+    <string name="app_manage_system">Limit it even though it came with the phone</string>
+    <string name="app_manage_system_hint">Apps that came with the phone are left alone by default. Turn this on and it gets closed like any other app. Some phones refuse to close certain built-in apps; if that happens you\'ll be told on the member\'s screen.</string>
+    <string name="app_manage_system_old_child">%1$s needs to update Walcott before this works on their phone.</string>
+    <string name="app_limit_not_applied">This limit does nothing yet: the app came with the phone. Turn on the switch above to make it real.</string>
     <string name="app_no_limit_ever">Never limit this app</string>
     <string name="app_no_limit_ever_hint">It ignores the family default. Bedtime and screen-free times still apply.</string>
     <string name="dashboard_default_limit">Limit per app</string>
@@ -1766,10 +1783,17 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_98_0">
+        <item>Making a phone ring was easy to start and hard to stop. Now the phone itself puts a "Stop the sound" button at the top of its own Walcott screen — where somebody holding a howling phone actually looks — and your home shows "X\'s phone is ringing" with Stop, for as long as it lasts. That card takes itself away when the noise ends, and can be hidden by hand for the case nothing can report: a phone that stopped ringing because its battery went.</item>
+        <item>You can now limit an app that came with the phone — the browser, the video app, the gallery. Those are usually where the day actually goes, and until now they were the one thing Walcott could not close: a limit you saved on them was kept, shown, and quietly ignored. Open the app in Apps and turn on "Limit it even though it came with the phone", and it is closed like any other. It is one app at a time on purpose: there is no list of built-in apps that is safe on every phone, so you name the one you mean. The phone itself refuses the ones it cannot do without — the home screen, the dialer, Settings — and if yours refuses anything else you are told on that member\'s page instead of being left to wonder.</item>
+        <item>Your app list now shows every app on the phone, with "From the phone" under the ones that shipped with it — you cannot decide to limit something you were never shown. And a limit that cannot bite says so: an app that came with the phone and has a limit you set, without that switch on, is tagged "Not applied" in the list and explains itself in its own screen.</item>
+        <item>Wherever Android tells the person holding the phone that something is "blocked by work policy", it used to add "for more info, contact your IT admin". It now says Walcott is keeping the family\'s rules and to open it to see what is limited and ask for more time — wherever Android will carry it: changing the date, trying to install something, resetting the phone. Not, unfortunately, on the dialog for a limited app itself; Android reserves that one for itself.</item>
+        <item>A fix worth knowing about: when more apps arrived unapproved at once than the quarantine can hold, the extra ones were quietly folded into the phone\'s list of apps it already knew — which meant they were never looked at again. They now wait for a slot instead.</item>
+    </string-array>
     <string-array name="whats_new_0_97_0">
         <item>Your family can now make a phone ring. From a member\'s page, or the lightning button on your home, "Make it ring" plays the alarm tone at full volume for a minute — on silent, on vibrate, and through Do Not Disturb, which are exactly the states a phone nobody can find is in. It stops by itself, when the phone is unlocked, or when whoever picked it up taps "Found it".</item>
         <item>And a phone that is really gone has a lost mode. It locks at once, puts a line you write on its lock screen — a number to call — and reports where it is every minute for as long as the battery lasts, with no floor: the floor that stops close tracking at 15% exists so a session does not kill a phone you will see tonight, and a lost phone that dies with its last fix unsent is lost for good. A reboot puts it straight back into lost mode. "I\'ve got it back" undoes all of it in one tap.</item>
-        <item>A phone about to go quiet now leaves a last word. When the battery reaches the system\'s low mark, or the phone is being switched off, it sends one more message — with its position, if you track that member — and your screen says "its battery ran out at 17:42" or "it was switched off at 18:42" instead of counting hours of silence. The map marks the last position it reported. Close tracking also takes one last fix before it stops for a low battery, and a "locate now" the phone could not answer is retried sooner than its own backoff would have.</item>
+        <item>A phone about to go quiet now leaves a last word. When the battery reaches the system\'s low mark, or the phone is being switched off, it sends one more message — with its position, if you track that member — and your screen says "its battery was about to run out at 17:42" or "it was switched off at 18:42" instead of counting hours of silence. The map marks the last position it reported. Close tracking also takes one last fix before it stops for a low battery, and a "locate now" the phone could not answer is retried sooner than its own backoff would have.</item>
     </string-array>
     <string-array name="whats_new_0_96_0">
         <item>The emergency release — the way out a child can start on their own, for when a parent\'s phone is gone and the PIN with it — is now twelve hours rather than twenty-four, and the phone has to get a notice out every hour instead of every two.</item>

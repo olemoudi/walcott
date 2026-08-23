@@ -50,6 +50,8 @@ class RemoteCommandRunner(
     private val endInstallWindow: suspend () -> Unit = { },
     /** Rings this phone for N seconds (see [RemoteAction.RING_NOW]); false when nothing could play. */
     private val ringNow: suspend (seconds: Int) -> Boolean = { false },
+    /** Stops a ring that is running (see [RemoteAction.RING_STOP]). */
+    private val ringStop: suspend () -> Unit = {},
     /** Puts this phone into, or takes it out of, lost mode (see [RemoteAction.LOST_MODE]). */
     private val setLostMode: suspend (on: Boolean, message: String) -> Unit = { _, _ -> },
 ) {
@@ -73,6 +75,7 @@ class RemoteCommandRunner(
                 RemoteAction.SET_RELAY -> setRelay(command.arg)
                 RemoteAction.LIVE_TRACKING -> liveTracking(command)
                 RemoteAction.RING_NOW -> ringNow(command)
+                RemoteAction.RING_STOP -> ringStop(command)
                 RemoteAction.LOST_MODE -> lostMode(command)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
@@ -307,6 +310,21 @@ class RemoteCommandRunner(
         }
         val seconds = RemoteAction.ringSeconds(command.arg) ?: return false to "bad_duration"
         return if (ringNow(seconds)) true to RemoteAction.DETAIL_RINGING else false to RemoteAction.DETAIL_RING_REFUSED
+    }
+
+    /**
+     * Stops the ring, and says so whether or not one was running.
+     *
+     * Idempotent on purpose: the commonest way this arrives is a parent tapping "stop" on a
+     * phone that has already stopped by itself, and answering that with a failure would put a
+     * red mark on the one screen that is telling the truth.
+     */
+    private suspend fun ringStop(command: RemoteCommand): Pair<Boolean, String> {
+        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
+            return false to RemoteAction.DETAIL_EXPIRED
+        }
+        ringStop()
+        return true to RemoteAction.DETAIL_RING_STOPPED
     }
 
     /** Lost mode on or off; never refused for age (see [RemoteAction.LOST_MODE]). */

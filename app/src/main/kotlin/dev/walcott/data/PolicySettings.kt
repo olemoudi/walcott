@@ -212,8 +212,14 @@ data class AppPolicyDto(
      * stay distinguishable or a parent could only cap everything or nothing.
      */
     val unlimited: Boolean = false,
+    /**
+     * Manage this app even though it came with the phone (see
+     * [dev.walcott.rules.AppPolicy.manageSystemApp]). Ignored for an app the family installed.
+     */
+    val manageSystemApp: Boolean = false,
 ) {
-    val isEmpty: Boolean get() = budgets.isEmpty() && blockedWindows.isEmpty() && !unlimited
+    val isEmpty: Boolean
+        get() = budgets.isEmpty() && blockedWindows.isEmpty() && !unlimited && !manageSystemApp
 }
 
 /** Persistable per-app domain rule (see [DomainAppRule]). */
@@ -960,6 +966,7 @@ data class PolicySettings(
                         .byDayType()
                         .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
                     unlimited = dto.unlimited,
+                    manageSystemApp = dto.manageSystemApp,
                 )
             }
         return FamilyConfig(

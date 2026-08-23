@@ -23,10 +23,18 @@ class Enforcer(context: Context) {
     /**
      * Syncs suspension of [managed] so that exactly [blocked] end up suspended. Only calls
      * the system for the differences, avoiding churn.
+     *
+     * [giveBack] is reconciled too and can never be suspended: apps this phone is NOT managing
+     * but may have suspended before. Asked of the system rather than remembered, because the
+     * memory of what was managed a moment ago dies with the process — and the moment that
+     * matters is a parent withdrawing the opt-in from a preinstalled app (see
+     * `AppInventory.systemLaunchablePackages`), after which nothing else on the device would
+     * ever unsuspend it. An app blocked with no rule to explain it and no way back is the one
+     * failure this cannot have.
      */
-    fun apply(managed: Set<String>, blocked: Set<String>) {
+    fun apply(managed: Set<String>, blocked: Set<String>, giveBack: Set<String> = emptySet()) {
         if (!isDeviceOwner()) return
-        val plan = plan(managed, blocked) { pkg ->
+        val plan = plan(managed + giveBack, blocked - giveBack) { pkg ->
             runCatching { dpm.isPackageSuspended(admin, pkg) }.getOrDefault(false)
         }
         if (plan.toSuspend.isNotEmpty()) suspend(plan.toSuspend, true)

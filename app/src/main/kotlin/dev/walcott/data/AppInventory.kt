@@ -14,7 +14,7 @@ data class InstalledApp(
 )
 
 /** Reads device apps via PackageManager (requires QUERY_ALL_PACKAGES). */
-class AppInventory(context: Context) {
+class AppInventory(private val context: Context) {
 
     private val pm: PackageManager = context.packageManager
     private val ownPackage = context.packageName
@@ -154,12 +154,59 @@ class AppInventory(context: Context) {
     }
 
     /**
-     * Packages the enforcement manages: every user-installed (non-system) app, never Walcott
-     * itself. It used to also include whatever the parent had classified; with limits set per
-     * app there is nothing to classify, and an app that isn't installed can't be used anyway.
+     * Packages the enforcement manages: every user-installed (non-system) app, plus the
+     * preinstalled ones the family named in [alsoManage], never Walcott itself. It used to also
+     * include whatever the parent had classified; with limits set per app there is nothing to
+     * classify, and an app that isn't installed can't be used anyway.
+     *
+     * The opt-in half is filtered through [criticalPackages] on the way in, and only that half:
+     * a family that installed its own launcher or keyboard has always had it managed, and
+     * quietly changing that is not what asking to limit the browser means. What the guard is
+     * for is a parent tapping the switch on something the phone needs — the platform refuses
+     * most of those itself (the default home, the dialer, Settings), but "most" is not a promise
+     * that holds on every OEM, and the failure mode is a phone that cannot be typed on.
      */
-    fun managedPackages(): Set<String> =
-        launchableApps().filterNot { it.isSystem }.map { it.packageName }.toSet() - ownPackage
+    fun managedPackages(alsoManage: Set<String> = emptySet()): Set<String> {
+        val launchable = launchableApps()
+        val own = launchable.filterNot { it.isSystem }.map { it.packageName }
+        val optedIn = if (alsoManage.isEmpty()) {
+            emptyList()
+        } else {
+            val critical = criticalPackages()
+            launchable.filter { it.isSystem && it.packageName in alsoManage && it.packageName !in critical }
+                .map { it.packageName }
+        }
+        return (own + optedIn).toSet() - ownPackage
+    }
+
+    /**
+     * Every app that CAME WITH THE PHONE and has an icon — the candidates for the opt-in above,
+     * and the set the enforcement loop offers back to the system when the opt-in is withdrawn.
+     */
+    fun systemLaunchablePackages(): Set<String> =
+        launchableApps().filter { it.isSystem }.map { it.packageName }.toSet()
+
+    /**
+     * Apps this phone cannot be asked to close whatever anybody sets: the home screen, the
+     * dialer, contacts, and every keyboard the device has enabled.
+     *
+     * The keyboard is the one worth naming. Suspending it does not look dangerous — it has no
+     * icon on most phones, so it never reaches a list a parent reads — but a phone with no
+     * keyboard cannot type its own unlock PIN, and this AVD suspends the Gboard package quite
+     * happily when asked. This list is the belt to the platform's braces, not a substitute for
+     * them: what the OS refuses is reported as an enforcement gap either way.
+     */
+    internal fun criticalPackages(): Set<String> =
+        alwaysReachablePackages() + setOfNotNull(homePackage()) + enabledInputMethods()
+
+    /** Every keyboard the system has enabled, by package. */
+    private fun enabledInputMethods(): Set<String> = runCatching {
+        context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            ?.enabledInputMethodList
+            ?.map { it.packageName }
+            ?.toSet()
+            .orEmpty()
+    }.getOrDefault(emptySet())
 
     /**
      * Every non-system package installed here, whether or not it has an icon — the baseline the

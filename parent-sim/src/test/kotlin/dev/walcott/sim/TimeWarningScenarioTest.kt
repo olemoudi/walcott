@@ -236,15 +236,16 @@ class TimeWarningScenarioTest : DeviceScenario() {
         const val QUIET_WINDOW_MS = 12_000L
 
         /**
-         * Space between two rungs, so the second is a banner rather than a throttled re-alert.
+         * Space between two rungs, kept now that the reason for it has actually been found.
          *
-         * A minute rather than thirty seconds: the product posts the second rung correctly (right
-         * text, own id, cancelled before re-notifying) and Android still declined to peek for it
-         * once, in a full sweep, on an emulator that had been working for half an hour — and
-         * passed on the same device immediately afterwards. The rungs a child actually meets are
-         * minutes apart (30 → 5 → 1), so compressing them is the test's convenience and the
-         * throttle is the platform's answer to it. Widen the gap rather than teach the product to
-         * shout past a heads-up limit it will never meet in a house.
+         * The mechanism is SystemUI's per-package heads-up snooze — `mSnoozeLengthMs=60000` in
+         * `HeadsUpManagerPhone`'s dump — which suppresses the peek for a package for a minute
+         * after one of its heads-ups goes away. Guessing at a "throttle" and setting this to
+         * exactly sixty seconds put the gap ON that boundary, which is why this class went on
+         * failing intermittently in full sweeps after it: the product posted the right warning
+         * and the platform declined to show it, and the scenario read that as a product gone
+         * quiet. The snooze is now turned off on the device instead (see `ChildDevice.keepAwake`),
+         * so this gap is belt to that braces rather than the defence itself.
          */
         const val RUNG_GAP_MS = 60_000L
         const val DAY_MINUTES = 24 * 60

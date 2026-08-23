@@ -40,6 +40,9 @@ object PolicyJson {
      *   "apps_control", "unknown_sources", "datetime", "vpn", …)
      * @param dailyMinutes package -> minutes allowed on EVERY day type; 0 blocks it outright
      * @param unlimited packages explicitly never limited
+     * @param manageSystem packages the family manages even though they ship with the phone
+     *   (`AppPolicy.manageSystemApp`). An opt-in on its own permits nothing, so a useful policy
+     *   names the same package here AND in [dailyMinutes]
      * @param bedtime start/end minute-of-day of the family's bedtime, on every day type
      * @param screenFree family-wide screen-free windows (start/end minute-of-day), every day type
      * @param children the family's member entries (see [childEntry]) — the only place the
@@ -56,6 +59,7 @@ object PolicyJson {
         restrictions: Set<String> = emptySet(),
         dailyMinutes: Map<String, Int> = emptyMap(),
         unlimited: Set<String> = emptySet(),
+        manageSystem: Set<String> = emptySet(),
         bedtime: Pair<Int, Int>? = null,
         screenFree: List<Pair<Int, Int>> = emptyList(),
         children: List<JsonObject> = emptyList(),
@@ -76,22 +80,30 @@ object PolicyJson {
             // every "nothing installs while the block is armed" assertion would become a story
             // about what time it was.
             put("updateWindowEnabled", false)
-            if (dailyMinutes.isNotEmpty() || unlimited.isNotEmpty()) {
+            if (dailyMinutes.isNotEmpty() || unlimited.isNotEmpty() || manageSystem.isNotEmpty()) {
+                // Built per package rather than by unioning three maps: an app is routinely in
+                // two of them at once (a preinstalled app opted into AND given a budget), and a
+                // union would silently drop whichever half was written first.
+                val packages = dailyMinutes.keys + unlimited + manageSystem
                 put(
                     "appPolicies",
                     JsonObject(
-                        dailyMinutes.mapValues { (_, minutes) ->
+                        packages.associateWith { pkg ->
                             buildJsonObject {
-                                put(
-                                    "budgets",
-                                    buildJsonObject {
-                                        put(SCHOOL, minutes)
-                                        put(WEEKEND, minutes)
-                                        put(HOLIDAY, minutes)
-                                    },
-                                )
+                                dailyMinutes[pkg]?.let { minutes ->
+                                    put(
+                                        "budgets",
+                                        buildJsonObject {
+                                            put(SCHOOL, minutes)
+                                            put(WEEKEND, minutes)
+                                            put(HOLIDAY, minutes)
+                                        },
+                                    )
+                                }
+                                if (pkg in unlimited) put("unlimited", true)
+                                if (pkg in manageSystem) put("manageSystemApp", true)
                             }
-                        } + unlimited.associateWith { buildJsonObject { put("unlimited", true) } },
+                        },
                     ),
                 )
             }

@@ -210,6 +210,14 @@ fun AppAssignScreen(
                         row,
                         restrictions = appRestrictions(effective, row.app.packageName),
                         limitLabel = appLimitLabel(effective, row.app.packageName),
+                        // A limit the parent set THEMSELVES on a preinstalled app nobody opted
+                        // into: it saved, and the phone goes on opening the app. The family
+                        // default is deliberately not counted here — it would put the warning on
+                        // every built-in app at once, which is a wall of red rather than news.
+                        limitIdle = effective.appPolicies[row.app.packageName].let { policy ->
+                            row.app.isSystem && policy?.manageSystemApp != true &&
+                                policy?.let { it.budgets.isNotEmpty() || it.blockedWindows.isNotEmpty() } == true
+                        },
                         usedThisWeek = usageWeek[row.app.packageName] ?: 0L,
                         showOwners = showOwners,
                         iconRefresh = iconRefresh,
@@ -218,6 +226,23 @@ fun AppAssignScreen(
                 }
             }
         }
+    }
+}
+
+/** One small pill under an app's name: where it came from, whose it is, what is wrong with it. */
+@Composable
+private fun AppTag(
+    text: String,
+    container: Color = MaterialTheme.colorScheme.surfaceVariant,
+    content: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Surface(shape = RoundedCornerShape(50), color = container) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
     }
 }
 
@@ -230,6 +255,8 @@ private fun AppAssignRow(
     restrictions: List<AppRestriction>,
     /** "45 min a day", "No limit", "Blocked" — the one thing there is to say about an app. */
     limitLabel: String,
+    /** This app's own limit cannot bite: it ships with the phone and nobody opted into it. */
+    limitIdle: Boolean,
     /** Seconds spent on it over the last week; 0 hides the line rather than printing a zero. */
     usedThisWeek: Long,
     showOwners: Boolean,
@@ -265,25 +292,27 @@ private fun AppAssignRow(
                     )
                     AppRestrictionBadges(restrictions, Modifier.padding(start = Tokens.spacing.sm))
                 }
-                // Who has it: one small tag per child (only in multi-child families).
-                if (showOwners && row.owners.isNotEmpty()) {
+                // Tags: where the app came from, whether its limit is real, and who has it.
+                val owners = if (showOwners) row.owners.map { it.name } else emptyList()
+                if (row.app.isSystem || limitIdle || owners.isNotEmpty()) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.padding(top = 2.dp),
                     ) {
-                        row.owners.forEach { owner ->
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                            ) {
-                                Text(
-                                    owner.name,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                )
-                            }
+                        // Said once per row and quietly: this list grew by everything the phone
+                        // shipped with, and a parent seeing thirty unfamiliar names is owed the
+                        // reason without being alarmed by it.
+                        if (row.app.isSystem) {
+                            AppTag(stringResource(R.string.apps_preinstalled_tag))
                         }
+                        if (limitIdle) {
+                            AppTag(
+                                stringResource(R.string.apps_limit_idle_tag),
+                                container = MaterialTheme.colorScheme.errorContainer,
+                                content = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                        owners.forEach { AppTag(it) }
                     }
                 }
             }

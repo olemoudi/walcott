@@ -198,6 +198,23 @@ data class AppPolicy(
      * a parent) without having to turn the default off for everybody.
      */
     val unlimited: Boolean = false,
+    /**
+     * Manage this app even though it SHIPS WITH THE PHONE — opt-in, one app at a time.
+     *
+     * A phone only ever manages what the family installed on it, because a device owner
+     * suspending system packages is how a phone stops working: the launcher, the keyboard, the
+     * thing that grants permissions. But the app a day actually disappears into is usually
+     * preinstalled — the browser, the video app, the gallery — so the rule a parent cared most
+     * about was the one rule this product could not keep, and it could be saved anyway.
+     *
+     * Deliberately per app rather than a mode. There is no list of "safe" system apps that is
+     * true of every phone, so the honest form is a parent naming one and being told whether the
+     * phone allowed it (see `Enforcer.recentSuspendFailures`).
+     *
+     * Meaningless for an app the family installed: those are managed regardless, and the flag
+     * on one is simply ignored.
+     */
+    val manageSystemApp: Boolean = false,
 )
 
 data class FamilyConfig(
@@ -277,6 +294,15 @@ data class FamilyConfig(
         if (own?.unlimited == true) return null
         return own?.dailyBudget?.get(dayType) ?: defaultAppBudget[dayType]
     }
+
+    /**
+     * The preinstalled apps this family asked to manage anyway (see [AppPolicy.manageSystemApp]).
+     *
+     * The set, not the question, because the device asks it once per inventory refresh and the
+     * answer decides what it may suspend at all.
+     */
+    fun managedSystemPackages(): Set<String> =
+        perAppPolicies.filterValues { it.manageSystemApp }.keys - essentialPackages
 
     /** Whether [packageName] is running on the family default rather than a budget of its own. */
     fun usesDefaultBudget(packageName: String): Boolean {

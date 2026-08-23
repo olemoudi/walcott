@@ -1545,9 +1545,11 @@ class SyncManager(
                     installer = repository.inventory.installerOf(it).orEmpty(),
                 )
             }
-        val dropped = InstallGuard.overflow(s.unauthorizedApps, fresh, installed)
-        if (dropped > 0) {
-            dev.walcott.debug.DebugLog.w(TAG, "quarantine at capacity: $dropped case(s) not tracked")
+        val dropped = InstallGuard.overflow(s.unauthorizedApps, fresh, installed).map { it.pkg }.toSet()
+        if (dropped.isNotEmpty()) {
+            dev.walcott.debug.DebugLog.w(
+                TAG, "quarantine at capacity: ${dropped.joinToString()} waiting for a slot",
+            )
         }
         val open = InstallGuard.nextQuarantine(s.unauthorizedApps, fresh, installed)
         if (open.isEmpty() && s.unauthorizedApps.isEmpty()) {
@@ -1577,7 +1579,11 @@ class SyncManager(
         if (resolved.isNotEmpty()) {
             dev.walcott.debug.DebugLog.i(TAG, "quarantine cleared: ${resolved.joinToString { it.pkg }}")
         }
-        syncStore.update { it.copy(knownPackages = installed, unauthorizedApps = updated) }
+        // The overflow is deliberately NOT folded into the baseline: an app the cap could not
+        // hold is still unapproved, still usable, and would otherwise become "an app that was
+        // always here" — invisible to every pass that follows. Held out, it is caught the moment
+        // a slot frees (see InstallGuard.overflow).
+        syncStore.update { it.copy(knownPackages = installed - dropped, unauthorizedApps = updated) }
 
         // Only tell the parent when the answer changed. A retry that failed the same way it
         // failed fifteen minutes ago is not news, and a snapshot per heartbeat for the lifetime
@@ -1876,6 +1882,16 @@ class SyncManager(
     /** Parent: rings [deviceId] out loud for [seconds] (see [RemoteAction.RING_NOW]). */
     suspend fun ringChildDevice(deviceId: String, seconds: Int = RemoteAction.RING_DEFAULT_SECONDS) =
         sendCommand(deviceId, RemoteAction.RING_NOW, arg = seconds.toString())
+
+    /**
+     * Parent: stop a ring that is running (see [RemoteAction.RING_STOP]).
+     *
+     * Its own command rather than a shorter ring, and offered from the parent's home rather than
+     * from a member's page: the parent who started the noise is holding the other phone, and the
+     * two minutes it can last are not two minutes to spend navigating.
+     */
+    suspend fun stopRingChildDevice(deviceId: String) =
+        sendCommand(deviceId, RemoteAction.RING_STOP)
 
     /**
      * Parent: lost mode on [deviceId], with [message] for its lock screen, or off (see
@@ -2864,6 +2880,15 @@ class SyncManager(
      * null if it did not go out. The emergency release is the one caller (see [PanicProtocol]) —
      * everything else is content with fire-and-forget and a re-emit behind it.
      */
+    /**
+     * This phone has started or stopped ringing: say so now rather than at the next heartbeat.
+     *
+     * Its own entry point because the ring can end in ways nothing here witnesses — the timeout,
+     * an unlock, a tap on the notification — so the publish has to be driven by the ringer's own
+     * state and not by the command that started it.
+     */
+    suspend fun publishRingingChange() = publishSelf()
+
     private suspend fun publishSelfForReceipt(): Long? = try {
         publishSelfOrThrow(forReceipt = true)
     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -3007,13 +3032,25 @@ class SyncManager(
                         ),
                     )
                 }
+                val settings = settingsStore.current()
+                // Preinstalled apps travel too, flagged, because the parent cannot opt into
+                // limiting a browser they are never shown. Ordered so the droppable ones are
+                // LAST: when the snapshot will not fit, SnapshotFit halves this list from the
+                // tail, and what a squeezed message must never lose is an app with a rule on it
+                // — a managed app missing from the list is a limit with no row to govern it.
+                val optedIn = settings.resolveForChild(id.childId).toFamilyConfig(emptySet())
+                    .managedSystemPackages()
                 // PackageManager enumeration is blocking; keep it off the caller's thread.
                 val apps = withContext(Dispatchers.IO) {
                     repository.inventory.launchableApps()
-                        .filterNot { it.isSystem }
-                        .map { InstalledAppInfo(it.packageName, it.label) }
+                        .sortedWith(
+                            compareBy(
+                                { it.isSystem && it.packageName !in optedIn },
+                                { it.label.lowercase() },
+                            ),
+                        )
+                        .map { InstalledAppInfo(it.packageName, it.label, system = it.isSystem) }
                 }
-                val settings = settingsStore.current()
                 // Everything still ungranted on this phone, by the same list its own home screen
                 // and its periodic self-check read (see DeviceSetup). The parent cannot fix any
                 // of it remotely — that is the point of reporting it: an enrollment nobody
@@ -3139,6 +3176,7 @@ class SyncManager(
                     unauthorized = s.unauthorizedApps,
                     setupUnmet = setupUnmet,
                     lostMode = s.lostMode,
+                    ringingSeconds = dev.walcott.enforcement.Ringer.secondsLeft(System.currentTimeMillis()),
                     lastGasp = s.lastGasp,
                     blocks = blockReport(today),
                 )
@@ -3848,6 +3886,11 @@ class SyncManager(
                 // MediaPlayer and its timers live on the main thread; the command does not.
                 ringNow = { seconds ->
                     withContext(Dispatchers.Main) { dev.walcott.enforcement.Ringer.start(context, seconds) }
+                },
+                ringStop = {
+                    withContext(Dispatchers.Main) {
+                        dev.walcott.enforcement.Ringer.stop(context, "the parent asked")
+                    }
                 },
                 setLostMode = { on, message -> if (on) enableLostMode(message) else disableLostMode() },
             )

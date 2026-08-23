@@ -24,6 +24,37 @@ class AppCatalogTest {
     private val registry = mapOf("c1" to "Martina", "c2" to "Leo")
 
     @Test
+    fun `an app preinstalled on one phone and installed on another counts as preinstalled`() {
+        // The catalog is one row per package across the whole family, so it has to pick an
+        // answer. It picks the one that offers the parent the switch: on the phone that shipped
+        // with it, a limit does nothing without it — and on the other phone the switch is
+        // simply ignored, which costs nobody anything.
+        val rows = AppCatalog.build(
+            listOf(
+                ChildSnapshot(
+                    deviceId = "d1", displayName = "Pixel", version = 1, epochDay = 20_000, childId = "c1",
+                    apps = listOf(InstalledAppInfo("com.android.chrome", "Chrome", system = true)),
+                ),
+                ChildSnapshot(
+                    deviceId = "d2", displayName = "Moto", version = 1, epochDay = 20_000, childId = "c2",
+                    apps = listOf(InstalledAppInfo("com.android.chrome", "Chrome")),
+                ),
+            ),
+            registry,
+        )
+        assertEquals(listOf(true), rows.map { it.system })
+    }
+
+    @Test
+    fun `an app nobody flags stays what every older child means by it`() {
+        val rows = AppCatalog.build(
+            listOf(snapshot("d1", "c1", "Pixel", "com.game" to "Game")),
+            registry,
+        )
+        assertEquals(listOf(false), rows.map { it.system })
+    }
+
+    @Test
     fun `an app on two children lists both as owners, alphabetically`() {
         val rows = AppCatalog.build(
             listOf(

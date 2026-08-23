@@ -85,4 +85,37 @@ class FindPhoneProtocolTest {
         assertNull(decoded.fix)
         assertEquals(-1, decoded.batteryPercent)
     }
+
+    @Test
+    fun `a stop lives exactly as long as the ring it is meant to cancel`() {
+        // Not longer, and above all not shorter. A phone that was off for ten minutes takes the
+        // ring when it comes back — the ring is still inside its own TTL — and if the stop had
+        // expired first it would go off in somebody's bag with the parent's only way of ending
+        // it already thrown away.
+        val issued = 1_000_000L
+        assertFalse(RemoteAction.expired(RemoteAction.RING_STOP, issued, issued + RemoteAction.RING_TTL_MS))
+        assertTrue(RemoteAction.expired(RemoteAction.RING_STOP, issued, issued + RemoteAction.RING_TTL_MS + 1))
+    }
+
+    @Test
+    fun `a ring is timed from when its message arrived, not from the other phone's clock`() {
+        val arrived = 5_000_000L
+        assertEquals(arrived + 60_000L, RemoteAction.ringEndsAt(60, arrived))
+        // Not ringing, and never heard from, are both "no button".
+        assertNull(RemoteAction.ringEndsAt(0, arrived))
+        assertNull(RemoteAction.ringEndsAt(-5, arrived))
+        assertNull(RemoteAction.ringEndsAt(60, null))
+    }
+
+    @Test
+    fun `a nonsense remainder cannot pin the button to a parent's screen`() {
+        // The card this drives offers to stop a noise. A child reporting a day's worth of ring —
+        // a bug, a build nobody has seen — must not be able to leave that offer standing for a
+        // day; the longest ring there is, is the longest this can claim.
+        val arrived = 5_000_000L
+        assertEquals(
+            arrived + RemoteAction.RING_MAX_SECONDS * 1000L,
+            RemoteAction.ringEndsAt(86_400, arrived),
+        )
+    }
 }

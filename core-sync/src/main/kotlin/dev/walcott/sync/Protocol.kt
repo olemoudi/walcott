@@ -259,7 +259,36 @@ data class DayUsage(val epochDay: Long, val usage: List<UsageEntry> = emptyList(
 
 /** A user app installed on a child device, reported so the parent can classify it. */
 @Serializable
-data class InstalledAppInfo(val packageName: String, val label: String)
+data class InstalledAppInfo(
+    val packageName: String,
+    val label: String,
+    /**
+     * Whether this app SHIPPED WITH THE PHONE rather than being installed by the family.
+     *
+     * Reported because the parent's answer to it differs: an app the family installed is
+     * managed as a matter of course, and a preinstalled one is only managed if they ask for it
+     * by name (see `AppPolicy.manageSystemApp`) — so a screen that cannot tell them apart is a
+     * screen offering a limit it may have no way to keep.
+     *
+     * False on a child too old to say, which is the reading that was already being assumed.
+     */
+    val system: Boolean = false,
+)
+
+/**
+ * The apps on this list the phone that reported it can actually be asked to close: everything
+ * the family installed, plus the preinstalled ones they named (see
+ * [dev.walcott.rules.FamilyConfig.managedSystemPackages]).
+ *
+ * The parent's screens compute verdicts from the rules and this list, so they need the same
+ * answer the child's enforcement loop reaches from `AppInventory.managedPackages` — otherwise a
+ * screen counts down to "Blocked" over a browser that goes on opening perfectly well, which is
+ * a screen contradicting the phone it is describing on exactly the apps a day disappears into.
+ */
+fun List<InstalledAppInfo>.managedUnder(config: dev.walcott.rules.FamilyConfig): List<InstalledAppInfo> {
+    val optedIn = config.managedSystemPackages()
+    return filter { !it.system || it.packageName in optedIn }
+}
 
 /**
  * A child's pending emergency-release request (see [PanicProtocol]). Travels in every
@@ -532,6 +561,20 @@ object RemoteAction {
     const val RING_NOW = "ring_now"
 
     /**
+     * Stop a ring that is running (see [RING_NOW]).
+     *
+     * Its own action rather than a zero-second ring, because the two are different requests and
+     * one of them must never be mistaken for the other: [ringSeconds] coerces a number into a
+     * legal duration, so a "0" would arrive as the shortest ring there is.
+     *
+     * Carries the same TTL as the ring itself, deliberately. A stop with a shorter life could
+     * expire while the ring it was meant to cancel is still deliverable — a phone that came back
+     * online after ten minutes would take the ring, refuse the stop, and go off in somebody's
+     * bag with the parent's only way of stopping it already thrown away.
+     */
+    const val RING_STOP = "ring_stop"
+
+    /**
      * Lost mode, on or off: [RemoteCommand.arg] is [LOST_ON] or [LOST_OFF], and for "on" the
      * line to put on the lock screen — a way to reach the family — travels in
      * [RemoteCommand.label]. The child locks the screen at once, writes the line, and keeps
@@ -641,7 +684,7 @@ object RemoteAction {
         SET_LOCK_PIN -> nowMs - issuedAtMs > LOCK_PIN_TTL_MS
         RELEASE_DEVICE -> nowMs - issuedAtMs > RELEASE_TTL_MS
         LIVE_TRACKING -> nowMs - issuedAtMs > LIVE_TRACKING_TTL_MS
-        RING_NOW -> nowMs - issuedAtMs > RING_TTL_MS
+        RING_NOW, RING_STOP -> nowMs - issuedAtMs > RING_TTL_MS
         else -> false
     }
 
@@ -670,14 +713,44 @@ object RemoteAction {
         return arg.trim().toIntOrNull()?.coerceIn(RING_MIN_SECONDS, RING_MAX_SECONDS)
     }
 
+    /**
+     * When a ring a child reported is due to end, on the READER's clock: the moment its message
+     * arrived, plus the seconds it said were left (see [ChildSnapshot.ringingSeconds]). Null when
+     * it is not ringing, or when this phone has never heard from it at all.
+     *
+     * Capped at [RING_MAX_SECONDS] because the answer governs a button that offers to stop a
+     * noise: a child reporting a nonsense remainder — a bug, an older build, a hostile one —
+     * would otherwise pin that button to a parent's home screen for as long as it liked.
+     */
+    fun ringEndsAt(ringingSeconds: Int, arrivedAtMs: Long?): Long? {
+        if (ringingSeconds <= 0 || arrivedAtMs == null) return null
+        return arrivedAtMs + ringingSeconds.coerceAtMost(RING_MAX_SECONDS) * 1000L
+    }
+
     /** The first child build that can ring on request and enter lost mode. */
     const val FIND_MIN_CHILD_VERSION = 150
+
+    /**
+     * The first child build that can manage an app that ships with the phone, and the first
+     * that says which of its apps those are.
+     *
+     * Gated on the parent's side because the failure is silent otherwise: an older child takes
+     * the policy, ignores the flag it does not know, and goes on letting the browser open — so
+     * the parent would be looking at a limit that is real on one phone in the family and
+     * decorative on another, with nothing on any screen to say which.
+     */
+    const val MANAGE_SYSTEM_MIN_CHILD_VERSION = 151
+
+    /** Whether a child reporting [childAppVersionCode] can manage its preinstalled apps. */
+    fun canManageSystemApps(childAppVersionCode: Int): Boolean =
+        childAppVersionCode >= MANAGE_SYSTEM_MIN_CHILD_VERSION
 
     /** Whether a child reporting [childAppVersionCode] can be rung and put into lost mode. */
     fun canFind(childAppVersionCode: Int): Boolean = childAppVersionCode >= FIND_MIN_CHILD_VERSION
 
-    /** [CommandAck.detail] outcomes of [RING_NOW] and [LOST_MODE]. */
+    /** [CommandAck.detail] outcomes of [RING_NOW], [RING_STOP] and [LOST_MODE]. */
     const val DETAIL_RINGING = "ringing"
+    const val DETAIL_RING_STOPPED = "ring_stopped"
     const val DETAIL_RING_REFUSED = "ring_refused"
     const val DETAIL_LOST_ON = "lost_on"
     const val DETAIL_LOST_OFF = "lost_off"
@@ -1007,6 +1080,19 @@ data class ChildSnapshot(
      * phone that is not yet locked.
      */
     val lostMode: Boolean = false,
+    /**
+     * Seconds of ringing still to run when this snapshot was written; 0 = not ringing.
+     *
+     * Sent as a REMAINDER rather than as a deadline on this phone's clock, so the parent can
+     * work out when the noise ends from its own clock and the moment the message arrived
+     * (`SyncState.lastSeen`). Two phones do not agree about the time closely enough to place a
+     * two-minute window, and a parent whose "stop" button is governed by the other phone's clock
+     * is a parent whose button is missing exactly when the phone is ringing.
+     *
+     * The field is also the whole version gate for stopping a ring remotely: a child too old to
+     * report it never appears to be ringing, so the button it could not obey is never offered.
+     */
+    val ringingSeconds: Int = 0,
     /** The phone's last word before going quiet, while it still applies (see [LastGasp]). */
     val lastGasp: LastGasp? = null,
 )

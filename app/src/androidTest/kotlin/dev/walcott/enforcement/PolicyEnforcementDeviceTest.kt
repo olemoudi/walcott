@@ -73,6 +73,62 @@ class PolicyEnforcementDeviceTest {
     }
 
     @Test
+    fun a_preinstalled_app_joins_the_managed_set_only_when_the_family_asks_for_it_by_name() {
+        // The half of the opt-in that no JVM test can reach: which apps THIS phone says it came
+        // with, asked of its own PackageManager.
+        val inventory = AppInventory(context)
+        val preinstalled = inventory.systemLaunchablePackages() - inventory.criticalPackages()
+        assumeTrue("no preinstalled app on this device that could be limited", preinstalled.isNotEmpty())
+        val candidate = preinstalled.firstOrNull { it == "com.android.chrome" } ?: preinstalled.first()
+
+        assertFalse(
+            "a preinstalled app was managed without anybody asking: $candidate",
+            candidate in inventory.managedPackages(),
+        )
+        assertTrue(
+            "the family asked for $candidate and the phone still would not manage it",
+            candidate in inventory.managedPackages(setOf(candidate)),
+        )
+    }
+
+    @Test
+    fun the_apps_a_phone_cannot_do_without_are_never_managed_however_they_are_asked_for() {
+        // Asking for every one of them at once must change nothing at all. The platform refuses
+        // most of these itself — the default home, the dialer — but "most" is not a promise that
+        // holds on every OEM, and the failure mode is a phone with no keyboard to type its own
+        // unlock PIN into.
+        val inventory = AppInventory(context)
+        val critical = inventory.criticalPackages()
+        assumeTrue("this device names nothing critical", critical.isNotEmpty())
+        assertEquals(
+            "asking to manage the phone's own essentials changed the managed set",
+            inventory.managedPackages(),
+            inventory.managedPackages(critical),
+        )
+    }
+
+    @Test
+    fun the_phone_says_who_is_limiting_it_wherever_android_names_an_administrator() {
+        // Android tells a child "Blocked by work policy — for more info, contact your IT admin"
+        // on every restriction this app sets. That sentence is true and useless: the person
+        // reading it is holding the phone, and what they need is which app to open.
+        //
+        // Only the message being SET is asserted here — where it appears is Android's business
+        // and was measured by hand on the emulator (Settings ▸ Date & time ▸ Set time
+        // automatically, with the date-time restriction on, shows it in place of the IT-admin
+        // line). Note it does NOT reach the dialog for a SUSPENDED app: that suspension is
+        // attributed to the platform itself (`suspendingPackage=<0>android`), and a device owner
+        // cannot put its own words on it at all.
+        DeviceRestrictions.apply(context, emptySet())
+        val dpm = context.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+        val admin = dev.walcott.WalcottAdminReceiver.componentName(context)
+        val short = dpm.getShortSupportMessage(admin)?.toString().orEmpty()
+        val long = dpm.getLongSupportMessage(admin)?.toString().orEmpty()
+        assertTrue("no short support message: the child is told to contact an IT admin", "Walcott" in short)
+        assertTrue("no long support message on the admin's own settings page", "Walcott" in long)
+    }
+
+    @Test
     fun a_bedtime_written_in_minutes_ends_with_an_app_the_system_will_not_open() {
         val settings = PolicySettings(
             bedtime = DayType.entries.associate { it.name to WindowDto(21 * 60, 7 * 60) },

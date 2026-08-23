@@ -114,6 +114,7 @@ import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.cardPosition
 import dev.walcott.rules.ActiveBlock
 import dev.walcott.rules.RuleEngine
+import dev.walcott.sync.managedUnder
 import dev.walcott.rules.activeBlocks
 import dev.walcott.rules.ruleContext
 import dev.walcott.ui.format.hhmm
@@ -218,7 +219,9 @@ fun ChildDetailScreen(
     val blockingNow = remember(childConfig, snapshot?.apps, childNow.withSecond(0), usageToday, extraToday, reportedToday) {
         RuleEngine.activeBlocks(
             config = childConfig,
-            packages = snapshot?.apps?.map { it.packageName }.orEmpty(),
+            // Filtered to what this phone can be asked to close: a preinstalled app nobody
+            // opted into is counted and shown, but no rule reaches it (see managedUnder).
+            packages = snapshot?.apps?.managedUnder(childConfig)?.map { it.packageName }.orEmpty(),
             now = childNow,
             usageToday = usageToday,
             extraTime = extraToday,

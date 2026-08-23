@@ -212,13 +212,42 @@ class InstallGuardTest {
     }
 
     @Test
-    fun `the ledger is capped, and says how much it dropped`() {
+    fun `the ledger is capped, and names what it had to leave out`() {
         val ledger = (1..InstallGuard.MAX_QUARANTINE).map { UnauthorizedApp("com.app$it", atMs = now) }
         val installed = ledger.map { it.pkg }.toSet() + "com.newest"
         val fresh = listOf(UnauthorizedApp("com.newest", atMs = now + 1))
         val next = InstallGuard.nextQuarantine(ledger, fresh, installed)
         assertEquals(InstallGuard.MAX_QUARANTINE, next.size)
         assertEquals("com.newest", next.last().pkg)
-        assertEquals(1, InstallGuard.overflow(ledger, fresh, installed))
+        // Named rather than counted: the caller has to keep these OUT of the baseline of known
+        // packages, or the cap turns a delayed case into an app that is never looked at again.
+        assertEquals(listOf("com.app1"), InstallGuard.overflow(ledger, fresh, installed).map { it.pkg })
+    }
+
+    @Test
+    fun `nothing is dropped while there is room, however the ledger got there`() {
+        val installed = setOf("com.a", "com.b")
+        assertEquals(
+            emptyList<UnauthorizedApp>(),
+            InstallGuard.overflow(
+                listOf(UnauthorizedApp("com.a", atMs = now)),
+                listOf(UnauthorizedApp("com.b", atMs = now)),
+                installed,
+            ),
+        )
+        // And an empty pass drops nothing rather than under-flowing the cap.
+        assertEquals(emptyList<UnauthorizedApp>(), InstallGuard.overflow(emptyList(), emptyList(), emptySet()))
+    }
+
+    @Test
+    fun `a case that closes makes room for the one the cap was holding out`() {
+        // The whole reason the overflow is named: the sixth app is not lost, it is waiting. When
+        // one of the five disappears — removed at last — the next pass has a slot for it.
+        val ledger = (1..InstallGuard.MAX_QUARANTINE).map { UnauthorizedApp("com.app$it", atMs = now) }
+        val waiting = UnauthorizedApp("com.newest", atMs = now + 1)
+        val stillInstalled = ledger.drop(1).map { it.pkg }.toSet() + waiting.pkg
+        val next = InstallGuard.nextQuarantine(ledger, listOf(waiting), stillInstalled)
+        assertTrue(next.any { it.pkg == waiting.pkg }, "the waiting app never got its slot")
+        assertEquals(emptyList<UnauthorizedApp>(), InstallGuard.overflow(ledger, listOf(waiting), stillInstalled))
     }
 }

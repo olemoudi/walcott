@@ -66,6 +66,15 @@ the phone says it is paused and until when.
 screen time for every app — putting it down is worth something, and their own screen says how
 much it was worth today.
 
+**Apps that came with the phone.** The browser, the video app, the gallery — usually where the
+day actually goes, and normally out of a parental control's reach because a phone that suspends
+its own system apps is a phone that stops working. Walcott will limit one if you ask for it by
+name: open the app and turn on "Limit it even though it came with the phone", and from then on
+it answers to limits and bedtimes like anything else. One app at a time on purpose — there is no
+list of built-in apps that is safe on every phone. The phone itself refuses the ones it cannot do
+without (the home screen, the dialer, Settings), and if it refuses anything else you are told on
+that member's page rather than left wondering.
+
 **Per-app rules.** Any single app can have its own blocked hours as well as its own limit —
 and one app can be marked "never limit this", so a bus timetable or a chat with you is always
 reachable. **The phone and contacts apps are never limited by anything**, not even at bedtime:
@@ -191,6 +200,12 @@ does not block, was always the faster way out anyway.
 - Per-app attribution of a domain lookup is best-effort; when a lookup can't be attributed,
   "only from this app" rules block rather than allow.
 - IPv4 DNS only, for now.
+- **Android decides what a blocked app says.** When a limited app is tapped, the phone shows its
+  own "Blocked by work policy" dialog. Walcott cannot change that wording or put a button on it:
+  Android attributes an admin's suspension to the platform itself, and the message a suspending
+  app can supply needs a permission a device owner is not given. Everywhere else Android names an
+  administrator — changing the date, installing something — it now says Walcott is keeping the
+  family's rules and to open it to ask for more time.
 - Walcott counts foreground app time. It is not a keylogger, a message reader or a screen
   recorder, and it is not intended to become one.
 

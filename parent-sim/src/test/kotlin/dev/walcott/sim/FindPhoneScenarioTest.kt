@@ -114,6 +114,60 @@ class FindPhoneScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `the parent can cut the noise short, and the phone says so while it lasts`() {
+        // The complaint this exists for: the ring works, and stopping it means finding the phone.
+        // Two minutes of alarm is a long time to stand in a room you cannot locate.
+        device.seed("--ei", "alarm_volume", "2")
+        awaitDevice("the alarm stream should take the quiet setting", timeoutMs = 10_000) {
+            alarmVolume()?.let { it.first < it.second } == true
+        }
+        val before = alarmVolume()
+        assertNotNull(before, "the audio service should report the alarm stream")
+
+        // The longest ring there is, so nothing here can be explained by it running out.
+        val ringId = parent.sendCommand(
+            deviceId, RemoteAction.RING_NOW, arg = RemoteAction.RING_MAX_SECONDS.toString(),
+        )
+        assertTrue(parent.awaitAck(ringId).ok, "the ring should start")
+        awaitDevice("the alarm stream should be turned up to full to ring", timeoutMs = 15_000) {
+            alarmVolume()?.let { it.first == it.second } == true
+        }
+
+        // The phone SAYS it is ringing, which is the whole reason the parent is offered a button:
+        // a snapshot that stayed silent about it would leave that button unreachable.
+        val ringing = childEventuallyReports { it.ringingSeconds > 0 }
+        assertTrue(
+            ringing.ringingSeconds <= RemoteAction.RING_MAX_SECONDS,
+            "the phone reported more ring left than the longest one there is: ${ringing.ringingSeconds}",
+        )
+
+        val stopId = parent.sendCommand(deviceId, RemoteAction.RING_STOP)
+        val stopAck = parent.awaitAck(stopId)
+        assertTrue(stopAck.ok, "the stop should be taken: ${stopAck.detail}")
+        assertEquals(RemoteAction.DETAIL_RING_STOPPED, stopAck.detail)
+
+        // Silence, and well inside the two minutes the ring was asked for — read from the audio
+        // service rather than from the app, so this is the noise ending and not a claim about it.
+        awaitDevice("the ring should stop when the parent asks", timeoutMs = 30_000) {
+            alarmVolume()?.first == before!!.first
+        }
+        awaitDevice("the ring's notification should be taken back down", timeoutMs = 10_000) { !ringNotified() }
+        // And the phone withdraws the button it offered, rather than leaving the parent's home
+        // holding an offer to stop a sound that ended.
+        childEventuallyReports { it.ringingSeconds == 0 }
+    }
+
+    @Test
+    fun `a stop for a phone that is already quiet is taken, not refused`() {
+        // The commonest way a stop arrives: the parent taps it just as the ring ends by itself.
+        // Answering that with a failure would put a red mark on the one screen telling the truth.
+        val stopId = parent.sendCommand(deviceId, RemoteAction.RING_STOP)
+        val ack = parent.awaitAck(stopId)
+        assertTrue(ack.ok, "a stop with nothing to stop should still be taken: ${ack.detail}")
+        assertEquals(RemoteAction.DETAIL_RING_STOPPED, ack.detail)
+    }
+
+    @Test
     fun `a stale ring is refused rather than going off in a classroom`() {
         val commandId = parent.sendCommand(
             deviceId, RemoteAction.RING_NOW, arg = "12",

@@ -166,10 +166,25 @@ object InstallGuard {
         return (open + fresh.filterNot { it.pkg in openPackages }).takeLast(MAX_QUARANTINE)
     }
 
-    /** Entries dropped by [nextQuarantine]'s cap, so the caller can say so out loud. */
-    fun overflow(current: List<UnauthorizedApp>, fresh: List<UnauthorizedApp>, installed: Set<String>): Int {
+    /**
+     * The apps [nextQuarantine]'s cap left out — not a count, because the caller has to do
+     * something with them and not merely mention them.
+     *
+     * A dropped app is one that appeared without approval and is NOT suspended, NOT reported and
+     * NOT being removed. It must therefore stay a stranger to this device: folded into the
+     * baseline of known packages, as it was, it becomes an app that arrived unnoticed and can
+     * never be noticed again, because the guard only ever asks what is new. Held out of the
+     * baseline, it is simply a case waiting for a slot — and the cap costs a delay rather than
+     * an app.
+     */
+    fun overflow(
+        current: List<UnauthorizedApp>,
+        fresh: List<UnauthorizedApp>,
+        installed: Set<String>,
+    ): List<UnauthorizedApp> {
         val open = current.filter { it.pkg in installed }
         val openPackages = open.map { it.pkg }.toSet()
-        return (open.size + fresh.count { it.pkg !in openPackages } - MAX_QUARANTINE).coerceAtLeast(0)
+        val all = open + fresh.filterNot { it.pkg in openPackages }
+        return all.dropLast(MAX_QUARANTINE.coerceAtMost(all.size))
     }
 }

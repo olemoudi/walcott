@@ -68,9 +68,28 @@ object Ringer {
     private val timeout = Runnable { stop(contextRef ?: return@Runnable, "time up") }
     private var contextRef: Context? = null
 
+    /**
+     * When the current ring is due to end, on this phone's wall clock; 0 = not ringing.
+     *
+     * A flow rather than a flag because two other things need to react the moment it changes:
+     * this phone's own home screen, which is where somebody holding it looks for a way to make
+     * it stop, and the snapshot, so the parent who started the noise is offered a way to end it
+     * without having to find the phone first.
+     */
+    private val _ringingUntilMs = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val ringingUntilMs: kotlinx.coroutines.flow.StateFlow<Long> = _ringingUntilMs
+
     /** True while the phone is ringing on request. */
-    @Volatile var ringing: Boolean = false
-        private set
+    val ringing: Boolean get() = _ringingUntilMs.value > 0L
+
+    /** Seconds of ring still to run at [nowMs], for the snapshot the parent reads. */
+    fun secondsLeft(nowMs: Long): Int {
+        val until = _ringingUntilMs.value
+        if (until <= nowMs) return 0
+        // Rounded UP: a ring with 400ms left is still a ringing phone, and a 0 here is the
+        // parent's button disappearing while the noise is still going.
+        return ((until - nowMs + 999) / 1000).toInt()
+    }
 
     /**
      * Starts ringing for [seconds]. Returns false when the platform gave it nothing to play with;
@@ -120,7 +139,7 @@ object Ringer {
         }
         player = created
         contextRef = app
-        ringing = true
+        _ringingUntilMs.value = System.currentTimeMillis() + seconds * 1_000L
 
         // Somebody unlocking the phone has found it. Not SCREEN_ON: a finder pressing the power
         // button to see whose phone this is has not found anything yet, and the line on the
@@ -153,7 +172,7 @@ object Ringer {
     fun stop(context: Context, reason: String) {
         val app = context.applicationContext
         if (!ringing) return
-        ringing = false
+        _ringingUntilMs.value = 0L
         handler.removeCallbacks(timeout)
         runCatching { player?.stop() }
         runCatching { player?.release() }

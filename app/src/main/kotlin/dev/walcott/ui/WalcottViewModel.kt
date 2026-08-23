@@ -252,6 +252,9 @@ class WalcottViewModel(
     /** Ring a member's phone out loud for a minute (see [dev.walcott.sync.RemoteAction.RING_NOW]). */
     fun ringChild(deviceId: String) = viewModelScope.launch { sync.ringChildDevice(deviceId) }
 
+    /** Stop a ring that is running on [deviceId] (see [dev.walcott.sync.RemoteAction.RING_STOP]). */
+    fun stopRingChild(deviceId: String) = viewModelScope.launch { sync.stopRingChildDevice(deviceId) }
+
     /**
      * Lost mode on, with the line for the lock screen, or off (see
      * [dev.walcott.sync.RemoteAction.LOST_MODE]).
@@ -617,11 +620,20 @@ class WalcottViewModel(
     fun requestExtraTimeRemote(categoryId: String, minutes: Int, reason: String, targetLabel: String = "") =
         viewModelScope.launch { sync.requestExtraTime(categoryId, minutes, reason, targetLabel) }
 
-    /** This child device's own launchable (non-system) apps, for the "request more time" list. */
+    /**
+     * The apps this child could be asking about, for the "request more time" list: exactly the
+     * ones this phone can be asked to close.
+     *
+     * Read from the managed set rather than filtered by hand, so it follows the family's
+     * preinstalled opt-ins (see [dev.walcott.data.AppInventory.managedPackages]). A child whose
+     * browser now counts down had, briefly, a phone that closed it and a picker that would not
+     * name it — a screen refusing to admit what its own home screen was showing.
+     */
     val myApps: StateFlow<List<InstalledApp>> =
         flow {
             val apps = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                repository.inventory.launchableApps().filterNot { it.isSystem }
+                val managed = repository.managedPackagesNow()
+                repository.inventory.launchableApps().filter { it.packageName in managed }
             }
             emit(apps)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -1194,7 +1206,7 @@ class WalcottViewModel(
             dev.walcott.data.AppCatalog.build(snapshots, s.children.associate { it.childId to it.name })
                 .map {
                     AppRow(
-                        InstalledApp(it.packageName, it.label, isSystem = false),
+                        InstalledApp(it.packageName, it.label, isSystem = it.system),
                         s.appPolicies[it.packageName],
                         it.owners,
                     )
@@ -1296,6 +1308,14 @@ class WalcottViewModel(
      */
     fun setAppUnlimited(pkg: String, unlimited: Boolean, childId: String? = null) =
         mutateAppPolicy(pkg, childId) { it.copy(unlimited = unlimited) }
+
+    /**
+     * Manage [pkg] on the child's phone even though it came with it (see
+     * [dev.walcott.rules.AppPolicy.manageSystemApp]) — what turns a limit on the browser from a
+     * saved preference into a rule the phone keeps.
+     */
+    fun setAppManageSystem(pkg: String, manage: Boolean, childId: String? = null) =
+        mutateAppPolicy(pkg, childId) { it.copy(manageSystemApp = manage) }
 
     /** Set this app's own blocked windows (any number), applied to every day type. */
     /** One app's own screen-free schedule, written whole (see [setAllAppsWindows]). */

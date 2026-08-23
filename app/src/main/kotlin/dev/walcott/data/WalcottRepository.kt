@@ -146,8 +146,16 @@ class WalcottRepository(
     }
 
 
-    /** Every user-installed app on this device: with no categories, they are all managed. */
-    suspend fun managedPackagesNow(): Set<String> = inventory.managedPackages()
+    /**
+     * Every user-installed app on this device — with no categories, they are all managed — plus
+     * the preinstalled ones the family asked for by name (see [FamilyConfig.managedSystemPackages]).
+     *
+     * The rules are read here rather than passed in because every caller of this already means
+     * "what may this phone close right now", and the opt-in is part of that answer: a managed
+     * set built without it is one the enforcement loop would use to give an app back.
+     */
+    suspend fun managedPackagesNow(): Set<String> =
+        inventory.managedPackages(configNow().managedSystemPackages())
 
     /** What screen time is counted for — wider than the managed set (see [AppInventory.trackedPackages]). */
     suspend fun trackedPackagesNow(): Set<String> = inventory.trackedPackages()

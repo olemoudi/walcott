@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
@@ -210,6 +211,7 @@ class EnforcementService : LifecycleService() {
         scheduleLocationSampling()
         observeLiveTracking()
         observeLostMode()
+        observeRinging()
         observeUpdateWindow()
         // Catch up on whatever happened while this service wasn't running. The package receiver
         // lives in this process, so a device that was off — or a service an OEM battery saver
@@ -630,6 +632,8 @@ class EnforcementService : LifecycleService() {
         // 2s tick was pure binder churn — the set only changes on (un)installs and
         // classification edits, both of which invalidate it explicitly below.
         var managed: Set<String> = emptySet()
+        // Preinstalled apps outside the managed set, reconciled so they can never stay shut.
+        var reclaimable: Set<String> = emptySet()
         // What screen time is COUNTED for: wider than `managed`, which is what may be blocked.
         var tracked: Set<String> = emptySet()
         var managedFetchedAt = 0L
@@ -725,6 +729,9 @@ class EnforcementService : LifecycleService() {
             if (inventoryDirty || nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS) {
                 managed = repo.managedPackagesNow()
                 tracked = repo.trackedPackagesNow()
+                // The preinstalled apps this phone is NOT managing, so a withdrawn opt-in gives
+                // the app back without depending on this process remembering that it once did.
+                reclaimable = repo.inventory.systemLaunchablePackages() - managed
                 // Read on the same event as the rest: a browser arrives and leaves by being
                 // installed and uninstalled, which is exactly what invalidates this block.
                 browsers = repo.inventory.browserPackages()
@@ -1010,7 +1017,7 @@ class EnforcementService : LifecycleService() {
                     DebugLog.i(TAG, "no longer managed, giving back: ${leftManaged.joinToString()}")
                     enforcer.release(leftManaged.toList())
                 }
-                enforcer.apply(managed + quarantined, blocked + quarantined)
+                enforcer.apply(managed + quarantined, blocked + quarantined, giveBack = reclaimable)
                 lastAppliedBlocked = blocked
                 lastAppliedManaged = managed
                 lastAppliedQuarantine = quarantined
@@ -1107,6 +1114,26 @@ class EnforcementService : LifecycleService() {
         statusText = text
         runCatching {
             getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification(text))
+        }
+    }
+
+    /**
+     * Tells the parent the moment this phone starts and stops ringing.
+     *
+     * Published rather than left to the next heartbeat, because the whole window is at most two
+     * minutes: a "stop" button that turned up after the noise had ended, or not at all, would be
+     * the parent looking for the phone anyway. The stop half matters just as much — a ring that
+     * ended on its own must take the button with it.
+     */
+    private fun observeRinging() {
+        val app = application as WalcottApplication
+        lifecycleScope.launch {
+            Ringer.ringingUntilMs
+                .map { it > 0L }
+                .distinctUntilChanged()
+                // Skips the state it starts in: a service starting up is not news about a ring.
+                .drop(1)
+                .collect { runCatching { app.syncManager.publishRingingChange() } }
         }
     }
 

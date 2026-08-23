@@ -1583,6 +1583,23 @@
     <string name="app_limit_default">Por defecto de la familia: %1$s al día</string>
     <string name="app_limit_none">Sin límite</string>
     <string name="app_limit_none_ever">Sin límite, nunca</string>
+    <!-- Preinstalled apps: the opt-in that makes a limit on the browser or the video app real. -->
+    <!-- What Android shows wherever it says an action is managed by an administrator. -->
+    <string name="ring_active_title">El móvil de %1$s está sonando</string>
+    <string name="ring_active_title_unnamed">Un móvil de la familia está sonando</string>
+    <string name="ring_active_stop">Parar</string>
+    <string name="ring_active_dismiss">Ocultar</string>
+    <string name="ring_home_title">Este móvil está sonando</string>
+    <string name="ring_home_desc">Lo ha pedido tu familia, para que puedas encontrarlo.</string>
+    <string name="ring_home_stop">Parar el sonido</string>
+    <string name="admin_support_short">Walcott aplica en este móvil las reglas de tu familia. Ábrelo para ver qué está limitado y pedir más tiempo.</string>
+    <string name="admin_support_long">Este móvil lo configura tu familia con Walcott. Abre Walcott para ver qué está limitado ahora mismo, cuánto queda hoy y pedir más tiempo.</string>
+    <string name="apps_preinstalled_tag">Del móvil</string>
+    <string name="apps_limit_idle_tag">No se aplica</string>
+    <string name="app_manage_system">Limitarla aunque venga con el móvil</string>
+    <string name="app_manage_system_hint">Las apps que vienen de fábrica no se tocan por defecto. Actívalo y se cerrará como cualquier otra. Algunos móviles no dejan cerrar ciertas apps de fábrica; si pasa, te lo digo en la pantalla del miembro.</string>
+    <string name="app_manage_system_old_child">%1$s tiene que actualizar Walcott para que esto funcione en su móvil.</string>
+    <string name="app_limit_not_applied">Este límite no hace nada todavía: la app viene con el móvil. Activa el interruptor de arriba para que sea de verdad.</string>
     <string name="app_no_limit_ever">No limitar nunca esta app</string>
     <string name="app_no_limit_ever_hint">Ignora el límite por defecto de la familia. La hora de dormir y los horarios sin pantalla siguen aplicando.</string>
     <string name="dashboard_default_limit">Límite por app</string>
@@ -1758,10 +1775,17 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_98_0">
+        <item>Hacer sonar un móvil era fácil de empezar y difícil de parar. Ahora el propio móvil pone un botón «Parar el sonido» arriba del todo en su pantalla de Walcott —donde mira de verdad quien tiene un móvil aullando en la mano— y tu home enseña «El móvil de X está sonando» con Parar, mientras dure. Esa tarjeta se quita sola cuando acaba el ruido, y se puede ocultar a mano para el caso que nada puede comunicar: un móvil que dejó de sonar porque se quedó sin batería.</item>
+        <item>Ya puedes limitar una app que viene con el móvil: el navegador, la app de vídeo, la galería. Ahí es donde se va el día de verdad, y hasta ahora eran justo lo único que Walcott no podía cerrar: el límite que les ponías se guardaba, se mostraba y no hacía nada. Abre la app en Apps y activa «Limitarla aunque venga con el móvil», y se cierra como cualquier otra. Es app por app a propósito: no existe una lista de apps de fábrica que sea segura en todos los móviles, así que dices cuál. El propio móvil rechaza las que no puede perder —el launcher, el teléfono, los Ajustes—, y si el tuyo rechaza alguna más te lo dice en la ficha de ese miembro en vez de dejarte adivinando.</item>
+        <item>Tu lista de apps enseña ahora todas las del móvil, con «Del móvil» debajo de las que vienen de fábrica: no puedes decidir limitar algo que nunca te enseñaron. Y un límite que no puede aplicarse lo dice: una app de fábrica con un límite tuyo y sin ese interruptor sale marcada «No se aplica» en la lista, y se explica en su propia pantalla.</item>
+        <item>Donde Android le dice a quien tiene el móvil que algo está «bloqueado por la política de trabajo», antes añadía «para más información, contacta con tu administrador de TI». Ahora dice que Walcott aplica las reglas de la familia y que lo abra para ver qué está limitado y pedir más tiempo — allí donde Android lo lleva: cambiar la hora, intentar instalar algo, resetear el móvil. En el diálogo de una app limitada no, por desgracia: ese se lo reserva Android.</item>
+        <item>Un arreglo que conviene saber: cuando llegaban de golpe más apps sin aprobar de las que caben en la cuarentena, las sobrantes se colaban en la lista de apps que el móvil ya daba por conocidas — o sea que no se volvían a mirar nunca. Ahora esperan a que haya sitio.</item>
+    </string-array>
     <string-array name="whats_new_0_97_0">
         <item>Tu familia ya puede hacer sonar un móvil. Desde la ficha de un miembro, o desde el botón del rayo en tu inicio, «Hacerlo sonar» reproduce el tono de alarma a todo volumen durante un minuto — en silencio, en vibración y con «No molestar», que son justo los estados en los que está un móvil que nadie encuentra. Se para solo, al desbloquearlo, o cuando quien lo recoge toca «Lo tengo».</item>
         <item>Y un móvil que de verdad se ha perdido tiene un modo perdido. Se bloquea al instante, pone en su pantalla de bloqueo una línea que escribes tú — un número al que llamar — y comunica dónde está cada minuto mientras dure la batería, sin suelo: el suelo que detiene el seguimiento estrecho al 15 % existe para que una sesión no mate un móvil que verás esta noche, y un móvil perdido que muere sin enviar su última posición está perdido para siempre. Un reinicio lo devuelve directamente al modo perdido. «Lo he recuperado» lo deshace todo de un toque.</item>
-        <item>Un móvil a punto de quedarse callado deja ahora una última palabra. Cuando la batería llega al aviso de batería baja del sistema, o el móvil se está apagando, manda un mensaje más — con su posición, si a ese miembro lo localizas — y tu pantalla dice «se quedó sin batería a las 17:42» o «se apagó a las 18:42» en vez de contar horas de silencio. El mapa marca la última posición que comunicó. El seguimiento estrecho toma además una última posición antes de detenerse por batería baja, y un «localizar ahora» que el móvil no pudo responder se reintenta antes de lo que marcaría su propia espera.</item>
+        <item>Un móvil a punto de quedarse callado deja ahora una última palabra. Cuando la batería llega al aviso de batería baja del sistema, o el móvil se está apagando, manda un mensaje más — con su posición, si a ese miembro lo localizas — y tu pantalla dice «estaba a punto de quedarse sin batería a las 17:42» o «se apagó a las 18:42» en vez de contar horas de silencio. El mapa marca la última posición que comunicó. El seguimiento estrecho toma además una última posición antes de detenerse por batería baja, y un «localizar ahora» que el móvil no pudo responder se reintenta antes de lo que marcaría su propia espera.</item>
     </string-array>
     <string-array name="whats_new_0_96_0">
         <item>La liberación de emergencia — la salida que un hijo puede iniciar solo, para cuando el móvil de los padres ya no está y el PIN tampoco — pasa de veinticuatro horas a doce, y el móvil tiene que sacar un aviso cada hora en vez de cada dos.</item>

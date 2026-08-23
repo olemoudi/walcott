@@ -16,6 +16,12 @@ object AppCatalog {
         val packageName: String,
         val label: String,
         val owners: List<Owner>,
+        /**
+         * Whether this app ships with the phone. True if ANY child reporting it says so: the
+         * same package is preinstalled on one phone and sideloaded on another, and the flag
+         * decides whether the parent is offered the switch that makes a limit on it real.
+         */
+        val system: Boolean = false,
     )
 
     /**
@@ -31,6 +37,7 @@ object AppCatalog {
                 Entry(
                     packageName = packageName,
                     label = hits.first().first.label,
+                    system = hits.any { it.first.system },
                     owners = hits.map { (_, snapshot) ->
                         Owner(
                             id = snapshot.childId.ifBlank { snapshot.deviceId },

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
@@ -67,6 +68,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -192,6 +194,40 @@ fun FamiliesScreen(
         }
     }
 
+    // Who is ringing, and until when BY THIS PHONE'S CLOCK.
+    //
+    // The child reports how much ring is LEFT, not a deadline, so the arithmetic is done here
+    // against the moment its message arrived (`lastSeen`). Two phones do not agree about the
+    // time closely enough to place a two-minute window, and the failure would be silent: a
+    // button that never appears, or one that outlives the noise it was offering to end.
+    val ringingUntil = remember(snapshots, lastSeen) {
+        snapshots.mapNotNull { snapshot ->
+            dev.walcott.sync.RemoteAction.ringEndsAt(snapshot.ringingSeconds, lastSeen[snapshot.deviceId])
+                ?.let { snapshot.deviceId to it }
+        }.toMap()
+    }
+    // Dismissed by hand, per ring. The card expires on its own when the noise is due to end,
+    // but "due to" is the child's last word on the subject: a phone that goes flat, or is
+    // switched off by whoever found it, stops ringing without ever saying so. A card that
+    // cannot be got rid of is worse than one that is sometimes wrong.
+    var dismissedRings by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(ringingUntil.keys.joinToString()) {
+        dismissedRings = dismissedRings.filterTo(mutableSetOf()) { it in ringingUntil.keys }
+    }
+    // Its own clock, and only while something is ringing: the minute tick above is what ages a
+    // staleness line, and a minute is most of a ring.
+    val anyRinging = ringingUntil.isNotEmpty()
+    val ringNowMs by produceState(System.currentTimeMillis(), anyRinging) {
+        if (!anyRinging) return@produceState
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(2_000)
+        }
+    }
+    val ringingNow = ringingUntil.filter { (deviceId, until) ->
+        until > ringNowMs && deviceId !in dismissedRings
+    }
+
     val registryIds = settings.children.map { it.childId }.toSet()
     val legacyDevices = snapshots.filter { it.childId !in registryIds }
 
@@ -221,6 +257,24 @@ fun FamiliesScreen(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+
+        // Above the family itself: a phone is making a noise somewhere and the person who
+        // started it is holding this screen. Two minutes is not long enough to go looking
+        // through a member's page for the way to end it.
+        ringingNow.keys.forEach { deviceId ->
+            item(key = "ringing-$deviceId") {
+                RingingChildCard(
+                    name = snapshots.firstOrNull { it.deviceId == deviceId }
+                        ?.let { snapshot ->
+                            settings.children.firstOrNull { it.childId == snapshot.childId }?.name
+                                ?: snapshot.displayName
+                        }
+                        .orEmpty(),
+                    onStop = { viewModel.stopRingChild(deviceId) },
+                    onDismiss = { dismissedRings = dismissedRings + deviceId },
+                )
             }
         }
 
@@ -1439,4 +1493,53 @@ private fun LocalBackupPinDialog(viewModel: WalcottViewModel, onDismiss: () -> U
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.action_cancel)) } },
     )
+}
+
+/**
+ * A phone in this family is ringing right now, with the way to end it and the way to put the
+ * card away.
+ *
+ * Both, because they answer different situations. "Stop" is for the ordinary one — the phone has
+ * been found, or was never lost. Dismiss is for the one nobody can see from here: a phone that
+ * stopped ringing without being able to say so, because its battery went or whoever found it
+ * switched it off. The card would otherwise sit there until its own deadline passed, offering to
+ * stop a sound that ended minutes ago.
+ */
+@Composable
+private fun RingingChildCard(name: String, onStop: () -> Unit, onDismiss: () -> Unit) {
+    val spacing = Tokens.spacing
+    WalcottCard(color = MaterialTheme.colorScheme.errorContainer) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.NotificationsActive,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(26.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                if (name.isBlank()) {
+                    stringResource(R.string.ring_active_title_unnamed)
+                } else {
+                    stringResource(R.string.ring_active_title, name)
+                },
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onStop) {
+                Text(
+                    stringResource(R.string.ring_active_stop),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    Icons.Outlined.Close,
+                    contentDescription = stringResource(R.string.ring_active_dismiss),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+    }
 }

@@ -205,6 +205,16 @@ class ChildDevice(
         // minute. Hence [nudgeAwake], called from inside every wait rather than once at the start.
         run("shell", "settings", "put", "system", "screen_off_timeout", "86400000")
         run("shell", "svc", "power", "stayon", "true")
+        // And no heads-up snooze, which is not a convenience: SystemUI keeps a PER-PACKAGE
+        // snooze after a heads-up goes away (`HeadsUpManagerPhone state: mSnoozeLengthMs=60000`
+        // in its dump), and while it is running the next notification from that package lands in
+        // the shade without ever peeking. On a phone that is what it is for — one warning
+        // dismissed should not be followed by another a second later — but the rungs a child
+        // actually meets are 30, 5 and 1 minutes apart, so it never bites in a house. It bites
+        // here, where a scenario walks a countdown down in seconds, and what it produces is a
+        // product that posted the right warning with the right text and a platform that quietly
+        // declined to show it. That failure looks exactly like a broken feature and is not one.
+        run("shell", "settings", "put", "global", "heads_up_snooze_length_ms", "0")
         nudgeAwake()
         // Waking is asynchronous, so a probe on the next line can still read Asleep.
         val deadline = System.currentTimeMillis() + timeoutMs
