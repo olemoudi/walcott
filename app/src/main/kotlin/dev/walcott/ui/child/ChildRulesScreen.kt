@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,11 +68,22 @@ fun ChildRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = spacing.screen),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
+            // Where today stands, before the rules themselves — including the ones that are NOT
+            // running. "No bedtime until 21:30" is not the absence of information: it says the
+            // phone is free AND when that stops being true, which is the whole question a child
+            // opens this screen with. The parent's own card, unchanged: there is no version of
+            // this that is true for one of them and not the other.
+            state.ruleContext?.let { context ->
+                item { dev.walcott.ui.parent.RuleContextCard(context, java.time.LocalDateTime.now()) }
+            }
+
             item { SectionHeader(stringResource(R.string.child_rules_general)) }
 
             // The standing rules, in the order they bite: the whole phone first, then per app.
             val bedtime = state.bedtimeTonight
-            if (bedtime == null && state.screenFreeToday.isEmpty() && state.defaultBudget == null) {
+            if (bedtime == null && state.screenFreeToday.isEmpty() &&
+                state.defaultBudget == null && state.screenBudget == null
+            ) {
                 item {
                     Text(
                         stringResource(R.string.child_rules_none),
@@ -97,6 +109,18 @@ fun ChildRulesScreen(viewModel: WalcottViewModel, onBack: () -> Unit) {
                     // different rule from one that bites every day, and the times alone hide that.
                     footnote = daysLabel(window),
                 )
+            }
+            // The phone's own day, before the per-app limits: it is the one that governs.
+            state.screenBudget?.let { budget ->
+                item {
+                    RuleCard(
+                        icon = Icons.Outlined.HourglassEmpty,
+                        title = stringResource(R.string.screen_budget_card_title),
+                        detail = state.screenLeft?.takeIf { it > java.time.Duration.ZERO }?.let { left ->
+                            stringResource(R.string.home_limit_screen_left, budget.humanize(), left.humanize())
+                        } ?: stringResource(R.string.home_limit_screen, budget.humanize()),
+                    )
+                }
             }
             state.defaultBudget?.let { budget ->
                 item {

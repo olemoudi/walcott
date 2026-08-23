@@ -30,6 +30,26 @@
     <string name="home_limit_default">%1$s al día para cada app</string>
     <string name="home_limit_bedtime">Dormir %1$s – %2$s</string>
     <string name="bedtime_title">Hora de dormir</string>
+    <string name="override_screen_budget_title">Su propio total diario</string>
+    <string name="home_limit_screen">%1$s de móvil al día</string>
+    <string name="home_limit_screen_left">%1$s de móvil al día · quedan %2$s</string>
+    <string name="pause_everyone">Pausar a todos</string>
+    <string name="pause_everyone_done">Todos en pausa %1$d min</string>
+    <string name="pause_everyone_resumed">Todos tienen su móvil otra vez</string>
+    <string name="quick_minus_minutes">−%1$d min</string>
+    <string name="quick_bedtime_earlier_done">%1$s se acuesta %2$d min antes esta noche</string>
+    <string name="quick_bedtime_custom">Otro rato…</string>
+    <string name="quick_bedtime_custom_title">¿Cuánto más tarde?</string>
+    <string name="quick_pause_until">Hasta…</string>
+    <string name="quick_pause_until_title">¿Pausado hasta qué hora?</string>
+    <string name="quick_paused_until_done">%1$s está en pausa hasta las %2$s</string>
+    <string name="quick_pause_open">Hasta que yo diga</string>
+    <string name="quick_paused_open">%1$s está en pausa hasta que digas (como muy tarde, las 6:00)</string>
+    <string name="screen_budget_header">El día del móvil</string>
+    <string name="screen_budget_hint">Cuánto se puede usar este móvil en total, sea para lo que sea. Todas las apps gastan el mismo reloj. Las llamadas, los contactos y lo que hayas marcado como «no limitar nunca» siguen funcionando.</string>
+    <string name="screen_budget_card_title">Tiempo de pantalla al día</string>
+    <string name="screen_budget_old_child">%1$s tiene que actualizar Walcott para que el límite diario funcione en su móvil.</string>
+    <string name="screen_budget_title">El tiempo del móvil para hoy</string>
     <string name="screen_free_title">Tiempo sin pantalla</string>
     <!-- When the phone comes back, rather than a guess about the shape of the window. -->
     <string name="window_until">Las apps descansan hasta las %1$s</string>
@@ -146,6 +166,7 @@
     <string name="status_blocked">Bloqueado</string>
     <string name="label_remaining">restante</string>
     <string name="reason_bedtime">Es hora de dormir</string>
+    <string name="reason_screen_budget">El tiempo de pantalla de hoy se ha acabado</string>
     <string name="reason_blocked_window">No disponible en este horario</string>
     <string name="reason_budget_exhausted">Se acabó el tiempo de hoy</string>
     <string name="reason_blocked_today">Bloqueada hoy</string>
@@ -1594,6 +1615,10 @@
     <string name="ring_home_stop">Parar el sonido</string>
     <string name="admin_support_short">Walcott aplica en este móvil las reglas de tu familia. Ábrelo para ver qué está limitado y pedir más tiempo.</string>
     <string name="admin_support_long">Este móvil lo configura tu familia con Walcott. Abre Walcott para ver qué está limitado ahora mismo, cuánto queda hoy y pedir más tiempo.</string>
+    <string name="apps_reach_out_tag">Sirve para localizarte</string>
+    <string name="app_reach_out_title">Con esta app contactan con alguien</string>
+    <string name="app_reach_out_hint">Los límites que nadie escribió sobre esta app —el límite por defecto de la familia y el tiempo de pantalla total al día— no la tocan, así que un número puesto en otra pantalla no puede dejarte sin sus mensajes. Un límite puesto aquí sí se aplica.</string>
+    <string name="app_reach_out_limited">Con esta app contactan con alguien, y le has puesto un límite. Cuando se acabe, no podrán escribir desde este móvil.</string>
     <string name="apps_preinstalled_tag">Del móvil</string>
     <string name="apps_limit_idle_tag">No se aplica</string>
     <string name="app_manage_system">Limitarla aunque venga con el móvil</string>
@@ -1756,6 +1781,8 @@
     <string name="status_paused">En pausa hasta las %1$s</string>
     <string name="status_bedtime">Hora de dormir hasta las %1$s</string>
     <string name="status_screen_free">Sin pantalla hasta las %1$s</string>
+    <string name="status_screen_left">Quedan %1$s de móvil hoy</string>
+    <string name="status_screen_spent">El tiempo de pantalla de hoy se ha acabado</string>
     <string name="status_app_left">%1$s · quedan %2$s</string>
     <string name="status_fail_closed">Bloqueado hasta arreglar este móvil</string>
     <!-- Lo que ha ganado hoy por dejar el móvil (ver IdleEarnEngine) -->
@@ -1774,6 +1801,13 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_99_0">
+        <item>Un móvil puede tener por fin un límite propio: <b>tiempo de pantalla total al día</b>, en Límites. Hasta ahora cada app tenía su reloj, así que diez apps con una hora cada una eran un día de diez horas — y quien puso esas diez horas creía haber puesto una. Pon un total y cada minuto gasta el mismo, sea en lo que sea, incluidas las apps a las que nunca les pusiste límite. Las llamadas y los contactos siguen funcionando, y también lo que hayas marcado como «no limitar nunca»: esa es tu salida y un techo no puede cerrarla. Cada miembro puede tener un día más corto que el de la familia.</item>
+        <item>El móvil del hijo dice lo que viene, no solo lo que se ha parado. Su pantalla de reglas abre ahora con la misma tarjeta que lees tú — qué tipo de día creen las reglas que es, si es especial, «sin hora de dormir hasta las 21:30», cuándo empieza el próximo rato sin pantalla — y su inicio dice cuándo cambia el día de tipo («reglas de finde desde el viernes a las 14:00») y cuánto queda del día del móvil. Es la diferencia entre planear una tarde y enterarse porque la pantalla se apaga.</item>
+        <item>Las acciones rápidas ganaron las respuestas que faltaban. La hora de dormir ya se puede mover <b>antes</b> esta noche, no solo más tarde, y por el rato que tú digas en vez de 30 o 60. Una pausa puede durar hasta una hora que elijas («hasta las nueve») o hasta que tú digas — esa acaba igualmente a las 6:00, porque una pausa que nadie se acuerda de levantar es una regla que nadie escribió. Y en tu inicio, con dos o más miembros, <b>Pausar a todos</b>: la cena, el coche, la habitación donde todo el mundo mira una pantalla.</item>
+        <item>Y las apps con las que un hijo contacta con alguien quedan protegidas de los dos límites de arriba. El teléfono y los contactos nunca han obedecido a ninguna regla; la mensajería no estaba protegida y no le hacía falta — viene con el móvil, así que nada la gestionaba. Este mes las dos cosas dejaron de ser ciertas, así que ahora se dice en voz alta: el límite por defecto de la familia y el tiempo de pantalla total al día no la tocan, sale marcada «Sirve para localizarte» en tu lista de apps, y su propia pantalla lo explica. Si decides limitarla, puedes — desde esa app, por su nombre, con esa misma pantalla diciéndote claramente que cuando se acabe no podrán escribirte.</item>
+        <item>Tres arreglos que conviene nombrar. El tiempo ganado — los minutos que da dejar el móvil — solo llegaba a las apps con el límite por defecto de la familia, así que una familia con límites por app veía «has ganado 20 minutos» que no valían para nada; ahora llega a todos los límites y al total del día. Las ventanas para ganar tiempo ignoraban sus propios filtros de días y festivos, así que «se gana las tardes entre semana» ganaba a la misma hora el sábado. Y el cambio de la hora de dormir se fechaba con el reloj del padre, lo que lo asigna a la noche equivocada si el padre está en otro huso; ahora se fecha con el móvil del hijo.</item>
     </string-array>
     <string-array name="whats_new_0_98_0">
         <item>Hacer sonar un móvil era fácil de empezar y difícil de parar. Ahora el propio móvil pone un botón «Parar el sonido» arriba del todo en su pantalla de Walcott —donde mira de verdad quien tiene un móvil aullando en la mano— y tu home enseña «El móvil de X está sonando» con Parar, mientras dure. Esa tarjeta se quita sola cuando acaba el ruido, y se puede ocultar a mano para el caso que nada puede comunicar: un móvil que dejó de sonar porque se quedó sin batería.</item>

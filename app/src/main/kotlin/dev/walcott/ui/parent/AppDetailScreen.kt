@@ -76,6 +76,7 @@ fun AppDetailScreen(
     val row = rows.firstOrNull { it.app.packageName == packageName }
     val label = row?.app?.label ?: packageName
     val isSystemApp = row?.app?.isSystem == true
+    val reachOut = row?.reachOut == true
     val children by viewModel.children.collectAsStateWithLifecycle()
     // The members who have this app on a build that cannot manage a preinstalled one. Named
     // rather than counted: with two phones in a family, "one of them" is not an answer.
@@ -138,6 +139,28 @@ fun AppDetailScreen(
                 }
             }
 
+            // Before anything else on this screen, because it changes what every control below
+            // it means: this is how the child contacts somebody, so the rules nobody wrote about
+            // it by name — the family default, the day's total — leave it alone. A limit set
+            // HERE does not, and the parent is owed that sentence before they set one.
+            if (reachOut) {
+                item {
+                    WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Column(Modifier.padding(spacing.lg)) {
+                            Text(
+                                stringResource(R.string.app_reach_out_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(
+                                stringResource(R.string.app_reach_out_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
             if (isSystemApp) {
                 item {
                     WalcottCard {
@@ -178,10 +201,24 @@ fun AppDetailScreen(
                 // here rather than only by the switch above, because this is where the parent is
                 // when they set it.
                 val idle = isSystemApp && appPolicy?.manageSystemApp != true
+                // A limit already set on the app the child texts from: the warning is no longer
+                // about what could happen, so it says what IS happening.
+                val limitingReachOut = reachOut && !idle &&
+                    appPolicy?.let { it.budgets.isNotEmpty() || it.blockedWindows.isNotEmpty() } == true
                 Text(
-                    stringResource(if (idle) R.string.app_limit_not_applied else R.string.app_own_limit_hint),
+                    stringResource(
+                        when {
+                            idle -> R.string.app_limit_not_applied
+                            limitingReachOut -> R.string.app_reach_out_limited
+                            else -> R.string.app_own_limit_hint
+                        },
+                    ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (idle) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (idle || limitingReachOut) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
             // The third state, and the only way to say "never cut this one off" without turning

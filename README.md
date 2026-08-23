@@ -41,6 +41,20 @@ is per kind of day: school days, weekends, and special days. Bedtime is per kind
 There are no categories to sort apps into — a newly installed app simply has no limit until you
 give it one.
 
+**A limit for the phone itself.** Optionally, a total screen time per day — one number for the
+whole phone, per kind of day. Every minute spends it, whatever it was spent on, including apps
+you have never given a limit to; when it runs out the phone closes for the day. It is the
+ceiling the per-app limits do not add up to on their own: ten apps with an hour each is a
+ten-hour day. Calls and contacts keep working, and so does anything marked "never limit this" —
+that one is a family's own way out and a ceiling must not close it. Each member can have a
+shorter day than the family's.
+
+The apps a child reaches a person with are outside both of the limits above — the phone and
+contacts, which answer to no rule at all, and the messaging app, which the family default and
+the daily total leave alone. A limit that stops a child texting their parent should be one
+somebody chose, so it can only be set on that app by name, and the screen that sets it says what
+it will do.
+
 **An optional limit for every app.** If you want one, set a daily limit that every app gets
 unless you have given it its own. Each app spends it on its own clock: an hour of one doesn't
 eat another's. It is off by default, and only the most detailed guided setup asks about it.

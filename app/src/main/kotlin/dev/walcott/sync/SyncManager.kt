@@ -2778,10 +2778,13 @@ class SyncManager(
         val grant = IdleEarnEngine.grantableMinutes(config, ledger, s.idleEarnBankSeconds / 60, now)
         if (grant <= 0) return 0
 
-        // Earned minutes widen every app's allowance (see RuleEngine's ALL_APPS handling):
-        // with no categories left there is no single target to send them to, and "you earned
-        // more screen time" is what a child was promised anyway.
-        repository.grantExtraMinutes(dev.walcott.rules.ExtraTime.ALL_APPS, grant.toLong())
+        // Filed under EARNED rather than with the blanket grants, and that is the whole
+        // difference between a promise kept and a number on a screen: a blanket "everyone gets
+        // thirty minutes" deliberately cannot blow past a budget set for one app on purpose, so
+        // a family with per-app limits was shown "you earned 20 minutes" that bought nothing
+        // anywhere. Earned minutes are a standing rule the family wrote, and they reach every
+        // budget and the day's total (see ExtraTime.EARNED).
+        repository.grantExtraMinutes(dev.walcott.rules.ExtraTime.EARNED, grant.toLong())
         val consumedSeconds = IdleEarnEngine.idleConsumedFor(config, grant) * 60
         val pruned = IdleEarnEngine.prune(ledger + EarnGrant(now, grant), now)
             .map { EarnGrantEntry(it.epochMs, it.minutes) }
@@ -3041,6 +3044,7 @@ class SyncManager(
                 val optedIn = settings.resolveForChild(id.childId).toFamilyConfig(emptySet())
                     .managedSystemPackages()
                 // PackageManager enumeration is blocking; keep it off the caller's thread.
+                val reachOut = withContext(Dispatchers.IO) { repository.inventory.reachOutPackages() }
                 val apps = withContext(Dispatchers.IO) {
                     repository.inventory.launchableApps()
                         .sortedWith(
@@ -3049,7 +3053,14 @@ class SyncManager(
                                 { it.label.lowercase() },
                             ),
                         )
-                        .map { InstalledAppInfo(it.packageName, it.label, system = it.isSystem) }
+                        .map {
+                            InstalledAppInfo(
+                                it.packageName,
+                                it.label,
+                                system = it.isSystem,
+                                reachOut = it.packageName in reachOut,
+                            )
+                        }
                 }
                 // Everything still ungranted on this phone, by the same list its own home screen
                 // and its periodic self-check read (see DeviceSetup). The parent cannot fix any

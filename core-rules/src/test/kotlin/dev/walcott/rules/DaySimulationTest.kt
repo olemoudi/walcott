@@ -239,7 +239,7 @@ class DaySimulationTest {
         private fun epochMs() = Duration.between(origin, now).toMillis()
 
         fun idle(minutes: Int) = repeat(minutes) {
-            val earning = IdleEarnEngine.isEarningTime(config, calendar.dayTypeOf(now), now.toLocalTime())
+            val earning = IdleEarnEngine.isEarningTime(config, calendar.dayTypeOf(now), now)
             if (earning) bankMinutes++
             now = now.plusMinutes(1)
         }

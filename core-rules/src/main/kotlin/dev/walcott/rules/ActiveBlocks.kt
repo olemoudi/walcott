@@ -49,6 +49,15 @@ data class ActiveBlock(
         BUDGET,
 
         /**
+         * The PHONE's time for today is spent (see [FamilyConfig.dailyScreenBudget]) — every app
+         * at once, and nothing to look for app by app.
+         *
+         * Reported before the per-app rows and with no package, because a parent reading "out of
+         * time" against nine apps would go looking for nine decisions when there is one.
+         */
+        SCREEN_BUDGET,
+
+        /**
          * This app is blocked outright today: its limit is zero, so there is no time to run out
          * of and nothing ends this at any hour.
          *
@@ -100,6 +109,22 @@ fun RuleEngine.activeBlocks(
     config.blockedWindows[dayType].orEmpty()
         .filter { it.appliesAt(now, specialDay) }
         .forEach { blocks += ActiveBlock(ActiveBlock.Kind.SCREEN_FREE, from = it.start, until = it.end) }
+
+    // The day's total, above the app rows for the same reason bedtime is: it is one fact about
+    // the whole phone. Judged only against counters that are actually today's — a total read off
+    // yesterday's numbers would be a rule the parent is told is biting when it is not.
+    if (usageIsToday) {
+        val screenAllowance = config.screenAllowanceAt(dayType, extraTime)
+        val screenUsed = ScreenTime.of(usageToday)
+        if (screenAllowance != null && screenUsed >= screenAllowance) {
+            blocks += ActiveBlock(
+                ActiveBlock.Kind.SCREEN_BUDGET,
+                allowance = screenAllowance,
+                used = screenUsed,
+                budget = config.dailyScreenBudget[dayType]?.takeIf { it != screenAllowance },
+            )
+        }
+    }
 
     // Sorted so the same rules always read in the same order: a list that reshuffles itself
     // between two glances is one nobody trusts.

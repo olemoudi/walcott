@@ -273,6 +273,17 @@ data class InstalledAppInfo(
      * False on a child too old to say, which is the reading that was already being assumed.
      */
     val system: Boolean = false,
+    /**
+     * Whether this is an app the child reaches a PERSON with — the phone, contacts, the
+     * messaging app.
+     *
+     * Reported because the parent's screens judge apps with the same engine the child's phone
+     * does, and the engine exempts these from the limits nobody wrote about them (see
+     * `FamilyConfig.reachOutPackages` and `essentialPackages`). Without the flag the parent's
+     * "what is stopping them" would list the phone as out of time under a family default, on a
+     * device that would never have blocked it.
+     */
+    val reachOut: Boolean = false,
 )
 
 /**
@@ -740,6 +751,31 @@ object RemoteAction {
      * decorative on another, with nothing on any screen to say which.
      */
     const val MANAGE_SYSTEM_MIN_CHILD_VERSION = 151
+
+    /**
+     * The first child build that understands a daily screen TOTAL
+     * (`FamilyConfig.dailyScreenBudget`).
+     *
+     * Gated on the parent's side for the same reason the preinstalled opt-in is: an older child
+     * takes the policy, ignores the field it has never heard of, and goes on letting every app
+     * run — a ceiling that is real on one phone in the family and decorative on another.
+     */
+    const val SCREEN_BUDGET_MIN_CHILD_VERSION = 152
+
+    /**
+     * The first child build that reads a NEGATIVE `bedtimeDelayMinutes` as "bedtime earlier
+     * tonight". Older ones read it as no change at all — a bedtime the parent moved and a phone
+     * that did not, which is the wrong way for this to fail.
+     */
+    const val EARLIER_BEDTIME_MIN_CHILD_VERSION = 152
+
+    /** Whether a child reporting [childAppVersionCode] can bring tonight's bedtime forward. */
+    fun canBedtimeEarlier(childAppVersionCode: Int): Boolean =
+        childAppVersionCode >= EARLIER_BEDTIME_MIN_CHILD_VERSION
+
+    /** Whether a child reporting [childAppVersionCode] can keep a daily screen total. */
+    fun canScreenBudget(childAppVersionCode: Int): Boolean =
+        childAppVersionCode >= SCREEN_BUDGET_MIN_CHILD_VERSION
 
     /** Whether a child reporting [childAppVersionCode] can manage its preinstalled apps. */
     fun canManageSystemApps(childAppVersionCode: Int): Boolean =

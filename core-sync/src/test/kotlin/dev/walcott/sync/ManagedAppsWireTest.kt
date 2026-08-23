@@ -77,4 +77,36 @@ class ManagedAppsWireTest {
         assertFalse(RemoteAction.canManageSystemApps(RemoteAction.MANAGE_SYSTEM_MIN_CHILD_VERSION - 1))
         assertTrue(RemoteAction.canManageSystemApps(RemoteAction.MANAGE_SYSTEM_MIN_CHILD_VERSION))
     }
+
+    @Test
+    fun `the phone says which of its apps reach a person, and an older one says none`() {
+        // The parent judges apps with the same engine the child's phone does, and only that
+        // phone knows which app answers "send a text". Without the flag the parent's wall would
+        // report the phone as out of time under a family default, about a device that would
+        // never have blocked it.
+        val messaging = InstalledAppInfo("com.android.messaging", "Messages", system = true, reachOut = true)
+        val familyKey = FamilyCrypto.generateFamilyKey()
+        val parent = FamilyCrypto.generateSigningKeyPair()
+        val decoded = SyncProtocol.decode(
+            SyncProtocol.encodeChild(
+                ChildSnapshot(
+                    deviceId = "d1", displayName = "phone", version = 1, epochDay = 20_000,
+                    apps = listOf(messaging, game),
+                ),
+                familyKey,
+            ),
+            familyKey, parent.public,
+        )
+        assertEquals(
+            listOf(true, false),
+            ((decoded as IncomingMessage.FromChild).snapshot).apps.map { it.reachOut },
+        )
+
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val legacy = json.decodeFromString(
+            InstalledAppInfo.serializer(),
+            """{"packageName":"com.android.messaging","label":"Messages"}""",
+        )
+        assertFalse(legacy.reachOut)
+    }
 }

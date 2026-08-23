@@ -1,6 +1,6 @@
 package dev.walcott.rules
 
-import java.time.LocalTime
+import java.time.LocalDateTime
 
 /**
  * "Idle time earns app time" with token-window caps, à la Claude Code plan limits.
@@ -39,11 +39,20 @@ object IdleEarnEngine {
     private const val HOUR_MS = 3_600_000L
     private const val WEEK_MS = 7 * 24 * HOUR_MS
 
-    /** Whether idle should accrue at [dayType]/[time] given the config's earn windows. */
-    fun isEarningTime(config: IdleEarnConfig, dayType: DayType, time: LocalTime): Boolean {
+    /**
+     * Whether idle should accrue at [at] given the config's earn windows.
+     *
+     * Asked with the whole instant rather than the time of day, because an earn window carries
+     * the same two filters every other window in this engine does — which weekdays it applies
+     * on, and what it does about holidays — and this was reading the clock alone. A family that
+     * said "idle earns on weekday evenings" had it earning at the same hour on Saturday, and a
+     * window written to stand down on holidays stood there anyway. Same call as every other
+     * window ([TimeWindow.appliesAt]), so there is nothing left to restate and drift out of step.
+     */
+    fun isEarningTime(config: IdleEarnConfig, dayType: DayType, at: LocalDateTime): Boolean {
         val windows = config.earnWindows[dayType] ?: return true // no restriction for this day
         if (windows.isEmpty()) return true
-        return windows.any { time in it }
+        return windows.any { it.appliesAt(at, specialDay = dayType == DayType.HOLIDAY) }
     }
 
     /**

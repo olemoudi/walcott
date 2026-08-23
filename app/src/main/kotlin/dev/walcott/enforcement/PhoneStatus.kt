@@ -37,6 +37,18 @@ sealed interface PhoneStatus {
     /** [packageName] is in use and has [left] on today's limit. */
     data class AppRemaining(val packageName: String, val left: Duration) : PhoneStatus
 
+    /**
+     * The phone has [left] of its own time for today (see [FamilyConfig.dailyScreenBudget]).
+     *
+     * Its own line rather than the app's, and shown whenever it is the tighter of the two: a
+     * child told "45 minutes left in Roblox" by a phone that is about to shut everything in ten
+     * has been told something the phone is going to contradict.
+     */
+    data class ScreenRemaining(val left: Duration) : PhoneStatus
+
+    /** The phone's time for today is spent; nothing non-essential opens until tomorrow. */
+    data object ScreenSpent : PhoneStatus
+
     /** The rules can't be trusted (no usage counter, or a clock this phone can't rely on). */
     data object FailClosed : PhoneStatus
 
@@ -78,16 +90,36 @@ object StatusLine {
             }
             else -> Unit
         }
+        // The day's own total, which outranks anything about a single app once it is spent —
+        // and which is worth a line all day when there is one, because it is the number the
+        // child would otherwise have to open the app to find.
+        val screenLeft = config.screenTimeLeftAt(
+            config.calendar.dayTypeOf(now),
+            dev.walcott.rules.ScreenTime.of(usageToday),
+            extraTime,
+        )
+        if (screenLeft != null && screenLeft <= Duration.ZERO) return PhoneStatus.ScreenSpent
+
         // Nothing in the foreground to report on: the screen is off, or the child is in Walcott,
-        // or in something this phone does not limit.
-        if (foreground == null || foreground !in managed) return PhoneStatus.Quiet
+        // or in something this phone does not limit. The phone's own countdown still stands.
+        if (foreground == null || foreground !in managed) {
+            return screenLeft?.let { PhoneStatus.ScreenRemaining(it) } ?: PhoneStatus.Quiet
+        }
         val status = RuleEngine.appStatus(config, foreground, now, usageToday, extraTime)
         // A blocked app is not reported: it cannot be in the foreground for more than the moment
         // it takes to be suspended, and the child is looking at the block screen, not at this.
         return if (status.state == AppState.BUDGETED && status.remaining != null) {
-            PhoneStatus.AppRemaining(foreground, status.remaining!!)
+            // Whichever ends first gets to say why. `appStatus` already reports the smaller of
+            // the two numbers, so without this the phone would print the right minutes under the
+            // wrong name and send a child looking for the app that ran out.
+            val left = status.remaining!!
+            if (screenLeft != null && screenLeft <= left) {
+                PhoneStatus.ScreenRemaining(screenLeft)
+            } else {
+                PhoneStatus.AppRemaining(foreground, left)
+            }
         } else {
-            PhoneStatus.Quiet
+            screenLeft?.let { PhoneStatus.ScreenRemaining(it) } ?: PhoneStatus.Quiet
         }
     }
 }

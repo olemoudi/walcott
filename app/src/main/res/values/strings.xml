@@ -30,6 +30,26 @@
     <string name="home_limit_default">%1$s a day for each app</string>
     <string name="home_limit_bedtime">Sleep %1$s – %2$s</string>
     <string name="bedtime_title">Bedtime</string>
+    <string name="override_screen_budget_title">Their own daily total</string>
+    <string name="home_limit_screen">%1$s of phone a day</string>
+    <string name="home_limit_screen_left">%1$s of phone a day · %2$s left</string>
+    <string name="pause_everyone">Pause everyone</string>
+    <string name="pause_everyone_done">Everyone is paused for %1$d min</string>
+    <string name="pause_everyone_resumed">Everyone has their phone back</string>
+    <string name="quick_minus_minutes">−%1$d min</string>
+    <string name="quick_bedtime_earlier_done">%1$s goes to bed %2$d min earlier tonight</string>
+    <string name="quick_bedtime_custom">Another time…</string>
+    <string name="quick_bedtime_custom_title">Later by how long?</string>
+    <string name="quick_pause_until">Until…</string>
+    <string name="quick_pause_until_title">Paused until what time?</string>
+    <string name="quick_paused_until_done">%1$s is paused until %2$s</string>
+    <string name="quick_pause_open">Until I say</string>
+    <string name="quick_paused_open">%1$s is paused until you say otherwise (6:00 at the latest)</string>
+    <string name="screen_budget_header">The phone\'s day</string>
+    <string name="screen_budget_hint">How long this phone may be used for in total, whatever it is used for. Every app spends the same clock. Calls, contacts and anything you marked "never limit" keep working.</string>
+    <string name="screen_budget_card_title">Total screen time a day</string>
+    <string name="screen_budget_old_child">%1$s needs to update Walcott before a daily total works on their phone.</string>
+    <string name="screen_budget_title">The phone\'s time for today</string>
     <string name="screen_free_title">Screen-free time</string>
     <!-- When the phone comes back, rather than a guess about the shape of the window. -->
     <string name="window_until">Apps rest until %1$s</string>
@@ -145,6 +165,7 @@
     <string name="status_blocked">Blocked</string>
     <string name="label_remaining">remaining</string>
     <string name="reason_bedtime">It\'s bedtime</string>
+    <string name="reason_screen_budget">Today\'s screen time is used up</string>
     <string name="reason_blocked_window">Not available at this time</string>
     <string name="reason_budget_exhausted">Out of time for today</string>
     <string name="reason_blocked_today">Blocked today</string>
@@ -1596,6 +1617,10 @@
     <string name="ring_home_stop">Stop the sound</string>
     <string name="admin_support_short">Walcott is keeping your family\'s rules on this phone. Open it to see what is limited and to ask for more time.</string>
     <string name="admin_support_long">This phone is set up by your family with Walcott. Open Walcott to see what is limited right now, how long is left today, and to ask for more time.</string>
+    <string name="apps_reach_out_tag">Reaches you</string>
+    <string name="app_reach_out_title">This is how they reach a person</string>
+    <string name="app_reach_out_hint">Limits nobody wrote about this app — the family default and the total screen time a day — leave it alone, so a number typed on another screen can never stop them texting you. A limit set here does apply.</string>
+    <string name="app_reach_out_limited">This app is how they reach a person, and you have given it a limit. When it runs out they cannot text from this phone.</string>
     <string name="apps_preinstalled_tag">From the phone</string>
     <string name="apps_limit_idle_tag">Not applied</string>
     <string name="app_manage_system">Limit it even though it came with the phone</string>
@@ -1764,6 +1789,8 @@
     <string name="status_paused">Paused until %1$s</string>
     <string name="status_bedtime">Bedtime until %1$s</string>
     <string name="status_screen_free">Screen-free until %1$s</string>
+    <string name="status_screen_left">%1$s of phone left today</string>
+    <string name="status_screen_spent">Today\'s screen time is used up</string>
     <string name="status_app_left">%1$s · %2$s left</string>
     <string name="status_fail_closed">Locked until this phone is fixed</string>
     <!-- What staying off the phone earned today (see IdleEarnEngine) -->
@@ -1782,6 +1809,13 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_99_0">
+        <item>A phone can now have a limit of its own: <b>total screen time a day</b>, in Limits. Until now every app had its own clock, so ten apps with an hour each was a ten-hour day — and the parent who set those ten hours believed they had set one. Set a total and every minute spends the same one, whatever it was spent on, including apps you have never given a limit to. Calls and contacts still work, and so does anything you marked "never limit this" — that one is your own way out and a ceiling must not close it. Each member can have a shorter day than the family\'s.</item>
+        <item>The child\'s phone says what is coming, not only what has stopped. Their rules screen now opens with the same card you read on theirs — what kind of day the rules think it is, whether it is special, "no bedtime until 21:30", when the next screen-free window starts — and their home says when the day changes kind ("weekend rules from Friday at 14:00") and how much of the phone\'s day is left. It is the difference between planning an afternoon and finding out by the screen going dark.</item>
+        <item>Quick actions grew the answers that were missing. Bedtime can now be moved <b>earlier</b> tonight, not only later, and by a number you choose rather than 30 or 60. A pause can run until an hour you pick ("until nine") or until you say so — that one still ends at 6:00 whatever happens, because a pause nobody remembers to lift is a rule nobody wrote. And on your home, with two or more members, <b>Pause everyone</b>: dinner, the car, the room where everybody is looking at a screen.</item>
+        <item>And the apps a child reaches a person with are protected from the two limits above. The phone and contacts always answered to no rule at all; messaging did not, and it did not need to — it ships with the phone, so nothing ever managed it. Both of those stopped being true this month, so it is now said out loud: the family default and the total screen time a day leave the messaging app alone, it is tagged "Reaches you" in your app list, and its own screen says so. If you decide to limit it, you still can — from that app, by name, with the same screen telling you plainly that when it runs out they cannot text you.</item>
+        <item>Three fixes worth naming. Earned time — the minutes a child gets for leaving the phone alone — reached only apps running on the family default, so a family with per-app limits was shown "you earned 20 minutes" that bought nothing anywhere; it now reaches every limit and the day\'s total. Earn windows ignored their own weekday and holiday filters, so "idle earns on weekday evenings" earned at the same hour on Saturday. And tonight\'s bedtime change was dated by the parent\'s clock, which files it against the wrong night for a parent in another timezone; it is dated by the child\'s phone now.</item>
     </string-array>
     <string-array name="whats_new_0_98_0">
         <item>Making a phone ring was easy to start and hard to stop. Now the phone itself puts a "Stop the sound" button at the top of its own Walcott screen — where somebody holding a howling phone actually looks — and your home shows "X\'s phone is ringing" with Stop, for as long as it lasts. That card takes itself away when the noise ends, and can be hidden by hand for the case nothing can report: a phone that stopped ringing because its battery went.</item>

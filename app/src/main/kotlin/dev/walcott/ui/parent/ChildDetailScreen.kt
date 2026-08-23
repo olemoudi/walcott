@@ -194,7 +194,16 @@ fun ChildDetailScreen(
     val reportedToday = snapshot != null && dev.walcott.data.ChildStats
         .reportsCurrentDay(snapshot.epochDay, snapshot.tzOffsetMinutes, nowMs, parentNow)
     val childSettings = remember(settings, childId) { settings.resolveForChild(childId) }
-    val childConfig = remember(childSettings) { childSettings.toFamilyConfig(emptySet()) }
+    // Judged with the same exemptions the child's own phone uses: which of its apps reach a
+    // person is something only that phone can say, and it says it in every snapshot. Without
+    // this the wall would report "Phone · out of time" under a family default, about a device
+    // that would never have blocked it.
+    val childReachOut = remember(snapshot) {
+        snapshot?.apps?.filter { it.reachOut }?.map { it.packageName }?.toSet().orEmpty()
+    }
+    val childConfig = remember(childSettings, childReachOut) {
+        childSettings.toFamilyConfig(emptySet(), childReachOut)
+    }
     // The family's own rules, unresolved, so every override row can say what it is overriding
     // instead of only that it is overriding something.
     val familyConfig = remember(settings) { settings.toFamilyConfig(emptySet()) }
@@ -583,6 +592,10 @@ fun ChildDetailScreen(
                                         // budget, and it is what the child's own screen asks
                                         // for — the same grant, from the side that can give it.
                                         ActiveBlock.Kind.BUDGET -> bonusTarget = block.packageName
+                                        // Same answer, aimed at the whole phone: more minutes
+                                        // for everything is the only thing that ends a spent day.
+                                        ActiveBlock.Kind.SCREEN_BUDGET ->
+                                            bonusTarget = dev.walcott.rules.ExtraTime.ALL_APPS
                                         // Otherwise: the rule itself. Where it lives depends on
                                         // whose it is — this child's own copy, or the family's.
                                         ActiveBlock.Kind.BEDTIME ->
@@ -790,6 +803,39 @@ fun ChildDetailScreen(
                             onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
                             onSetBudget = { dayType, minutes ->
                                 viewModel.setDefaultBudget(dayType, minutes, childId)
+                            },
+                        )
+                    }
+                    // This child's own ceiling. Its own switch rather than a row inside the
+                    // per-app one: they are different fields with different answers — a child
+                    // can keep the family's per-app limits and still have a shorter day.
+                    CardGroup {
+                        OverrideSwitchRow(
+                            title = stringResource(R.string.override_screen_budget_title),
+                            checked = entry.overrides.dailyScreenBudget != null,
+                            position = CardPosition.First,
+                            childValue = budgetValue(childConfig.dailyScreenBudget[childDayType]),
+                            familyValue = budgetValue(familyConfig.dailyScreenBudget[familyDayType]),
+                            onToggle = { on ->
+                                viewModel.setChildOverrides(
+                                    childId,
+                                    entry.overrides.copy(
+                                        dailyScreenBudget = if (on) settings.dailyScreenBudget else null,
+                                    ),
+                                )
+                            },
+                        )
+                        DailyBudgetCard(
+                            title = stringResource(R.string.screen_budget_card_title),
+                            icon = Icons.Outlined.HourglassEmpty,
+                            perDay = childSettings.dailyScreenBudget,
+                            enabled = entry.overrides.dailyScreenBudget != null,
+                            position = CardPosition.Last,
+                            specialDaysOwnRules = settings.specialDaysOwnRules,
+                            onOpenSpecialDays = onOpenSpecialDays,
+                            onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                            onSetBudget = { dayType, minutes ->
+                                viewModel.setScreenBudget(dayType, minutes, childId)
                             },
                         )
                     }
@@ -1017,6 +1063,9 @@ private fun BlockingRow(
         ActiveBlock.Kind.SCREEN_FREE -> Icons.Outlined.DoNotDisturbOn to stringResource(R.string.screen_free_title)
         ActiveBlock.Kind.APP_WINDOW -> Icons.Outlined.Schedule to appLabel
         ActiveBlock.Kind.BUDGET -> Icons.Outlined.HourglassEmpty to appLabel
+        // The whole phone, so the child's name rather than an app's: this is not about one app
+        // and offering one would send the parent to the wrong screen.
+        ActiveBlock.Kind.SCREEN_BUDGET -> Icons.Outlined.HourglassEmpty to stringResource(R.string.screen_budget_title)
         ActiveBlock.Kind.APP_BLOCKED -> Icons.Outlined.Block to appLabel
     }
     // What the rule actually says: a window with both its ends, a limit with what was spent

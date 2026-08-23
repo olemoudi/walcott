@@ -11,6 +11,9 @@ class IdleEarnEngineTest {
     private val now = 1_700_000_000_000L
     private val hour = 3_600_000L
 
+    /** A Monday at [h]:[m] — earn windows carry weekday filters, so the DATE matters now. */
+    private fun weekdayAt(h: Int, m: Int) = java.time.LocalDateTime.of(2026, 3, 2, h, m)
+
     private val config = IdleEarnConfig(
         minutesIdlePerReward = 10, // 10 min idle
         rewardMinutes = 5, //         -> 5 min games
@@ -87,7 +90,7 @@ class IdleEarnEngineTest {
 
     @Test
     fun `earning is always on when no windows are configured`() {
-        assertTrue(IdleEarnEngine.isEarningTime(config, DayType.SCHOOL, LocalTime.of(10, 0)))
+        assertTrue(IdleEarnEngine.isEarningTime(config, DayType.SCHOOL, weekdayAt(10, 0)))
     }
 
     @Test
@@ -96,10 +99,10 @@ class IdleEarnEngineTest {
             earnWindows = mapOf(DayType.SCHOOL to listOf(TimeWindow(LocalTime.of(16, 0), LocalTime.of(21, 0)))),
         )
         // 10:00 on a school day = class -> no earning; 17:00 = after school -> earning.
-        assertFalse(IdleEarnEngine.isEarningTime(withWindows, DayType.SCHOOL, LocalTime.of(10, 0)))
-        assertTrue(IdleEarnEngine.isEarningTime(withWindows, DayType.SCHOOL, LocalTime.of(17, 0)))
+        assertFalse(IdleEarnEngine.isEarningTime(withWindows, DayType.SCHOOL, weekdayAt(10, 0)))
+        assertTrue(IdleEarnEngine.isEarningTime(withWindows, DayType.SCHOOL, weekdayAt(17, 0)))
         // A day type with no window configured still earns all day.
-        assertTrue(IdleEarnEngine.isEarningTime(withWindows, DayType.WEEKEND, LocalTime.of(10, 0)))
+        assertTrue(IdleEarnEngine.isEarningTime(withWindows, DayType.WEEKEND, weekdayAt(10, 0)))
     }
 
     @Test
@@ -113,5 +116,40 @@ class IdleEarnEngineTest {
         val ledger = listOf(EarnGrant(now - 2 * 24 * hour, 30), EarnGrant(now - hour, 10))
         assertEquals(40, IdleEarnEngine.earnedThisWeek(ledger, now))
         assertEquals(10, IdleEarnEngine.earnedOnDay(ledger, now - 3 * hour, now + hour))
+    }
+
+    @Test
+    fun `an earn window keeps its own weekday filter and its own answer about holidays`() {
+        // The bug this pins: earning read the CLOCK and nothing else, so a family that said
+        // "idle earns on weekday evenings" had it earning at the same hour on Saturday, and a
+        // window written to stand down on holidays stood there anyway. Every other window in
+        // this engine carries these two filters; this one silently did not.
+        val weekdayEvenings = IdleEarnConfig(
+            minutesIdlePerReward = 30, rewardMinutes = 10, windowHours = 4,
+            windowCapMinutes = 60, weeklyCapMinutes = 300,
+            earnWindows = mapOf(
+                DayType.SCHOOL to listOf(
+                    TimeWindow(
+                        LocalTime.of(17, 0), LocalTime.of(20, 0),
+                        days = setOf(java.time.DayOfWeek.MONDAY, java.time.DayOfWeek.TUESDAY),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(IdleEarnEngine.isEarningTime(weekdayEvenings, DayType.SCHOOL, weekdayAt(18, 0)))
+        // The same hour on a Wednesday, which the family did not include.
+        val wednesday = java.time.LocalDateTime.of(2026, 3, 4, 18, 0)
+        assertFalse(IdleEarnEngine.isEarningTime(weekdayEvenings, DayType.SCHOOL, wednesday))
+
+        val notOnHolidays = IdleEarnConfig(
+            minutesIdlePerReward = 30, rewardMinutes = 10, windowHours = 4,
+            windowCapMinutes = 60, weeklyCapMinutes = 300,
+            earnWindows = mapOf(
+                DayType.HOLIDAY to listOf(
+                    TimeWindow(LocalTime.of(17, 0), LocalTime.of(20, 0), specialDays = SpecialDays.NEVER),
+                ),
+            ),
+        )
+        assertFalse(IdleEarnEngine.isEarningTime(notOnHolidays, DayType.HOLIDAY, weekdayAt(18, 0)))
     }
 }

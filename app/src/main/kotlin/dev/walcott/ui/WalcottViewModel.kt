@@ -11,6 +11,7 @@ import dev.walcott.data.withBudget
 import dev.walcott.data.withSpecialDaysOwnRules
 import dev.walcott.rules.DayType
 import dev.walcott.rules.RuleEngine
+import dev.walcott.rules.ruleContext
 import dev.walcott.rules.appStatus
 import dev.walcott.rules.nightOf
 import dev.walcott.sync.ChildSnapshot
@@ -87,6 +88,19 @@ data class ChildUiState(
      * with no end on the screen is the same phone as one that is broken.
      */
     val pausedUntil: LocalDateTime? = null,
+    /** The phone's own limit for today, and what is left of it. Null when the family set none. */
+    val screenBudget: Duration? = null,
+    val screenLeft: Duration? = null,
+    /**
+     * Where today stands in the rules, including the ones that are NOT running (see
+     * [dev.walcott.rules.RuleContext]).
+     *
+     * The parent has had this since it was written and the child never did, which is backwards:
+     * "no bedtime until 21:30", "the weekend rules start on Friday at 14:00" is the difference
+     * between a child who can plan their afternoon and one who finds out by the screen going
+     * dark. The same computation, on the phone it is about.
+     */
+    val ruleContext: dev.walcott.rules.RuleContext? = null,
 )
 
 /** One app in the parent's list, with whatever was set for it (null = the family default). */
@@ -123,6 +137,8 @@ internal fun childCardPackages(
 
 data class AppRow(
     val app: InstalledApp,
+    /** This is how the child reaches a person; broad limits do not touch it (see FamilyConfig). */
+    val reachOut: Boolean = false,
     val policy: AppPolicyDto?,
     /** Which children have this app installed (registry name, legacy device name as fallback). */
     val owners: List<dev.walcott.data.AppCatalog.Owner> = emptyList(),
@@ -587,6 +603,33 @@ class WalcottViewModel(
         it.copy(pauseUntilMs = System.currentTimeMillis() + minutes * 60_000L)
     }
 
+    /**
+     * Pause this phone until a moment the parent picked, rather than for a number of minutes.
+     *
+     * The two are the same rule and different questions: "half an hour" is how long dinner
+     * lasts, "until nine" is when homework ends. Converted to the wall clock of the phone the
+     * parent is holding, which is also the clock they read the hour off.
+     */
+    fun pauseChildUntil(childId: String, until: java.time.LocalDateTime) = editTodayException(childId) {
+        it.copy(
+            pauseUntilMs = until.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+        )
+    }
+
+    /**
+     * Pause every member's phone at once — dinner, the car, the room where everybody is looking
+     * at a screen. One tap rather than one sheet per child, which is the difference between a
+     * rule a family uses and one they mean to.
+     */
+    fun pauseEveryone(minutes: Int) = viewModelScope.launch {
+        settings.value.children.forEach { pauseChild(it.childId, minutes).join() }
+    }
+
+    /** Give every paused phone back. */
+    fun resumeEveryone() = viewModelScope.launch {
+        settings.value.children.forEach { resumeChild(it.childId).join() }
+    }
+
     /** Give the phone back before the pause was due to end. */
     fun resumeChild(childId: String) = editTodayException(childId) { it.copy(pauseUntilMs = 0) }
 
@@ -599,13 +642,22 @@ class WalcottViewModel(
      * not the one that has not started yet (see [dev.walcott.rules.nightOf]).
      */
     fun setBedtimeTonight(childId: String, delayMinutes: Int, off: Boolean) {
-        val now = java.time.LocalDateTime.now()
+        // The CHILD's clock, not this phone's. A night is a local thing, and a parent on a plane
+        // — or simply in another country for the week — was dating the exception from their own
+        // evening: an hour or two out is enough to file it against the wrong night, at which
+        // point the child's phone reads it as spent and tonight's bedtime never moves at all.
+        // Falls back to this phone's clock for a child too old to report an offset, which is
+        // exactly what it did before.
+        val now = childLocalNow(childId)
         val config = settings.value.resolveForChild(childId).toFamilyConfig(emptySet())
         // From the rule, not from tonight's remains: a bedtime already lifted answers null, and
         // the night would then be tomorrow's (see FamilyConfig.scheduledBedtimeAt).
         val night = config.scheduledBedtimeAt(now)?.nightOf(now) ?: now.toLocalDate()
         editTodayException(childId) {
-            if (delayMinutes <= 0 && !off) {
+            // Zero, not "nothing positive": a NEGATIVE delay is a bedtime moved EARLIER, and
+            // reading it as "no change" is how the one direction this could not express before
+            // went on not being expressible.
+            if (delayMinutes == 0 && !off) {
                 it.copy(bedtimeNightEpochDay = 0, bedtimeDelayMinutes = 0, bedtimeOff = false)
             } else {
                 it.copy(
@@ -615,6 +667,18 @@ class WalcottViewModel(
                 )
             }
         }
+    }
+
+    /**
+     * What time it is where [childId]'s phone is, falling back to this phone's clock when that
+     * child has never reported an offset (see [dev.walcott.data.ChildStats.localNow]).
+     */
+    private fun childLocalNow(childId: String): java.time.LocalDateTime {
+        val parentNow = java.time.LocalDateTime.now()
+        val snapshot = children.value.firstOrNull { it.childId == childId } ?: return parentNow
+        return dev.walcott.data.ChildStats.localNow(
+            snapshot.tzOffsetMinutes, System.currentTimeMillis(), parentNow,
+        )
     }
 
     fun requestExtraTimeRemote(categoryId: String, minutes: Int, reason: String, targetLabel: String = "") =
@@ -1164,6 +1228,11 @@ class WalcottViewModel(
             screenFreeNow = config.blockedWindows[dayType].orEmpty()
                 .firstOrNull { it.appliesAt(now, dayType == DayType.HOLIDAY) },
             pausedUntil = config.todayException.pauseUntil?.takeIf { now.isBefore(it) },
+            screenBudget = config.dailyScreenBudget[dayType],
+            screenLeft = config.screenTimeLeftAt(
+                dayType, dev.walcott.rules.ScreenTime.of(usage), effectiveExtra,
+            ),
+            ruleContext = RuleEngine.ruleContext(config, now),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 
@@ -1207,8 +1276,9 @@ class WalcottViewModel(
                 .map {
                     AppRow(
                         InstalledApp(it.packageName, it.label, isSystem = it.system),
-                        s.appPolicies[it.packageName],
-                        it.owners,
+                        reachOut = it.reachOut,
+                        policy = s.appPolicies[it.packageName],
+                        owners = it.owners,
                     )
                 }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -1230,6 +1300,30 @@ class WalcottViewModel(
                         else child.copy(
                             overrides = child.overrides.copy(
                                 defaultAppBudget = child.overrides.defaultAppBudget.orEmpty()
+                                    .withBudget(dayType.name, minutes),
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * How long the phone may be used for IN TOTAL on [dayType] ([minutes] null removes it).
+     * [childId] set edits that child's own total instead of the family's.
+     */
+    fun setScreenBudget(dayType: DayType, minutes: Int?, childId: String? = null) = viewModelScope.launch {
+        repository.updateSettings { s ->
+            if (childId == null) {
+                s.copy(dailyScreenBudget = s.dailyScreenBudget.withBudget(dayType.name, minutes))
+            } else {
+                s.copy(
+                    children = s.children.map { child ->
+                        if (child.childId != childId) child
+                        else child.copy(
+                            overrides = child.overrides.copy(
+                                dailyScreenBudget = child.overrides.dailyScreenBudget.orEmpty()
                                     .withBudget(dayType.name, minutes),
                             ),
                         )

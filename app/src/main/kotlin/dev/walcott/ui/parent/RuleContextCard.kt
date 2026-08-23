@@ -58,7 +58,7 @@ fun RuleContextCard(context: RuleContext, now: LocalDateTime) {
                     stringResource(
                         R.string.now_daytype_change,
                         stringResource(change.to.labelRes()),
-                        whenText(change, now),
+                        dayTypeChangeWhen(change, now),
                     )
                 },
                 active = true,
@@ -109,7 +109,7 @@ fun RuleContextCard(context: RuleContext, now: LocalDateTime) {
  * would say it. A bare weekday for something happening in four hours reads as next week.
  */
 @Composable
-private fun whenText(change: DayTypeChange, now: LocalDateTime): String {
+internal fun dayTypeChangeWhen(change: DayTypeChange, now: LocalDateTime): String {
     val time = change.at.toLocalTime().hhmm()
     val days = java.time.temporal.ChronoUnit.DAYS.between(now.toLocalDate(), change.at.toLocalDate())
     return when (days) {

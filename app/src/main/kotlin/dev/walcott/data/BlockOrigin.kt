@@ -29,6 +29,7 @@ object BlockOrigin {
             ActiveBlock.Kind.BEDTIME -> overrides.bedtime != null
             ActiveBlock.Kind.SCREEN_FREE -> overrides.allAppsBlockedWindows != null
             ActiveBlock.Kind.APP_WINDOW -> overrides.appPolicies != null
+            ActiveBlock.Kind.SCREEN_BUDGET -> overrides.dailyScreenBudget != null
             ActiveBlock.Kind.BUDGET, ActiveBlock.Kind.APP_BLOCKED ->
                 if (block.fromDefaultBudget) overrides.defaultAppBudget != null else overrides.appPolicies != null
         }

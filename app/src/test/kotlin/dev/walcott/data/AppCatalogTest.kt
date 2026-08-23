@@ -46,12 +46,34 @@ class AppCatalogTest {
     }
 
     @Test
+    fun `one phone calling an app a way to reach somebody is enough for the whole family`() {
+        // The catalog is one row per package, so it has to pick an answer, and it picks the
+        // protective one: an app that is the messaging app on ONE of the phones must not be
+        // caught by a family-wide default because another phone does not use it that way.
+        val rows = AppCatalog.build(
+            listOf(
+                ChildSnapshot(
+                    deviceId = "d1", displayName = "Pixel", version = 1, epochDay = 20_000, childId = "c1",
+                    apps = listOf(InstalledAppInfo("com.android.messaging", "Messages", reachOut = true)),
+                ),
+                ChildSnapshot(
+                    deviceId = "d2", displayName = "Moto", version = 1, epochDay = 20_000, childId = "c2",
+                    apps = listOf(InstalledAppInfo("com.android.messaging", "Messages")),
+                ),
+            ),
+            registry,
+        )
+        assertEquals(listOf(true), rows.map { it.reachOut })
+    }
+
+    @Test
     fun `an app nobody flags stays what every older child means by it`() {
         val rows = AppCatalog.build(
             listOf(snapshot("d1", "c1", "Pixel", "com.game" to "Game")),
             registry,
         )
         assertEquals(listOf(false), rows.map { it.system })
+        assertEquals(listOf(false), rows.map { it.reachOut })
     }
 
     @Test

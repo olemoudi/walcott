@@ -40,6 +40,8 @@ object PolicyJson {
      *   "apps_control", "unknown_sources", "datetime", "vpn", …)
      * @param dailyMinutes package -> minutes allowed on EVERY day type; 0 blocks it outright
      * @param unlimited packages explicitly never limited
+     * @param screenBudgetMinutes how long the phone may be used for IN TOTAL on any day type
+     *   (`FamilyConfig.dailyScreenBudget`); null leaves the family with no total at all
      * @param manageSystem packages the family manages even though they ship with the phone
      *   (`AppPolicy.manageSystemApp`). An opt-in on its own permits nothing, so a useful policy
      *   names the same package here AND in [dailyMinutes]
@@ -60,6 +62,7 @@ object PolicyJson {
         dailyMinutes: Map<String, Int> = emptyMap(),
         unlimited: Set<String> = emptySet(),
         manageSystem: Set<String> = emptySet(),
+        screenBudgetMinutes: Int? = null,
         bedtime: Pair<Int, Int>? = null,
         screenFree: List<Pair<Int, Int>> = emptyList(),
         children: List<JsonObject> = emptyList(),
@@ -106,6 +109,9 @@ object PolicyJson {
                         },
                     ),
                 )
+            }
+            screenBudgetMinutes?.let { minutes ->
+                put("dailyScreenBudget", JsonObject(dayTypes.associateWith { JsonPrimitive(minutes) }))
             }
             bedtime?.let { (start, end) ->
                 put("bedtime", JsonObject(dayTypes.associateWith { window(start, end) }))

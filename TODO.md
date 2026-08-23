@@ -278,6 +278,17 @@ goes red again, check `adb shell dumpsys power | grep mWakefulness` before suspe
 
 ## Emulator notes that cost time
 
+One from the 0.99.0 work, and it is about the AVD's own memory rather than the platform:
+
+- **Extra time granted by an earlier scenario is still there.** Bonus minutes live in Room until
+  midnight, and a blanket grant (`__all_apps__`, and now `__earned__`) widens the DAY as well as
+  an app's budget — so a scenario that sets a daily total "with forty minutes of headroom" and
+  then seeds forty minutes of usage does NOT necessarily spend it: `GrantScenarioTest` alone
+  leaves thirty-five minutes lying around. The first draft of `ScreenBudgetScenarioTest` read
+  that as a product that had stopped enforcing, and worse, its "never limit" case passed while
+  the day had never been spent at all. Seed past the extra as well as the headroom, and put a
+  control in any test whose assertion is a SILENCE.
+
 Four from the 0.98.0 work, all of them platform facts rather than emulator quirks — measured on
 the AVD and worth not re-deriving:
 

@@ -46,8 +46,12 @@ class WalcottRepository(
      */
     val notifications: NotificationDao get() = db.notifications()
 
+    /** The apps that reach a person (see [AppInventory.reachOutPackages]); cached like essentials. */
+    private val reachOut: Set<String>
+        get() = inventory.reachOutPackages()
+
     val familyConfigFlow: Flow<FamilyConfig> =
-        settingsFlow.map { it.toFamilyConfig(essentials) }
+        settingsFlow.map { it.toFamilyConfig(essentials, reachOut) }
 
     /**
      * The current epoch day, re-checked once a minute. On an always-on child device the
@@ -99,7 +103,7 @@ class WalcottRepository(
     // --- Snapshots for the service (always recompute "today") ---
 
     suspend fun configNow(): FamilyConfig =
-        settingsStore.current().toFamilyConfig(essentials)
+        settingsStore.current().toFamilyConfig(essentials, reachOut)
 
     /** The idle-earn config right now, or null when the feature is off. */
     suspend fun idleEarnConfigNow(): dev.walcott.rules.IdleEarnConfig? =

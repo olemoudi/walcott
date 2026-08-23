@@ -294,7 +294,7 @@ private fun AppAssignRow(
                 }
                 // Tags: where the app came from, whether its limit is real, and who has it.
                 val owners = if (showOwners) row.owners.map { it.name } else emptyList()
-                if (row.app.isSystem || limitIdle || owners.isNotEmpty()) {
+                if (row.app.isSystem || row.reachOut || limitIdle || owners.isNotEmpty()) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.padding(top = 2.dp),
@@ -302,6 +302,15 @@ private fun AppAssignRow(
                         // Said once per row and quietly: this list grew by everything the phone
                         // shipped with, and a parent seeing thirty unfamiliar names is owed the
                         // reason without being alarmed by it.
+                        // Said first, because it is the one that changes what the rest means:
+                        // a broad limit does not reach this app however it is set.
+                        if (row.reachOut) {
+                            AppTag(
+                                stringResource(R.string.apps_reach_out_tag),
+                                container = MaterialTheme.colorScheme.secondaryContainer,
+                                content = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
                         if (row.app.isSystem) {
                             AppTag(stringResource(R.string.apps_preinstalled_tag))
                         }

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.InstallMobile
@@ -86,6 +87,8 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.walcott.BuildConfig
 import dev.walcott.R
+import dev.walcott.ui.labelRes
+import dev.walcott.ui.parent.dayTypeChangeWhen
 import dev.walcott.enforcement.UsageAccess
 import dev.walcott.location.LocationPolicy
 import dev.walcott.rules.BlockReason
@@ -1278,8 +1281,19 @@ private fun HeroCard(
                     // The standing rules, as short lines rather than cards of their own. Absent
                     // entirely when the family has set none, which is a real configuration.
                     val bedtimeTonight = state.bedtimeTonight
-                    if (state.defaultBudget != null || bedtimeTonight != null) {
+                    if (state.defaultBudget != null || bedtimeTonight != null || state.screenBudget != null) {
                         Spacer(Modifier.height(spacing.md))
+                        // The phone's own day, above the per-app line because it is the one that
+                        // governs: with a total set, no app can outlast it however much of its
+                        // own allowance is left.
+                        state.screenBudget?.let { budget ->
+                            HeroLimitLine(
+                                Icons.Outlined.HourglassEmpty,
+                                state.screenLeft?.takeIf { it > Duration.ZERO }?.let { left ->
+                                    stringResource(R.string.home_limit_screen_left, budget.humanize(), left.humanize())
+                                } ?: stringResource(R.string.home_limit_screen, budget.humanize()),
+                            )
+                        }
                         state.defaultBudget?.let { budget ->
                             // "for each app", never "screen time": the engine gives every app
                             // its own allowance rather than one shared pot, and a child told
@@ -1287,6 +1301,19 @@ private fun HeroCard(
                             HeroLimitLine(
                                 Icons.Outlined.Schedule,
                                 stringResource(R.string.home_limit_default, budget.humanize()),
+                            )
+                        }
+                        // "The weekend rules start on Friday at 14:00" — the parent has had this
+                        // since it was written and the child never did, which is backwards: it
+                        // is the child who has to plan an afternoon around it.
+                        state.ruleContext?.nextDayType?.let { change ->
+                            HeroLimitLine(
+                                Icons.Outlined.CalendarMonth,
+                                stringResource(
+                                    R.string.now_daytype_change,
+                                    stringResource(change.to.labelRes()),
+                                    dayTypeChangeWhen(change, java.time.LocalDateTime.now()),
+                                ),
                             )
                         }
                         bedtimeTonight?.let { window ->
@@ -1499,6 +1526,9 @@ private fun blockedReasonText(app: AppStatusUi): String = when (app.blockReason)
     BlockReason.PAUSED -> stringResource(R.string.reason_paused)
     BlockReason.BEDTIME -> stringResource(R.string.reason_bedtime)
     BlockReason.BLOCKED_WINDOW -> stringResource(R.string.reason_blocked_window)
+    // Not "this app ran out" — the phone did, and every app says the same thing. A child told
+    // otherwise would go looking for the one that ran out and find all of them at zero.
+    BlockReason.SCREEN_BUDGET -> stringResource(R.string.reason_screen_budget)
     // An app whose limit is zero never had time to run out of, and telling the child it did is
     // the same sentence their parent was reading on the other side — "0 of 0 used" — with the
     // numbers hidden. Only when nothing was used: a grant spent down to zero really is a

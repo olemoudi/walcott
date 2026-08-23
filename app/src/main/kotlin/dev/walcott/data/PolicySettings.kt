@@ -262,6 +262,7 @@ fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
     val mirror = !specialDaysOwnRules
     return copy(
         defaultAppBudget = defaultAppBudget.mirrorHoliday(mirror),
+        dailyScreenBudget = dailyScreenBudget.mirrorHoliday(mirror),
         bedtime = bedtime.mirrorHoliday(mirror),
         allAppsBlockedWindows = allAppsBlockedWindows.mirrorHoliday(mirror),
         appPolicies = appPolicies
@@ -277,6 +278,7 @@ fun PolicySettings.withHolidayMirroringWeekend(): PolicySettings {
             child.copy(
                 overrides = child.overrides.copy(
                     defaultAppBudget = child.overrides.defaultAppBudget?.mirrorHoliday(mirror),
+                    dailyScreenBudget = child.overrides.dailyScreenBudget?.mirrorHoliday(mirror),
                     bedtime = child.overrides.bedtime?.mirrorHoliday(mirror),
                     appPolicies = child.overrides.appPolicies
                         ?.mapValues { (_, dto) ->
@@ -458,6 +460,8 @@ private fun List<DomainAppRuleDto>.plusAppRules(domains: List<String>, packageNa
 data class ChildOverrides(
     /** This child's own default per-app budget (dayType -> minutes); empty map = no default. */
     val defaultAppBudget: Map<String, Int>? = null,
+    /** This child's own daily screen total (dayType -> minutes); empty map = no total at all. */
+    val dailyScreenBudget: Map<String, Int>? = null,
     /** Pre-0.35 per-child category budgets. Migration input only (see [migratedFromCategories]). */
     val budgets: Map<String, Map<String, Int>>? = null,
     /** Pre-0.35 per-child category windows. Migration input only. */
@@ -511,7 +515,7 @@ data class ChildOverrides(
     val todayException: TodayExceptionDto? = null,
 ) {
     val isEmpty: Boolean
-        get() = defaultAppBudget == null && bedtime == null &&
+        get() = defaultAppBudget == null && dailyScreenBudget == null && bedtime == null &&
             blockedDomains == null && domainAppRules == null &&
             deviceRestrictions == null &&
             trackingIntervalMinutes == null && locationHistoryEnabled == null &&
@@ -530,7 +534,7 @@ data class ChildOverrides(
      */
     val customRuleCount: Int
         get() = listOfNotNull(
-            bedtime, allAppsBlockedWindows, defaultAppBudget,
+            bedtime, allAppsBlockedWindows, defaultAppBudget, dailyScreenBudget,
             appPolicies, blockedDomains, deviceRestrictions,
         ).size
 }
@@ -592,6 +596,11 @@ data class PolicySettings(
      * app never arrives already restricted. Each app spends it on its own counter.
      */
     val defaultAppBudget: Map<String, Int> = emptyMap(),
+    /**
+     * How long the phone may be used for IN TOTAL per kind of day (dayType -> minutes); empty =
+     * no total (see [dev.walcott.rules.FamilyConfig.dailyScreenBudget]).
+     */
+    val dailyScreenBudget: Map<String, Int> = emptyMap(),
     /**
      * Pre-0.35 category budgets (categoryId -> dayType -> minutes). Read once by
      * [migratedFromCategories] and blanked; nothing else looks at them. Kept only so a policy
@@ -818,6 +827,7 @@ data class PolicySettings(
         val overrides = children.firstOrNull { it.childId == childId }?.overrides ?: return this
         return copy(
             defaultAppBudget = overrides.defaultAppBudget ?: defaultAppBudget,
+            dailyScreenBudget = overrides.dailyScreenBudget ?: dailyScreenBudget,
             bedtime = overrides.bedtime ?: bedtime,
             blockedDomains = overrides.blockedDomains ?: blockedDomains,
             domainAppRules = overrides.domainAppRules ?: domainAppRules,
@@ -954,8 +964,14 @@ data class PolicySettings(
             deviceRestrictions
         }
 
-    /** Builds the engine's [FamilyConfig] from these rules. */
-    fun toFamilyConfig(essentials: Set<String>): FamilyConfig {
+    /**
+     * Builds the engine's [FamilyConfig] from these rules.
+     *
+     * [reachOut] is the apps a child contacts somebody with (see
+     * [dev.walcott.rules.FamilyConfig.reachOutPackages]); empty on the parent's own screens for
+     * a member whose phone has not said which its are.
+     */
+    fun toFamilyConfig(essentials: Set<String>, reachOut: Set<String> = emptySet()): FamilyConfig {
         val perApp = appPolicies
             .mapValues { (_, dto) ->
                 AppPolicy(
@@ -972,6 +988,7 @@ data class PolicySettings(
         return FamilyConfig(
             version = version,
             defaultAppBudget = defaultAppBudget.byDayType().mapValues { Duration.ofMinutes(it.value.toLong()) },
+            dailyScreenBudget = dailyScreenBudget.byDayType().mapValues { Duration.ofMinutes(it.value.toLong()) },
             perAppPolicies = perApp,
             bedtime = bedtime.byDayType()
                 .mapNotNull { (dayType, window) -> window.toTimeWindowOrNull()?.let { dayType to it } }
@@ -980,6 +997,7 @@ data class PolicySettings(
                 .byDayType()
                 .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
             essentialPackages = essentials,
+            reachOutPackages = reachOut,
             calendar = SchoolCalendar(
                 holidays = holidays.map(LocalDate::ofEpochDay).toSet(),
                 vacations = vacations.map { LocalDate.ofEpochDay(it.startEpochDay)..LocalDate.ofEpochDay(it.endEpochDay) },

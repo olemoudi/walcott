@@ -674,7 +674,7 @@ class EnforcementService : LifecycleService() {
             val nowForEarn = LocalDateTime.now()
             val earningNow = idleCfg != null &&
                 dev.walcott.rules.IdleEarnEngine.isEarningTime(
-                    idleCfg, config.calendar.dayTypeOf(nowForEarn), nowForEarn.toLocalTime(),
+                    idleCfg, config.calendar.dayTypeOf(nowForEarn), nowForEarn,
                 )
 
             // Screen off: blocked apps stay suspended. With idle-earn off we park with zero
@@ -1156,6 +1156,8 @@ class EnforcementService : LifecycleService() {
             appLabel(status.packageName) ?: status.packageName,
             status.left.humanize(),
         )
+        is PhoneStatus.ScreenRemaining -> getString(R.string.status_screen_left, status.left.humanize())
+        PhoneStatus.ScreenSpent -> getString(R.string.status_screen_spent)
         PhoneStatus.FailClosed -> getString(R.string.status_fail_closed)
         PhoneStatus.Quiet -> getString(R.string.service_notif_text)
     }

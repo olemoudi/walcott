@@ -528,6 +528,18 @@ class ChildDevice(
             ?.substringBefore('/')
             .orEmpty()
 
+    /**
+     * This phone's messaging app, as the platform resolves one — the same call the product makes
+     * (see `AppInventory.reachOutPackages`). "" when there is none.
+     */
+    fun messagingApp(): String =
+        run("shell", "cmd", "package", "resolve-activity", "--brief", "-a", "android.intent.action.SENDTO", "-d", "sms:")
+            .lineSequence()
+            .map { it.trim() }
+            .firstOrNull { "/" in it && !it.startsWith("priority=") }
+            ?.substringBefore('/')
+            .orEmpty()
+
     fun installBlocked(): Boolean =
         userRestrictions().substringAfter("Device policy restrictions:", "")
             .substringBefore("Effective restrictions:")

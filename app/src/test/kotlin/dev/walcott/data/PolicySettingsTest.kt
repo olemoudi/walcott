@@ -15,6 +15,36 @@ import java.time.LocalDate
 class PolicySettingsTest {
 
     @Test
+    fun `the day's total reaches the engine, and a member can have one of their own`() {
+        val family = PolicySettings(
+            version = 1,
+            dailyScreenBudget = mapOf(DayType.SCHOOL.name to 120),
+            children = listOf(
+                ChildEntry(
+                    childId = "c1",
+                    name = "Ana",
+                    overrides = ChildOverrides(dailyScreenBudget = mapOf(DayType.SCHOOL.name to 60)),
+                ),
+                ChildEntry(childId = "c2", name = "Leo"),
+            ),
+        )
+        assertEquals(
+            Duration.ofHours(2),
+            family.toFamilyConfig(emptySet()).dailyScreenBudget[DayType.SCHOOL],
+        )
+        // A shorter day for one member, the family's for the other. The override is one field,
+        // so a member can carry their own total and still inherit every per-app limit.
+        assertEquals(
+            Duration.ofHours(1),
+            family.resolveForChild("c1").toFamilyConfig(emptySet()).dailyScreenBudget[DayType.SCHOOL],
+        )
+        assertEquals(
+            Duration.ofHours(2),
+            family.resolveForChild("c2").toFamilyConfig(emptySet()).dailyScreenBudget[DayType.SCHOOL],
+        )
+    }
+
+    @Test
     fun `the preinstalled opt-in reaches the engine, and an entry holding only it is not empty`() {
         // Two halves of the same promise. The flag has to survive the mapping, or the switch is
         // a preference nothing reads; and an entry carrying nothing BUT the flag has to count as

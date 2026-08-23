@@ -54,6 +54,28 @@ class AppInventory(private val context: Context) {
 
     private fun dialerPackage(): String? = runCatching { telecom?.defaultDialerPackage }.getOrNull()
 
+    /**
+     * Every app this phone lets a child reach a PERSON with: the phone and contacts, which
+     * answer to no rule at all ([alwaysReachablePackages]), plus the messaging app, which
+     * answers only to a rule written about it by name (see `FamilyConfig.reachOutPackages`).
+     *
+     * Messaging is the one that had to be named. It is a system app on nearly every phone, so
+     * it was never managed and never limited by accident — until this app learnt to manage
+     * preinstalled apps and to cap the whole day, at which point "every app gets an hour" and
+     * "two hours of phone" both quietly included the way a child says they are running late.
+     */
+    fun reachOutPackages(): Set<String> = alwaysReachablePackages() + setOfNotNull(messagingPackage())
+
+    /**
+     * Whoever answers "send a text". Resolved rather than read from
+     * `Settings.Secure.sms_default_application`, which is null on a phone where nobody has
+     * chosen one — including every emulator — while the intent still resolves perfectly well.
+     */
+    private fun messagingPackage(): String? = runCatching {
+        val intent = Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("sms:"))
+        pm.resolveActivity(intent, 0)?.activityInfo?.packageName?.takeIf { it != RESOLVER_PACKAGE }
+    }.getOrNull()
+
     @Volatile private var browsers: Set<String> = emptySet()
     @Volatile private var browsersReadAt = 0L
 

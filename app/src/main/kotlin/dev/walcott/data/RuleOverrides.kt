@@ -20,6 +20,9 @@ enum class FamilyRule {
     /** The default daily budget each app gets. */
     DEFAULT_BUDGET,
 
+    /** How long the phone may be used for in total on one day. */
+    SCREEN_BUDGET,
+
     /** Per-app limits and schedules. */
     APP_LIMITS,
 
@@ -52,6 +55,7 @@ enum class FamilyRule {
         BEDTIME -> overrides.bedtime != null
         SCREEN_FREE -> overrides.allAppsBlockedWindows != null
         DEFAULT_BUDGET -> overrides.defaultAppBudget != null
+        SCREEN_BUDGET -> overrides.dailyScreenBudget != null
         APP_LIMITS -> overrides.appPolicies != null
         WEB_FILTER -> overrides.blockedDomains != null
         PROTECTION -> overrides.deviceRestrictions != null

@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.sync.RemoteAction
 import dev.walcott.R
+import dev.walcott.ui.components.MinutesPickerDialog
+import dev.walcott.ui.components.TimePickerDialog
 import dev.walcott.rules.ExtraTime
 import dev.walcott.rules.nightOf
 import dev.walcott.sync.LiveTracking
@@ -58,6 +60,23 @@ private val PAUSE_MINUTES = listOf(15, 30, 60)
 
 /** How much later bedtime can be, in minutes. Beyond an hour is a night, not a late night. */
 private val BEDTIME_DELAYS = listOf(30, 60)
+
+/**
+ * Bedtime EARLIER tonight, in minutes. The other half of the same answer: "half an hour more,
+ * it's a Friday" was expressible and "bed half an hour early, you were up all night" was not,
+ * and the only way to say the second was to edit the standing rule and remember to put it back.
+ */
+private val BEDTIME_EARLIER = listOf(30, 60)
+
+/**
+ * The latest a "until I say so" pause may run to, as an hour of the morning.
+ *
+ * A pause with no end is a phone somebody has to remember to give back, and the night it gets
+ * forgotten is the night it becomes a rule nobody wrote. Six in the morning is late enough that
+ * nothing in the evening escapes it and early enough that a forgotten pause has ended before
+ * anybody needs the phone.
+ */
+private const val OPEN_PAUSE_ENDS_AT_HOUR = 6
 
 /** How much time the sheet hands out in one tap. */
 private val BONUS_MINUTES = listOf(15, 30, 60)
@@ -108,7 +127,7 @@ fun QuickActionsSheet(
     val night = config.scheduledBedtimeAt(now)?.nightOf(now) ?: now.toLocalDate()
     val bedtimeChanged = exception != null &&
         exception.bedtimeNightEpochDay == night.toEpochDay() &&
-        (exception.bedtimeOff || exception.bedtimeDelayMinutes > 0)
+        (exception.bedtimeOff || exception.bedtimeDelayMinutes != 0)
     val pausedUntilMs = exception?.pauseUntilMs?.takeIf { it > System.currentTimeMillis() }
 
     // An older build decodes the policy and simply ignores what it does not know, so the pause
@@ -136,6 +155,14 @@ fun QuickActionsSheet(
     // child's phone awake and drinks its battery, so the parent is told the price first.
     var askLive by remember { mutableStateOf(false) }
     var askLost by remember { mutableStateOf(false) }
+    // The two that ask for a number before they act. Neither confirms anything — they are the
+    // same instant, undoable actions as the chips beside them, with the value typed in.
+    var askPauseUntil by remember { mutableStateOf(false) }
+    var askBedtimeMinutes by remember { mutableStateOf(false) }
+    // A child too old to understand a NEGATIVE delay reads it as no change at all, which is a
+    // bedtime the parent moved earlier and a phone that did not (see RemoteAction).
+    val understandsEarlierBedtime = understandsExceptions &&
+        (snapshot == null || RemoteAction.canBedtimeEarlier(snapshot.appVersionCode))
     val lostAskedAll by viewModel.lostModeAsked.collectAsStateWithLifecycle()
     // The template rather than the finished sentence, because the duration is only known at the
     // tap — resolved up here like `undo` and `locating` for the same reason they are.
@@ -148,6 +175,41 @@ fun QuickActionsSheet(
                 askLost = false
                 viewModel.setChildLostMode(snapshot.deviceId, true, message)
                 done(lostAsked)
+            },
+        )
+    }
+    if (askPauseUntil) {
+        val pausedFmt = stringResource(R.string.quick_paused_until_done)
+        TimePickerDialog(
+            title = stringResource(R.string.quick_pause_until_title),
+            // An hour from now rather than the current time: a picker that opens on a moment
+            // already past would take a tap to become a pause at all.
+            initial = now.toLocalTime().plusHours(1).withSecond(0).withNano(0),
+            onDismiss = { askPauseUntil = false },
+            onConfirm = { at ->
+                askPauseUntil = false
+                // The NEXT time it is that hour: "until 21:00" typed at half past nine means
+                // tomorrow evening to nobody, and this evening to everybody.
+                val until = nextOccurrenceOf(now, at)
+                viewModel.pauseChildUntil(childId, until)
+                done(String.format(pausedFmt, entry.name, at.hhmm()), undo) { viewModel.resumeChild(childId) }
+            },
+        )
+    }
+    if (askBedtimeMinutes) {
+        val delayedFmt = stringResource(R.string.quick_bedtime_delayed)
+        MinutesPickerDialog(
+            title = stringResource(R.string.quick_bedtime_custom_title),
+            initial = 45,
+            minValue = 5,
+            maxValue = 4 * 60,
+            onDismiss = { askBedtimeMinutes = false },
+            onConfirm = { minutes ->
+                askBedtimeMinutes = false
+                viewModel.setBedtimeTonight(childId, minutes, off = false)
+                done(String.format(delayedFmt, entry.name, minutes), undo) {
+                    viewModel.setBedtimeTonight(childId, 0, off = false)
+                }
             },
         )
     }
@@ -228,6 +290,20 @@ fun QuickActionsSheet(
                                 done(said, undo) { viewModel.resumeChild(childId) }
                             }
                         }
+                        // "Until dinner is over", "until we get home" — the answers that are an
+                        // hour rather than a duration, and that a parent would otherwise have to
+                        // do the subtraction for.
+                        ActionChip(stringResource(R.string.quick_pause_until), enabled = understandsExceptions) {
+                            askPauseUntil = true
+                        }
+                        // The open-ended one, which is still not open-ended: it ends at
+                        // OPEN_PAUSE_ENDS_AT_HOUR whatever happens, because a pause nobody
+                        // remembers to lift is a rule nobody wrote.
+                        val openSaid = stringResource(R.string.quick_paused_open, entry.name)
+                        ActionChip(stringResource(R.string.quick_pause_open), enabled = understandsExceptions) {
+                            viewModel.pauseChildUntil(childId, nextMorning(now, OPEN_PAUSE_ENDS_AT_HOUR))
+                            done(openSaid, undo) { viewModel.resumeChild(childId) }
+                        }
                     }
                 }
 
@@ -249,6 +325,16 @@ fun QuickActionsSheet(
                                 done(restored)
                             }
                         } else {
+                            // Earlier first, then later: the same row reads as one axis with
+                            // tonight's usual hour in the middle of it.
+                            BEDTIME_EARLIER.forEach { minutes ->
+                                val label = stringResource(R.string.quick_minus_minutes, minutes)
+                                val said = stringResource(R.string.quick_bedtime_earlier_done, entry.name, minutes)
+                                ActionChip(label, enabled = understandsEarlierBedtime) {
+                                    viewModel.setBedtimeTonight(childId, -minutes, off = false)
+                                    done(said, undo) { viewModel.setBedtimeTonight(childId, 0, off = false) }
+                                }
+                            }
                             BEDTIME_DELAYS.forEach { minutes ->
                                 val label = stringResource(R.string.quick_plus_minutes, minutes)
                                 val said = stringResource(R.string.quick_bedtime_delayed, entry.name, minutes)
@@ -257,6 +343,12 @@ fun QuickActionsSheet(
                                     done(said, undo) { viewModel.setBedtimeTonight(childId, 0, off = false) }
                                 }
                             }
+                            // Anything else: the two chips cover most nights and not the one
+                            // where the film ends at a quarter past.
+                            ActionChip(
+                                stringResource(R.string.quick_bedtime_custom),
+                                enabled = understandsExceptions,
+                            ) { askBedtimeMinutes = true }
                             val liftedSaid = stringResource(R.string.quick_bedtime_off_done, entry.name)
                             ActionChip(
                                 stringResource(R.string.quick_bedtime_off),
@@ -451,3 +543,19 @@ private fun QuickRow(
     }
 }
 
+/**
+ * The next time it is [at] o'clock, from [now]: today if that hour is still ahead, tomorrow if
+ * it has been and gone.
+ *
+ * "Until 21:00" typed at half past nine means this evening to nobody and tomorrow evening to
+ * everybody — which is the wrong way round, so it is said explicitly here rather than left to
+ * whichever date the caller happened to have.
+ */
+internal fun nextOccurrenceOf(now: LocalDateTime, at: java.time.LocalTime): LocalDateTime {
+    val today = now.toLocalDate().atTime(at)
+    return if (today.isAfter(now)) today else today.plusDays(1)
+}
+
+/** The next [hour] in the morning — the ceiling an open-ended pause runs to. */
+internal fun nextMorning(now: LocalDateTime, hour: Int): LocalDateTime =
+    nextOccurrenceOf(now, java.time.LocalTime.of(hour, 0))

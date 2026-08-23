@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
@@ -89,6 +90,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import android.provider.Settings
 import dev.walcott.R
+import dev.walcott.ui.components.ActionChip
+import dev.walcott.ui.components.LocalSnackbar
 import dev.walcott.data.ChildEntry
 import dev.walcott.data.PolicyDiff
 import dev.walcott.sync.ChildSnapshot
@@ -228,6 +231,15 @@ fun FamiliesScreen(
         until > ringNowMs && deviceId !in dismissedRings
     }
 
+    // Whether anybody is paused right now, so the row can offer the way back instead of a
+    // fourth way in. Read from the rules rather than from what was tapped: a pause started on a
+    // member's own sheet is the same pause.
+    val anyPaused = remember(settings, nowMs) {
+        settings.children.any { child ->
+            (child.overrides.todayException?.pauseUntilMs ?: 0L) > nowMs
+        }
+    }
+
     val registryIds = settings.children.map { it.childId }.toSet()
     val legacyDevices = snapshots.filter { it.childId !in registryIds }
 
@@ -276,6 +288,14 @@ fun FamiliesScreen(
                     onDismiss = { dismissedRings = dismissedRings + deviceId },
                 )
             }
+        }
+
+        // Dinner, the car, the room where everybody is looking at a screen. One tap rather than
+        // one sheet per child — offered only with two or more members, because with one the
+        // member's own quick actions are already on the next row and this would be a second
+        // button for the same thing.
+        if (settings.children.size > 1) {
+            item { PauseEveryoneRow(viewModel, anyPaused = anyPaused) }
         }
 
         // The way out of this family: to the chooser when there are others, straight to
@@ -1543,3 +1563,52 @@ private fun RingingChildCard(name: String, onStop: () -> Unit, onDismiss: () -> 
         }
     }
 }
+
+/**
+ * "Everybody put it down" — the whole family paused at once, and given back the same way.
+ *
+ * The same instant, undoable action as the per-member chips, and deliberately the same three
+ * durations: a family that has learnt what "30" means on one member's sheet has learnt it here.
+ */
+@Composable
+private fun PauseEveryoneRow(viewModel: WalcottViewModel, anyPaused: Boolean) {
+    val spacing = Tokens.spacing
+    val snackbar = LocalSnackbar.current
+    val undo = stringResource(R.string.action_undo)
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Outlined.PauseCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(R.string.pause_everyone),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        if (anyPaused) {
+            val resumed = stringResource(R.string.pause_everyone_resumed)
+            ActionChip(stringResource(R.string.quick_resume)) {
+                viewModel.resumeEveryone()
+                snackbar.show(resumed)
+            }
+        } else {
+            PAUSE_EVERYONE_MINUTES.forEach { minutes ->
+                val label = stringResource(R.string.quick_minutes, minutes)
+                val said = stringResource(R.string.pause_everyone_done, minutes)
+                ActionChip(label) {
+                    viewModel.pauseEveryone(minutes)
+                    snackbar.show(said, undo) { viewModel.resumeEveryone() }
+                }
+            }
+        }
+    }
+}
+
+/** The same three the per-member sheet offers, so the numbers mean one thing in this app. */
+private val PAUSE_EVERYONE_MINUTES = listOf(15, 30, 60)

@@ -67,8 +67,14 @@ object CloseWatch {
         val verdict = RuleEngine.evaluate(config, packageName, now, usageToday, extraTime)
         if (verdict is Verdict.Blocked) return null
 
-        val budget = (verdict as? Verdict.AllowedWithBudget)?.remaining
-            ?.takeIf { it <= HORIZON }
+        // This app's OWN time, worked out here rather than read off the verdict: the verdict
+        // reports whichever limit ends first, so once the day has a total of its own it can be
+        // the phone's number that comes back — and announcing that as "5 minutes left in Roblox"
+        // sends a child looking for the app that ran out when every app has.
+        val appLeft = config.allowanceFor(packageName, config.calendar.dayTypeOf(now), extraTime)
+            ?.minus(usageToday[packageName] ?: Duration.ZERO)
+        val budget = appLeft
+            ?.takeIf { it > Duration.ZERO && it <= HORIZON }
             ?.let { ClosingSoon(BlockReason.BUDGET_EXHAUSTED, packageName, it) }
 
         // Asked with no usage on purpose: the budget's countdown is the arithmetic above, and
@@ -88,17 +94,52 @@ object CloseWatch {
             ClosingSoon(reason, if (deviceWide) "" else packageName, left)
         }
 
-        return listOfNotNull(budget, timed).minByOrNull { it.left }
+        // The day's total, which closes this app as surely as its own budget does and is not
+        // about this app at all — so it is reported with no package, like bedtime, and the
+        // caller remembers it once for the phone rather than once per app the child passes
+        // through (see TimeWarnings).
+        val screen = screenClose(config, now, usageToday, extraTime)
+
+        return listOfNotNull(budget, timed, screen).minByOrNull { it.left }
+    }
+
+    /**
+     * The day's total running out, if it is close enough to be worth saying — the phone-wide
+     * countdown, told as one event however many apps the child moves through.
+     */
+    private fun screenClose(
+        config: FamilyConfig,
+        now: LocalDateTime,
+        usageToday: Map<String, Duration>,
+        extraTime: Map<String, Duration>,
+    ): ClosingSoon? {
+        val left = config.screenTimeLeftAt(
+            config.calendar.dayTypeOf(now),
+            ScreenTime.of(usageToday),
+            extraTime,
+        ) ?: return null
+        if (left <= Duration.ZERO || left > HORIZON) return null
+        return ClosingSoon(BlockReason.SCREEN_BUDGET, "", left)
     }
 
     /**
      * When the whole device closes next (bedtime or a family screen-free window), for a child
      * using something Walcott doesn't limit: their app isn't going anywhere, but the phone is.
      */
-    fun nextDeviceWideClose(config: FamilyConfig, now: LocalDateTime): ClosingSoon? {
+    fun nextDeviceWideClose(
+        config: FamilyConfig,
+        now: LocalDateTime,
+        usageToday: Map<String, Duration> = emptyMap(),
+        extraTime: Map<String, Duration> = emptyMap(),
+    ): ClosingSoon? {
         if (RuleEngine.deviceWideBlock(config, now) != null) return null
-        return firstMinute(now) { at -> RuleEngine.deviceWideBlock(config, at) }
+        val timed = firstMinute(now) { at -> RuleEngine.deviceWideBlock(config, at) }
             ?.let { (reason, left) -> ClosingSoon(reason, "", left) }
+        // The total cannot be found by walking the clock — it is spent by using the phone, not
+        // by time passing — so it is asked for directly and then raced against whatever the
+        // clock is about to do.
+        val screen = screenClose(config, now, usageToday, extraTime)
+        return listOfNotNull(timed, screen).minByOrNull { it.left }
     }
 
     /** The warning [left] has earned — the smallest threshold it has reached — or null. */

@@ -57,6 +57,16 @@ fun RuleEngine.appStatus(
     if (own?.blockedWindows?.get(dayType).orEmpty().any { it.appliesAt(now, specialDay) }) {
         return blocked(BlockReason.BLOCKED_WINDOW)
     }
+    // The day's total, judged before this app's own budget and on the same terms as the engine
+    // (see RuleEngine.evaluate): an app marked "never limit this" is outside it, everything else
+    // spends it, and a phone that has spent it is shut whatever any single app has left.
+    val screenLeft = if (own?.unlimited == true || packageName in config.reachOutPackages) {
+        null
+    } else {
+        config.screenTimeLeftAt(dayType, ScreenTime.of(usageToday), extraTime)
+    }
+    if (screenLeft != null && screenLeft <= Duration.ZERO) return blocked(BlockReason.SCREEN_BUDGET)
+
     // The budget plus whatever extra time reaches this app, by the same widening rule the
     // engine uses — one implementation, in FamilyConfig, so the two cannot drift apart. Null
     // for exactly the apps that have no budget at all, which is what "no limit today" means.
@@ -64,7 +74,9 @@ fun RuleEngine.appStatus(
         ?: return AppStatus(packageName, AppState.ALLOWED, used, null, null, null)
     val remaining = allowance - used
     return if (remaining > Duration.ZERO) {
-        AppStatus(packageName, AppState.BUDGETED, used, budget, remaining, null)
+        // The smaller of the two, for the same reason the engine reports it: this is the answer
+        // to "how long can I stay in this", and the day's total can be the thing that ends it.
+        AppStatus(packageName, AppState.BUDGETED, used, budget, minOf(remaining, screenLeft ?: remaining), null)
     } else {
         blocked(BlockReason.BUDGET_EXHAUSTED)
     }

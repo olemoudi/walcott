@@ -22,6 +22,8 @@ object AppCatalog {
          * decides whether the parent is offered the switch that makes a limit on it real.
          */
         val system: Boolean = false,
+        /** Whether any phone reporting it calls it an app for reaching a person. */
+        val reachOut: Boolean = false,
     )
 
     /**
@@ -38,6 +40,7 @@ object AppCatalog {
                     packageName = packageName,
                     label = hits.first().first.label,
                     system = hits.any { it.first.system },
+                    reachOut = hits.any { it.first.reachOut },
                     owners = hits.map { (_, snapshot) ->
                         Owner(
                             id = snapshot.childId.ifBlank { snapshot.deviceId },

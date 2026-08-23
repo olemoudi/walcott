@@ -50,16 +50,39 @@ object RuleEngine {
             return Verdict.Blocked(BlockReason.BLOCKED_WINDOW)
         }
 
+        // The phone's own total for the day, which is not about this app at all: every minute
+        // spends it and running out shuts everything. Read from the counters that were passed in
+        // rather than from a number alongside them, so there is nothing to forget and no second
+        // total that can disagree (see ScreenTime).
+        //
+        // An app marked "never limit this" is outside it, like it is outside every budget: the
+        // reason a parent marks the bus timetable or the chat with them is that it has to work,
+        // and a total that closed it would be the family's own escape hatch closing itself. Its
+        // minutes still COUNT towards the total — time is time — they just cannot be stopped by it.
+        val screenLeft = if (appPolicy?.unlimited == true || packageName in config.reachOutPackages) {
+            null
+        } else {
+            config.screenTimeLeftAt(dayType, ScreenTime.of(usageToday), extraTime)
+        }
+        if (screenLeft != null && screenLeft <= Duration.ZERO) {
+            return Verdict.Blocked(BlockReason.SCREEN_BUDGET)
+        }
+
         // The budget plus the extra time that reaches this app: its own grant always, plus any
         // "all apps" grant — but only while the app is on the family default. A budget somebody
         // set for this app on purpose is not something a blanket "everyone gets 30 more minutes"
         // should blow past. Written once, in FamilyConfig, because everything that draws a
         // number for a child reads it and they have to agree (see appStatus, activeBlocks).
-        val allowance = config.allowanceFor(packageName, dayType, extraTime) ?: return Verdict.Allowed
+        val allowance = config.allowanceFor(packageName, dayType, extraTime)
+            ?: return screenLeft?.let { Verdict.AllowedWithBudget(it) } ?: Verdict.Allowed
 
         val remaining = allowance - (usageToday[packageName] ?: Duration.ZERO)
         return if (remaining > Duration.ZERO) {
-            Verdict.AllowedWithBudget(remaining)
+            // Whichever runs out first is what "how long have I got" means. The reason behind the
+            // number is a separate question, and the screens that need it ask it separately
+            // (see StatusLine, CloseWatch): a child told "5 minutes" and then cut off by the
+            // phone's total rather than by this app has still been told the truth.
+            Verdict.AllowedWithBudget(minOf(remaining, screenLeft ?: remaining))
         } else {
             Verdict.Blocked(BlockReason.BUDGET_EXHAUSTED)
         }
@@ -94,6 +117,10 @@ object RuleEngine {
      */
     fun requiresUsageCounting(config: FamilyConfig): Boolean =
         config.defaultAppBudget.isNotEmpty() ||
+            // The day's total is counted off the same counter, so a family that sets ONLY a
+            // total must fail closed without it too — otherwise the one rule they wrote is the
+            // one revoking a permission turns off.
+            config.dailyScreenBudget.isNotEmpty() ||
             // Per-app budgets count down off the same counter. Missing them here was a real
             // bypass: a family that caps only individual apps ("WhatsApp, 30 min") kept
             // enforcing "as usual" with the counter gone, which for a budget means forever.
@@ -106,6 +133,8 @@ object RuleEngine {
      */
     fun requiresTrustedClock(config: FamilyConfig): Boolean =
         config.bedtime.isNotEmpty() ||
+            // A total that resets at midnight is a rule about when, like every other one here.
+            config.dailyScreenBudget.isNotEmpty() ||
             config.blockedWindows.values.any { it.isNotEmpty() } ||
             config.defaultAppBudget.isNotEmpty() ||
             config.perAppPolicies.values.any { it.dailyBudget.isNotEmpty() || it.blockedWindows.isNotEmpty() }

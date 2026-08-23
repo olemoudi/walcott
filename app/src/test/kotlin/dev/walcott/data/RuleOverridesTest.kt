@@ -96,6 +96,7 @@ class RuleOverridesTest {
             bedtime = emptyMap(),
             allAppsBlockedWindows = emptyMap(),
             defaultAppBudget = emptyMap(),
+            dailyScreenBudget = emptyMap(),
             appPolicies = emptyMap(),
             blockedDomains = emptySet(),
             deviceRestrictions = emptySet(),
