@@ -69,6 +69,9 @@ object LockScreen {
     fun register(context: Context, token: ByteArray): Boolean {
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return false
         if (!dpm.isDeviceOwnerApp(context.packageName)) return false
+        // A token re-armed while a release clears it is a key to this phone left in the hands of
+        // an app about to stop being trusted with anything (see DeviceHandback).
+        if (PanicRelease.inProgress) return false
         return runCatching {
             dpm.setResetPasswordToken(WalcottAdminReceiver.componentName(context), token)
         }.onFailure { DebugLog.w(TAG, "the system refused the reset token", it) }

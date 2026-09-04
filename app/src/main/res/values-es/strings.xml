@@ -202,12 +202,12 @@
     <string name="parent_pin_reminder_hint">¿No te acuerdas? Se puede ver en este móvil. A los móviles de los hijos solo les llega un hash irreversible.</string>
     <string name="parent_pin_show">Ver el PIN</string>
     <string name="parent_pin_create">Poner el PIN de la familia</string>
-    <string name="parent_pin_create_why">Abre el modo padre, y es lo que libera el móvil de un hijo si algún día pierdes este. Sin él, eso pasa por una petición de 24 horas desde el móvil del hijo.</string>
+    <string name="parent_pin_create_why">Abre el modo padre, y es lo que libera el móvil de un hijo si algún día pierdes este. Sin él, eso pasa por una petición de 12 horas desde el móvil del hijo.</string>
     <string name="setup_step_pin">Poner el PIN de la familia</string>
     <string name="notice_expired">Sin respuesta sobre %1$s</string>
     <string name="notice_expired_desc">Nadie contestó a tiempo, así que la petición se cierra. Puedes volver a pedirlo.</string>
     <string name="enroll_needs_pin_title">Pon antes el PIN de la familia</string>
-    <string name="enroll_needs_pin_text">Es la llave que libera este móvil si el tuyo se pierde o se rompe. Sin él, la única vuelta atrás es una petición de 24 horas desde el propio móvil del hijo.</string>
+    <string name="enroll_needs_pin_text">Es la llave que libera este móvil si el tuyo se pierde o se rompe. Sin él, la única vuelta atrás es una petición de 12 horas desde el propio móvil del hijo.</string>
     <string name="release_device_no_pin">Tu familia todavía no tiene PIN, así que no hay nada que pueda autorizar esto. Pídele a un adulto que ponga uno: llega a este móvil en la siguiente sincronización.</string>
     <string name="parent_pin_show_note">Se guarda solo en este móvil. En los móviles de los hijos nunca está en claro.</string>
     <string name="pin_show_biometric_title">Confirma que eres tú</string>
@@ -1341,6 +1341,7 @@
     <string name="diag_show_log">Ver registro (%1$d)</string>
     <string name="diag_hide_log">Ocultar registro</string>
     <string name="remote_result_diag_sent">informe de salud enviado</string>
+    <string name="remote_result_expired">el móvil estuvo más de una semana sin aparecer y la orden caducó — envíala otra vez</string>
     <!-- Canario de actualizaciones (los hijos siguen la versión del padre) -->
     <string name="update_state_waiting_parent">Ya está disponible %1$s — este dispositivo espera a que el móvil del padre la tenga</string>
     <string name="child_update_waiting_parent">Se actualizará después de tu móvil — tu móvil es el canario de las versiones nuevas.</string>
@@ -1431,7 +1432,11 @@
     <string name="release_done_title">Dispositivo liberado</string>
     <string name="release_done_text">Walcott ya no gestiona este dispositivo. Puedes desinstalarlo ahora si no quieres que quede rastro.</string>
     <string name="release_uninstall_action">Desinstalar</string>
-    <!-- Desactivación de emergencia pedida por el hijo (24 h, ver PanicProtocol) -->
+    <!-- Tarjeta en la pantalla de modo de un móvil liberado, por cualquiera de las puertas -->
+    <string name="released_card_title">Walcott ha dejado este móvil</string>
+    <string name="released_card_text">Se devolvieron todas las apps y ajustes y se borraron las reglas. Puedes desinstalarlo ahora, o configurarlo de nuevo desde aquí.</string>
+    <string name="released_card_report">Algunas cosas no se pudieron devolver: %1$s</string>
+    <!-- Desactivación de emergencia pedida por el hijo (12 h, ver PanicProtocol) -->
     <string name="panic_entry">Emergencia: liberar este dispositivo</string>
     <string name="panic_title">Liberación de emergencia</string>
     <string name="panic_intro_title">Solo para una emergencia real</string>
@@ -1829,6 +1834,11 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_102_0">
+        <item>Liberar un móvil — con el PIN de padre en el propio móvil, desde el tuyo, o con la petición de doce horas — ya no puede dejarlo liberado a medias. La parte que devuelve todo y la parte que deja de aplicar las reglas se solapaban unos segundos, y una app que las reglas volvieran a bloquear en ese hueco se habría quedado bloqueada para siempre, sin que quedara nada en el móvil capaz de levantarla. Ahora las reglas se paran primero y se espera a que lo hagan, nada puede rearmarse por detrás, y el móvil comprueba después que soltó todo de verdad, repasando otra vez si no fue así.</item>
+        <item>Una liberación interrumpida a medias — el móvil que se apaga o se queda sin batería en mitad — la termina él solo al arrancar de nuevo, venga por donde venga. Y cuando acaba lo dice: enseña que lo ha devuelto todo, avisa si algo no se pudo devolver, y ofrece desinstalarse.</item>
+        <item>Cuando liberas un móvil desde el tuyo, ahora se espera a la confirmación en vez de solo mandarla, así se distingue un móvil liberado de uno que simplemente se ha callado. Si el móvil llevaba más de una semana sin aparecer, la orden caduca, y tu móvil te lo dice con palabras en vez de poner «expired» — mándala otra vez.</item>
     </string-array>
     <string-array name="whats_new_0_101_0">
         <item>La liberación de emergencia ya solo cuenta un aviso que el relay de tu familia haya recibido de verdad. Un wifi de hotel o de aeropuerto que contesta a todo con su página de acceso — o cualquier proxy que dice «OK» y se traga el mensaje — colaba como si fuera el relay: el aviso se contaba, se le inventaba una hora de entrega, y con ella se saltaba la comprobación que impide acelerar la cuenta atrás. Un aviso que nunca te llegó ya no puede contar para liberar un móvil.</item>

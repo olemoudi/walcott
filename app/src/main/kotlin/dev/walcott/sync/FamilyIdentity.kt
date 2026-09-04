@@ -76,8 +76,19 @@ data class FamilyIdentity(
      * the wiped identity is UNSET — which enforces by default (see [enforcesLocally]) — so this
      * one bit is what keeps the boot receiver, the watchdog and the heartbeat standing down
      * until someone deliberately pairs the device again.
+     *
+     * Written FIRST, before the release touches anything privileged, and the rest of the
+     * enrollment is wiped only at the end: a release that is interrupted in between leaves an
+     * identity that is released and still paired, which the next start-up recognises and
+     * finishes. Nothing else ever produces that combination.
      */
     val released: Boolean = false,
+    /**
+     * What the release could not give back, by name (see [dev.walcott.enforcement.DeviceHandback]);
+     * empty for a clean handback. Shown on the mode screen afterwards, because a phone that is
+     * not quite handed back should say so where its owner can read it, not in a log nobody opens.
+     */
+    val releaseReport: List<String> = emptyList(),
     /**
      * The relay this family used before a migration, and when the move was ordered.
      *

@@ -272,6 +272,10 @@ class SyncManager(
     private suspend fun connect(id: FamilyIdentity) {
         transport?.close()
         if (!id.isPaired) return
+        // Released and still paired is a release interrupted before it forgot the family (see
+        // PanicRelease.finishIfInterrupted). Reconnecting would publish this phone to a parent
+        // that already let it go.
+        if (id.released) return
         sinceCache = maxOf(sinceCache, syncStore.current().ntfySinceSec)
         connectedAtMs = System.currentTimeMillis()
         transport = NtfyTransport(
@@ -649,11 +653,21 @@ class SyncManager(
     }
 
     /**
-     * Emergency release ([dev.walcott.enforcement.PanicRelease]): unlink AND remember that this
-     * device must not enforce again, since the wiped identity alone would look like a fresh
-     * install and start enforcing an empty policy.
+     * The first thing an emergency release does ([dev.walcott.enforcement.PanicRelease]): this
+     * device stops enforcing NOW, and a process death from here on is finished on the next start.
+     * The enrollment itself is kept for the moment — the channel has an acknowledgement to carry.
      */
-    suspend fun markReleased() = unlink(FamilyIdentity(released = true))
+    suspend fun markReleasing() {
+        identityStore.save(identityStore.current().copy(released = true))
+    }
+
+    /**
+     * The last identity write of an emergency release: unlink, keep the released flag (the wiped
+     * identity alone would look like a fresh install and start enforcing an empty policy), and
+     * keep [report] — what the handback could not give back — for the mode screen to show.
+     */
+    suspend fun markReleased(report: List<String>) =
+        unlink(FamilyIdentity(released = true, releaseReport = report))
 
     /**
      * Forgets everything the sync layer recorded (emergency release): requests, notices,
@@ -1064,6 +1078,14 @@ class SyncManager(
      * request it started on is still the live one.
      */
     suspend fun runPanicStep() {
+        // A release that already began — this one's, or one the parent or the PIN started in the
+        // meantime — is finished, not counted again: a step that threw halfway through the
+        // teardown would otherwise re-fire at once and run the whole thing in a loop.
+        if (identityStore.current().released) {
+            PanicAlarm.cancel(context)
+            dev.walcott.enforcement.PanicRelease.finishIfInterrupted(context)
+            return
+        }
         val (request, intervalSec) = panicStateNow()
         if (request == null) {
             PanicAlarm.cancel(context)
@@ -1249,14 +1271,11 @@ class SyncManager(
      */
     private suspend fun completeRelease() {
         PanicAlarm.cancel(context)
+        // Posted BEFORE the teardown as well as by it: the teardown cancels every notification
+        // this app ever posted and re-posts this one at its very end, but in between the process
+        // is ordinary and killable, and a child who is told nothing at all is the worse failure.
         PanicNotifications.notifyReleased(context)
         dev.walcott.enforcement.PanicRelease.releaseDevice(context)
-        // Again, and this is not belt-and-braces: the teardown ends by cancelling every
-        // notification this app ever posted, which included the one above — so the single
-        // message this whole countdown exists to deliver was being shown for about a second and
-        // then wiped. Posted before as well, because between the two the process is ordinary
-        // and killable, and a child who is told nothing at all is the worse failure.
-        PanicNotifications.notifyReleased(context)
     }
 
     /** PIN-gated manual exemption: allow installs on this device for [durationMs] (blanket). */
@@ -4085,15 +4104,21 @@ class SyncManager(
             }
             val ack = runner.run(command)
             syncStore.update { it.copy(lastCommandAck = ack, childVersion = it.childVersion + 1) }
-            publishSelf()
             // The release is run HERE, after its acknowledgement is on the wire, and it is the
             // last thing this device ever does on this channel: the teardown wipes the sync
             // state and closes the transport, so an ack published afterwards would go nowhere
-            // and the parent would be left unable to tell a freed phone from a dead one.
+            // and the parent would be left unable to tell a freed phone from a dead one. Waited
+            // on, not merely sent: the fire-and-forget publish only hands the message to a socket,
+            // and the teardown closes that socket a moment later. No receipt is logged, not
+            // obeyed — the parent asked, and freeing the phone does not depend on the channel.
             if (command.action == RemoteAction.RELEASE_DEVICE && ack.ok) {
+                if (publishSelfForReceipt() == null) {
+                    dev.walcott.debug.DebugLog.w(TAG, "the release acknowledgement got no receipt; releasing anyway")
+                }
                 dev.walcott.enforcement.PanicRelease.releaseDevice(context)
                 return@withLock true
             }
+            publishSelf()
             // Same ordering discipline, milder consequence: the acknowledgement above went out on
             // the relay the parent is still listening to, and only now does this device stop
             // listening to it.

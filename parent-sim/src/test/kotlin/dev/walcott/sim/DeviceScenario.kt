@@ -34,6 +34,14 @@ abstract class DeviceScenario {
         // passed. If the device is not ready, the run should say so where someone will read it.
         precondition("a device is attached", device.isAvailable())
         precondition("dev.walcott is installed", device.isWalcottInstalled())
+        // Promised by the KDoc above for as long as this class has existed, and never actually
+        // checked: a device that lost Device Owner (a destructive scenario that could not
+        // re-provision) made every scenario FAIL with a message about the product — "never
+        // checked in", "never suspended" — rather than skip with one about the device.
+        precondition(
+            "dev.walcott is Device Owner (dpm set-device-owner — see parent-sim/README.md)",
+            device.isDeviceOwner(),
+        )
         // Before anything else, and every time: the enforcement loop parks while the screen is off,
         // so an emulator that dozed off half an hour into a run evaluates no rules at all and every
         // scenario about a schedule or a budget times out waiting for a suspension nothing was even
@@ -99,7 +107,7 @@ abstract class DeviceScenario {
     }
 
     @AfterEach
-    fun releaseDevice() {
+    fun tearDownFamily() {
         // Restrictions are the one thing that outlives the app's own state and can break the
         // NEXT run before it starts, so they come off explicitly rather than by being forgotten.
         runCatching { device.seedPolicy(PolicyJson.minimal()) }
@@ -175,6 +183,25 @@ abstract class DeviceScenario {
         return which.pkg
     }
 
+    /**
+     * The same fixture, but recorded into the install baseline before it is handed to a scenario
+     * that will block installs.
+     *
+     * The fixture is an UNAPPROVED app (see [Fixture]); the install guard's whole job is to
+     * quarantine one of those that appears while installs are blocked. So a scenario that both
+     * blocks installs AND expects the fixture to sit there suspended by a rule is racing: if the
+     * installs-block policy lands before a reconcile has taken the freshly-installed app into the
+     * baseline, the guard suspends and UNINSTALLS it out from under the rule, and the wait for
+     * "the app suspended by its rules" times out on an app that is no longer there. Reconciling
+     * while installs are still open (they are, right after a fresh pair) makes the app part of
+     * "what this phone always had", which the guard never touches.
+     */
+    protected fun installBaselineFixture(which: Fixture = Fixture.FIRST): String {
+        val pkg = installFixtureApp(which)
+        device.reconcileInstalls()
+        return pkg
+    }
+
     /** The throwaway apps in test resources (see their README). */
     protected enum class Fixture(val apk: String, val pkg: String, val label: String) {
         FIRST("unapproved-app.apk", "com.sneaky.notapproved", "Sneaky Game"),
@@ -187,6 +214,31 @@ abstract class DeviceScenario {
          * a scenario about warnings.
          */
         STARTABLE("startable-app.apk", "com.sneaky.startable", "Startable Toy"),
+    }
+
+    /**
+     * The state a released phone has to be in, asked of the OS rather than of the app: nothing
+     * suspended or hidden by anyone, no always-on VPN and no tunnel, private DNS not pinned to a
+     * resolver — and the app's own last word on the handback agreeing (see DeviceHandback, which
+     * asks the system the same questions from the inside and names what it could not undo).
+     * Callers clear logcat before starting the release, so that last word is this release's.
+     */
+    protected fun assertHandedBack() {
+        org.junit.jupiter.api.Assertions.assertEquals(
+            emptySet<String>(), device.suspendedPackages(), "packages still suspended after the release",
+        )
+        org.junit.jupiter.api.Assertions.assertEquals(
+            emptySet<String>(), device.hiddenPackages(), "packages still hidden after the release",
+        )
+        org.junit.jupiter.api.Assertions.assertEquals("", device.alwaysOnVpnPackage(), "an always-on VPN is still pinned")
+        org.junit.jupiter.api.Assertions.assertFalse(device.tunnelUp(), "the filter's tunnel is still up")
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+            "hostname", device.privateDnsMode(), "private DNS is still pinned to a resolver",
+        )
+        org.junit.jupiter.api.Assertions.assertTrue(
+            device.walcottLog().any { "handback: everything came off cleanly" in it },
+            "the app did not report a clean handback (see its log for what it could not give back)",
+        )
     }
 
     /** Asserts the device does NOT reach [what] while the window lasts. */

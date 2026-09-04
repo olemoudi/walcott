@@ -105,8 +105,11 @@ class PanicStepReceiver : BroadcastReceiver() {
             } catch (t: Throwable) {
                 DebugLog.e("WalcottPanic", "emergency-release step failed", t)
                 // Never leave a live request with no alarm behind it: a step that threw must
-                // still come back, or the countdown simply stops with nothing to say so.
-                runCatching { PanicAlarm.sync(context) }
+                // still come back, or the countdown simply stops with nothing to say so. Unless
+                // the release itself has begun — its next wake-up is already overdue, so re-arming
+                // would fire at once, and the next start-up finishes it anyway.
+                val app = context.applicationContext as WalcottApplication
+                if (!app.identityStore.current().released) runCatching { PanicAlarm.sync(context) }
             } finally {
                 runCatching { lock?.release() }
             }

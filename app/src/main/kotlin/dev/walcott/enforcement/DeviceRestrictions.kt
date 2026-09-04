@@ -137,6 +137,8 @@ object DeviceRestrictions {
     fun apply(context: Context, enabledKeys: Set<String>, installExemptUntilMs: Long = 0) {
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        // An alarm firing mid-release would put back what the handback is taking off, for good.
+        if (PanicRelease.inProgress) return
         val admin = WalcottAdminReceiver.componentName(context)
         val effective = effectiveKeys(enabledKeys, installExemptUntilMs, System.currentTimeMillis())
 

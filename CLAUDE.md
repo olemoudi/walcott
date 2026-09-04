@@ -220,4 +220,7 @@ These are standing rules for this repository. Follow them without being re-asked
 ### Testing
 - Keep a robust unit-test suite. All rule logic lives in `:core-rules` (pure Kotlin) and must stay fully covered; pure mappers/helpers in `:app` (e.g. settings⇄domain mapping, PIN hashing) get JVM unit tests too. Avoid Android dependencies in testable logic (e.g. use `java.util.Base64`, not `android.util.Base64`).
 - Run `./gradlew test` (and build the APK) before cutting a release.
+- The device suites are part of cutting a release too: `:parent-sim:e2eTest`, then
+  `:parent-sim:e2eReleaseTest` **twice** (the destructive one — it gives up Device Owner and
+  re-provisions; a single green run does not prove it is stable). See `docs/release-checklist.md`.
 

@@ -60,7 +60,7 @@ object PanicNotifications {
         context.getString(R.string.panic_child_denied_text),
     )
 
-    /** The 24 hours are complete and the device is being released. */
+    /** The device has been (or is being) released, whichever door it went through. */
     fun notifyReleased(context: Context) = post(
         context,
         context.getString(R.string.panic_child_released_title),
@@ -99,7 +99,7 @@ object PanicNotifications {
 
 /**
  * The "Refuse" action on the parent's emergency-release alert. A refusal must be one tap from
- * the notification: the alert can arrive at any hour, and the whole point of the two-hourly
+ * the notification: the alert can arrive at any hour, and the whole point of the hourly
  * drum-beat is that a parent who sees ONE of them can stop the countdown.
  */
 class PanicDenyReceiver : BroadcastReceiver() {

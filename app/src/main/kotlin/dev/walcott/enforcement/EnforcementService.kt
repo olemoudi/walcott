@@ -201,6 +201,13 @@ class EnforcementService : LifecycleService() {
         // a child device should not be able to end up enforcing rules it cannot explain.
         NotificationPolicy.ensureGranted(this)
         startForegroundCompat()
+        // A start dispatched just before a release raised its flag lands here; the loop it would
+        // run is the one thing the release has to be sure is not running (see PanicRelease).
+        if (PanicRelease.inProgress) {
+            DebugLog.w(TAG, "a release is in progress: not starting the enforcement loop")
+            stopSelf()
+            return
+        }
         observeCounters()
         lifecycleScope.launch { runLoopResilient() }
         observeWebFilter()
@@ -220,9 +227,11 @@ class EnforcementService : LifecycleService() {
         lifecycleScope.launch {
             runCatching { (application as WalcottApplication).syncManager.reconcileInstalls() }
         }
+        running.value = true
     }
 
     override fun onDestroy() {
+        running.value = false
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(packageReceiver) }
         runCatching { unregisterReceiver(powerReceiver) }
@@ -1313,7 +1322,20 @@ class EnforcementService : LifecycleService() {
         /** Asks a running service to re-check what it holds (see [ACTION_RECHECK]). */
         private const val ACTION_RECHECK = "dev.walcott.RECHECK"
 
+        /**
+         * Whether the service is up: true once onCreate has launched its loops, false again from
+         * onDestroy. What a release waits on, because stopService returns before either happens.
+         */
+        val running = MutableStateFlow(false)
+
         fun start(context: Context, recheck: Boolean = false) {
+            // Eight callers, not all of them gated on the device's identity (a remote "re-apply
+            // policy", a locate request, the location alarm). One check here covers them all: a
+            // release in progress must not have the loop it just stopped brought back under it.
+            if (PanicRelease.inProgress) {
+                DebugLog.w(TAG, "a release is in progress: not starting enforcement")
+                return
+            }
             val intent = Intent(context, EnforcementService::class.java)
                 .apply { if (recheck) action = ACTION_RECHECK }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

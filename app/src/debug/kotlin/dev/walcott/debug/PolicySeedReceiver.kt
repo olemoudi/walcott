@@ -100,6 +100,9 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     "reset" -> {
                         target.identityStore.save(dev.walcott.sync.FamilyIdentity())
                         target.syncStore.update { dev.walcott.sync.SyncState() }
+                        // The marker the harness waits on: a broadcast returns when it was
+                        // dispatched, not when the write landed (see ChildDevice.reset).
+                        DebugLog.i("WalcottSeed", "identity reset")
                     }
                     // `--es mode local_backup [--es local_backup_slots daily,weekly,monthly]`:
                     // writes the shared-storage copies now, and logs what this install can see
@@ -436,7 +439,7 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 // Emergency-release hooks (see PanicProtocol). `--ei panic_self N` puts THIS
                 // device N checkpoints into a request, with the gates satisfied (fresh channel
                 // proof, a server clock, a parent new enough), so the child screens and the
-                // 2 h checkpoint can be driven without waiting a day. `--el panic_due_ago_sec S`
+                // hourly checkpoint can be driven without waiting a day. `--el panic_due_ago_sec S`
                 // back-dates the last checkpoint so the next incoming message lands a notice
                 // (or, past the grace, cancels the request).
                 val panicSelf = intent.getIntExtra("panic_self", -1)
@@ -478,6 +481,28 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 intent.getLongExtra("panic_hour_sec", 0L).takeIf { it > 0 }?.let { seconds ->
                     target.syncStore.update { it.copy(panicIntervalSec = seconds) }
                     DebugLog.i("WalcottSeed", "an emergency-release hour is now ${seconds}s here")
+                }
+                // Release hooks (see PanicRelease). `--es pin 4291` sets the family PIN through
+                // the real path, so this device carries a genuine hash to verify against — the
+                // harness cannot compute one, and a fake would prove nothing about the door.
+                intent.getStringExtra("pin")?.let { pin ->
+                    target.repository.setPin(pin)
+                    DebugLog.i("WalcottSeed", "pin set")
+                }
+                // `--es release_with_pin 4291`: exactly what the settings screen does when the
+                // parent PIN is typed on this phone — the guarded verify (lockout and all), and
+                // on success the whole release. The result is logged either way.
+                intent.getStringExtra("release_with_pin")?.let { pin ->
+                    val result = target.syncManager.verifyPinGuarded(pin)
+                    DebugLog.i("WalcottSeed", "release_with_pin: $result")
+                    if (result is dev.walcott.data.PinResult.Ok) app.releaseDevice()
+                }
+                // `--ez release_die_before_clear true`: the next release kills this process right
+                // before it would give up Device Owner, so a scenario can watch the next start-up
+                // finish it. `am force-stop` cannot do this on a Device Owner.
+                if (intent.getBooleanExtra("release_die_before_clear", false)) {
+                    dev.walcott.enforcement.PanicRelease.dieBeforeClearForTest = true
+                    DebugLog.i("WalcottSeed", "the next release will die before clearing device owner")
                 }
                 // `--ez panic_ready true` just satisfies the start gates (channel + parent build),
                 // for exercising the child's "Request release" button itself.

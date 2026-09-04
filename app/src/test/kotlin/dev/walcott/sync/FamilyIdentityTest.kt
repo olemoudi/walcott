@@ -51,6 +51,20 @@ class FamilyIdentityTest {
     }
 
     @Test
+    fun `a release that has begun stops enforcement before it forgets the family`() {
+        // The flag is written FIRST, while the enrollment is still whole: from that moment the
+        // boot receiver, the watchdog and the heartbeat must stand down, and the next start-up
+        // must recognise "released and still paired" as a release to finish.
+        val midway = FamilyIdentity(role = Role.CHILD, mode = DeviceMode.CHILD, topic = "t", released = true)
+        assertEquals(false, midway.enforcesLocally)
+        assertEquals(true, midway.isPaired)
+        // And what the handback could not give back survives the final wipe, for the mode screen.
+        val done = FamilyIdentity(released = true, releaseReport = listOf("suspended com.example"))
+        assertEquals(false, done.isPaired)
+        assertEquals(listOf("suspended com.example"), done.releaseReport)
+    }
+
+    @Test
     fun `serialization round-trips with new fields`() {
         val json = Json { encodeDefaults = true }
         val identity = FamilyIdentity(

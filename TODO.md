@@ -3,6 +3,63 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.102.0 — a release that cannot leave a phone half-freed
+
+A review of the one thing that must never fail once strangers' children carry this app: giving
+a phone back. The happy path was well proven on the emulator; what was not was the release
+under anything going wrong, and two of those were real.
+
+**The enforcement loop was alive during the handback.** `PanicRelease` stopped the service at
+step 4, after `DeviceHandback` had unsuspended every package at step 2 — and the loop re-asserts
+suspensions every thirty seconds without looking at anything but `isDeviceOwnerApp`, which is
+true until the last step. A re-assert landing in between was a suspension for the life of the
+install. Now the release raises `PanicRelease.inProgress` first, which every gate that writes
+Device Owner state reads (`EnforcementService.start`, `Enforcer`, `DeviceRestrictions.apply`,
+`VpnController.apply(true)`, `LockScreen.register`, `LocationPolicy`, `NotificationPolicy`,
+`LostMode`), stops the service and WAITS for `EnforcementService.running` to go false, cancels
+every policy-applying alarm by name, and only then sweeps.
+
+**The released flag was written after the handback.** A process death during the sweep came back
+as an enforcing child — with the parent, who had already received the acknowledgement, having
+dropped the row. The flag is now written before anything privileged, keys and topic kept until
+the end so the acknowledgement can leave; `finishIfInterrupted` runs the whole release again
+whenever `released` meets either "still Device Owner" or "still paired" (the second is new: a
+released-and-paired identity would otherwise reconnect and publish to a parent that let it go,
+so `connect` refuses it too). The release acknowledgement is published with a receipt, like the
+panic notices, and the teardown proceeds whether or not one comes back.
+
+**And it says what it could not undo.** `DeviceHandback.run` asks the system again after the
+sweep — suspended, hidden, undeletable packages; own restrictions; the always-on VPN; the reset
+token — sweeps once more if anything is left, and answers the list. It rides in
+`FamilyIdentity.releaseReport` and the mode screen shows it under "Walcott has left this phone",
+with the uninstall button every door now offers. **Decision:** Device Owner is given up even when
+something could not be put back. Keeping it would leave the terminal state this feature exists to
+avoid, and an `unsuspend` does not fail for a package this app suspended; the report is for the
+rare OEM refusal, so that it is read on the phone rather than in a log nobody opens.
+
+Smaller, from the same review: `remoteResultLabel` had no case for `expired`, so a parent whose
+child was away for a week read "Failed: expired" in red with nothing to do about it; two strings
+in both languages still promised a "24-hour request" two versions after it became twelve.
+
+**The tests, which were the other half of the ask.** The parent PIN typed on the child's phone —
+the door a family reaches for first — had no coverage of any kind; `finishIfInterrupted` had
+none; the harness never checked Device Owner despite promising to. Now: `PinReleaseScenarioTest`
+(wrong PIN reaches the parent and changes nothing; right PIN frees the phone, filter included;
+two releases at once are one), `InterruptedReleaseScenarioTest` (a debug hook kills the process
+before Device Owner is dropped — `am force-stop` cannot — and the next start finishes it), the
+relay dying inside the panic's final pause, an eight-day-old release refused. Every destructive
+scenario ends on `assertHandedBack`: nothing suspended or hidden on the whole device, no
+always-on VPN, no tunnel, private DNS not pinned, and the app's own "everything came off
+cleanly". `DeviceScenario` now skips without Device Owner, `isDeviceOwner()` checks the package,
+re-provisioning lives in one place with retries, and `e2eReleaseTest` refuses to pass having run
+nothing.
+
+Known and left alone: a strict private-DNS hostname the child had set is put back to automatic
+when the filter comes up and is not restored on release (the previous value was never kept);
+`KEY_BIOMETRICS` does nothing on any device, because `device_admin.xml` declares only
+`force-lock` and `setKeyguardDisabledFeatures` is refused — a switch the parent can flip that
+promises what the admin declaration cannot deliver.
+
 ## Shipped in v0.76.0 — the close nobody answered
 
 `OutageScenarioTest` had been failing on and off for four releases and every note it accumulated

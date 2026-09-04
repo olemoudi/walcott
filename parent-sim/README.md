@@ -49,6 +49,25 @@ reporting a green build that tested nothing.
 ./gradlew :parent-sim:run --args="qr"        # just print a pairing payload
 ```
 
+## Before a release
+
+The device suites are the only proof that a phone can be freed, and a release that cannot free
+a phone is the one release that must never ship. Run, in this order, on a device that is
+Device Owner:
+
+```sh
+./gradlew :parent-sim:e2eTest             # everything that leaves the device as it found it
+./gradlew :parent-sim:e2eReleaseTest      # the destructive scenarios: PIN, remote, panic, interrupted
+./gradlew :parent-sim:e2eReleaseTest      # and again — one green run proves nothing about stability
+```
+
+`e2eReleaseTest` ends every scenario by putting Device Owner back (`ChildDevice.reprovisionDeviceOwner`,
+three attempts) and fails loudly when it cannot. If it could not, every later scenario skips
+with "dev.walcott is Device Owner" as the reason; re-provision by hand (below) before going on.
+A red scenario is asked the same four questions before the product is touched: can something
+else satisfy the assertion, is the window under a documented worst case, does the scenario
+survive its own repetition, is it compressing something the phone spaces out.
+
 ## Setting a device up
 
 The scenarios need the debug build, Device Owner, and a network.

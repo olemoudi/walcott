@@ -109,12 +109,11 @@ class WalcottApplication : Application() {
         }
 
         // A release that stopped halfway leaves a device nobody manages but that is still owned
-        // by this app, and no screen offering to retry (see PanicRelease.finishIfInterrupted).
+        // by this app — or still paired to a family that let it go — and no screen offering to
+        // retry (see PanicRelease.finishIfInterrupted).
         appScope.launch {
-            if (identityStore.current().released) {
-                runCatching { dev.walcott.enforcement.PanicRelease.finishIfInterrupted(this@WalcottApplication) }
-                    .onFailure { DebugLog.e(TAG, "finishing the interrupted release failed", it) }
-            }
+            runCatching { dev.walcott.enforcement.PanicRelease.finishIfInterrupted(this@WalcottApplication) }
+                .onFailure { DebugLog.e(TAG, "finishing the interrupted release failed", it) }
         }
 
         // The share-a-backup flow parks the encrypted file in cache (see FamilyBackupCard);
@@ -188,7 +187,9 @@ class WalcottApplication : Application() {
         // again here races that: a sweep of every installed package that starts while the phone
         // is still owned and finishes after it is not, reporting a few hundred refusals for work
         // that was already done. See PanicRelease.
-        if (syncManager.identity.value.released) return
+        // Two reads, because they can disagree for a few milliseconds: the identity this
+        // collector has seen, and the release's own in-memory flag.
+        if (syncManager.identity.value.released || dev.walcott.enforcement.PanicRelease.inProgress) return
         DebugLog.w(TAG, "this device no longer enforces: giving back apps and settings")
         // The same handback the emergency release uses, and for the same reason: what has to come
         // off is decided by asking the SYSTEM what is still set, not by remembering what this

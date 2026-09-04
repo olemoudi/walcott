@@ -18,7 +18,12 @@ class Enforcer(context: Context) {
     private val admin = WalcottAdminReceiver.componentName(context)
     private val ownPackage = context.packageName
 
-    fun isDeviceOwner(): Boolean = dpm.isDeviceOwnerApp(ownPackage)
+    /**
+     * Whether this reconciler may touch anything: Device Owner, and no release running. The
+     * second half is what keeps the loop's re-assert from re-suspending into the middle of the
+     * handback that is taking every suspension off (see PanicRelease.inProgress).
+     */
+    fun isDeviceOwner(): Boolean = !PanicRelease.inProgress && dpm.isDeviceOwnerApp(ownPackage)
 
     /**
      * Syncs suspension of [managed] so that exactly [blocked] end up suspended. Only calls

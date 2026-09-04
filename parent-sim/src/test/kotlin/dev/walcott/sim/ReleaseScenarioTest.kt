@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
  *
  * What it proves is the promise the parent's screen makes when it offers to free a phone: not that
  * a command was acknowledged, but that the OS itself let go — apps unsuspended, restrictions
- * lifted, management gone.
+ * lifted, management gone, and nothing at all left held (see [assertHandedBack]).
  */
 @Tag("e2e")
 @Tag("destructive")
@@ -27,7 +27,7 @@ class ReleaseScenarioTest : DeviceScenario() {
 
     @Test
     fun `the parent frees a phone and the OS actually lets go of it`() {
-        val pkg = installFixtureApp()
+        val pkg = installBaselineFixture()
         // A phone in a state a family would recognise: an app blocked by its rules, installs
         // locked down, and the date/time protected against being moved.
         parent.pushPolicy(
@@ -43,6 +43,7 @@ class ReleaseScenarioTest : DeviceScenario() {
         awaitDevice("the app suspended by its rules", timeoutMs = 60_000) { device.isSuspended(pkg) }
         awaitDevice("the install block armed") { device.installBlocked() }
 
+        device.clearLogcat()
         val commandId = parent.sendCommand(deviceId, RemoteAction.RELEASE_DEVICE)
 
         // The acknowledgement has to arrive BEFORE the teardown, or a parent could never tell a
@@ -56,24 +57,13 @@ class ReleaseScenarioTest : DeviceScenario() {
         awaitDevice("the install block lifted") { !device.installBlocked() }
         awaitDevice("the date and time unlocked") { !device.hasRestriction("no_config_date_time") }
         awaitDevice("management given up", timeoutMs = 60_000) { !device.isDeviceOwner() }
+        assertHandedBack()
     }
 
-    /**
-     * Puts Device Owner back so the rest of the suite has a device to run against.
-     *
-     * `dpm set-device-owner` only works on a device with no accounts and no other admin, which is
-     * exactly what a freed emulator is — but if it ever fails, every later scenario would skip its
-     * preconditions and the suite would go green having tested nothing. Hence the loud failure.
-     */
+    /** Puts Device Owner back so the rest of the suite has a device to run against. */
     @AfterEach
-    fun reprovision() {
-        if (!device.isAvailable() || device.isDeviceOwner()) return
-        val result = runCatching {
-            device.run("shell", "dpm", "set-device-owner", "dev.walcott/.WalcottAdminReceiver")
-        }.getOrElse { it.message.orEmpty() }
-        check(device.isDeviceOwner()) {
-            "the device could not be made Device Owner again ($result). Re-provision it before " +
-                "running the rest of the suite, or every scenario will skip and pass."
-        }
+    fun cleanUpAndReprovision() {
+        runCatching { device.ensureRemoved(Fixture.FIRST.pkg) }
+        device.reprovisionDeviceOwner()
     }
 }

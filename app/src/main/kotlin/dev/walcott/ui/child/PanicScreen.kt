@@ -55,7 +55,7 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 
 /**
- * The child's way out when the parent device is gone AND the parent PIN is lost: a 24-hour
+ * The child's way out when the parent device is gone AND the parent PIN is lost: a twelve-hour
  * request that keeps telling the parents what it is doing (see [PanicProtocol]).
  *
  * The screen leads with what will happen, not with the button. Everything about this flow is

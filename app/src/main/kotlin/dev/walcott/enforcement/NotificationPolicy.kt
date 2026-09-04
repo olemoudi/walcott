@@ -40,6 +40,8 @@ object NotificationPolicy {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        // Same reason as LocationPolicy: the handback is putting this grant back to DEFAULT.
+        if (PanicRelease.inProgress) return
         val permission = Manifest.permission.POST_NOTIFICATIONS
         val granted = ContextCompat.checkSelfPermission(context, permission) ==
             PackageManager.PERMISSION_GRANTED

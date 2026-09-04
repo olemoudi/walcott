@@ -24,8 +24,49 @@ class ChildDevice(
         runCatching { run("shell", "pm", "list", "packages", PACKAGE).contains(PACKAGE) }.getOrDefault(false)
 
     fun isDeviceOwner(): Boolean = runCatching {
-        run("shell", "dumpsys", "device_policy").contains("Device Owner:")
+        // The block under "Device Owner:" names the admin. A device owned by some OTHER package
+        // (a stale record, another admin) is not one these scenarios can run against, and used
+        // to pass this check.
+        run("shell", "dumpsys", "device_policy")
+            .substringAfter("Device Owner:", "")
+            .lineSequence()
+            .take(8)
+            .any { PACKAGE in it }
     }.getOrDefault(false)
+
+    /**
+     * Puts Device Owner back after a scenario that gave it up (see the `destructive` tag).
+     *
+     * `dpm set-device-owner` only works on a device with no accounts and no other admin, which is
+     * exactly what a freed emulator is — but the first attempt can still fail on a transient
+     * account check (docs/fase0-resultados.md), so it is tried more than once. Loud when it cannot
+     * be done, because a device that is no longer managed makes every later scenario skip, and a
+     * suite that skips everything goes green having tested nothing.
+     */
+    fun reprovisionDeviceOwner() {
+        if (!isAvailable()) return
+        // The identity FIRST, and always. A released phone remembers that it is released, and
+        // the app finishes an interrupted release on every start-up: a device made Device Owner
+        // again while its identity still says "released" lets go of it the next time its
+        // process starts — the admin callback of `set-device-owner` itself, or the next
+        // scenario's first broadcast — and every scenario after that skips. Today that only
+        // showed up when the process happened to be dead between two scenarios, which is what
+        // made it look like an emulator that "loses its admin record".
+        reset()
+        if (isDeviceOwner()) return
+        var last = ""
+        repeat(REPROVISION_ATTEMPTS) {
+            last = runCatching {
+                run("shell", "dpm", "set-device-owner", "$PACKAGE/.WalcottAdminReceiver")
+            }.getOrElse { it.message.orEmpty() }
+            if (isDeviceOwner()) return
+            Thread.sleep(2_000)
+        }
+        error(
+            "the device could not be made Device Owner again ($last). Re-provision it before " +
+                "running the rest of the suite, or every scenario will skip and pass.",
+        )
+    }
 
     /**
      * Whether the device has an IP at all.
@@ -84,7 +125,41 @@ class ChildDevice(
     }
 
     /** Forgets the family, as a fresh install would start. */
-    fun reset() = seed("--es", "mode", "reset")
+    /**
+     * Forgets the identity and the sync state, and does not return until the app says it has.
+     *
+     * A seed broadcast returns when the receiver was dispatched, not when the write landed —
+     * and the one thing that must not run against a stale identity is `dpm set-device-owner`
+     * (see [reprovisionDeviceOwner]). Best effort on the wait: the broadcast went out either way.
+     */
+    fun reset() {
+        val before = walcottLog().count { RESET_MARKER in it }
+        seed("--es", "mode", "reset")
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            if (walcottLog().count { RESET_MARKER in it } > before) return
+            Thread.sleep(250)
+        }
+    }
+
+    // --- The release, the way a person would start it on this phone (see PolicySeedReceiver) ---
+
+    /** Sets the family PIN through the real path, so the phone carries a genuine hash. */
+    fun setPin(pin: String) = seed("--es", "pin", pin)
+
+    /** What the settings screen does when the parent PIN is typed here: verify, then release. */
+    fun releaseWithPin(pin: String) = seed("--es", "release_with_pin", pin)
+
+    /** The next release dies right before giving up Device Owner (see PanicRelease). */
+    fun dieBeforeClearingDeviceOwner() = seed("--ez", "release_die_before_clear", "true")
+
+    /** Starts the app's own activity, the way a person tapping its icon would. */
+    fun startWalcott() {
+        run("shell", "am", "start", "-n", "$PACKAGE/.MainActivity")
+    }
+
+    /** The app's process id, or "" when it is not running. */
+    fun walcottPid(): String = runCatching { run("shell", "pidof", PACKAGE).trim() }.getOrDefault("")
 
     /** Replaces the stored policy locally, without going through the parent. */
     fun seedPolicy(policyJson: String) {
@@ -502,6 +577,37 @@ class ChildDevice(
      */
     fun tunnelUp(): Boolean = run("shell", "ip", "addr", "show", "tun0").contains(TUN_ADDRESS)
 
+    /**
+     * Every package the OS reports suspended for the main user, from ONE package dump. The
+     * question a release has to answer is not "is the fixture free" but "is anything still held"
+     * — a package nobody named is exactly the one nothing would ever unsuspend again.
+     */
+    fun suspendedPackages(): Set<String> = packagesWhere("suspended=true")
+
+    /** Same, for packages hidden from the user (a different knob with the same effect). */
+    fun hiddenPackages(): Set<String> = packagesWhere("hidden=true")
+
+    private fun packagesWhere(userStateFlag: String): Set<String> {
+        val header = Regex("^\\s*Package \\[([^\\]]+)\\]")
+        var current = ""
+        val found = mutableSetOf<String>()
+        for (line in run("shell", "dumpsys", "package", "packages").lineSequence()) {
+            val match = header.find(line)
+            if (match != null) {
+                current = match.groupValues[1]
+                continue
+            }
+            if (current.isNotEmpty() && line.trimStart().startsWith("User 0:") && userStateFlag in line) {
+                found += current
+            }
+        }
+        return found
+    }
+
+    /** The global private-DNS mode ("off", "opportunistic", "hostname"), or "" when unset. */
+    fun privateDnsMode(): String =
+        run("shell", "settings", "get", "global", "private_dns_mode").trim().takeIf { it != "null" }.orEmpty()
+
     /** The package the OS has pinned as the always-on VPN, or "" for none. */
     fun alwaysOnVpnPackage(): String =
         run("shell", "dumpsys", "device_policy")
@@ -646,6 +752,12 @@ class ChildDevice(
         /** The un-dismissable "Walcott is protecting this device" one. */
         const val ONGOING_CHANNEL = "walcott_enforcement_quiet"
         private const val ADB_TIMEOUT_SEC = 120L
+
+        /** How many times `dpm set-device-owner` is tried before the suite gives up. */
+        private const val REPROVISION_ATTEMPTS = 3
+
+        /** What the seed receiver logs once a `mode reset` has actually been written. */
+        private const val RESET_MARKER = "WalcottSeed: identity reset"
 
         /** Flattened component of the notification listener declared in the app's manifest. */
         private const val NOTIFICATION_LISTENER =

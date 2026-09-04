@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.SupervisorAccount
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.sync.DeviceMode
 import dev.walcott.ui.components.WalcottCard
@@ -60,11 +62,18 @@ fun ModeSelectScreen(
     var familyName by rememberSaveable { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
     val defaultFamilyName = stringResource(R.string.family_default_name)
+    val identity by viewModel.identity.collectAsStateWithLifecycle()
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(spacing.screen),
         verticalArrangement = Arrangement.Center,
     ) {
+        // A phone that was just freed lands here. Say so, and say what (if anything) could not
+        // be given back — this is the one screen its owner is certain to see afterwards.
+        if (identity.released) {
+            ReleasedCard(identity.releaseReport)
+            Spacer(Modifier.height(spacing.xl))
+        }
         Text(
             stringResource(R.string.mode_select_title),
             style = MaterialTheme.typography.headlineMedium,
@@ -138,6 +147,38 @@ fun ModeSelectScreen(
         // Disaster recovery: a replaced parent phone loads the family backup file and the
         // whole family comes back — children keep obeying without being touched.
         RestoreBackupCard(viewModel, onRestored = onParentCreated)
+    }
+}
+
+/** The release's last word on the device it left (see PanicRelease and DeviceHandback). */
+@Composable
+private fun ReleasedCard(report: List<String>) {
+    val spacing = Tokens.spacing
+    val context = androidx.compose.ui.platform.LocalContext.current
+    WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {
+        Column(Modifier.padding(spacing.lg)) {
+            Text(stringResource(R.string.released_card_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.released_card_text),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
+            if (report.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.released_card_report, report.joinToString()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = spacing.xs),
+                )
+            }
+            TextButton(
+                onClick = { dev.walcott.enforcement.PanicRelease.requestUninstall(context) },
+                modifier = Modifier.padding(top = spacing.xs),
+            ) {
+                Text(stringResource(R.string.release_uninstall_action))
+            }
+        }
     }
 }
 

@@ -90,6 +90,7 @@ class PanicCountdownScenarioTest : DeviceScenario() {
         awaitDevice("the app shut by the window", timeoutMs = 60_000) { device.isSuspended(pkg) }
         awaitDevice("force-stop greyed out") { device.hasRestriction("no_control_apps") }
 
+        device.clearLogcat()
         startCompressedRequest()
         val opened = parent.awaitChild { it.panic != null }.panic
         requireNotNull(opened)
@@ -112,6 +113,33 @@ class PanicCountdownScenarioTest : DeviceScenario() {
         awaitDevice("VPN settings unlocked") { !device.hasRestriction("no_config_vpn") }
         awaitDevice("private DNS unlocked") { !device.hasRestriction("no_config_private_dns") }
         awaitDevice("management given up", timeoutMs = 90_000) { !device.isDeviceOwner() }
+        assertHandedBack()
+    }
+
+    @Test
+    fun `twelve notices out and the relay gone, the phone still frees itself`() {
+        // The deal is twelve hours of a phone that can be REACHED, and after the twelfth notice
+        // the phone has kept its side of it. The final pause exists for the parent's refusal, and
+        // a phone that cannot hear one — no network, a relay that died — waits the same pause and
+        // then goes, which is what it earned (see SyncManager.releaseAfterListening). Stopping
+        // the relay is the one real outage this harness can produce: the socket is closed and
+        // nothing answers at the port afterwards.
+        device.clearLogcat()
+        startCompressedRequest()
+        parent.awaitChild { it.panic != null }
+        val full = parent.awaitChild(timeoutMs = 4 * 60_000) {
+            (it.panic?.checkpoints ?: 0) >= PanicProtocol.REQUIRED_CHECKPOINTS
+        }
+        assertEquals(PanicProtocol.REQUIRED_CHECKPOINTS, full.panic?.checkpoints)
+        val publishedBefore = relay.published(parent.topic).size
+        // Quickly: the compressed pause is a handful of seconds, and the relay has to be gone
+        // before it ends. A short wait for the close handshake, not the default.
+        relay.stop(waitMs = 200)
+
+        awaitDevice("management given up with no relay to hear it", timeoutMs = 90_000) { !device.isDeviceOwner() }
+        assertHandedBack()
+        // Nothing reached the relay after it stopped — the release did not depend on the channel.
+        assertEquals(publishedBefore, relay.published(parent.topic).size, "the relay took messages after stopping")
     }
 
     @Test
@@ -147,17 +175,6 @@ class PanicCountdownScenarioTest : DeviceScenario() {
     fun cleanUpAndReprovision() {
         runCatching { device.allowInstallsFor(0) }
         runCatching { device.ensureRemoved(Fixture.FIRST.pkg) }
-        reprovision()
-    }
-
-    private fun reprovision() {
-        if (!device.isAvailable() || device.isDeviceOwner()) return
-        val result = runCatching {
-            device.run("shell", "dpm", "set-device-owner", "dev.walcott/.WalcottAdminReceiver")
-        }.getOrElse { it.message.orEmpty() }
-        check(device.isDeviceOwner()) {
-            "the device could not be made Device Owner again ($result). Re-provision it before " +
-                "running the rest of the suite, or every scenario will skip and pass."
-        }
+        device.reprovisionDeviceOwner()
     }
 }

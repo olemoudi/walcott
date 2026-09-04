@@ -42,26 +42,71 @@ object DeviceHandback {
     private const val TAG = "WalcottPanic"
 
     /**
-     * Puts everything back, and says what it did. Returns false when something was refused, so
-     * the caller can leave a trace worth reading afterwards — but it never throws and never
-     * stops early, because a partial handback is the thing to avoid, not to report.
+     * Puts everything back, checks, and says what would not come off — by name, as an empty
+     * list when the phone is clean. It never throws and never stops early, because a partial
+     * handback is the thing to avoid, not to report.
+     *
+     * The check is a second question to the system, not a tally of refusals: a call can succeed
+     * and leave the state it was meant to change (the bulk unsuspend answers with a list nobody
+     * has to read), and a re-assert from elsewhere can land between two steps. Anything still
+     * held after the first pass gets one more sweep, and what survives that is the answer.
      *
      * Safe on a device that is not a Device Owner: it does nothing at all.
      */
-    fun run(context: Context): Boolean {
-        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return true
-        if (!dpm.isDeviceOwnerApp(context.packageName)) return true
+    fun run(context: Context): List<String> {
+        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return emptyList()
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return emptyList()
         val admin = WalcottAdminReceiver.componentName(context)
+        sweep(context, dpm, admin)
+        var held = stillHeld(context, dpm, admin)
+        if (held.isNotEmpty()) {
+            DebugLog.w(TAG, "handback: still held after the first pass, sweeping again: ${held.joinToString()}")
+            sweep(context, dpm, admin)
+            held = stillHeld(context, dpm, admin)
+        }
+        if (held.isEmpty()) {
+            DebugLog.w(TAG, "handback: everything came off cleanly")
+        } else {
+            DebugLog.e(TAG, "handback: could not give back: ${held.joinToString()}")
+        }
+        return held
+    }
+
+    private fun sweep(context: Context, dpm: DevicePolicyManager, admin: ComponentName) {
         val failures = Failures()
         clearEveryRestriction(context, dpm, admin, failures)
         freeEveryPackage(context, dpm, admin, failures)
         clearEveryPolicy(context, dpm, admin, failures)
-        if (failures.count == 0) {
-            DebugLog.w(TAG, "handback: everything came off cleanly")
-        } else {
+        if (failures.count > 0) {
             DebugLog.e(TAG, "handback: ${failures.count} step(s) refused: ${failures.what.joinToString()}")
         }
-        return failures.count == 0
+    }
+
+    /**
+     * What this admin is still holding, asked of the system after a sweep: restrictions it set,
+     * packages it keeps suspended, hidden or undeletable, the always-on VPN if it is ours, and
+     * the reset-password token. Every read is guarded and a read that throws is NOT counted —
+     * a package uninstalled halfway through must never be the thing that blocks a release.
+     */
+    private fun stillHeld(context: Context, dpm: DevicePolicyManager, admin: ComponentName): List<String> {
+        val held = mutableListOf<String>()
+        fun note(what: String) {
+            if (held.size < MAX_NAMED) held += what
+        }
+        runCatching { dpm.getUserRestrictions(admin) }.getOrNull()?.let { bundle ->
+            bundle.keySet().filter { bundle.getBoolean(it) }.sorted().forEach { note("restriction $it") }
+        }
+        val packages = runCatching {
+            context.packageManager.getInstalledApplications(0).map { it.packageName }.distinct()
+        }.getOrDefault(emptyList())
+        for (pkg in packages) {
+            if (runCatching { dpm.isPackageSuspended(admin, pkg) }.getOrDefault(false)) note("suspended $pkg")
+            if (runCatching { dpm.isApplicationHidden(admin, pkg) }.getOrDefault(false)) note("hidden $pkg")
+            if (runCatching { dpm.isUninstallBlocked(admin, pkg) }.getOrDefault(false)) note("undeletable $pkg")
+        }
+        if (runCatching { dpm.getAlwaysOnVpnPackage(admin) }.getOrNull() == context.packageName) note("always-on vpn")
+        if (runCatching { dpm.isResetPasswordTokenActive(admin) }.getOrDefault(false)) note("reset-password token")
+        return held
     }
 
     /**
@@ -271,6 +316,6 @@ object DeviceHandback {
         android.Manifest.permission.POST_NOTIFICATIONS,
     )
 
-    /** How many refused steps are named in the log line before it is just a count. */
+    /** How many refused steps, and how many things still held, are named before it is a count. */
     private const val MAX_NAMED = 12
 }

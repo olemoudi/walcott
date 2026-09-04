@@ -18,6 +18,8 @@ object LocationPolicy {
     fun ensureEnforced(context: Context) {
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        // The handback puts these grants back to DEFAULT; re-granting behind it would undo that.
+        if (dev.walcott.enforcement.PanicRelease.inProgress) return
         val admin = WalcottAdminReceiver.componentName(context)
         val pkg = context.packageName
         // Grant foreground location if missing, then hand control back to DEFAULT. Keeping

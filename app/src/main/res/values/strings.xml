@@ -201,12 +201,12 @@
     <string name="parent_pin_reminder_hint">Forgot it? It can be shown on this phone. The children\'s phones only ever get a one-way hash of it.</string>
     <string name="parent_pin_show">Show the PIN</string>
     <string name="parent_pin_create">Set the family PIN</string>
-    <string name="parent_pin_create_why">It opens parent mode, and it is what frees a child\'s phone if this one is ever lost. Without it that takes a 24-hour request from the child\'s device.</string>
+    <string name="parent_pin_create_why">It opens parent mode, and it is what frees a child\'s phone if this one is ever lost. Without it that takes a 12-hour request from the child\'s device.</string>
     <string name="setup_step_pin">Set the family PIN</string>
     <string name="notice_expired">No answer about %1$s</string>
     <string name="notice_expired_desc">Nobody answered in time, so the request is closed. You can ask again.</string>
     <string name="enroll_needs_pin_title">Set the family PIN first</string>
-    <string name="enroll_needs_pin_text">It is the key that frees this phone if yours is lost or broken. Without it, the only way back is a 24-hour request from the child\'s own device.</string>
+    <string name="enroll_needs_pin_text">It is the key that frees this phone if yours is lost or broken. Without it, the only way back is a 12-hour request from the child\'s own device.</string>
     <string name="release_device_no_pin">Your family has no PIN yet, so nothing can authorise this. Ask a parent to set one — it reaches this phone on the next sync.</string>
     <string name="parent_pin_show_note">Kept on this phone only. The children\'s phones never store it in the clear.</string>
     <string name="pin_show_biometric_title">Confirm it\'s you</string>
@@ -1343,6 +1343,7 @@
     <string name="diag_show_log">Show log (%1$d)</string>
     <string name="diag_hide_log">Hide log</string>
     <string name="remote_result_diag_sent">health report sent</string>
+    <string name="remote_result_expired">the phone was away for more than a week, so the request lapsed — send it again</string>
     <!-- Update canary (children follow the parent's version) -->
     <string name="update_state_waiting_parent">%1$s is out — this device waits until the parent\'s phone runs it</string>
     <string name="child_update_waiting_parent">Will update after your phone does — your phone is the canary for new versions.</string>
@@ -1433,7 +1434,11 @@
     <string name="release_done_title">Device released</string>
     <string name="release_done_text">Walcott no longer manages this device. You can uninstall it now if you want no trace left.</string>
     <string name="release_uninstall_action">Uninstall</string>
-    <!-- Emergency release: the child-initiated one (24 h, see PanicProtocol) -->
+    <!-- Shown on the mode screen of a phone that was freed, whichever door it went through -->
+    <string name="released_card_title">Walcott has left this phone</string>
+    <string name="released_card_text">Every app and setting was given back and the rules were erased. You can uninstall it now, or set it up again from here.</string>
+    <string name="released_card_report">A few things could not be put back: %1$s</string>
+    <!-- Emergency release: the child-initiated one (12 h, see PanicProtocol) -->
     <string name="panic_entry">Emergency: release this device</string>
     <string name="panic_title">Emergency release</string>
     <string name="panic_intro_title">Only for a real emergency</string>
@@ -1837,6 +1842,11 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_102_0">
+        <item>Freeing a phone — with the parent PIN on the phone itself, from your own phone, or by the twelve-hour request — can no longer leave one half-freed. The part that gives everything back and the part that stops enforcing the rules used to overlap by a few seconds, and an app the rules re-blocked inside that gap would have stayed blocked for good, with nothing left on the phone able to lift it. Enforcement now stops first and is waited for; nothing can re-arm behind it; and the phone checks afterwards that it really let go of everything, sweeping again if it did not.</item>
+        <item>A release interrupted halfway — the phone dying or being switched off in the middle of it — is now finished by itself the next time the app starts, whichever door the release came through. And the phone says so when it is done: it shows what it gave back, tells you if anything could not be put back, and offers to uninstall itself.</item>
+        <item>When you free a phone from your own, the confirmation is now waited for rather than merely sent, so a freed phone can be told apart from one that simply went quiet. If the phone was away for more than a week the request lapses, and your phone now says that in plain words instead of showing "expired" — send it again.</item>
     </string-array>
     <string-array name="whats_new_0_101_0">
         <item>The emergency release now only counts a notice your family\'s relay really took. A hotel or airport wi-fi that answers everything with a sign-in page — or any proxy that says "OK" and quietly swallows the message — used to pass for the relay: the notice was counted, a delivery time was invented for it, and the check that stops the countdown being rushed was skipped along with it. A notice you were never sent can no longer count towards releasing a phone.</item>

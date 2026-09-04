@@ -38,6 +38,27 @@ class RemoteCommandScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `a release too old to still be meant is refused and changes nothing`() {
+        // A phone that was off for longer than the parent's own queue keeps a command comes back
+        // to a release nobody may still mean — and freeing a phone cannot be undone without a
+        // factory reset, so the child refuses it (see RemoteAction.RELEASE_TTL_MS). The parent is
+        // told why, and the phone is exactly as it was: still managed, still applying its rules.
+        val pkg = installFixtureApp()
+        parent.pushPolicy(PolicyJson.build(version = 2, dailyMinutes = mapOf(pkg to 0)))
+        awaitDevice("the app suspended by its rules", timeoutMs = 60_000) { device.isSuspended(pkg) }
+
+        val eightDaysAgo = System.currentTimeMillis() - 8 * 24 * 60 * 60 * 1000L
+        val commandId = parent.sendCommand(deviceId, RemoteAction.RELEASE_DEVICE, issuedAtMs = eightDaysAgo)
+        val ack = parent.awaitAck(commandId)
+        assertFalse(ack.ok, "a stale release should not be honoured")
+        assertEquals(RemoteAction.DETAIL_EXPIRED, ack.detail)
+
+        assertTrue(device.isDeviceOwner(), "a refused release gave up Device Owner")
+        assertTrue(device.isSuspended(pkg), "a refused release unsuspended the app")
+        device.ensureRemoved(pkg)
+    }
+
+    @Test
     fun `an action this build has never heard of is refused, not fatal`() {
         // Forward compatibility in the other direction: a NEWER parent naming a command an older
         // child does not implement. The child must say so and carry on being a working child.

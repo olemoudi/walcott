@@ -66,23 +66,7 @@ tasks.register<Test>("e2eTest") {
         events("passed", "failed", "skipped")
         showStandardStreams = true
     }
-    // A suite whose every scenario skipped its preconditions passes the build while proving
-    // nothing — the most expensive kind of green there is. Count what actually ran and refuse
-    // to call it a success if that is zero.
-    var executed = 0
-    afterTest(
-        KotlinClosure2<TestDescriptor, TestResult, Unit>({ _, result ->
-            if (result.resultType != TestResult.ResultType.SKIPPED) executed++
-        }),
-    )
-    doLast {
-        if (executed == 0) {
-            throw GradleException(
-                "no scenario ran: every one skipped its preconditions (device attached? " +
-                    "debug build installed? network up?). A skipped suite is not a passing suite.",
-            )
-        }
-    }
+    failWhenNothingRan()
 }
 
 /**
@@ -100,5 +84,28 @@ tasks.register<Test>("e2eReleaseTest") {
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true
+    }
+    failWhenNothingRan()
+}
+
+/**
+ * A suite whose every scenario skipped its preconditions passes the build while proving
+ * nothing — the most expensive kind of green there is. Count what actually ran and refuse
+ * to call it a success if that is zero.
+ */
+fun Test.failWhenNothingRan() {
+    var executed = 0
+    afterTest(
+        KotlinClosure2<TestDescriptor, TestResult, Unit>({ _, result ->
+            if (result.resultType != TestResult.ResultType.SKIPPED) executed++
+        }),
+    )
+    doLast {
+        if (executed == 0) {
+            throw GradleException(
+                "no scenario ran: every one skipped its preconditions (device attached? " +
+                    "debug build installed? Device Owner provisioned?). A skipped suite is not a passing suite.",
+            )
+        }
     }
 }

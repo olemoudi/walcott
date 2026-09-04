@@ -31,6 +31,9 @@ object VpnController {
         settings.hasWebFilter() || monitoring || curfew.isNotEmpty()
 
     fun apply(context: Context, enabled: Boolean) {
+        // Never pin the always-on VPN back onto an app that is in the middle of giving up Device
+        // Owner: after that, nothing could ever unpin it. Turning it OFF is always allowed.
+        if (enabled && dev.walcott.enforcement.PanicRelease.inProgress) return
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
         val admin = WalcottAdminReceiver.componentName(context)
         val isDeviceOwner = dpm.isDeviceOwnerApp(context.packageName)

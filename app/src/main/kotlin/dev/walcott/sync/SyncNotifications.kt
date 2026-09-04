@@ -320,7 +320,7 @@ object SyncNotifications {
 
     /**
      * A child asked to be released from Walcott (see [PanicProtocol]). Posted on the request and
-     * again on every two-hourly notice — the drum-beat is what makes the release refusable — and
+     * again on every hourly notice — the drum-beat is what makes the release refusable — and
      * carries a one-tap refusal, since the alert may well arrive at 3 a.m. and the parent
      * shouldn't have to open the app to stop it.
      */

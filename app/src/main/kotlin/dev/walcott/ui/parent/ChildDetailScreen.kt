@@ -2173,6 +2173,7 @@ internal fun remoteResultLabel(context: android.content.Context, detail: String)
     "waiting_wifi" -> context.getString(R.string.remote_result_waiting_wifi)
     "busy" -> context.getString(R.string.remote_result_busy)
     "diag_sent" -> context.getString(R.string.remote_result_diag_sent)
+    "expired" -> context.getString(R.string.remote_result_expired)
     else -> if (detail.contains('_')) context.getString(R.string.remote_result_notified) else detail
 }
 

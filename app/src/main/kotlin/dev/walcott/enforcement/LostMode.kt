@@ -23,6 +23,8 @@ object LostMode {
 
     /** Locks the screen (when [on]) and writes or clears the lock-screen line. */
     fun apply(context: Context, on: Boolean, message: String) {
+        // A lock-screen line written mid-release would outlive the app that wrote it.
+        if (on && PanicRelease.inProgress) return
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
         if (!dpm.isDeviceOwnerApp(context.packageName)) {
             DebugLog.w(TAG, "not Device Owner: cannot lock the screen or write on it")
