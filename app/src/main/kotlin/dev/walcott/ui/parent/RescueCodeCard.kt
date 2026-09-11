@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.sync.RescueCode
 import dev.walcott.ui.WalcottViewModel
@@ -61,7 +62,16 @@ internal fun RescueCodeCard(viewModel: WalcottViewModel) {
             delay(1_000)
         }
     }
-    val code = remember(action, RescueCode.slotOf(nowMs)) { viewModel.rescueCodeNow(action, nowMs) }
+    // Whose phone: the code is bound to one device (see RescueCode.codeFor), so a family with
+    // several children picks one. A child too old to bind still answers to the family-wide code.
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val phones = syncState.children
+    var pickedDeviceId by remember { mutableStateOf<String?>(null) }
+    val picked = phones.firstOrNull { it.deviceId == pickedDeviceId } ?: phones.firstOrNull()
+    val codeDeviceId = picked?.takeIf { RescueCode.bindsToDevice(it.appVersionCode) }?.deviceId ?: ""
+    val code = remember(action, RescueCode.slotOf(nowMs), codeDeviceId) {
+        viewModel.rescueCodeNow(action, nowMs, codeDeviceId)
+    }
 
     WalcottCard {
         Column(Modifier.padding(spacing.lg)) {
@@ -90,6 +100,25 @@ internal fun RescueCodeCard(viewModel: WalcottViewModel) {
             }
 
             Spacer(Modifier.size(spacing.md))
+            if (phones.isEmpty()) {
+                Text(
+                    stringResource(R.string.rescue_no_members),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                return@Column
+            }
+            if (phones.size > 1) {
+                Text(stringResource(R.string.rescue_pick_member), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    phones.forEach { phone ->
+                        ActionChip(phone.displayName, enabled = phone.deviceId != picked?.deviceId) {
+                            pickedDeviceId = phone.deviceId
+                        }
+                    }
+                }
+                Spacer(Modifier.size(spacing.sm))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 RescueCode.ACTIONS.forEach { candidate ->
                     ActionChip(

@@ -46,18 +46,16 @@ class ScreenBudgetScenarioTest : DeviceScenario() {
      * Spends the rest of the phone's day, on [pkg], and says so out loud.
      *
      * The extra time is the part that has to be seeded past, and forgetting it is why the first
-     * draft of this class reported a product that had stopped enforcing: a blanket grant widens
-     * the DAY as well as an app's budget (see FamilyConfig.screenAllowanceAt), those grants live
-     * in Room until midnight, and every earlier scenario that hands out bonus minutes leaves
-     * some behind. Worse, it made the "never limit" test pass while the day was never spent at
-     * all — an assertion about nothing, which is the shape of lie this suite has been bitten by
-     * before.
+     * draft of this class reported a product that had stopped enforcing: EVERY grant widens the
+     * DAY as well as an app's budget (see FamilyConfig.screenAllowanceAt — since 0.107 a grant
+     * to one app does too), those grants live in Room until midnight, and every earlier scenario
+     * that hands out bonus minutes leaves some behind. Worse, it made the "never limit" test pass
+     * while the day was never spent at all — an assertion about nothing, which is the shape of
+     * lie this suite has been bitten by before.
      */
     private fun spendTheDay(pkg: String) {
-        val dayWide = childReports { true }.extra
-            .filter { it.categoryId == ALL_APPS || it.categoryId == EARNED }
-            .sumOf { it.seconds }
-        device.addUsage(pkg to (HEADROOM_MINUTES * 60L + dayWide + SLACK_SECONDS))
+        val extra = childReports { true }.extra.sumOf { it.seconds }
+        device.addUsage(pkg to (HEADROOM_MINUTES * 60L + extra + SLACK_SECONDS))
     }
 
     @Test
@@ -196,7 +194,6 @@ class ScreenBudgetScenarioTest : DeviceScenario() {
 
     private companion object {
         const val ALL_APPS = "__all_apps__"
-        const val EARNED = "__earned__"
 
         /** Enough past the line that a second of sampling while this runs cannot undo it. */
         const val SLACK_SECONDS = 120L

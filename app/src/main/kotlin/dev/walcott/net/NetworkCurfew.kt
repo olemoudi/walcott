@@ -94,7 +94,7 @@ object NetworkCurfew {
      * Re-derives the standing half at most once a [STANDING_TTL_MS]: this sits in the path of
      * every DNS query the phone makes, and a window is a thing that turns over on the hour.
      */
-    suspend fun cutOffNow(repository: WalcottRepository): Set<String> {
+    suspend fun cutOffNow(repository: WalcottRepository, rescued: Boolean = false): Set<String> {
         val since = android.os.SystemClock.elapsedRealtime()
         if (since - standingAt > STANDING_TTL_MS) {
             standingAt = since
@@ -105,6 +105,7 @@ object NetworkCurfew {
                     // arrives — so a browser installed this afternoon is in tonight's window.
                     repository.inventory.browserPackages(),
                     java.time.LocalDateTime.now(),
+                    rescued = rescued,
                 )
             }.onFailure {
                 // Once per outage, not once per lookup: this sits in the path of every DNS query.

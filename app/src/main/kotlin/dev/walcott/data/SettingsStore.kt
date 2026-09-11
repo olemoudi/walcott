@@ -22,11 +22,15 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
 
     /**
      * Set when a stored blob was present but wouldn't decode. That case is quietly disastrous
-     * on a child: the empty fallback classifies every app as unknown, so everything gets
-     * blocked, and the parent's periodic re-emit can't repair it — re-emits reuse the same
-     * version, which the replay gate rejects. [dev.walcott.sync.SyncManager] consumes this to
-     * force the next parent snapshot to be adopted. Re-set on every read while it lasts, so
-     * losing the flag can't strand the device.
+     * on a child, in the direction one would not guess: limits are per app, so an EMPTY policy
+     * blocks nothing at all, and an empty restriction set is an instruction to clear every
+     * device restriction — a child with a broken file would come out with no rules and no
+     * protection. So the last policy this process decoded is kept and handed out instead (see
+     * [decode]); when there is none, the empty fallback says so ([PolicySettings.fallback]) and
+     * the restriction appliers stand still. Either way the parent's periodic re-emit can't
+     * repair it — re-emits reuse the same version, which the replay gate rejects — so
+     * [dev.walcott.sync.SyncManager] consumes this to force the next parent snapshot to be
+     * adopted. Re-set on every read while it lasts, so losing the flag can't strand the device.
      */
     @Volatile
     var corruptionSeen: Boolean = false
@@ -70,7 +74,10 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
             // version the replay gate would reject — so it would sit on an empty policy until
             // somebody happened to edit a rule. Raising the same flag a bad blob raises is what
             // makes the next parent snapshot adopted whatever its version.
-            if (WalcottDataStores.wasReplaced(fileName)) corruptionSeen = true
+            if (WalcottDataStores.wasReplaced(fileName)) {
+                corruptionSeen = true
+                return lastGood() ?: PolicySettings(fallback = true)
+            }
             return PolicySettings()
         }
         cache?.let { hit -> if (raw === hit.raw || raw == hit.raw) return hit.settings }
@@ -82,16 +89,22 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
             .map { it.migratedFromCategories() }
             .getOrElse {
                 corruptionSeen = true
-                dev.walcott.debug.DebugLog.e(TAG, "stored policy is unreadable; falling back to empty", it)
-                // Deliberately NOT cached. The flag has to be re-raised on every read while the
-                // corruption lasts (see [corruptionSeen]) — caching the fallback would raise it
-                // exactly once, and a consumer that had already taken it would never see it
-                // again, stranding a child with every app blocked.
-                return PolicySettings()
+                dev.walcott.debug.DebugLog.e(TAG, "stored policy is unreadable; keeping the last good one", it)
+                // Deliberately NOT cached under this raw. The flag has to be re-raised on every
+                // read while the corruption lasts (see [corruptionSeen]) — caching the fallback
+                // would raise it exactly once, and a consumer that had already taken it would
+                // never see it again, stranding the device.
+                return lastGood() ?: PolicySettings(fallback = true)
             }
         cache = Decoded(raw, decoded)
         return decoded
     }
+
+    /**
+     * The last policy that decoded in this process, if any — what a child keeps enforcing while
+     * the stored one cannot be read. It is only ever a policy the parent actually sent.
+     */
+    private fun lastGood(): PolicySettings? = cache?.settings
 
     val settings: Flow<PolicySettings> = dataStore.data.map { prefs -> decode(prefs[key]) }
 

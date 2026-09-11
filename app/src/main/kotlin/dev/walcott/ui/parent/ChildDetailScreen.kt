@@ -513,6 +513,10 @@ fun ChildDetailScreen(
             if (snapshot != null && snapshot.enforcementGaps.isNotEmpty()) {
                 item { EnforcementGapCard(snapshot.enforcementGaps.size) }
             }
+            // --- Protections the phone itself refused: a switch that is on and does nothing ---
+            if (snapshot != null && snapshot.restrictionGaps.isNotEmpty()) {
+                item { RestrictionGapCard(snapshot.restrictionGaps) }
+            }
 
             // --- Apps that appeared unapproved: suspended there, waiting for the parent's call ---
             if (snapshot != null) {
@@ -1843,6 +1847,24 @@ private fun EnforcementGapCard(count: Int) {
             Spacer(Modifier.width(spacing.md))
             Text(
                 pluralStringResource(R.plurals.enforcement_gap_child, count, count),
+                style = MaterialTheme.typography.bodyMedium,
+                color = color,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RestrictionGapCard(keys: List<String>) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    val names = keys.map { key -> restrictionTitleRes(key)?.let { stringResource(it) } ?: key }
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(spacing.md))
+            Text(
+                stringResource(R.string.restriction_gap_child, names.joinToString()),
                 style = MaterialTheme.typography.bodyMedium,
                 color = color,
             )

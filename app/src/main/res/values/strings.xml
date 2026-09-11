@@ -186,7 +186,12 @@
     <string name="pin_subtitle_create">Choose a PIN for parent mode</string>
     <string name="pin_label">PIN</string>
     <string name="pin_repeat_label">Repeat the PIN</string>
-    <string name="pin_too_short">Use at least 4 digits</string>
+    <string name="pin_too_short">Use at least 6 digits</string>
+    <!-- Unit suffixes for compact durations ("1h 20m"); no space before them. -->
+    <string name="duration_unit_hour">h</string>
+    <string name="duration_unit_minute">m</string>
+    <string name="duration_unit_second">s</string>
+    <string name="parent_pin_short_warning">This PIN has fewer than %1$d digits. Change it: it guards the family\'s rules on every phone, and four digits are quick to guess.</string>
     <string name="pin_mismatch">The PINs don\'t match</string>
     <string name="pin_current_label">Current PIN</string>
     <string name="pin_new_label">New PIN</string>
@@ -333,6 +338,7 @@
     <string name="request_summary">%1$s · %2$d min</string>
     <string name="request_used_today">Already %1$s today</string>
     <string name="request_used_today_of">Already %1$s of %2$s today</string>
+    <string name="request_phone_today_of">The phone: %1$s of %2$s today. Minutes granted here add to that too.</string>
     <string name="request_grant_minutes">Give %1$d min</string>
 
     <!-- Sync: remote extra-time -->
@@ -721,7 +727,11 @@
     <string name="restriction_installs_title">Ask permission for new apps</string>
     <string name="restriction_installs_desc">New apps need your say-so. How that is enforced — Play left working and what appears suspended, or Play refused at the door — is the choice below.</string>
     <string name="restriction_add_user_title">Block new users</string>
-    <string name="restriction_add_user_desc">A second user profile would escape the rules</string>
+    <string name="restriction_add_user_desc">A second user or a guest would escape every rule, and so would switching to one that already exists</string>
+    <string name="restriction_debugging_title">Block USB debugging</string>
+    <string name="restriction_debugging_desc">Developer options and a computer with adb are a way round every rule the phone enforces</string>
+    <string name="restriction_safe_boot_title">Block safe mode</string>
+    <string name="restriction_safe_boot_desc">Safe mode starts the phone with every installed app off, Walcott and its web filter included</string>
     <string name="restriction_apps_control_title">Block app tampering</string>
     <string name="restriction_apps_control_desc">No force-stopping apps or clearing their data from Settings</string>
     <string name="restriction_unknown_sources_title">Block sideloading</string>
@@ -1272,6 +1282,7 @@
         <item quantity="one">%d app that should be blocked isn\'t actually suspended — Walcott is re-applying it</item>
         <item quantity="other">%d apps that should be blocked aren\'t actually suspended — Walcott is re-applying them</item>
     </plurals>
+    <string name="restriction_gap_child">This phone refused some protections, so their switches are on but not in force: %1$s</string>
     <plurals name="enforcement_gap_child">
         <item quantity="one">Self-test failed: %d app that should be blocked was not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
         <item quantity="other">Self-test failed: %d apps that should be blocked were not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
@@ -1372,10 +1383,10 @@
     <string name="restore_pass_title">Backup passphrase</string>
     <string name="restore_failed">Wrong passphrase or invalid backup file</string>
     <string name="local_backup_enable_title">Keep a copy on this phone</string>
-    <string name="local_backup_enable_body">Walcott can keep three encrypted copies of your family here, refreshed nightly, so uninstalling the app doesn\'t lose your rules. Enter your PIN once to switch it on.</string>
+    <string name="local_backup_enable_body">Walcott can keep three encrypted copies of your family here, refreshed nightly, so uninstalling the app doesn\'t lose your rules. They are sealed with a passphrase you choose — never with the PIN, which is too short to guard them.</string>
     <string name="local_backup_enable_action">Turn on</string>
-    <string name="local_backup_pin_prompt">Your PIN unlocks the copies if you ever need to restore them. It is asked for once.</string>
-    <string name="backup_local_note">Walcott also keeps three encrypted copies on this phone (%1$s), refreshed nightly and unlocked with your parent PIN. They survive uninstalling the app — but not losing or breaking the phone, which is what the backup above is for.</string>
+    <string name="local_backup_pass_prompt">Choose the passphrase that unlocks the copies if you ever restore them. There is no way to reset it, so keep it with your other backup.</string>
+    <string name="backup_local_note">Walcott also keeps three encrypted copies on this phone (%1$s), refreshed nightly and unlocked with the passphrase you chose for them. They survive uninstalling the app — but not losing or breaking the phone, which is what the backup above is for.</string>
     <string name="restore_pin_title">Parent PIN</string>
     <string name="restore_pin_label">Parent PIN</string>
     <string name="restore_pin_failed">Wrong PIN or invalid backup file</string>
@@ -1821,6 +1832,8 @@
     <string name="rescue_changes_in">A new code in %1$d min</string>
     <string name="rescue_once">Works once. Overheard or remembered, it is worth nothing a second time.</string>
     <string name="rescue_no_family">This phone does not belong to a family yet, so there is no code to give.</string>
+    <string name="rescue_no_members">No phone has checked in yet, so there is no code to give: a code opens one phone, and it has to be one the family already has.</string>
+    <string name="rescue_pick_member">Whose phone?</string>
     <string name="status_rescued">Open with a code until %1$s</string>
     <string name="status_screen_left">%1$s of phone left today</string>
     <string name="status_screen_spent">Today\'s screen time is used up</string>
@@ -1842,6 +1855,15 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_107_0">
+        <item>The key that signs Walcott used to be public — anyone could have built an app a child\'s phone would accept as an update to this one, and inherit everything it can do. This version rotates it. Once a phone has taken it, only releases signed with the new, private key are accepted; there is nothing to do on your side.</item>
+        <item>Freeing a phone now also removes an unlock PIN that Walcott set from your phone, before it gives up its powers. It never actually did: the step ran one step too late and refused itself. A phone that has just been freed could otherwise be one nobody knows the PIN to.</item>
+        <item>Rescue codes open one phone, the one you chose them for. With several children, the same six digits used to open every phone in the family for that half hour. Pick whose phone when you show a code.</item>
+        <item>A new PIN needs six digits. Four were ten thousand guesses, which is an afternoon. A PIN you already have keeps working, and the PIN card says if it is short. The nightly copies on your phone are now sealed with a passphrase you choose rather than with the PIN, which was too short to guard them: turn them on again from the card on your home screen.</item>
+        <item>Three more protections, on by default for a child: no second user or guest (a phone where none of the rules exist), no USB debugging, no safe mode. And a child\'s page now says if their phone refused any protection, instead of showing a switch that is on and does nothing.</item>
+        <item>Approving extra minutes for one app on a day whose total is spent now opens the phone by that many minutes, and the request card shows the phone\'s total beside the app\'s. The minutes used to be credited to the app while the day kept it shut.</item>
+        <item>The phone and contacts are never blocked, not even when the rules fail closed over a missing permission or a moved clock. A rescue code now also opens the browser and a phone that is protected without being managed. And every duration reads in the phone\'s language: "20 min", not "20m".</item>
     </string-array>
     <string-array name="whats_new_0_102_0">
         <item>Freeing a phone — with the parent PIN on the phone itself, from your own phone, or by the twelve-hour request — can no longer leave one half-freed. The part that gives everything back and the part that stops enforcing the rules used to overlap by a few seconds, and an app the rules re-blocked inside that gap would have stayed blocked for good, with nothing left on the phone able to lift it. Enforcement now stops first and is waited for; nothing can re-arm behind it; and the phone checks afterwards that it really let go of everything, sweeping again if it did not.</item>
@@ -2020,7 +2042,7 @@
     <string name="list_join_two">%1$s and %2$s</string>
     <string name="list_join_more">%1$s, %2$s</string>
     <string name="panic_start_refused">Couldn\'t start the request just now. Check the connection and try again.</string>
-    <string name="backup_local_needs_pin">Nightly copies on this phone are off until the family PIN is set and entered once — they are sealed with it.</string>
+    <string name="backup_local_needs_pin">Nightly copies on this phone are off. They are sealed with a passphrase you choose, never with the PIN — turn them on from the card on your home screen.</string>
     <string name="backup_local_failed">The nightly copy into %1$s could not be written last time it ran.</string>
 
     <!-- Finding the phone: ring on request, lost mode, and the phone's last word (0.97.0) -->

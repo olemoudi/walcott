@@ -11,6 +11,13 @@ import javax.crypto.spec.PBEKeySpec
  * android.util) so it stays unit-testable on the JVM.
  */
 object Pin {
+    /**
+     * Digits a new PIN must have. Four was ten thousand guesses: an afternoon against a lockout
+     * a moved clock could skip, and seconds against the hash every child carries in its policy.
+     * PINs set before this stay valid; the parent's PIN card asks for a longer one.
+     */
+    const val MIN_LENGTH = 6
+
     private const val ITERATIONS = 120_000
     private const val KEY_BITS = 256
 

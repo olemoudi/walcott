@@ -104,24 +104,31 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         // dispatched, not when the write landed (see ChildDevice.reset).
                         DebugLog.i("WalcottSeed", "identity reset")
                     }
+                    // `--es mode clear_extra`: forgets every granted minute, so a scenario that
+                    // expects a zero-minute budget to bite is not undone by an hour an earlier
+                    // scenario handed the same fixture (extra time outlives a re-pairing).
+                    "clear_extra" -> {
+                        target.repository.clearExtraTimeForDebug()
+                        DebugLog.i("WalcottSeed", "extra time cleared")
+                    }
                     // `--es mode local_backup [--es local_backup_slots daily,weekly,monthly]`:
                     // writes the shared-storage copies now, and logs what this install can see
                     // afterwards. Exists to answer the scoped-storage question on a device rather
                     // than from documentation: does the write need a permission, does the file
                     // outlive an uninstall, and can a reinstalled app still enumerate it.
-                    // `--es mode local_backup --es local_backup_pin 4291`: creates a family if
-                    // needed, derives the on-device backup key from that PIN and writes the copies
-                    // through the real path — so the resulting file can be pulled off the device
-                    // and decrypted elsewhere to prove it is genuinely restorable.
+                    // `--es mode local_backup --es local_backup_pass <passphrase>`: creates a
+                    // family if needed, seals the on-device copies under that passphrase and
+                    // writes them through the real path — so the resulting file can be pulled
+                    // off the device and decrypted elsewhere to prove it is genuinely restorable.
                     "local_backup" -> {
                         if (target.identityStore.current().role != dev.walcott.sync.Role.PARENT) {
                             target.syncManager.becomeParent("DebugFamily")
                         }
-                        val pin = intent.getStringExtra("local_backup_pin") ?: "4291"
-                        target.repository.setPin(pin)
-                        target.syncManager.cacheLocalBackupKey(pin)
+                        target.repository.setPin(intent.getStringExtra("local_backup_pin") ?: "429100")
+                        val passphrase = intent.getStringExtra("local_backup_pass") ?: "debug-passphrase-1234"
+                        target.syncManager.enableLocalBackups(passphrase.toCharArray())
                         val written = target.syncManager.writeDueLocalBackups(java.time.LocalDate.now())
-                        DebugLog.i("WalcottSeed", "local backup wrote=$written pin=$pin")
+                        DebugLog.i("WalcottSeed", "local backup wrote=$written")
                         DebugLog.i("WalcottSeed", "visible to this install: ${dev.walcott.sync.LocalBackupStore.listOwn(app)}")
                     }
                     // `--es mode clear_do`: drops Device Owner so the app can be uninstalled.

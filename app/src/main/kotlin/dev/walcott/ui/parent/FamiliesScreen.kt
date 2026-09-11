@@ -171,7 +171,7 @@ fun FamiliesScreen(
     var orphanDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
     var adoptingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
     var releasingDevice by remember { mutableStateOf<ChildSnapshot?>(null) }
-    val needsBackupPin by viewModel.localBackupNeedsPin.collectAsStateWithLifecycle()
+    val needsBackupPin by viewModel.localBackupOff.collectAsStateWithLifecycle()
     var showBackupPin by remember { mutableStateOf(false) }
     val families by viewModel.familySummaries.collectAsStateWithLifecycle()
     val multiFamily = families.size > 1
@@ -1473,17 +1473,24 @@ private fun LocalBackupPinDialog(viewModel: WalcottViewModel, onDismiss: () -> U
         title = { Text(stringResource(R.string.local_backup_enable_title)) },
         text = {
             Column {
-                Text(stringResource(R.string.local_backup_pin_prompt), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.local_backup_pass_prompt), style = MaterialTheme.typography.bodyMedium)
+                val tooShort = pin.isNotEmpty() && pin.length < dev.walcott.sync.FamilyBackup.MIN_PASSPHRASE_CHARS
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { pin = it; failed = false },
-                    label = { Text(stringResource(R.string.restore_pin_label)) },
-                    isError = failed,
-                    supportingText = { if (failed) Text(stringResource(R.string.pin_incorrect)) },
+                    label = { Text(stringResource(R.string.backup_pass_label)) },
+                    isError = failed || tooShort,
+                    supportingText = {
+                        if (tooShort) {
+                            Text(stringResource(R.string.backup_pass_short, dev.walcott.sync.FamilyBackup.MIN_PASSPHRASE_CHARS))
+                        } else if (failed) {
+                            Text(stringResource(R.string.backup_save_failed))
+                        }
+                    },
                     singleLine = true,
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
                     ),
                     modifier = Modifier.fillMaxWidth().padding(top = Tokens.spacing.sm),
                 )
@@ -1491,18 +1498,12 @@ private fun LocalBackupPinDialog(viewModel: WalcottViewModel, onDismiss: () -> U
         },
         confirmButton = {
             TextButton(
-                enabled = pin.isNotEmpty() && !busy,
+                enabled = pin.length >= dev.walcott.sync.FamilyBackup.MIN_PASSPHRASE_CHARS && !busy,
                 onClick = {
                     busy = true
                     scope.launch {
-                        // Verified first: deriving from a wrong PIN would seal every copy with a
-                        // key nobody can reproduce, and the failure would only show up at restore.
-                        if (viewModel.verifyPin(pin) is dev.walcott.data.PinResult.Ok) {
-                            viewModel.enableLocalBackup(pin)
-                            onDismiss()
-                        } else {
-                            failed = true
-                        }
+                        val ok = runCatching { viewModel.enableLocalBackups(pin) }.isSuccess
+                        if (ok) onDismiss() else failed = true
                         busy = false
                     }
                 },

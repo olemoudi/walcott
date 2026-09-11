@@ -249,23 +249,28 @@ class EnforcementService : LifecycleService() {
             while (currentCoroutineContext().isActive) {
                 // Report the outcome to the parent: a child silently stuck on an old build
                 // is otherwise only diagnosable by picking the device up.
-                runCatching { Updater(applicationContext).checkAndUpdate() }
-                    .onSuccess { outcome ->
-                        app.syncManager.recordUpdateError(
-                            when (outcome) {
-                                UpdateCheckOutcome.TRANSIENT_FAILURE -> "download_failed"
-                                UpdateCheckOutcome.INSTALL_FAILURE -> "install_failed"
-                                // Not a failure, but the parent should see WHY the child is
-                                // behind: it is deliberately waiting for the canary.
-                                UpdateCheckOutcome.WAITING_FOR_PARENT -> "waiting_parent"
-                                // Nor is this one: the family asked for Wi-Fi-only updates and
-                                // this phone has not seen Wi-Fi. Without it the child reports
-                                // nothing at all and sits months behind looking perfectly well.
-                                UpdateCheckOutcome.WAITING_FOR_WIFI -> "waiting_wifi"
-                                else -> ""
-                            },
-                        )
-                    }
+                // Both halves inside the guard: a throw from the report would leave this launch,
+                // and an uncaught throw from a service coroutine takes the child's process down.
+                runCatching {
+                    val outcome = Updater(applicationContext).checkAndUpdate()
+                    app.syncManager.recordUpdateError(
+                        when (outcome) {
+                            UpdateCheckOutcome.TRANSIENT_FAILURE -> "download_failed"
+                            UpdateCheckOutcome.INSTALL_FAILURE -> "install_failed"
+                            // Not a failure, but the parent should see WHY the child is
+                            // behind: it is deliberately waiting for the canary.
+                            UpdateCheckOutcome.WAITING_FOR_PARENT -> "waiting_parent"
+                            // Nor is this one: the family asked for Wi-Fi-only updates and
+                            // this phone has not seen Wi-Fi. Without it the child reports
+                            // nothing at all and sits months behind looking perfectly well.
+                            UpdateCheckOutcome.WAITING_FOR_WIFI -> "waiting_wifi"
+                            else -> ""
+                        },
+                    )
+                }.onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    DebugLog.e(TAG, "update check failed", it)
+                }
                 delay(UPDATE_CHECK_MILLIS)
             }
         }
@@ -569,20 +574,36 @@ class EnforcementService : LifecycleService() {
             ) { keys, exemptUntil -> keys to exemptUntil }
                 .distinctUntilChanged()
                 .collectLatest { (keys, exemptUntil) ->
-                    DeviceRestrictions.apply(this@EnforcementService, keys, exemptUntil)
-                    // Re-arm the install block when the exemption window closes. Two ways to
-                    // notice, because neither is enough on its own: an alarm, which is the only
-                    // clock that ticks on a sleeping phone (the nightly update window ends on
-                    // one by design), and this countdown, which is the precise one while the
-                    // phone is awake — an inexact alarm may run minutes late, and a ten-minute
-                    // window that becomes fourteen is a promise broken to whoever typed the PIN.
-                    val untilExpiry = exemptUntil - System.currentTimeMillis()
-                    if (untilExpiry > 0 && DeviceRestrictions.KEY_INSTALLS in keys) {
-                        InstallBlockAlarm.arm(this@EnforcementService, exemptUntil)
-                        delay(untilExpiry + 1_000)
-                        app.syncManager.rearmInstallBlock()
-                    } else {
-                        InstallBlockAlarm.cancel(this@EnforcementService)
+                    if (keys == null) {
+                        // The stored policy cannot be read (see PolicySettings.fallback): the
+                        // restrictions in force stay exactly as they are until a real one lands.
+                        DebugLog.w(TAG, "policy unreadable: leaving the device restrictions as they are")
+                        return@collectLatest
+                    }
+                    // Guarded like the loop itself (see runLoopResilient): a throw here would
+                    // end this collector for the life of the service, and the restrictions
+                    // would never be applied from here again while the service reported healthy.
+                    try {
+                        val refused = DeviceRestrictions.apply(this@EnforcementService, keys, exemptUntil)
+                        runCatching { app.syncManager.recordRestrictionGaps(refused) }
+                        // Re-arm the install block when the exemption window closes. Two ways to
+                        // notice, because neither is enough on its own: an alarm, which is the only
+                        // clock that ticks on a sleeping phone (the nightly update window ends on
+                        // one by design), and this countdown, which is the precise one while the
+                        // phone is awake — an inexact alarm may run minutes late, and a ten-minute
+                        // window that becomes fourteen is a promise broken to whoever typed the PIN.
+                        val untilExpiry = exemptUntil - System.currentTimeMillis()
+                        if (untilExpiry > 0 && DeviceRestrictions.KEY_INSTALLS in keys) {
+                            InstallBlockAlarm.arm(this@EnforcementService, exemptUntil)
+                            delay(untilExpiry + 1_000)
+                            app.syncManager.rearmInstallBlock()
+                        } else {
+                            InstallBlockAlarm.cancel(this@EnforcementService)
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                        DebugLog.e(TAG, "applying the device restrictions failed", t)
                     }
                 }
         }
@@ -607,6 +628,9 @@ class EnforcementService : LifecycleService() {
         while (currentCoroutineContext().isActive) {
             try {
                 runLoop()
+                // A normal return is the loop deciding it has nothing left to enforce (below);
+                // going round again would spin on that decision until the service dies.
+                return
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (t: Throwable) {
@@ -678,6 +702,15 @@ class EnforcementService : LifecycleService() {
         var healingFilter = false
 
         while (currentCoroutineContext().isActive) {
+            // A device that stopped enforcing — left child mode, was released — is handing its
+            // apps and settings back at this very moment. The stop that follows that transition
+            // is awaited, but a service the system has just restarted (START_STICKY) or a tick
+            // that outran the wait must not re-assert into the middle of the handback.
+            if (!app.syncManager.identity.value.enforcesLocally) {
+                DebugLog.w(TAG, "this device no longer enforces: leaving the enforcement loop")
+                stopSelf()
+                return
+            }
             val config = repo.configNow()
             val idleCfg = repo.idleEarnConfigNow()
             val nowForEarn = LocalDateTime.now()
@@ -848,7 +881,8 @@ class EnforcementService : LifecycleService() {
             // that resolves nothing for days — with no rule on any screen that would explain it —
             // is a worse failure than the one it would be covering.
             val deviceBlock = RuleEngine.deviceWideBlock(config, now)
-            val curfewWindow = deviceBlock != null
+            // No window while a rescue runs: it opens everything, browsers included.
+            val curfewWindow = deviceBlock != null && !rescued
             // The same guard the usage counters use: consecutive sightings only, so the slow tick
             // cannot charge one app for time spent in another. `creditedUsage` also carries
             // `in tracked`, which is what keeps the launcher and Walcott itself out of this.
@@ -1227,14 +1261,23 @@ class EnforcementService : LifecycleService() {
             val wantsLocation = LocationPolicy.hasFineLocation(this)
             val withLocation =
                 if (wantsLocation) special or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else special
-            if (runCatching { startForeground(NOTIF_ID, notification, withLocation) }.isFailure &&
-                withLocation != special
-            ) {
-                startForeground(NOTIF_ID, notification, special)
-                locationTypeHeld = false
-            } else {
-                locationTypeHeld = wantsLocation
+            // Tried richest first, and every refusal is said out loud: the old shape swallowed
+            // a refusal of the plain special-use type, and a service that never entered the
+            // foreground is killed by the system a few seconds later with nothing in the log —
+            // then restarted into the same silence, START_STICKY, for ever.
+            val candidates = if (withLocation != special) listOf(withLocation, special) else listOf(special)
+            val claimed = candidates.firstOrNull { type ->
+                runCatching { startForeground(NOTIF_ID, notification, type) }
+                    .onFailure { DebugLog.w(TAG, "startForeground refused for type $type", it) }
+                    .isSuccess
             }
+            if (claimed == null) {
+                DebugLog.e(TAG, "could not enter the foreground at all; stopping rather than being killed")
+                locationTypeHeld = false
+                stopSelf()
+                return
+            }
+            locationTypeHeld = claimed != special
         } else {
             startForeground(NOTIF_ID, notification)
             locationTypeHeld = true
@@ -1348,5 +1391,22 @@ class EnforcementService : LifecycleService() {
         fun stop(context: Context) {
             context.stopService(Intent(context, EnforcementService::class.java))
         }
+
+        /**
+         * Stops the service and waits for it to be DEAD rather than merely told to stop.
+         *
+         * `stopService` returns at once, and a tick already in flight keeps writing Device Owner
+         * state until the loop's scope is cancelled. Anything that is about to take that state
+         * off — the emergency release, a device leaving child mode — has to wait here first, or
+         * a re-assert lands in the middle of the handback and outlives it (see PanicRelease).
+         */
+        suspend fun stopAndAwait(context: Context) {
+            stop(context)
+            val stopped = withTimeoutOrNull(STOP_TIMEOUT_MS) { running.first { !it } } != null
+            if (!stopped) DebugLog.w(TAG, "the enforcement service did not confirm stopping; going on")
+        }
+
+        /** How long [stopAndAwait] waits for the service to confirm it has died. */
+        private const val STOP_TIMEOUT_MS = 5_000L
     }
 }

@@ -11,11 +11,9 @@ import dev.walcott.sync.HeartbeatAlarm
 import dev.walcott.sync.PanicAlarm
 import dev.walcott.sync.PanicNotifications
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The emergency release: hands the device back, leaving no sign it was ever enrolled.
@@ -79,8 +77,11 @@ object PanicRelease {
     /** Serializes the teardown: the parent's command and the child's PIN can arrive together. */
     private val releaseMutex = Mutex()
 
-    /** How long to wait for the enforcement service to confirm it has died once told to stop. */
-    private const val SERVICE_STOP_TIMEOUT_MS = 5_000L
+    /**
+     * What the release report says when the lock screen this app set could not be removed. A raw
+     * identifier like the ones [DeviceHandback] answers with, shown on the mode screen afterwards.
+     */
+    const val LOCK_SCREEN_HELD = "lock screen PIN"
 
     /**
      * Frees this device. Safe to call on a device that was never a Device Owner (the privileged
@@ -110,11 +111,7 @@ object PanicRelease {
             // 2. Stop everything that could re-arm enforcement, and wait for the loop to be dead
             // rather than merely told to stop: stopService returns at once, and a tick already in
             // flight would re-suspend into the middle of the handback below.
-            EnforcementService.stop(context)
-            val stopped = withTimeoutOrNull(SERVICE_STOP_TIMEOUT_MS) {
-                EnforcementService.running.first { !it }
-            } != null
-            if (!stopped) DebugLog.w(TAG, "the enforcement service did not confirm stopping; going on")
+            EnforcementService.stopAndAwait(context)
             // Every alarm that applies policy when it fires, cancelled by name. Each of them
             // self-heals when it fires on a device that no longer enforces — which is one fire
             // too late when it lands mid-handback.
@@ -126,7 +123,20 @@ object PanicRelease {
             runCatching { WorkManager.getInstance(context).cancelAllWork() }
             runCatching { VpnController.apply(context, false) }
 
-            // 3. Give the phone back: every restriction, every suspended, hidden or undeletable
+            // 3. The lock screen, if the credential in force is one this app set remotely. Device
+            // Owner only, and the sharpest deadline of the lot: a release that steps over this
+            // hands back a phone whose owner may never have been told the PIN, with nothing left on
+            // it that could ever reset one — the factory reset this whole feature exists to avoid,
+            // handed out as the reward for waiting twelve hours. A lock the owner chose is left alone.
+            //
+            // BEFORE the handback below, and not after, because the handback clears the
+            // reset-password token this step needs — a token registered afterwards is not active
+            // until the owner next unlocks, which is exactly the person who cannot.
+            val lockHeld = runCatching { app.syncManager.handBackLockScreen() }
+                .onFailure { DebugLog.e(TAG, "handing back the lock screen failed", it) }
+                .getOrDefault(false)
+
+            // 4. Give the phone back: every restriction, every suspended, hidden or undeletable
             // package, every other Device Owner knob — then asked again, and swept again if
             // anything stayed. All of it needs Device Owner rights, so it must precede step 8, and
             // it is the step that decides whether what comes out of this is a healthy phone (see
@@ -135,14 +145,7 @@ object PanicRelease {
             val held = runCatching { withContext(Dispatchers.IO) { DeviceHandback.run(context) } }
                 .onFailure { DebugLog.e(TAG, "handing the device settings back failed", it) }
                 .getOrDefault(emptyList())
-
-            // 4. And the lock screen, if the credential in force is one this app set remotely. Also
-            // Device Owner only, and the sharpest deadline of the lot: a release that steps over this
-            // hands back a phone whose owner may never have been told the PIN, with nothing left on
-            // it that could ever reset one — the factory reset this whole feature exists to avoid,
-            // handed out as the reward for waiting twelve hours. A lock the owner chose is left alone.
-            runCatching { app.syncManager.handBackLockScreen() }
-                .onFailure { DebugLog.e(TAG, "handing back the lock screen failed", it) }
+                .let { if (lockHeld) listOf(LOCK_SCREEN_HELD) + it else it }
 
             // 5. Forget the family: close the channel, drop the keys, keep the released flag and
             // what could not be given back (shown on the mode screen afterwards).

@@ -22,9 +22,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
@@ -1155,19 +1158,20 @@ class WalcottViewModel(
         viewModelScope.launch { onDone(sync.restoreBackup(fileJson, passphrase)) }
 
     /**
-     * True when this parent has a PIN but no key for the on-device copies yet, so the nightly
-     * backup cannot run. Only ever true for a family that already existed before the copies did:
-     * a new parent sets the PIN moments after creating the family and is keyed from day one.
+     * True while the nightly on-device copies are off: no key, or the PIN-derived key builds
+     * before 0.107 made, which is never used again (see [dev.walcott.sync.SyncManager.enableLocalBackups]).
      * Surfaced on the home rather than left to a settings screen — a safety net nobody is told
      * about is the same opt-in problem it was built to remove.
      */
-    val localBackupNeedsPin: StateFlow<Boolean> = combine(
-        sync.state, repository.settingsFlow,
-    ) { state, settings -> settings.pinHash != null && state.localBackupKeyB64.isBlank() }
+    val localBackupOff: StateFlow<Boolean> = sync.state
+        .map { !sync.localBackupsOn(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Derives and caches the on-device backup key from a PIN the parent just re-entered. */
-    suspend fun enableLocalBackup(pin: String) = sync.cacheLocalBackupKey(pin)
+    /** Whether the nightly on-device copies are on (see [dev.walcott.sync.SyncManager.localBackupsOn]). */
+    fun localBackupsOn(state: dev.walcott.sync.SyncState): Boolean = sync.localBackupsOn(state)
+
+    /** Turns the on-device copies on under a passphrase the parent just chose. */
+    suspend fun enableLocalBackups(passphrase: String) = sync.enableLocalBackups(passphrase.toCharArray())
 
     /** Toggle the "your backup is missing/stale" nudge notifications (all families). */
     fun setBackupReminders(enabled: Boolean) =
@@ -1267,7 +1271,11 @@ class WalcottViewModel(
                 .sorted(),
             rescued = rescued,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
+    }
+        // Off the main thread: the counters move every two seconds while a limited app is in
+        // use, and each emission resolves a label per card through PackageManager.
+        .flowOn(kotlinx.coroutines.Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChildUiState())
 
     /**
      * The one thing the child's own screen says about their numbers today, and the numbers
@@ -1275,17 +1283,28 @@ class WalcottViewModel(
      * (see [dev.walcott.data.Insights]), so it holds still while they read it.
      */
     val childInsight: StateFlow<dev.walcott.data.Insight?> =
-        repository.usageTodayAllFlow.map {
-            val today = java.time.LocalDate.now()
-            val day = today.toEpochDay()
-            dev.walcott.data.Insights.forToday(
-                today = it,
-                week = repository.usageBetween(day - 6, day),
-                month = repository.usageBetween(day - 29, day),
-                previousWeek = repository.usageBetween(day - 13, day - 7),
-                rotation = today.dayOfYear,
-            )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repository.usageTodayAllFlow
+            // A month of history is aggregated per emission, and the counters emit every two
+            // seconds while a limited app is in use: the first answer is immediate, the rest at
+            // most once a minute, and none of it on the main thread. A conflated upstream keeps
+            // only the newest counters for the next turn.
+            .conflate()
+            .transform {
+                val today = java.time.LocalDate.now()
+                val day = today.toEpochDay()
+                emit(
+                    dev.walcott.data.Insights.forToday(
+                        today = it,
+                        week = repository.usageBetween(day - 6, day),
+                        month = repository.usageBetween(day - 29, day),
+                        previousWeek = repository.usageBetween(day - 13, day - 7),
+                        rotation = today.dayOfYear,
+                    ),
+                )
+                delay(INSIGHT_MIN_INTERVAL_MS)
+            }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Everything this phone has been used for today, added up — the child's own headline. */
     val childScreenTimeToday: StateFlow<Duration> =
@@ -1511,11 +1530,11 @@ class WalcottViewModel(
      * nothing else on this phone cares about, and the screen showing it is already ticking to
      * count it down.
      */
-    fun rescueCodeNow(action: String, nowMs: Long): Pair<String, Long>? {
+    fun rescueCodeNow(action: String, nowMs: Long, deviceId: String): Pair<String, Long>? {
         val keyB64 = sync.identity.value.familyKeyB64.takeIf { it.isNotBlank() } ?: return null
         val key = dev.walcott.sync.FamilyCrypto.familyKeyFromBytes(dev.walcott.sync.FamilyCrypto.fromB64(keyB64))
         val slot = dev.walcott.sync.RescueCode.slotOf(nowMs)
-        return dev.walcott.sync.RescueCode.codeFor(key, action, slot) to
+        return dev.walcott.sync.RescueCode.codeFor(key, action, slot, deviceId) to
             dev.walcott.sync.RescueCode.slotEndsAtMs(slot)
     }
 
@@ -1540,3 +1559,6 @@ class WalcottViewModel(
         private const val DEFAULT_TRACKING_MINUTES = 15
     }
 }
+
+/** How often the child's insight line is recomputed while the counters keep moving. */
+private const val INSIGHT_MIN_INTERVAL_MS = 60_000L

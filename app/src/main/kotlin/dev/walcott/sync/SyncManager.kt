@@ -502,9 +502,15 @@ class SyncManager(
     suspend fun migrateRelay(server: String): RelayChangeResult {
         val id = identityStore.current()
         if (id.role != Role.PARENT) return RelayChangeResult.HAS_CHILDREN
-        val normalized = RelayServer.normalize(server) ?: return RelayChangeResult.INVALID
+        val normalized = RelayServer.normalize(server, cleartextAllowed = dev.walcott.BuildConfig.DEBUG)
+            ?: return RelayChangeResult.INVALID
         if (normalized == id.ntfyServer) return RelayChangeResult.OK
-        if (migrationOpen(id)) return RelayChangeResult.MIGRATION_RUNNING
+        // A move while another is still open is allowed, and keeps listening to the OLDEST
+        // relay rather than the one just left: it is the way back from a migration to a relay
+        // that turned out not to work, and the phones that never moved are still on the old
+        // one. Phones that did move to the relay being abandoned cannot be reached from here.
+        val open = migrationOpen(id)
+        if (open) dev.walcott.debug.DebugLog.w(TAG, "moving on from a migration still in flight")
 
         val devices = syncStore.current().children.map { it.deviceId }
         dev.walcott.debug.DebugLog.w(TAG, "moving this family to $normalized (${devices.size} device(s) to tell)")
@@ -516,7 +522,7 @@ class SyncManager(
         identityStore.save(
             id.copy(
                 ntfyServer = normalized,
-                previousNtfyServer = id.ntfyServer,
+                previousNtfyServer = if (open) id.previousNtfyServer else id.ntfyServer,
                 relayMigratedAtMs = System.currentTimeMillis(),
             ),
         )
@@ -532,7 +538,7 @@ class SyncManager(
 
     /** Child: adopts the relay the parent named, and reconnects there. */
     private suspend fun adoptRelay(server: String) {
-        val normalized = RelayServer.normalize(server) ?: return
+        val normalized = RelayServer.normalize(server, cleartextAllowed = dev.walcott.BuildConfig.DEBUG) ?: return
         val id = identityStore.current()
         if (normalized == id.ntfyServer) return
         dev.walcott.debug.DebugLog.w(TAG, "the parent moved this family to $normalized")
@@ -761,7 +767,8 @@ class SyncManager(
     suspend fun setRelayServer(server: String): RelayChangeResult {
         val id = identityStore.current()
         if (id.role != Role.PARENT) return RelayChangeResult.HAS_CHILDREN
-        val normalized = RelayServer.normalize(server) ?: return RelayChangeResult.INVALID
+        val normalized = RelayServer.normalize(server, cleartextAllowed = dev.walcott.BuildConfig.DEBUG)
+            ?: return RelayChangeResult.INVALID
         // Both registers count: a child enrolled in the registry may not have checked in yet,
         // and a legacy child may have checked in without ever being in the registry.
         val enrolled = settingsStore.current().children.isNotEmpty() ||
@@ -1368,11 +1375,9 @@ class SyncManager(
      */
     private suspend fun applyInstallWindow(untilMs: Long) {
         runCatching {
-            DeviceRestrictions.apply(
-                context,
-                settingsStore.current().restrictionKeysToApply(),
-                installExemptUntilMs = untilMs,
-            )
+            settingsStore.current().restrictionKeysToApply()?.let { keys ->
+                DeviceRestrictions.apply(context, keys, installExemptUntilMs = untilMs)
+            }
         }.onFailure { dev.walcott.debug.DebugLog.e(TAG, "could not apply the install restrictions", it) }
         dev.walcott.enforcement.InstallBlockAlarm.arm(context, untilMs)
     }
@@ -2097,6 +2102,14 @@ class SyncManager(
         runCatching { publishSelf() }
     }
 
+    /** Records which device-protection features the phone refused; publishes on change. */
+    suspend fun recordRestrictionGaps(keys: Set<String>) {
+        val sorted = keys.sorted()
+        if (syncStore.current().restrictionGaps == sorted) return
+        syncStore.update { it.copy(restrictionGaps = sorted, childVersion = it.childVersion + 1) }
+        runCatching { publishSelf() }
+    }
+
     /** The parent app's build as last published in its snapshot (0 = unknown/legacy parent). */
     suspend fun parentAppVersionCode(): Int = syncStore.current().parentAppVersionCode
 
@@ -2381,22 +2394,38 @@ class SyncManager(
     val readablePin: StateFlow<String> =
         identityStore.identity.map { it.pinPlain }.stateIn(scope, SharingStarted.Eagerly, "")
 
-    suspend fun cacheLocalBackupKey(pin: String) {
-        // Deliberately NOT gated on being a parent yet. Gating it made the whole feature depend on
-        // the PIN being set after the family exists, and if a setup journey ever did it the other
-        // way round the key would silently never be derived — no backup, no signal, exactly the
-        // failure this is here to prevent. Deriving early is harmless: writing still requires a
-        // parent, and a child never reaches the code that uses it.
-        val current = syncStore.current()
-        val salt = current.localBackupSaltB64.takeIf { it.isNotBlank() } ?: FamilyBackup.newSaltB64()
-        val key = withContext(Dispatchers.Default) { FamilyBackup.deriveKeyB64(pin.toCharArray(), salt) }
-        if (key == current.localBackupKeyB64) return
-        // A changed PIN has to open ALL three copies, not just whichever the rotation happens to
-        // refresh next — otherwise the monthly one keeps needing a PIN the parent has forgotten.
-        // Forgetting the written days makes every slot due, and the rewrite happens now.
-        syncStore.update { it.copy(localBackupKeyB64 = key, localBackupSaltB64 = salt, localBackupDays = emptyMap()) }
+    /**
+     * Turns the nightly on-device copies on, sealed under [passphrase] — a passphrase the parent
+     * chose for them, at least [FamilyBackup.MIN_PASSPHRASE_CHARS] long, like the backups they
+     * save elsewhere. Parent phones only.
+     *
+     * The copies used to be sealed with the PIN, and that was the one place this app let a
+     * four-digit secret guard the family's signing key: the file sits in shared storage on
+     * purpose, and ten thousand candidates against PBKDF2 is minutes on a graphics card. A
+     * longer PIN does not fix that — a million candidates is still an afternoon — so the copies
+     * are written under a real passphrase or not at all. Every slot is rewritten now, so the
+     * PIN-sealed files this install wrote before are replaced rather than left lying next to
+     * the new ones.
+     */
+    suspend fun enableLocalBackups(passphrase: CharArray) {
+        require(passphrase.size >= FamilyBackup.MIN_PASSPHRASE_CHARS) { "passphrase too short" }
+        // A fresh salt: the stored one belongs to the PIN-derived key it is replacing.
+        val salt = FamilyBackup.newSaltB64()
+        val key = withContext(Dispatchers.Default) { FamilyBackup.deriveKeyB64(passphrase, salt) }
+        syncStore.update {
+            it.copy(
+                localBackupKeyB64 = key,
+                localBackupSaltB64 = salt,
+                localBackupKeySource = FamilyBackup.SOURCE_PASSPHRASE,
+                localBackupDays = emptyMap(),
+            )
+        }
         writeDueLocalBackups(java.time.LocalDate.now())
     }
+
+    /** Whether the nightly copies are on: keyed, and keyed by a passphrase rather than the PIN. */
+    fun localBackupsOn(state: SyncState): Boolean =
+        state.localBackupKeyB64.isNotBlank() && state.localBackupKeySource == FamilyBackup.SOURCE_PASSPHRASE
 
     /**
      * Rewrites whichever on-device copies are due tonight (see [BackupRotation]). No-op until the
@@ -2405,7 +2434,7 @@ class SyncManager(
      */
     suspend fun writeDueLocalBackups(today: java.time.LocalDate): Set<BackupRotation.Slot> {
         val s = syncStore.current()
-        if (identityStore.current().role != Role.PARENT || s.localBackupKeyB64.isBlank()) return emptySet()
+        if (identityStore.current().role != Role.PARENT || !localBackupsOn(s)) return emptySet()
         val lastWritten = s.localBackupDays.mapNotNull { (name, day) ->
             BackupRotation.Slot.entries.firstOrNull { it.name == name }?.to(java.time.LocalDate.ofEpochDay(day))
         }.toMap()
@@ -2416,7 +2445,7 @@ class SyncManager(
             withContext(Dispatchers.Default) {
                 FamilyBackup.encryptWithDerivedKey(
                     buildBackupPayload(), s.localBackupKeyB64, s.localBackupSaltB64,
-                    keySource = FamilyBackup.SOURCE_PIN,
+                    keySource = FamilyBackup.SOURCE_PASSPHRASE,
                 )
             }
         }.getOrElse {
@@ -2446,7 +2475,9 @@ class SyncManager(
 
     /** Debug harness only: puts this parent back in the state an un-upgraded one is in. */
     suspend fun clearLocalBackupKeyForDebug() {
-        syncStore.update { it.copy(localBackupKeyB64 = "", localBackupSaltB64 = "", localBackupDays = emptyMap()) }
+        syncStore.update {
+            it.copy(localBackupKeyB64 = "", localBackupSaltB64 = "", localBackupKeySource = "", localBackupDays = emptyMap())
+        }
     }
 
     /**
@@ -2940,7 +2971,11 @@ class SyncManager(
         val s = syncStore.current()
         val nowWall = System.currentTimeMillis()
         val nowElapsed = android.os.SystemClock.elapsedRealtime()
-        val remaining = PinLockout.remainingMs(s.rescueLockedUntilMs, nowWall)
+        val boot = bootCount()
+        val remaining = PinLockout.remainingMs(
+            s.rescueLockedUntilMs, nowWall, s.rescueLockedUntilElapsedMs, nowElapsed,
+            sameBoot = boot >= 0 && boot == s.rescueLockBootCount,
+        )
         if (remaining > 0) return PinResult.Locked(remaining)
 
         val keyB64 = identity.value.familyKeyB64
@@ -2949,7 +2984,10 @@ class SyncManager(
         // guess (see PinResult.NotSet).
         if (keyB64.isBlank()) return PinResult.NotSet
         val key = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(keyB64))
-        val accepted = RescueCode.verify(key, entered, nowWall - s.clockSkewMs, s.rescueLastSlot)
+        // Bound to this phone: the code was read out for it and for no sibling's (see RescueCode).
+        val accepted = RescueCode.verify(
+            key, entered, nowWall - s.clockSkewMs, s.rescueLastSlot, deviceId = identity.value.deviceId,
+        )
         if (accepted == null) {
             val attempts = s.rescueFails + 1
             val lockMs = PinLockout.lockoutMs(attempts)
@@ -2957,6 +2995,8 @@ class SyncManager(
                 it.copy(
                     rescueFails = attempts,
                     rescueLockedUntilMs = if (lockMs > 0) nowWall + lockMs else it.rescueLockedUntilMs,
+                    rescueLockedUntilElapsedMs = if (lockMs > 0) nowElapsed + lockMs else it.rescueLockedUntilElapsedMs,
+                    rescueLockBootCount = if (lockMs > 0) boot else it.rescueLockBootCount,
                 )
             }
             return PinResult.Wrong
@@ -2974,6 +3014,8 @@ class SyncManager(
                 rescueLastSlot = accepted.slot,
                 rescueFails = 0,
                 rescueLockedUntilMs = 0,
+                rescueLockedUntilElapsedMs = 0,
+                rescueLockBootCount = -1,
                 rescueUsedAtMs = nowWall,
                 rescueUntilWallMs = if (RescueCode.opensRules(accepted.action)) untilWall else it.rescueUntilWallMs,
                 rescueUntilElapsedMs = if (RescueCode.opensRules(accepted.action)) {
@@ -3009,26 +3051,39 @@ class SyncManager(
         syncStore.update { it.copy(rescueUntilWallMs = 0, rescueUntilElapsedMs = 0) }
     }
 
+    /**
+     * How many times this phone has booted, or -1 where the platform will not say. What tells a
+     * lockout measured on the monotonic clock whether that clock has restarted since (see
+     * [PinLockout.remainingMs]); -1 never matches, so an unreadable count falls back to the wall
+     * clock alone rather than to a lockout that outlives every reboot.
+     */
+    private fun bootCount(): Int = runCatching {
+        android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT)
+    }.getOrDefault(-1)
+
     suspend fun verifyPinGuarded(pin: String): PinResult {
         val s = syncStore.current()
         val now = System.currentTimeMillis()
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        val boot = bootCount()
         // Before anything else: a family with no PIN can't fail a check, it can only fail to
         // have one. Counting these as wrong guesses locked the child out of a door that was
         // never going to open, and reported them to the parent as an attempted break-in.
         if (!repository.hasPin()) return PinResult.NotSet
-        val remaining = PinLockout.remainingMs(s.pinLockedUntilMs, now)
+        val remaining = PinLockout.remainingMs(
+            s.pinLockedUntilMs, now, s.pinLockedUntilElapsedMs, nowElapsed,
+            sameBoot = boot >= 0 && boot == s.pinLockBootCount,
+        )
         if (remaining > 0) return PinResult.Locked(remaining)
 
         if (repository.verifyPin(pin)) {
-            if (s.pinFailedAttempts != 0 || s.pinLockedUntilMs != 0L) {
-                syncStore.update { it.copy(pinFailedAttempts = 0, pinLockedUntilMs = 0) }
+            if (s.pinFailedAttempts != 0 || s.pinLockedUntilMs != 0L || s.pinLockedUntilElapsedMs != 0L) {
+                syncStore.update {
+                    it.copy(pinFailedAttempts = 0, pinLockedUntilMs = 0, pinLockedUntilElapsedMs = 0, pinLockBootCount = -1)
+                }
             }
-            // A correct PIN is the only moment we ever hold it, so it is the only moment the
-            // on-device backup key can be derived. Parents who set their PIN before this existed
-            // get it on their next unlock, without being asked for anything.
-            if (s.localBackupKeyB64.isBlank()) cacheLocalBackupKey(pin)
-            // Same trick for the readable reminder: a family whose PIN predates the feature
-            // gets it back the next time they type it correctly, with nothing to answer.
+            // The readable reminder: a family whose PIN predates the feature gets it back the
+            // next time they type it correctly, with nothing to answer.
             rememberPinIfParent(pin)
             return PinResult.Ok
         }
@@ -3039,6 +3094,8 @@ class SyncManager(
             it.copy(
                 pinFailedAttempts = attempts,
                 pinLockedUntilMs = if (lockMs > 0) now + lockMs else it.pinLockedUntilMs,
+                pinLockedUntilElapsedMs = if (lockMs > 0) nowElapsed + lockMs else it.pinLockedUntilElapsedMs,
+                pinLockBootCount = if (lockMs > 0) boot else it.pinLockBootCount,
                 // Monotonic tally reported to the parent so a brute-force attempt is visible remotely.
                 pinWrongTotal = it.pinWrongTotal + 1,
                 lastWrongPinMs = now,
@@ -3335,6 +3392,7 @@ class SyncManager(
                     charging = batteryCharging(),
                     updateError = s.updateError,
                     enforcementGaps = s.enforcementGaps,
+                    restrictionGaps = s.restrictionGaps,
                     clockSkewMs = s.clockSkewMs,
                     panic = s.panic,
                     // The maintenance window is reported as itself and not as an exemption: the
@@ -3600,16 +3658,20 @@ class SyncManager(
      * Part of the emergency release, and it has to run while this device is still Device Owner —
      * afterwards nothing can change the credential. Only a lock WE set is removed: a PIN its owner
      * chose is theirs, and taking it off would hand back an unprotected phone nobody asked for.
+     *
+     * True when a lock this app set is STILL there afterwards — the one thing a release report
+     * must name, because the phone that comes out of it cannot be opened by anyone.
      */
-    suspend fun handBackLockScreen() {
-        if (!syncStore.current().lockPinSetByUs) return
+    suspend fun handBackLockScreen(): Boolean {
+        if (!syncStore.current().lockPinSetByUs) return false
         dev.walcott.debug.DebugLog.w(TAG, "emergency release: removing the lock screen this app set")
         val result = dev.walcott.enforcement.LockScreen.apply(context, "", lockToken())
         if (result == dev.walcott.enforcement.LockScreen.Result.DONE) {
             syncStore.update { it.copy(lockPinSetByUs = false) }
-        } else {
-            dev.walcott.debug.DebugLog.e(TAG, "could not remove the lock screen on release: $result")
+            return false
         }
+        dev.walcott.debug.DebugLog.e(TAG, "could not remove the lock screen on release: $result")
+        return true
     }
 
     /**
@@ -3629,6 +3691,9 @@ class SyncManager(
         } ?: dev.walcott.enforcement.LockScreen.newToken().also {
             syncStore.update { s -> s.copy(lockTokenB64 = FamilyCrypto.toB64(it)) }
         }
+        // Mid-release the token must not be re-registered (see LockScreen.register), but the one
+        // already registered is exactly what the handback needs to take the lock off.
+        if (dev.walcott.enforcement.PanicRelease.inProgress) return token
         return if (dev.walcott.enforcement.LockScreen.register(context, token)) token else null
     }
 
@@ -3712,16 +3777,24 @@ class SyncManager(
             ParentKeystore.privateKey()
         }
 
-    private suspend fun handleIncoming(raw: String, id: FamilyIdentity, timeSec: Long) {
+    private suspend fun handleIncoming(raw: String, connectedAs: FamilyIdentity, timeSec: Long) {
+        // The identity as it is NOW, not as it was when the socket was opened. The one that
+        // changes underneath a live socket is the parent's signing key, adopted below: read from
+        // the connect-time copy, every message after a rotation failed the direct check, went
+        // in through the certificate again and counted as a rotation — which is the one thing
+        // that switches the replay gate off (see SyncEngine.adoptsPolicy). [connectedAs] is
+        // only the fallback for a store that has nothing yet.
+        val id = identityStore.current().takeIf { it.familyKeyB64.isNotBlank() } ?: connectedAs
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         val parentPublic = FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(id.parentPublicKeyB64))
         val decoded = SyncProtocol.decodeVerbose(raw, familyKey, parentPublic) ?: return
         val message = decoded.message
 
         // A restored parent proved a key rotation (see KeyRotation): make the new key this
-        // child's trust root. The old key died with the old phone, so this is permanent.
-        val rotatedKey = decoded.rotatedParentPublicKeyB64
-        if (rotatedKey != null && id.role == Role.CHILD && rotatedKey != id.parentPublicKeyB64) {
+        // child's trust root. The old key died with the old phone, so this is permanent. Only a
+        // key that CHANGES is a rotation; the same key proven again is an ordinary message.
+        val rotatedKey = decoded.rotatedParentPublicKeyB64?.takeIf { it != id.parentPublicKeyB64 }
+        if (rotatedKey != null && id.role == Role.CHILD) {
             identityStore.save(identityStore.current().copy(parentPublicKeyB64 = rotatedKey))
             dev.walcott.debug.DebugLog.w(TAG, "adopted rotated parent signing key (parent restored from backup)")
         }
@@ -4015,7 +4088,9 @@ class SyncManager(
         }
 
         // Apply bonuses addressed to this device, idempotently.
-        val freshBonuses = SyncEngine.newBonuses(snapshot, deviceId, s.appliedBonusIds)
+        val freshBonuses = SyncEngine.newBonuses(
+            snapshot, deviceId, s.appliedBonusIds, todayEpochDay = java.time.LocalDate.now().toEpochDay(),
+        )
         for (bonus in freshBonuses) {
             if (bonus.minutes > 0) repository.grantExtraMinutes(bonus.categoryId, bonus.minutes.toLong())
         }
@@ -4096,13 +4171,21 @@ class SyncManager(
                 setLostMode = { on, message -> if (on) enableLostMode(message) else disableLostMode() },
             )
         }
-        for (command in SyncEngine.newCommands(snapshot, deviceId, syncStore.current().appliedCommandIds)) {
+        val before = syncStore.current()
+        // The command's age is judged on the clock the relay vouches for, not the one the child
+        // can set: a phone moved half an hour forward refused every lock-screen PIN as expired,
+        // and one moved back took last week's ring as fresh (see ClockGuard).
+        val nowCorrected = System.currentTimeMillis() - before.clockSkewMs
+        for (command in SyncEngine.newCommands(snapshot, deviceId, before.appliedCommandIds, before.appliedCommandMarks)) {
             // Re-check under the lock: a concurrent handler may have claimed it since.
             if (command.id in syncStore.current().appliedCommandIds) continue
             syncStore.update {
-                it.copy(appliedCommandIds = SyncState.rememberApplied(it.appliedCommandIds, listOf(command.id)))
+                it.copy(
+                    appliedCommandIds = SyncState.rememberApplied(it.appliedCommandIds, listOf(command.id)),
+                    appliedCommandMarks = SyncEngine.markApplied(it.appliedCommandMarks, command),
+                )
             }
-            val ack = runner.run(command)
+            val ack = runner.run(command, nowMs = nowCorrected)
             syncStore.update { it.copy(lastCommandAck = ack, childVersion = it.childVersion + 1) }
             // The release is run HERE, after its acknowledgement is on the wire, and it is the
             // last thing this device ever does on this channel: the teardown wipes the sync

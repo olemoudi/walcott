@@ -53,8 +53,12 @@ class CommandFreshnessTest {
     }
 
     @Test
-    fun `everything else is still worth running after a long time offline`() {
-        val fortnight = 14 * 24 * 60 * 60 * 1000L
+    fun `everything else lives exactly as long as the parent keeps it queued`() {
+        // A week offline loses nothing the parent could still have delivered — its own queue
+        // drops the command at COMMAND_TTL_MS — and anything older arriving is a replay: a
+        // captured "lost mode on" or "move to this relay" from last month, whose id has long
+        // since left the bounded applied ledger.
+        val week = SyncEngine.COMMAND_TTL_MS
         for (action in listOf(
             RemoteAction.UPDATE_NOW,
             RemoteAction.REAPPLY_POLICY,
@@ -66,8 +70,11 @@ class CommandFreshnessTest {
             RemoteAction.DENY_PANIC,
             RemoteAction.LOCK_NOW,
             RemoteAction.NOTIFICATION_LOG,
+            RemoteAction.LOST_MODE,
+            RemoteAction.SET_RELAY,
         )) {
-            assertFalse(RemoteAction.expired(action, issued, issued + fortnight), action)
+            assertFalse(RemoteAction.expired(action, issued, issued + week), action)
+            assertTrue(RemoteAction.expired(action, issued, issued + week + 1), action)
         }
     }
 }

@@ -40,11 +40,6 @@ object NotificationLog {
     /** Longest title/text kept, so one pathological notification cannot dominate the table. */
     const val MAX_FIELD_CHARS = 300
 
-    /** Trimming runs on one write in this many, since it costs a delete and finds nothing most times. */
-    private const val TRIM_EVERY = 25
-
-    private var writes = 0
-
     /**
      * Stores one notification, trimmed to shape. Called from the listener's callback thread, so it
      * does the least it can and swallows its own failures — a log that crashes the listener takes
@@ -58,11 +53,21 @@ object NotificationLog {
         runCatching {
             if (trimmed.key.isNotEmpty()) dao.deleteByKey(trimmed.key)
             dao.insert(trimmed)
-            if (++writes % TRIM_EVERY == 0) {
-                dao.deleteOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(RETAIN_HOURS))
-                dao.trimTo(MAX_ROWS)
-            }
+            // On every write, not one in twenty-five: a delete over a few hundred rows costs
+            // nothing, and the old counter left the last twenty-four messages of a phone that
+            // then went quiet sitting past the forty-eight hours this promises.
+            prune(dao)
         }.onFailure { DebugLog.w(TAG, "could not record a notification", it) }
+    }
+
+    /**
+     * Applies the retention: rows older than [RETAIN_HOURS], and anything past [MAX_ROWS]. Run
+     * on every write, and by the watchdog for a phone whose notifications have stopped — the
+     * promise is a window of hours, not of writes.
+     */
+    suspend fun prune(dao: NotificationDao) {
+        dao.deleteOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(RETAIN_HOURS))
+        dao.trimTo(MAX_ROWS)
     }
 
     /** Drops everything, for the moment the family switches the log off. */

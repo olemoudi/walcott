@@ -56,8 +56,29 @@ class RemoteCommandRunner(
     private val setLostMode: suspend (on: Boolean, message: String) -> Unit = { _, _ -> },
 ) {
 
-    suspend fun run(command: RemoteCommand): CommandAck {
+    /**
+     * Runs [command]. [nowMs] is the moment its age is judged at — the caller's clock corrected
+     * by the skew measured against the relay (see ClockGuard), so a moved clock neither refuses
+     * a fresh command nor admits a stale one.
+     *
+     * Every action has a life (see [RemoteAction.expired]) and it is checked here, once. The one
+     * exception is a close-tracking STOP, obeyed however old it is: the worst a late one can do
+     * is end something that has already ended, and refusing it would strand a running session.
+     */
+    suspend fun run(command: RemoteCommand, nowMs: Long = System.currentTimeMillis()): CommandAck {
         DebugLog.i(TAG, "running remote command ${command.action} (${command.id})")
+        val trackingStop = command.action == RemoteAction.LIVE_TRACKING && command.arg.toIntOrNull() == 0
+        if (!trackingStop && RemoteAction.expired(command.action, command.issuedAtMs, nowMs)) {
+            DebugLog.w(TAG, "ignoring a ${command.action} that is too old to still be meant")
+            return CommandAck(
+                id = command.id,
+                action = command.action,
+                ok = false,
+                detail = RemoteAction.DETAIL_EXPIRED,
+                completedAtMs = System.currentTimeMillis(),
+                arg = command.arg,
+            )
+        }
         val result = runCatching {
             when (command.action) {
                 RemoteAction.UPDATE_NOW -> updateNow()
@@ -135,8 +156,9 @@ class RemoteCommandRunner(
     private suspend fun reapplyPolicy(): Pair<Boolean, String> {
         LocationPolicy.ensureEnforced(context)
         endInstallWindow()
-        val restrictions = repository.settingsFlow.first().restrictionKeysToApply()
-        DeviceRestrictions.apply(context, restrictions, installExemptUntilMs = 0)
+        repository.settingsFlow.first().restrictionKeysToApply()?.let { restrictions ->
+            DeviceRestrictions.apply(context, restrictions, installExemptUntilMs = 0)
+        }
         EnforcementService.start(context)
         // And the nightly update hour, which this has just closed along with everything else.
         // It is an alarm, so a force-stop is exactly the thing that loses it — re-arming it is
@@ -218,17 +240,12 @@ class RemoteCommandRunner(
     /**
      * Sets the unlock PIN, or removes the lock when the arg is empty.
      *
-     * Refuses an expired command outright. Every other action here is harmless when it lands late —
-     * an update, a policy re-apply, an uninstall — but a PIN change is not: a replayed "set 1234"
-     * arriving next week would lock somebody out of their own phone with a number nobody remembers
-     * telling them. The ack distinguishes "the token was not armed" from "the platform said no",
-     * because those are different things for the parent to do next.
+     * Its short life is enforced in [run]: a replayed "set 1234" arriving next week would lock
+     * somebody out of their own phone with a number nobody remembers telling them. The ack
+     * distinguishes "the token was not armed" from "the platform said no", because those are
+     * different things for the parent to do next.
      */
     private suspend fun setLock(command: RemoteCommand): Pair<Boolean, String> {
-        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
-            DebugLog.w(TAG, "ignoring a lock-screen command that is too old to still be meant")
-            return false to RemoteAction.DETAIL_EXPIRED
-        }
         val pin = command.arg
         if (pin.isNotEmpty() && !dev.walcott.enforcement.LockScreen.isValidPin(pin)) {
             return false to RemoteAction.DETAIL_LOCK_REFUSED
@@ -249,15 +266,11 @@ class RemoteCommandRunner(
      * published first or the parent would never learn that the phone it freed was actually freed.
      * [SyncManager.applyCommands] runs it immediately after publishing this ack.
      *
-     * Refuses an expired command like the lock-screen one, and for a sharper version of the same
-     * reason: freeing a phone a week after the family thought better of it cannot be undone
-     * without factory-resetting it.
+     * Its life is enforced in [run], and for a sharper version of the lock-screen reason: freeing
+     * a phone a week after the family thought better of it cannot be undone without
+     * factory-resetting it.
      */
     private fun release(command: RemoteCommand): Pair<Boolean, String> {
-        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
-            DebugLog.w(TAG, "ignoring a release that is too old to still be meant")
-            return false to RemoteAction.DETAIL_EXPIRED
-        }
         DebugLog.w(TAG, "the parent asked this device to be released")
         return true to RemoteAction.DETAIL_RELEASING
     }
@@ -271,7 +284,7 @@ class RemoteCommandRunner(
      * parent's, but a typo would point this phone at nothing and it would have no way back.
      */
     private fun setRelay(server: String): Pair<Boolean, String> {
-        val normalized = dev.walcott.sync.RelayServer.normalize(server)
+        val normalized = dev.walcott.sync.RelayServer.normalize(server, cleartextAllowed = dev.walcott.BuildConfig.DEBUG)
         if (normalized == null) {
             DebugLog.w(TAG, "refusing to move to an address that is not a relay: $server")
             return false to RemoteAction.DETAIL_RELAY_REFUSED
@@ -282,32 +295,22 @@ class RemoteCommandRunner(
     /**
      * Starts (or stops) close tracking for the number of minutes in the arg.
      *
-     * Refuses an expired command outright, like the lock-screen one and for a sharper version of
-     * the same reason: this mode is *about* right now. An hour of minute-by-minute GPS beginning
-     * tomorrow morning is not a late version of what the parent meant — it is a phone flattening
-     * its battery for an audience that stopped watching yesterday.
+     * A start has a short life, enforced in [run]: this mode is *about* right now, and an hour of
+     * minute-by-minute GPS beginning tomorrow morning is not a late version of what the parent
+     * meant — it is a phone flattening its battery for an audience that stopped watching
+     * yesterday. A stop is obeyed however old it is.
      */
     private suspend fun liveTracking(command: RemoteCommand): Pair<Boolean, String> {
         val minutes = command.arg.toIntOrNull() ?: return false to "bad_duration"
-        // A stop is always obeyed, however old it is: the worst a late one can do is end
-        // something that has already ended, and refusing it would strand a running session.
-        if (minutes > 0 && RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
-            DebugLog.w(TAG, "ignoring a close-tracking request that is too old to still be meant")
-            return false to RemoteAction.DETAIL_EXPIRED
-        }
         setLiveTracking(minutes)
         return true to if (minutes > 0) LiveTracking.DETAIL_STARTED else LiveTracking.DETAIL_STOPPED
     }
 
     /**
-     * Rings the phone. Refuses an old command like [liveTracking] does: a ring that lands
-     * tomorrow is a phone going off in a classroom, not a late version of what was wanted.
+     * Rings the phone. Its short life is enforced in [run]: a ring that lands tomorrow is a phone
+     * going off in a classroom, not a late version of what was wanted.
      */
     private suspend fun ringNow(command: RemoteCommand): Pair<Boolean, String> {
-        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
-            DebugLog.w(TAG, "ignoring a ring that is too old to still be meant")
-            return false to RemoteAction.DETAIL_EXPIRED
-        }
         val seconds = RemoteAction.ringSeconds(command.arg) ?: return false to "bad_duration"
         return if (ringNow(seconds)) true to RemoteAction.DETAIL_RINGING else false to RemoteAction.DETAIL_RING_REFUSED
     }
@@ -320,14 +323,11 @@ class RemoteCommandRunner(
      * red mark on the one screen that is telling the truth.
      */
     private suspend fun ringStop(command: RemoteCommand): Pair<Boolean, String> {
-        if (RemoteAction.expired(command.action, command.issuedAtMs, System.currentTimeMillis())) {
-            return false to RemoteAction.DETAIL_EXPIRED
-        }
         ringStop()
         return true to RemoteAction.DETAIL_RING_STOPPED
     }
 
-    /** Lost mode on or off; never refused for age (see [RemoteAction.LOST_MODE]). */
+    /** Lost mode on or off; lives as long as the parent's queue does (see [RemoteAction.LOST_MODE]). */
     private suspend fun lostMode(command: RemoteCommand): Pair<Boolean, String> = when (command.arg) {
         RemoteAction.LOST_ON -> {
             setLostMode(true, command.label)

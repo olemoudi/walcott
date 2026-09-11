@@ -70,13 +70,24 @@ object SyncEngine {
     ): List<Resolution> =
         parent.resolutions.filter { it.requestId in pendingRequestIds && it.requestId !in alreadyApplied }
 
-    /** Bonuses for this device that haven't been applied yet. */
+    /**
+     * Bonuses for this device that haven't been applied yet.
+     *
+     * With [todayEpochDay], only bonuses granted for today or yesterday (the parent's day can
+     * differ from the child's across a midnight or a time zone): a bonus is minutes for the day
+     * it was given, and one from last month arriving in a replayed envelope — its id long gone
+     * from the applied ledger — is minutes nobody granted.
+     */
     fun newBonuses(
         parent: ParentSnapshot,
         deviceId: String,
         alreadyApplied: Set<String>,
+        todayEpochDay: Long? = null,
     ): List<Bonus> =
-        parent.bonuses.filter { it.targetDeviceId == deviceId && it.id !in alreadyApplied }
+        parent.bonuses.filter {
+            it.targetDeviceId == deviceId && it.id !in alreadyApplied &&
+                (todayEpochDay == null || it.epochDay >= todayEpochDay - 1)
+        }
 
     /** A "locate now" for this device newer than the last one it answered, else null. */
     fun freshLocationRequest(
@@ -97,15 +108,29 @@ object SyncEngine {
     /**
      * Remote commands addressed to this device that it hasn't run yet, oldest first so a
      * queued pair applies in the order the parent issued them.
+     *
+     * [marks] is the newest `issuedAtMs` already applied per action (see [markApplied]): a
+     * command older than the newest one of its kind this device has run is a replay, whatever
+     * its id — the applied ledger is bounded, and a captured envelope can be published long
+     * after the ids in it have fallen off the end. Same-instant commands of one action (a
+     * catch-up queues two at once) still pass on their ids.
      */
     fun newCommands(
         parent: ParentSnapshot,
         deviceId: String,
         alreadyApplied: Set<String>,
+        marks: Map<String, Long> = emptyMap(),
     ): List<RemoteCommand> =
         parent.commands
-            .filter { it.deviceId == deviceId && it.id !in alreadyApplied }
+            .filter {
+                it.deviceId == deviceId && it.id !in alreadyApplied &&
+                    it.issuedAtMs >= (marks[it.action] ?: Long.MIN_VALUE)
+            }
             .sortedBy { it.issuedAtMs }
+
+    /** [marks] with [command] recorded as the newest of its action this device has applied. */
+    fun markApplied(marks: Map<String, Long>, command: RemoteCommand): Map<String, Long> =
+        marks + (command.action to maxOf(marks[command.action] ?: Long.MIN_VALUE, command.issuedAtMs))
 
     /**
      * Queues [command], replacing any pending command with the same action AND argument for

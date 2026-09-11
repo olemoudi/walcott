@@ -601,9 +601,10 @@ object RemoteAction {
      * [RemoteCommand.label]. The child locks the screen at once, writes the line, and keeps
      * reporting where it is until told otherwise (see `LostMode`).
      *
-     * Deliberately NOT TTL'd, in either direction. A phone that was off for two days and comes
-     * back should still lock itself and still say whose it is: the parent has not stopped wanting
-     * it found. And an "off" must always land, or a recovered phone stays locked down.
+     * Only the general life every command has (see [expired]): a phone that was off for two
+     * days and comes back should still lock itself and still say whose it is, and an "off" must
+     * land after a week in a drawer — but the parent's own queue keeps nothing longer than that,
+     * so a "lost" arriving after it can only be a replay of one the family has already ended.
      */
     const val LOST_MODE = "lost_mode"
     const val LOST_ON = "on"
@@ -642,10 +643,10 @@ object RemoteAction {
      * left listening to a server nobody publishes on, with no way to be told where everyone went.
      * On a Device Owner child, recovering from that is a factory reset.
      *
-     * Deliberately NOT expiring (see [expired]). Every other dangerous command is refused when it
-     * lands late; this one is the opposite — a phone that was in a drawer for a fortnight is
-     * exactly the phone that still needs to be told, and the parent's own queue already retires it
-     * after [SyncEngine.COMMAND_TTL_MS].
+     * Only the general life every command has (see [expired]): a phone that was in a drawer for
+     * a week is exactly the phone that still needs to be told, and the parent's own queue keeps
+     * the instruction for that long — anything older arriving is a replay pointing this phone at
+     * a relay the family has since left.
      */
     const val SET_RELAY = "set_relay"
 
@@ -691,22 +692,26 @@ object RemoteAction {
     const val DETAIL_RELEASING = "releasing"
 
     /**
-     * Whether a command that changes something irreversible has waited too long to still be meant.
+     * Whether a command has waited too long to still be meant.
      *
-     * Only three actions have a life at all, and all for the same reason: they act on the phone
-     * itself rather than on the app. A lock-screen PIN landing next week locks somebody out with a
+     * Four actions have a short life, and all for the same reason: they act on the phone itself
+     * rather than on the app. A lock-screen PIN landing next week locks somebody out with a
      * number nobody remembers being told; a release landing next week frees a phone the family
-     * thought better of, and re-enrolling it means a factory reset; and a close-tracking session
-     * is by definition about right now, so one that starts tomorrow is a phone burning its battery
-     * for nobody. Everything else here is harmless when it arrives late, and pretending otherwise
-     * would only lose commands that a child was right to run after a fortnight offline.
+     * thought better of, and re-enrolling it means a factory reset; a close-tracking session
+     * or a ring is by definition about right now.
+     *
+     * Everything else lives exactly as long as the parent keeps it queued
+     * ([SyncEngine.COMMAND_TTL_MS]). That costs nothing a child was right to run after a week
+     * offline — the parent could not have delivered it either — and it closes the replay: a
+     * captured envelope carrying a "lost mode on" or a "move to this relay" from last month is
+     * refused, rather than obeyed because its id had long since left the applied ledger.
      */
     fun expired(action: String, issuedAtMs: Long, nowMs: Long): Boolean = when (action) {
         SET_LOCK_PIN -> nowMs - issuedAtMs > LOCK_PIN_TTL_MS
         RELEASE_DEVICE -> nowMs - issuedAtMs > RELEASE_TTL_MS
         LIVE_TRACKING -> nowMs - issuedAtMs > LIVE_TRACKING_TTL_MS
         RING_NOW, RING_STOP -> nowMs - issuedAtMs > RING_TTL_MS
-        else -> false
+        else -> nowMs - issuedAtMs > SyncEngine.COMMAND_TTL_MS
     }
 
     /**
@@ -981,6 +986,13 @@ data class ChildSnapshot(
      * failure: everything looks healthy but the OS isn't blocking.
      */
     val enforcementGaps: List<String> = emptyList(),
+    /**
+     * Device-protection features (keys from `DeviceRestrictions`) that are on in the policy and
+     * that the phone does NOT report in force after they were applied — an OEM refusing a
+     * restriction, measured rather than assumed. Empty when everything asked for is held, or
+     * on a child too old to measure it.
+     */
+    val restrictionGaps: List<String> = emptyList(),
     /**
      * Local clock minus the sync server's clock, in ms, as last measured by [ClockGuard].
      * 0 = in sync / legacy child. A large skew means the child moved the device clock

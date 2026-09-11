@@ -55,9 +55,15 @@ class WalcottApplication : Application() {
         dev.walcott.debug.CrashCounter.init(this)
         installCrashLogger()
         themeStore = ThemeStore(this)
+        dev.walcott.ui.format.DurationUnits.load(this)
+        // The database is opened — and, if it cannot be, thrown away and rebuilt — off the main
+        // thread, now, before anything asks for it. `get` is idempotent and serialized, so a
+        // reader that arrives first simply does the open itself; what this buys is that the
+        // ordinary cold start no longer blocks its first frame on a disk open or a migration.
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) { WalcottDatabase.get(this@WalcottApplication) }
         hub = FamilyHub(
             context = this,
-            db = WalcottDatabase.get(this),
+            dbProvider = { WalcottDatabase.get(this) },
             inventory = AppInventory(this),
             scope = appScope,
         )
@@ -154,6 +160,12 @@ class WalcottApplication : Application() {
             override fun onActivitySaveInstanceState(activity: android.app.Activity, bundle: android.os.Bundle) = Unit
             override fun onActivityDestroyed(activity: android.app.Activity) = Unit
         })
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The unit suffixes follow the language; nothing else here is cached per locale.
+        dev.walcott.ui.format.DurationUnits.load(this)
     }
 
     private fun setInteractive(interactive: Boolean) {
@@ -327,7 +339,9 @@ class WalcottApplication : Application() {
                         WatchdogWorker.schedule(this@WalcottApplication)
                         UpdateWorker.schedule(this@WalcottApplication)
                     } else {
-                        EnforcementService.stop(this@WalcottApplication)
+                        // Awaited, not merely told: the handback below takes off what a tick
+                        // still in flight would put straight back (see PanicRelease).
+                        EnforcementService.stopAndAwait(this@WalcottApplication)
                         VpnController.apply(this@WalcottApplication, false)
                         standDown()
                     }

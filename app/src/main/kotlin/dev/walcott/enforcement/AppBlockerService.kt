@@ -51,6 +51,8 @@ class AppBlockerService : AccessibilityService() {
     @Volatile private var extra: Map<String, Duration> = emptyMap()
     /** Apps quarantined by the install guard: blocked whatever the rules say about them. */
     @Volatile private var quarantined: Set<String> = emptySet()
+    /** The two deadlines of a running rescue code, wall and monotonic (see RescueCode.isRunning). */
+    @Volatile private var rescueDeadlines: Pair<Long, Long> = 0L to 0L
 
     private var lastNotifiedPkg: String? = null
     private var lastNotifiedAt = 0L
@@ -94,6 +96,7 @@ class AppBlockerService : AccessibilityService() {
             }
         }
         scope.launch { app.syncManager.quarantined.collectLatest { quarantined = it } }
+        scope.launch { app.syncManager.rescueDeadlines.collectLatest { rescueDeadlines = it } }
         // ALL the counters, packages included. The stripped flow this used to read filters out
         // every key containing a dot — every package name — so `usage` never held anything the
         // rules could count against, `used` was always zero, and on a child WITHOUT Device Owner
@@ -138,6 +141,19 @@ class AppBlockerService : AccessibilityService() {
             return
         }
         if (pkg == packageName || pkg !in managed) return
+        // The phone and contacts answer to nothing, the fail-closed below included: the engine
+        // spares them on its first line and so must this, its only other judge.
+        if (pkg in cfg.essentialPackages) return
+        // A rescue code typed into this phone opens everything for as long as it was worth, and
+        // on a device without Device Owner this service IS the enforcement — a rescue it did not
+        // honour was a screen saying "open" over apps that kept bouncing to the launcher.
+        val (rescueWall, rescueElapsed) = rescueDeadlines
+        if (dev.walcott.sync.RescueCode.isRunning(
+                rescueWall, rescueElapsed, System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(),
+            )
+        ) {
+            return
+        }
         // Mirror the Device Owner path's fail-closed rules: without the usage counter or with a
         // clock we can't trust, every managed app is blocked (see RuleEngine.blockedPackages).
         val failClosed = (!usageAccessGranted() && RuleEngine.requiresUsageCounting(cfg)) ||

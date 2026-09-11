@@ -18,11 +18,18 @@ import java.time.LocalDate
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class WalcottRepository(
-    private val db: WalcottDatabase,
+    /**
+     * The database, asked for on each use: `WalcottDatabase.get` is a cached singleton, so this
+     * costs a null check, and it lets the process open (or rebuild) the file off the main
+     * thread at start-up instead of on it (see WalcottApplication.onCreate).
+     */
+    private val dbProvider: () -> WalcottDatabase,
     private val settingsStore: SettingsStore,
     val inventory: AppInventory,
     private val ownPackage: String,
 ) {
+    private val db: WalcottDatabase get() = dbProvider()
+
     private fun today(): Long = LocalDate.now().toEpochDay()
 
     /**
@@ -204,8 +211,13 @@ class WalcottRepository(
 
     /** One-time: turn the recommended anti-tamper restrictions on by default (parent edits sync down). */
     suspend fun seedHardeningIfNeeded() {
-        if (settingsStore.current().hardeningSeeded) return
-        updateSettings { it.seedRestrictions(dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_DEFAULTS) }
+        val current = settingsStore.current()
+        if (!current.hardeningSeeded) {
+            updateSettings { it.seedRestrictions(dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_DEFAULTS) }
+        }
+        if (!current.hardeningSeededV2) {
+            updateSettings { it.seedRestrictionsV2(dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_SINCE_107) }
+        }
     }
 
     // --- Parent PIN ---
@@ -240,6 +252,18 @@ class WalcottRepository(
         settingsStore.update { current ->
             transform(current).withHolidayMirroringWeekend().copy(version = current.version + 1)
         }
+    }
+
+    /**
+     * Debug harness only: forgets every minute of extra time ever granted on this device.
+     *
+     * Extra time lives in Room until midnight and outlives a re-pairing, so a scenario that
+     * grants an hour to a fixture leaves every later scenario that expects a zero-minute budget
+     * to bite with an hour of allowance nobody in that scenario granted. Each scenario starts
+     * from nothing instead (see `DeviceScenario.pairFreshFamily`).
+     */
+    suspend fun clearExtraTimeForDebug() {
+        db.usage().deleteExtraBefore(Long.MAX_VALUE)
     }
 
     /** Drops usage/extra counters older than [USAGE_RETENTION_DAYS] (see [WatchdogWorker]). */

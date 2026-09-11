@@ -46,4 +46,26 @@ object PinLockout {
 
     /** Remaining lockout given the stored deadline and the current time. */
     fun remainingMs(lockedUntilMs: Long, nowMs: Long): Long = (lockedUntilMs - nowMs).coerceAtLeast(0)
+
+    /**
+     * Remaining lockout by whichever of two clocks has more of it.
+     *
+     * The wall clock alone was the whole lockout, and the wall clock is the one thing a child
+     * can move: three wrong guesses, the date set forward, three more. The monotonic clock
+     * cannot be edited, so the deadline is kept on both and the lockout holds while EITHER
+     * says so — but the monotonic clock restarts from zero at boot, so its deadline is only
+     * read when [sameBoot] (the boot count the lockout was measured in is the current one);
+     * across a reboot the wall clock carries it alone, as before.
+     */
+    fun remainingMs(
+        lockedUntilMs: Long,
+        nowMs: Long,
+        lockedUntilElapsedMs: Long,
+        nowElapsedMs: Long,
+        sameBoot: Boolean,
+    ): Long {
+        val wall = remainingMs(lockedUntilMs, nowMs)
+        val elapsed = if (sameBoot) (lockedUntilElapsedMs - nowElapsedMs).coerceAtLeast(0) else 0L
+        return maxOf(wall, elapsed)
+    }
 }

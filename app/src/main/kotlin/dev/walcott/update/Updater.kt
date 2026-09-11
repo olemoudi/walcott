@@ -229,7 +229,7 @@ class Updater(private val context: Context) {
             UpdateStep.DOWNLOAD -> Unit
         }
         UpdateCenter.report(UpdateUiState.Downloading(info))
-        val downloaded = runCatching { download(info.apk) }
+        val downloaded = runCatching { download(info.apk, info.sha256) }
             .onFailure { DebugLog.w(TAG, "download failed", it) }
             .isSuccess
         if (!downloaded) {
@@ -292,8 +292,15 @@ class Updater(private val context: Context) {
         val keys = runCatching { app.repository.settingsFlow.first().restrictionKeysToApply() }.getOrNull() ?: return false
         if (DeviceRestrictions.KEY_INSTALLS !in keys) return false
         DebugLog.i(TAG, "install blocked by DISALLOW_INSTALL_APPS; lifting it for this commit")
+        val until = System.currentTimeMillis() + COMMIT_WINDOW_MS
         return runCatching {
-            DeviceRestrictions.apply(context, keys, System.currentTimeMillis() + COMMIT_WINDOW_MS)
+            DeviceRestrictions.apply(context, keys, until)
+            // The alarm is the backstop for this lift, like for every other window: the
+            // re-arm below runs in this coroutine, and a coroutine can be cancelled — the
+            // worker stopped, the service torn down — between the lift and the commit.
+            // Without it the block stayed off until the next watchdog pass, a quarter of an
+            // hour of open sideloading on a phone whose parent believes installs are blocked.
+            dev.walcott.enforcement.InstallBlockAlarm.arm(context, until)
         }.onFailure { DebugLog.e(TAG, "failed to lift install block", it) }.isSuccess
     }
 
@@ -303,10 +310,14 @@ class Updater(private val context: Context) {
      */
     private suspend fun reArmInstallBlock() {
         val app = context.applicationContext as? WalcottApplication ?: return
-        runCatching {
-            val keys = app.repository.settingsFlow.first().restrictionKeysToApply()
-            DeviceRestrictions.apply(context, keys, app.syncManager.installExemption.value)
-        }.onFailure { DebugLog.e(TAG, "failed to re-arm the install block", it) }
+        // Not cancellable: this is the half that puts the block back, and the first thing it
+        // does suspends on a DataStore read. Cancelled there, the block stayed off.
+        withContext(kotlinx.coroutines.NonCancellable) {
+            runCatching {
+                val keys = app.repository.settingsFlow.first().restrictionKeysToApply() ?: return@runCatching
+                DeviceRestrictions.apply(context, keys, app.syncManager.installExemption.value)
+            }.onFailure { DebugLog.e(TAG, "failed to re-arm the install block", it) }
+        }
     }
 
     private fun currentVersionCode(): Int {
@@ -330,11 +341,40 @@ class Updater(private val context: Context) {
         }
     }
 
-    private fun download(url: String) {
+    /**
+     * Downloads the APK into the cache, bounded and checked: never more than [MAX_APK_BYTES] —
+     * a body that does not end must not fill the phone least able to spare the space — and,
+     * when version.json announced a digest, only bytes that match it. Anything else is deleted
+     * before this throws, so a bad download can never be found "staged" by the next check.
+     */
+    private fun download(url: String, expectedSha256: String) {
         val target = apkFile()
-        client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-            require(resp.isSuccessful) { "download failed: ${resp.code}" }
-            resp.body!!.byteStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+        try {
+            client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+                require(resp.isSuccessful) { "download failed: ${resp.code}" }
+                val body = resp.body!!
+                require(body.contentLength() <= MAX_APK_BYTES) { "download too large: ${body.contentLength()} bytes" }
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                var total = 0L
+                val buffer = ByteArray(64 * 1024)
+                body.byteStream().use { input ->
+                    target.outputStream().use { out ->
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            total += n
+                            require(total <= MAX_APK_BYTES) { "download too large: over $MAX_APK_BYTES bytes" }
+                            digest.update(buffer, 0, n)
+                            out.write(buffer, 0, n)
+                        }
+                    }
+                }
+                val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                require(apkDigestAccepted(expectedSha256, actual)) { "downloaded APK does not match the published sha256" }
+            }
+        } catch (t: Throwable) {
+            discardStagedApk()
+            throw t
         }
         DebugLog.i(TAG, "downloaded ${target.length()} bytes")
     }
@@ -399,6 +439,9 @@ class Updater(private val context: Context) {
 
         /** Free space required before downloading, so a full phone fails fast instead of mid-write. */
         private const val REQUIRED_FREE_BYTES = 200L * 1024 * 1024
+
+        /** The most an update download may weigh; a release is about fifty megabytes. */
+        private const val MAX_APK_BYTES = 150L * 1024 * 1024
 
         /** Ceiling on the version.json body we will read (see [fetchInfo]). */
         private const val MAX_INFO_BYTES = 64L * 1024

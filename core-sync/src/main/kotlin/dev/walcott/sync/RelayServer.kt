@@ -21,18 +21,24 @@ object RelayServer {
     /**
      * [input] as a usable relay base URL, or null when it isn't one.
      *
-     * Accepts a bare host ("ntfy.example.com" becomes https), requires https unless the host is
-     * explicitly http (a self-hosted relay on a home LAN is a legitimate reason to allow it),
-     * and refuses anything carrying a path, query or fragment — the topic is appended by the
-     * transport, so a path here would silently produce URLs nobody intended.
+     * Accepts a bare host ("ntfy.example.com" becomes https) and refuses anything carrying a
+     * path, query or fragment — the topic is appended by the transport, so a path here would
+     * silently produce URLs nobody intended.
+     *
+     * `http` is accepted only when [cleartextAllowed]. Release builds refuse cleartext at the
+     * platform level (no network-security-config permits it), so an http relay accepted here
+     * would be adopted by every phone in the family and then opened by none of them — parent
+     * and children each listening to an address that cannot connect, with the migration window
+     * blocking a second move for a week. The debug build permits cleartext to the test relay on
+     * loopback, and passes true.
      */
-    fun normalize(input: String): String? {
+    fun normalize(input: String, cleartextAllowed: Boolean = false): String? {
         val trimmed = input.trim().trimEnd('/')
         if (trimmed.isEmpty()) return null
         val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
         val uri = runCatching { java.net.URI(withScheme) }.getOrNull() ?: return null
         val scheme = uri.scheme?.lowercase() ?: return null
-        if (scheme != "https" && scheme != "http") return null
+        if (scheme != "https" && !(scheme == "http" && cleartextAllowed)) return null
         val host = uri.host ?: return null
         if (host.isBlank() || '.' !in host && host != "localhost") return null
         // A path would end up in front of the topic; a query or fragment would be carried into
@@ -44,5 +50,6 @@ object RelayServer {
     }
 
     /** True when [input] names a usable relay. */
-    fun isValid(input: String): Boolean = normalize(input) != null
+    fun isValid(input: String, cleartextAllowed: Boolean = false): Boolean =
+        normalize(input, cleartextAllowed) != null
 }

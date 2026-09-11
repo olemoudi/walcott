@@ -32,4 +32,38 @@ class PinLockoutTest {
         assertEquals(0L, PinLockout.remainingMs(lockedUntilMs = 1_000, nowMs = 5_000))
         assertEquals(4_000L, PinLockout.remainingMs(lockedUntilMs = 9_000, nowMs = 5_000))
     }
+
+    @Test
+    fun `a moved wall clock does not end a lockout the monotonic clock still holds`() {
+        // Three wrong guesses, the date set forward, three more: the wall clock says the
+        // lockout is over and the monotonic one — which nobody can set — says it is not.
+        val remaining = PinLockout.remainingMs(
+            lockedUntilMs = 10_000, nowMs = 1_000_000,
+            lockedUntilElapsedMs = 400_000, nowElapsedMs = 100_000,
+            sameBoot = true,
+        )
+        assertEquals(300_000L, remaining)
+    }
+
+    @Test
+    fun `across a reboot the monotonic deadline is meaningless and the wall clock carries it alone`() {
+        // The monotonic clock restarts from zero at boot, so an old deadline on it would read as
+        // hours of lockout on a phone that merely restarted.
+        assertEquals(
+            0L,
+            PinLockout.remainingMs(
+                lockedUntilMs = 10_000, nowMs = 1_000_000,
+                lockedUntilElapsedMs = 400_000, nowElapsedMs = 100_000,
+                sameBoot = false,
+            ),
+        )
+        assertEquals(
+            4_000L,
+            PinLockout.remainingMs(
+                lockedUntilMs = 9_000, nowMs = 5_000,
+                lockedUntilElapsedMs = 0, nowElapsedMs = 100_000,
+                sameBoot = false,
+            ),
+        )
+    }
 }

@@ -19,13 +19,14 @@ class RelayMigrationTest {
     private val issued = 1_720_000_000_000L
 
     @Test
-    fun `the move never expires on the child, unlike the other dangerous commands`() {
-        // The opposite of the release and the lock PIN, and deliberately so: a phone that spent a
-        // fortnight in a drawer is exactly the phone that still needs to be told where everyone
-        // went. What bounds it is the parent's own queue, not the child's clock.
-        val fortnight = 14 * 24 * 60 * 60 * 1000L
-        assertFalse(RemoteAction.expired(RemoteAction.SET_RELAY, issued, issued + fortnight))
-        assertTrue(RemoteAction.expired(RemoteAction.RELEASE_DEVICE, issued, issued + fortnight))
+    fun `the move lives as long as the parent's queue does, far longer than a lock-screen PIN`() {
+        // A phone that spent a week in a drawer is exactly the phone that still needs to be told
+        // where everyone went, and the parent's queue keeps the instruction that long. Past it,
+        // a move arriving is a replay pointing this phone at a relay the family has since left.
+        val week = SyncEngine.COMMAND_TTL_MS
+        assertFalse(RemoteAction.expired(RemoteAction.SET_RELAY, issued, issued + week))
+        assertTrue(RemoteAction.expired(RemoteAction.SET_RELAY, issued, issued + week + 1))
+        assertTrue(RemoteAction.expired(RemoteAction.SET_LOCK_PIN, issued, issued + week))
     }
 
     @Test
@@ -44,7 +45,9 @@ class RelayMigrationTest {
         assertNull(RelayServer.normalize("https://ntfy.example.com/some/path"))
         assertNull(RelayServer.normalize(""))
         assertEquals("https://ntfy.example.com", RelayServer.normalize("ntfy.example.com"))
-        assertEquals("http://192.168.1.10:8080", RelayServer.normalize("http://192.168.1.10:8080"))
+        // Cleartext only where the build can open it (see RelayServerTest).
+        assertNull(RelayServer.normalize("http://192.168.1.10:8080"))
+        assertEquals("http://192.168.1.10:8080", RelayServer.normalize("http://192.168.1.10:8080", cleartextAllowed = true))
     }
 
     @Test

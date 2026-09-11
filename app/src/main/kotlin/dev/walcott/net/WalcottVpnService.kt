@@ -44,6 +44,15 @@ class WalcottVpnService : VpnService() {
     private val writeLock = Any()
 
     /**
+     * How many queries may be in flight at once. Each one can block a thread of the IO pool
+     * for up to three resolver timeouts, and that pool is shared with the sync transport, the
+     * blocklist store and the enforcement loop's writes: a Wi-Fi whose resolvers black-hole
+     * (a captive portal, a bad DHCP answer) had a few hundred queued lookups starve all of them.
+     * Past the bound a query is answered SERVFAIL at once — the app retries, nothing waits.
+     */
+    private val inFlight = kotlinx.coroutines.sync.Semaphore(MAX_IN_FLIGHT)
+
+    /**
      * Compiled once per policy change, matched per query (see [DomainMatcher]).
      *
      * Kept apart because they are waived apart: [familyDomains] is what this family typed and
@@ -58,6 +67,7 @@ class WalcottVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
     private lateinit var cm: ConnectivityManager
     private lateinit var repository: dev.walcott.data.WalcottRepository
+    private lateinit var syncManager: dev.walcott.sync.SyncManager
 
     /**
      * Where an allowed query is forwarded, newest network first (see [DnsUpstreams]). Followed
@@ -82,6 +92,7 @@ class WalcottVpnService : VpnService() {
         cm = getSystemService(ConnectivityManager::class.java)
         val repo = (application as WalcottApplication).repository
         repository = repo
+        syncManager = (application as WalcottApplication).syncManager
         scope.launch {
             // Two inputs, one matcher: the rules (typed domains + the bundled lists) and the
             // public lists this device has downloaded (see BlocklistStore). Recompiled when
@@ -184,26 +195,51 @@ class WalcottVpnService : VpnService() {
             }
             if (length == 0) continue
             val copy = packet.copyOf(length)
-            scope.launch { runCatching { handleDnsPacket(copy, output) } }
+            if (!inFlight.tryAcquire()) {
+                runCatching { refuseNow(copy, output) }
+                continue
+            }
+            scope.launch {
+                try {
+                    runCatching { handleDnsPacket(copy, output) }
+                } finally {
+                    inFlight.release()
+                }
+            }
         }
         stopTunnel()
         runCatching { input.close() }
         runCatching { output.close() }
     }
 
-    private suspend fun handleDnsPacket(packet: ByteArray, output: FileOutputStream) {
-        // IPv4 + UDP only; anything else shouldn't reach the tun given our routes.
-        if (packet.size < 28) return
+    /**
+     * Where the DNS message starts inside an IPv4/UDP [packet], or null when the packet is not
+     * one this loop can answer (not IPv4, not UDP, or too short to carry a DNS header). Bounds
+     * are checked here so a header carrying options on a short packet cannot index past it.
+     */
+    private fun dnsStartOf(packet: ByteArray): Int? {
+        if (packet.size < 28) return null
         val version = (packet[0].toInt() and 0xF0) shr 4
-        if (version != 4) return
+        if (version != 4) return null
         val ihl = (packet[0].toInt() and 0x0F) * 4
-        if (packet[9].toInt() and 0xFF != OsConstants.IPPROTO_UDP) return
+        if (ihl < 20 || ihl + 8 + 12 > packet.size) return null
+        if (packet[9].toInt() and 0xFF != OsConstants.IPPROTO_UDP) return null
+        return ihl + 8
+    }
 
+    /** Answers a query this loop will not process right now with SERVFAIL, so the app does not wait. */
+    private fun refuseNow(packet: ByteArray, output: FileOutputStream) {
+        val dnsStart = dnsStartOf(packet) ?: return
+        writePacket(output, buildResponse(packet, dnsStart, servFail(packet, dnsStart)))
+    }
+
+    private suspend fun handleDnsPacket(packet: ByteArray, output: FileOutputStream) {
+        // IPv4 + UDP only; anything else shouldn't reach the tun given our routes, and cannot
+        // be answered anyway.
+        val dnsStart = dnsStartOf(packet) ?: return
+        val udp = dnsStart - 8
         val srcIp = InetAddress.getByAddress(packet.copyOfRange(12, 16))
-        val udp = ihl
         val srcPort = ((packet[udp].toInt() and 0xFF) shl 8) or (packet[udp + 1].toInt() and 0xFF)
-        val dnsStart = udp + 8
-        if (dnsStart >= packet.size) return
 
         val pkg = ownerPackage(srcPort)
         // The curfew is asked per query rather than compiled into the matchers above: it turns
@@ -211,7 +247,8 @@ class WalcottVpnService : VpnService() {
         // to tell it (see NetworkCurfew). Cached there, so this costs a field read most times.
         //
         // Asked BEFORE the question is parsed, because it does not depend on the question.
-        val cutOff = NetworkCurfew.cutOffNow(repository)
+        // A rescue code opens the whole phone, browsers included (see Curfew.standing).
+        val cutOff = NetworkCurfew.cutOffNow(repository, rescued = syncManager.rescueOpenNow())
         val host = parseDnsQuestion(packet, dnsStart)
         if (host == null) {
             // A question this loop cannot read is forwarded — fail-open is the rule here, and a
@@ -402,6 +439,8 @@ class WalcottVpnService : VpnService() {
          */
         private const val UPSTREAM_TIMEOUT_MS = 2000
         private const val MAX_PACKET = 32767
+        /** Queries handled concurrently; see [inFlight]. */
+        private const val MAX_IN_FLIGHT = 16
         private const val ACTION_STOP = "dev.walcott.net.STOP"
         private const val TAG = "WalcottVpn"
 

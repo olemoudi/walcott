@@ -71,8 +71,9 @@ class ParentSim(
      * the feature: nothing is sent, so nothing has to arrive — a scenario can compute the code
      * with the relay in pieces.
      */
-    fun rescueCode(action: String, nowMs: Long = System.currentTimeMillis()): String =
-        RescueCode.codeFor(familyKey, action, RescueCode.slotOf(nowMs))
+    /** The code the parent's screen would show for [deviceId] right now (see RescueCode.codeFor). */
+    fun rescueCode(action: String, deviceId: String, nowMs: Long = System.currentTimeMillis()): String =
+        RescueCode.codeFor(familyKey, action, RescueCode.slotOf(nowMs), deviceId)
 
     /**
      * The key this parent signs with, and the hand-over it presents when that is no longer the key

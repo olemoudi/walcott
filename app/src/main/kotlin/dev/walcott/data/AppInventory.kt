@@ -47,10 +47,15 @@ class AppInventory(private val context: Context) {
         // PackageManager round trip that only ever fires on the phones that can least spare it.
         if (reachOutReadAt == 0L || now - reachOutReadAt > REACH_OUT_TTL_MS) {
             reachOut = setOfNotNull(dialerPackage(), contactsPackage())
+            // Read on the same terms, for the same reason: `reachOutPackages` is asked from the
+            // top of every enforcement tick and from the DNS path.
+            messaging = messagingPackage()
             reachOutReadAt = now
         }
         return reachOut
     }
+
+    @Volatile private var messaging: String? = null
 
     private fun dialerPackage(): String? = runCatching { telecom?.defaultDialerPackage }.getOrNull()
 
@@ -64,7 +69,7 @@ class AppInventory(private val context: Context) {
      * preinstalled apps and to cap the whole day, at which point "every app gets an hour" and
      * "two hours of phone" both quietly included the way a child says they are running late.
      */
-    fun reachOutPackages(): Set<String> = alwaysReachablePackages() + setOfNotNull(messagingPackage())
+    fun reachOutPackages(): Set<String> = alwaysReachablePackages() + setOfNotNull(messaging)
 
     /**
      * Whoever answers "send a text". Resolved rather than read from
@@ -150,6 +155,7 @@ class AppInventory(private val context: Context) {
     /** Drops the cached app lists; call when a package is added or removed. */
     fun invalidate() {
         launchable = null
+        labels.clear()
         // The browsers too, and for the same event: installing one is exactly how a phone
         // acquires the app this list exists to name, and waiting out its TTL would leave a fresh
         // browser un-cut through tonight's window.
@@ -276,8 +282,16 @@ class AppInventory(private val context: Context) {
         runCatching { pm.getApplicationIcon(packageName) }.getOrNull()
 
     /** Display label for one installed package, or null when it isn't installed. */
-    fun label(packageName: String): String? =
-        runCatching { pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString() }.getOrNull()
+    fun label(packageName: String): String? = labels[packageName] ?: runCatching {
+        pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString()
+    }.getOrNull()?.also { labels[packageName] = it }
+
+    /**
+     * Labels resolved so far. A label is a binder call plus a foreign resource load, and the
+     * child's home asks for one per card on every counter change; it only changes when a
+     * package does, which is when [invalidate] drops the lot.
+     */
+    private val labels = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /**
      * Who installed [packageName], as the platform records it: "com.android.vending" for Play,

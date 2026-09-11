@@ -45,7 +45,7 @@ data class FamilySummary(
 class FamilyScope(
     context: Context,
     val id: String,
-    db: WalcottDatabase,
+    dbProvider: () -> WalcottDatabase,
     inventory: AppInventory,
     scope: CoroutineScope,
     iconStore: IconStore,
@@ -62,7 +62,7 @@ class FamilyScope(
      * On a parent phone these tables stay empty whatever the family count.
      */
     val repository = WalcottRepository(
-        db = db,
+        dbProvider = dbProvider,
         settingsStore = settingsStore,
         inventory = inventory,
         ownPackage = context.packageName,
@@ -95,7 +95,8 @@ class FamilyScope(
  */
 class FamilyHub(
     private val context: Context,
-    private val db: WalcottDatabase,
+    /** Resolved on first use rather than handed over opened: see WalcottApplication.onCreate. */
+    private val dbProvider: () -> WalcottDatabase,
     private val inventory: AppInventory,
     private val scope: CoroutineScope,
 ) {
@@ -141,7 +142,7 @@ class FamilyHub(
     val active: FamilyScope get() = scopeOf(activeId.value ?: FamilyIds.DEFAULT)
 
     fun scopeOf(id: String): FamilyScope = instances.computeIfAbsent(id) {
-        FamilyScope(context, id, db, inventory, scope, iconStore, multiFamily = { isMultiNow() })
+        FamilyScope(context, id, dbProvider, inventory, scope, iconStore, multiFamily = { isMultiNow() })
             .also { it.syncManager.start() }
     }
 
@@ -273,18 +274,8 @@ class FamilyHub(
             // FamilyIdentity.pinPlain for why it must never exist on a child).
             runCatching { scope.syncManager.rememberPinIfParent(pin) }
         }
-        // The backup key is derived and the three on-device copies rewritten AFTER the caller
-        // is free to go: that is PBKDF2 at 600k iterations plus three encrypt-and-write cycles
-        // per family, which held the Save button frozen for tens of seconds while the thing the
-        // parent asked for — the new PIN — had already been saved. Nothing downstream waits on
-        // it, and a process death before it lands is repaired by the next correct PIN entry
-        // (see verifyPinGuarded), which is where families predating the feature get it anyway.
-        scope.launch {
-            for (family in allNow()) {
-                runCatching { family.syncManager.cacheLocalBackupKey(pin) }
-                    .onFailure { dev.walcott.debug.DebugLog.w(TAG, "caching the backup key failed", it) }
-            }
-        }
+        // Nothing else follows from a PIN: the on-device copies are sealed with a passphrase of
+        // their own (see SyncManager.enableLocalBackups), never with this.
     }
 
     /**
@@ -333,9 +324,13 @@ class FamilyHub(
         val hash = source.pinHash ?: return
         to.repository.updateSettings { it.copy(pinHash = hash, pinSalt = source.pinSalt) }
         val key = from.syncStore.current()
-        if (key.localBackupKeyB64.isNotBlank()) {
+        if (from.syncManager.localBackupsOn(key)) {
             to.syncStore.update {
-                it.copy(localBackupKeyB64 = key.localBackupKeyB64, localBackupSaltB64 = key.localBackupSaltB64)
+                it.copy(
+                    localBackupKeyB64 = key.localBackupKeyB64,
+                    localBackupSaltB64 = key.localBackupSaltB64,
+                    localBackupKeySource = key.localBackupKeySource,
+                )
             }
             runCatching { to.syncManager.writeDueLocalBackups(java.time.LocalDate.now()) }
         }

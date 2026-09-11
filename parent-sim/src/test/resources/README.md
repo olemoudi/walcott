@@ -37,8 +37,10 @@ aapt2 link --manifest AndroidManifest.xml \
   -I "$ANDROID_HOME/platforms/android-35/android.jar" \
   --min-sdk-version 26 --target-sdk-version 34 -o unsigned.apk
 zipalign -f 4 unsigned.apk aligned.apk
-apksigner sign --ks walcott-release.jks --ks-pass pass:walcott --key-pass pass:walcott \
-  --ks-key-alias walcott --out unapproved-app.apk aligned.apk
+# Any key will do — these are their own packages, nothing checks their signer. (They were made
+# with the original release key, which has since been rotated out; see docs/signing.md.)
+apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android \
+  --ks-key-alias androiddebugkey --out unapproved-app.apk aligned.apk
 ```
 
 `second-unapproved-app.apk` is the same with `com.sneaky.second` / "Second Sneak".

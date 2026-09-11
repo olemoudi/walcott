@@ -13,10 +13,20 @@ class RelayServerTest {
     }
 
     @Test
-    fun `an explicit scheme is kept, including http for a relay on the home LAN`() {
+    fun `an explicit https scheme is kept`() {
         assertEquals("https://ntfy.sh", RelayServer.normalize("https://ntfy.sh"))
-        assertEquals("http://nas.local", RelayServer.normalize("http://nas.local"))
-        assertEquals("http://localhost:8080", RelayServer.normalize("http://localhost:8080"))
+    }
+
+    @Test
+    fun `http is refused unless the build permits cleartext`() {
+        // A release build refuses cleartext at the platform level, so an http relay accepted
+        // here would be adopted by every phone and opened by none — a family with no channel
+        // and a week before it may move again. The debug build permits it, for the test relay.
+        assertNull(RelayServer.normalize("http://nas.local"))
+        assertNull(RelayServer.normalize("http://localhost:8080"))
+        assertEquals("http://nas.local", RelayServer.normalize("http://nas.local", cleartextAllowed = true))
+        assertEquals("http://localhost:8080", RelayServer.normalize("http://localhost:8080", cleartextAllowed = true))
+        assertEquals("https://ntfy.sh", RelayServer.normalize("https://ntfy.sh", cleartextAllowed = true))
     }
 
     @Test

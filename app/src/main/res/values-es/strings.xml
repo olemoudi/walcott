@@ -187,7 +187,11 @@
     <string name="pin_subtitle_create">Elige un PIN para el modo padre</string>
     <string name="pin_label">PIN</string>
     <string name="pin_repeat_label">Repite el PIN</string>
-    <string name="pin_too_short">Usa al menos 4 dígitos</string>
+    <string name="pin_too_short">Usa al menos 6 dígitos</string>
+    <string name="duration_unit_hour">h</string>
+    <string name="duration_unit_minute">min</string>
+    <string name="duration_unit_second">s</string>
+    <string name="parent_pin_short_warning">Este PIN tiene menos de %1$d dígitos. Cámbialo: protege las reglas de la familia en todos los móviles, y cuatro dígitos se adivinan rápido.</string>
     <string name="pin_mismatch">Los PIN no coinciden</string>
     <string name="pin_current_label">PIN actual</string>
     <string name="pin_new_label">PIN nuevo</string>
@@ -333,6 +337,7 @@
     <string name="request_summary">%1$s · %2$d min</string>
     <string name="request_used_today">Ya lleva %1$s hoy</string>
     <string name="request_used_today_of">Ya lleva %1$s de %2$s hoy</string>
+    <string name="request_phone_today_of">El móvil: %1$s de %2$s hoy. Los minutos que concedas aquí también amplían ese total.</string>
     <string name="request_grant_minutes">Dar %1$d min</string>
 
     <!-- Sync: tiempo extra remoto -->
@@ -719,7 +724,11 @@
     <string name="restriction_installs_title">Pedir permiso para apps nuevas</string>
     <string name="restriction_installs_desc">Las apps nuevas necesitan tu visto bueno. Cómo se hace cumplir — dejando a Play funcionar y suspendiendo lo que aparezca, o rechazando a Play en la puerta — es la elección de abajo.</string>
     <string name="restriction_add_user_title">Bloquear usuarios nuevos</string>
-    <string name="restriction_add_user_desc">Un segundo perfil de usuario escaparía a las reglas</string>
+    <string name="restriction_add_user_desc">Un segundo usuario o un invitado escaparía a todas las reglas, y también cambiar a uno que ya exista</string>
+    <string name="restriction_debugging_title">Bloquear la depuración USB</string>
+    <string name="restriction_debugging_desc">Las opciones de desarrollador y un ordenador con adb son una vía para saltarse todas las reglas que el móvil aplica</string>
+    <string name="restriction_safe_boot_title">Bloquear el modo seguro</string>
+    <string name="restriction_safe_boot_desc">El modo seguro arranca el móvil con todas las apps instaladas apagadas, Walcott y su filtro web incluidos</string>
     <string name="restriction_apps_control_title">Bloquear manipulación de apps</string>
     <string name="restriction_apps_control_desc">No se pueden forzar cierres ni borrar datos de apps desde Ajustes</string>
     <string name="restriction_unknown_sources_title">Bloquear sideload</string>
@@ -1270,6 +1279,7 @@
         <item quantity="one">%d app que debería estar bloqueada no está realmente suspendida — Walcott lo está reaplicando</item>
         <item quantity="other">%d apps que deberían estar bloqueadas no están realmente suspendidas — Walcott lo está reaplicando</item>
     </plurals>
+    <string name="restriction_gap_child">Este móvil ha rechazado algunas protecciones, así que sus interruptores están encendidos pero no en vigor: %1$s</string>
     <plurals name="enforcement_gap_child">
         <item quantity="one">Auto-test fallido: %d app que debería estar bloqueada no lo estaba realmente en el dispositivo. Walcott reaplica el bloqueo en cada check-in.</item>
         <item quantity="other">Auto-test fallido: %d apps que deberían estar bloqueadas no lo estaban realmente en el dispositivo. Walcott reaplica el bloqueo en cada check-in.</item>
@@ -1370,10 +1380,10 @@
     <string name="restore_pass_title">Contraseña de la copia</string>
     <string name="restore_failed">Contraseña incorrecta o fichero de copia no válido</string>
     <string name="local_backup_enable_title">Guardar una copia en este móvil</string>
-    <string name="local_backup_enable_body">Walcott puede guardar aquí tres copias cifradas de tu familia, actualizadas cada noche, para que desinstalar la app no se lleve tus reglas. Introduce tu PIN una vez para activarlo.</string>
+    <string name="local_backup_enable_body">Walcott puede guardar aquí tres copias cifradas de tu familia, actualizadas cada noche, para que desinstalar la app no se lleve tus reglas. Se cifran con una contraseña que eliges tú, nunca con el PIN, que es demasiado corto para protegerlas.</string>
     <string name="local_backup_enable_action">Activar</string>
-    <string name="local_backup_pin_prompt">Tu PIN abre las copias si algún día necesitas restaurarlas. Se pide una sola vez.</string>
-    <string name="backup_local_note">Walcott guarda además tres copias cifradas en este móvil (%1$s), actualizadas cada noche y protegidas con tu PIN parental. Sobreviven a desinstalar la app, pero no a perder o romper el móvil: para eso está el backup de arriba.</string>
+    <string name="local_backup_pass_prompt">Elige la contraseña que abrirá las copias si algún día las restauras. No se puede recuperar, así que guárdala con tu otro backup.</string>
+    <string name="backup_local_note">Walcott guarda además tres copias cifradas en este móvil (%1$s), actualizadas cada noche y protegidas con la contraseña que elegiste para ellas. Sobreviven a desinstalar la app, pero no a perder o romper el móvil: para eso está el backup de arriba.</string>
     <string name="restore_pin_title">PIN parental</string>
     <string name="restore_pin_label">PIN parental</string>
     <string name="restore_pin_failed">PIN incorrecto o fichero de backup no válido</string>
@@ -1812,6 +1822,8 @@
     <string name="rescue_action_install">Dejar instalar (30 min)</string>
     <string name="rescue_changes_in">Código nuevo en %1$d min</string>
     <string name="rescue_once">Vale una vez. Si alguien lo oye o lo recuerda, no le sirve una segunda.</string>
+    <string name="rescue_no_members">Todavía no hay ningún móvil que haya dado señales, así que no hay código que dar: un código abre un móvil, y tiene que ser uno que la familia ya tenga.</string>
+    <string name="rescue_pick_member">¿De quién es el móvil?</string>
     <string name="rescue_no_family">Este móvil todavía no pertenece a una familia, así que no hay código que dar.</string>
     <string name="status_rescued">Abierto con un código hasta las %1$s</string>
     <string name="status_screen_left">Quedan %1$s de móvil hoy</string>
@@ -1834,6 +1846,15 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_107_0">
+        <item>La clave con la que se firma Walcott era pública: cualquiera podría haber construido una app que el móvil de un hijo aceptara como actualización de esta, y heredar todo lo que puede hacer. Esta versión la rota. Una vez que un móvil la ha instalado, solo acepta versiones firmadas con la clave nueva, que es privada; no tienes que hacer nada.</item>
+        <item>Liberar un móvil ahora también quita el PIN de desbloqueo que Walcott le hubiera puesto desde tu móvil, antes de renunciar a sus poderes. Nunca lo hacía: el paso llegaba uno tarde y se rechazaba a sí mismo. Un móvil recién liberado podía quedarse con un PIN que nadie sabía.</item>
+        <item>Los códigos de rescate abren un móvil, el que elegiste al mostrarlo. Con varios hijos, las mismas seis cifras abrían todos los móviles de la familia durante esa media hora. Elige de quién es el móvil cuando enseñes un código.</item>
+        <item>Un PIN nuevo necesita seis dígitos. Cuatro eran diez mil intentos, que es una tarde. El PIN que ya tienes sigue valiendo, y la tarjeta del PIN te avisa si es corto. Las copias nocturnas en tu móvil ahora se cifran con una contraseña que eliges tú y no con el PIN, demasiado corto para protegerlas: vuelve a activarlas desde la tarjeta de tu pantalla de inicio.</item>
+        <item>Tres protecciones más, activadas por defecto para un hijo: sin segundo usuario ni invitado (un móvil donde ninguna regla existe), sin depuración USB, sin modo seguro. Y la página de un hijo dice ahora si su móvil rechazó alguna protección, en vez de enseñar un interruptor encendido que no hace nada.</item>
+        <item>Conceder minutos extra a una app en un día cuyo total está gastado ahora abre el móvil esos minutos, y la tarjeta de la petición enseña el total del móvil junto al de la app. Los minutos se apuntaban a la app mientras el día la mantenía cerrada.</item>
+        <item>El teléfono y los contactos nunca se bloquean, ni siquiera cuando las reglas fallan cerradas por un permiso que falta o un reloj movido. Un código de rescate abre ahora también el navegador y un móvil protegido sin estar gestionado. Y todas las duraciones se leen en tu idioma: «20 min», no «20m».</item>
     </string-array>
     <string-array name="whats_new_0_102_0">
         <item>Liberar un móvil — con el PIN de padre en el propio móvil, desde el tuyo, o con la petición de doce horas — ya no puede dejarlo liberado a medias. La parte que devuelve todo y la parte que deja de aplicar las reglas se solapaban unos segundos, y una app que las reglas volvieran a bloquear en ese hueco se habría quedado bloqueada para siempre, sin que quedara nada en el móvil capaz de levantarla. Ahora las reglas se paran primero y se espera a que lo hagan, nada puede rearmarse por detrás, y el móvil comprueba después que soltó todo de verdad, repasando otra vez si no fue así.</item>
@@ -2012,7 +2033,7 @@
     <string name="list_join_two">%1$s y %2$s</string>
     <string name="list_join_more">%1$s, %2$s</string>
     <string name="panic_start_refused">Ahora mismo no se ha podido iniciar la solicitud. Comprueba la conexión e inténtalo de nuevo.</string>
-    <string name="backup_local_needs_pin">Las copias diarias en este móvil están desactivadas hasta que se ponga el PIN de la familia y se introduzca una vez: se cifran con él.</string>
+    <string name="backup_local_needs_pin">Las copias diarias en este móvil están desactivadas. Se cifran con una contraseña que eliges tú, nunca con el PIN: actívalas desde la tarjeta de tu pantalla de inicio.</string>
     <string name="backup_local_failed">La copia diaria en %1$s no se pudo escribir la última vez que se intentó.</string>
 
     <!-- Encontrar el teléfono: sonar a petición, modo perdido y la última palabra del móvil (0.97.0) -->

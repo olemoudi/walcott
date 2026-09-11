@@ -51,4 +51,25 @@ class BonusTest {
         val decoded = SyncProtocol.decode(wire, familyKey, parentKeys.public)
         assertEquals(snapshot, (decoded as IncomingMessage.FromChild).snapshot)
     }
+
+    @Test
+    fun `a bonus from another day is not credited, whatever its id`() {
+        // Minutes for the day they were given: one from last month in a replayed envelope —
+        // its id long gone from the bounded applied ledger — is minutes nobody granted.
+        // Yesterday's still counts: the parent's day and the child's can differ by one.
+        val today = 20_000L
+        val stale = parent.copy(
+            bonuses = listOf(
+                Bonus("old", "dev-1", "games", 15, today - 30),
+                Bonus("yesterday", "dev-1", "games", 15, today - 1),
+                Bonus("today", "dev-1", "games", 15, today),
+            ),
+        )
+        assertEquals(
+            listOf("yesterday", "today"),
+            SyncEngine.newBonuses(stale, "dev-1", emptySet(), todayEpochDay = today).map { it.id },
+        )
+        // Without a day to judge against, nothing changes for a caller that has none.
+        assertEquals(3, SyncEngine.newBonuses(stale, "dev-1", emptySet()).size)
+    }
 }

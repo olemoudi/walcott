@@ -201,8 +201,12 @@ object RuleEngine {
         rescued: Boolean = false,
     ): Set<String> {
         if (rescued) return emptySet()
-        if (!usageCountingAvailable && requiresUsageCounting(config)) return managed.toSet()
-        if (!clockTrusted && requiresTrustedClock(config)) return managed.toSet()
+        // Never the phone and contacts, not even here: a child who cannot call is the one
+        // outcome no rule of this app may produce, and a fail-closed that swept them up did —
+        // on a phone whose dialer or contacts app is an ordinary installed one, which the
+        // managed set includes like any other (see AppInventory.alwaysReachablePackages).
+        if (!usageCountingAvailable && requiresUsageCounting(config)) return managed - config.essentialPackages
+        if (!clockTrusted && requiresTrustedClock(config)) return managed - config.essentialPackages
         return managed.filterTo(mutableSetOf()) {
             evaluate(config, it, now, usageToday, extraTime) is Verdict.Blocked
         }

@@ -212,4 +212,23 @@ class CurfewTest {
             ),
         )
     }
+
+    @Test
+    fun `a rescue code opens the browsers too, observed half included`() {
+        // The rescue opens everything, and on the DNS side "everything" used to stop at the
+        // apps: a child rescued at bedtime had their apps back and a browser that resolved
+        // nothing. No window stands while a rescue runs, which lifts what the loop observed too.
+        val bedtime = FamilyConfig(
+            version = 1,
+            bedtime = DayType.entries.associateWith { TimeWindow(LocalTime.of(21, 0), LocalTime.of(7, 0)) },
+            essentialPackages = phone,
+        )
+        val night = LocalDateTime.of(2026, 3, 4, 23, 30)
+        val rescued = Curfew.standing(bedtime, browsers, night, rescued = true)
+        assertFalse(rescued.windowOpen)
+        assertEquals(emptySet<String>(), rescued.packages)
+        assertEquals(emptySet<String>(), rescued.with(setOf("com.oem.news")))
+        // And without it the same night is the same curfew as before.
+        assertEquals(browsers, Curfew.standing(bedtime, browsers, night).packages)
+    }
 }

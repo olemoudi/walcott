@@ -25,10 +25,13 @@ class FindPhoneProtocolTest {
     }
 
     @Test
-    fun `lost mode never expires in either direction`() {
-        val fortnight = 14 * 24 * 60 * 60 * 1000L
-        assertFalse(RemoteAction.expired(RemoteAction.LOST_MODE, issued, issued + fortnight))
+    fun `lost mode lives as long as the parent keeps it queued, in either direction`() {
+        // A phone off for days must still lock itself, and an "off" must still land — for as
+        // long as the parent could have delivered either. Past its own queue's life, a "lost
+        // mode on" arriving can only be a replay of one the family already ended.
+        assertFalse(RemoteAction.expired(RemoteAction.LOST_MODE, issued, issued + 2 * 24 * 60 * 60 * 1000L))
         assertFalse(RemoteAction.expired(RemoteAction.LOST_MODE, issued, issued + SyncEngine.COMMAND_TTL_MS))
+        assertTrue(RemoteAction.expired(RemoteAction.LOST_MODE, issued, issued + SyncEngine.COMMAND_TTL_MS + 1))
     }
 
     @Test

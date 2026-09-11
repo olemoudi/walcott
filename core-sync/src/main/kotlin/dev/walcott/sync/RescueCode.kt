@@ -69,6 +69,15 @@ object RescueCode {
     /** Every action a code can carry, in the order a parent is offered them. */
     val ACTIONS = listOf(ACTION_OPEN_1H, ACTION_OPEN_3H, ACTION_INSTALL)
 
+    /**
+     * The first child build whose codes are bound to the device (see [codeFor]). Older children
+     * still answer to the family-wide code, so the parent's screen shows that one for them.
+     */
+    const val PER_DEVICE_MIN_CHILD_VERSION = 156
+
+    /** Whether a child reporting [childAppVersionCode] expects a code bound to its device. */
+    fun bindsToDevice(childAppVersionCode: Int): Boolean = childAppVersionCode >= PER_DEVICE_MIN_CHILD_VERSION
+
     /** How long [action] is worth, in minutes; 0 for an action this build does not know. */
     fun grantMinutes(action: String): Int = when (action) {
         ACTION_OPEN_1H -> 60
@@ -86,11 +95,20 @@ object RescueCode {
     /** When [slot] stops being the current one, so a screen can count down to it. */
     fun slotEndsAtMs(slot: Long): Long = (slot + 1) * SLOT_MS
 
-    /** The code for [action] in [slot], as six digits with the leading zeros kept. */
-    fun codeFor(familyKey: SecretKey, action: String, slot: Long): String {
+    /**
+     * The code for [action] in [slot] on the phone [deviceId], as six digits with the leading
+     * zeros kept.
+     *
+     * Bound to the device, because every phone in a family holds the same key and each keeps
+     * its own record of spent slots: a family-wide code read out for one child opened every
+     * sibling's phone in the same half hour, and the parent's screen could not tell the two
+     * events apart. A blank [deviceId] is the family-wide code an older child still expects.
+     */
+    fun codeFor(familyKey: SecretKey, action: String, slot: Long, deviceId: String = ""): String {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(familyKey.encoded, "HmacSHA256"))
-        val digest = mac.doFinal("$action|$slot".toByteArray(Charsets.UTF_8))
+        val input = if (deviceId.isBlank()) "$action|$slot" else "$deviceId|$action|$slot"
+        val digest = mac.doFinal(input.toByteArray(Charsets.UTF_8))
         // RFC 4226 dynamic truncation: the low nibble of the last byte picks four bytes, the top
         // bit of those is dropped so the number is positive on every platform's signed int.
         val offset = digest[digest.size - 1].toInt() and 0x0f
@@ -140,6 +158,8 @@ object RescueCode {
         entered: String,
         nowMs: Long,
         lastUsedSlot: Long,
+        /** This phone's device id; the code has to have been read out for THIS phone. */
+        deviceId: String = "",
     ): Accepted? {
         val digits = entered.filter { it.isDigit() }
         if (digits.length != DIGITS) return null
@@ -149,7 +169,7 @@ object RescueCode {
         for (slot in (current - 1)..(current + 1)) {
             if (slot <= lastUsedSlot) continue
             for (action in ACTIONS) {
-                if (constantTimeEquals(codeFor(familyKey, action, slot), digits)) {
+                if (constantTimeEquals(codeFor(familyKey, action, slot, deviceId), digits)) {
                     return Accepted(action, slot)
                 }
             }

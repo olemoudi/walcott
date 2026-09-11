@@ -398,15 +398,17 @@ data class FamilyConfig(
      * The phone's whole allowance for a day of this kind — the total plus whatever extra time
      * widens it — or null when the family has set no total.
      *
-     * Both kinds of extra reach it, and for the same reason they reach an app on the family
-     * default: "everyone gets another half hour" and "you earned twenty minutes" are both
-     * statements about how long the phone may be used for today, which is exactly what this is.
+     * EVERY kind of extra reaches it: "everyone gets another half hour", "you earned twenty
+     * minutes" and "fifteen more minutes of that game" are all statements about how long the
+     * phone may be used for today, which is exactly what this is. The named grant in particular
+     * used to stop at the app: with the day spent, a parent approving the child's request saw
+     * the minutes credited and the app stay shut, and nothing on either phone said why. A grant
+     * the parent chose, in the amount they chose, widens the day by that amount — the leak that
+     * those minutes could be spent elsewhere is the size of the grant and the parent's call.
      */
     fun screenAllowanceAt(dayType: DayType, extraTime: Map<String, Duration> = emptyMap()): Duration? {
         val budget = dailyScreenBudget[dayType] ?: return null
-        return budget +
-            (extraTime[ExtraTime.ALL_APPS] ?: Duration.ZERO) +
-            (extraTime[ExtraTime.EARNED] ?: Duration.ZERO)
+        return extraTime.values.fold(budget, Duration::plus)
     }
 
     /**

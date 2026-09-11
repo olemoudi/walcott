@@ -147,6 +147,22 @@ class ChildDevice(
     /** Sets the family PIN through the real path, so the phone carries a genuine hash. */
     fun setPin(pin: String) = seed("--es", "pin", pin)
 
+    /**
+     * Forgets every minute of extra time granted on this device, and waits for the app to say
+     * so. Extra time lives in Room until midnight and outlives a re-pairing, so without this an
+     * hour one scenario granted a fixture keeps a later scenario's zero-minute budget from ever
+     * biting (see DeviceScenario.pairFreshFamily).
+     */
+    fun clearExtra() {
+        val before = walcottLog().count { EXTRA_CLEARED_MARKER in it }
+        seed("--es", "mode", "clear_extra")
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            if (walcottLog().count { EXTRA_CLEARED_MARKER in it } > before) return
+            Thread.sleep(250)
+        }
+    }
+
     /** What the settings screen does when the parent PIN is typed here: verify, then release. */
     fun releaseWithPin(pin: String) = seed("--es", "release_with_pin", pin)
 
@@ -758,6 +774,7 @@ class ChildDevice(
 
         /** What the seed receiver logs once a `mode reset` has actually been written. */
         private const val RESET_MARKER = "WalcottSeed: identity reset"
+        private const val EXTRA_CLEARED_MARKER = "WalcottSeed: extra time cleared"
 
         /** Flattened component of the notification listener declared in the app's manifest. */
         private const val NOTIFICATION_LISTENER =

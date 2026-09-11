@@ -142,4 +142,31 @@ class RescueCodeTest {
         assertEquals(0, RescueCode.grantMinutes("open999"))
         assertTrue(!RescueCode.opensRules("open999"))
     }
+
+    @Test
+    fun `a code is for one phone, and a sibling's phone refuses it`() {
+        // Every phone in a family holds the same key and keeps its own record of spent slots,
+        // so a family-wide code read out for one child opened every sibling's phone in the same
+        // half hour. Bound to the device, the code Ana was given is worth nothing to Leo.
+        val ana = "device-ana"
+        val leo = "device-leo"
+        val forAna = RescueCode.codeFor(key, RescueCode.ACTION_OPEN_1H, slot, ana)
+        assertNotEquals(forAna, RescueCode.codeFor(key, RescueCode.ACTION_OPEN_1H, slot, leo))
+        assertNotEquals(forAna, RescueCode.codeFor(key, RescueCode.ACTION_OPEN_1H, slot))
+        assertEquals(
+            RescueCode.ACTION_OPEN_1H,
+            RescueCode.verify(key, forAna, now, Long.MIN_VALUE, deviceId = ana)?.action,
+        )
+        assertNull(RescueCode.verify(key, forAna, now, Long.MIN_VALUE, deviceId = leo))
+        assertNull(RescueCode.verify(key, forAna, now, Long.MIN_VALUE))
+    }
+
+    @Test
+    fun `a child too old to bind still answers to the family-wide code`() {
+        assertTrue(RescueCode.bindsToDevice(RescueCode.PER_DEVICE_MIN_CHILD_VERSION))
+        assertTrue(!RescueCode.bindsToDevice(RescueCode.PER_DEVICE_MIN_CHILD_VERSION - 1))
+        assertTrue(!RescueCode.bindsToDevice(0))
+        // And the family-wide code is unchanged, so the parent's screen can still show it.
+        assertEquals(code(), RescueCode.codeFor(key, RescueCode.ACTION_OPEN_1H, slot, ""))
+    }
 }

@@ -25,24 +25,39 @@ jobs:
       - name: Run tests
         run: ./gradlew test
 
-      - name: Build release APK
+      - name: Build release APK (unsigned; the signing step below adds the key and its lineage)
         run: ./gradlew :app:assembleRelease
+
+      # The signing key is a repository secret, never a file in the tree (see docs/signing.md).
+      # The lineage next to it is what lets a phone still carrying the original key accept this
+      # build — and refuse, from then on, anything signed with that original key alone.
+      - name: Sign with the release key and its lineage
+        env:
+          SIGNING_STORE_B64: ${{ secrets.SIGNING_STORE_B64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          test -n "$SIGNING_STORE_B64" || { echo "SIGNING_STORE_B64 secret is not set"; exit 1; }
+          export SIGNING_STORE_FILE="$RUNNER_TEMP/walcott-release.jks"
+          echo "$SIGNING_STORE_B64" | base64 -d > "$SIGNING_STORE_FILE"
+          scripts/sign-apk.sh app/build/outputs/apk/release/app-release-unsigned.apk walcott.apk
+          rm -f "$SIGNING_STORE_FILE"
 
       # walcott.apk is the canonical name and carries no release stage on purpose, so it never
       # has to change again. walcott-alpha.apk is a byte-identical copy kept for compatibility:
       # parent phones that haven't updated yet still show an onboarding QR encoding the old
       # name, and those scans must not 404. Do not drop it.
-      - name: Copy APK to the stable asset names
-        run: |
-          cp app/build/outputs/apk/release/app-release.apk walcott.apk
-          cp app/build/outputs/apk/release/app-release.apk walcott-alpha.apk
+      - name: Copy APK to the stable asset name kept for old QRs
+        run: cp walcott.apk walcott-alpha.apk
 
       - name: Build version.json (drives in-app auto-update)
         run: |
           VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
-          printf '{"versionCode": %s, "versionName": "%s", "apk": "%s"}\n' \
-            "$VC" "$VN" "https://github.com/olemoudi/walcott/releases/latest/download/walcott.apk" > version.json
+          SHA=$(sha256sum walcott.apk | cut -d' ' -f1)
+          printf '{"versionCode": %s, "versionName": "%s", "apk": "%s", "sha256": "%s"}\n' \
+            "$VC" "$VN" "https://github.com/olemoudi/walcott/releases/latest/download/walcott.apk" "$SHA" > version.json
           cat version.json
 
       - name: Publish GitHub Release

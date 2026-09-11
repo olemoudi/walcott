@@ -9,6 +9,13 @@ data class UpdateInfo(
     val versionCode: Int,
     val versionName: String = "",
     val apk: String = "",
+    /**
+     * SHA-256 of the APK at [apk], lower-case hex, as CI computed it from the bytes it published.
+     * Empty from a release older than 0.107, which is accepted: the signature check the platform
+     * performs at install is the real gate, and this is the earlier, cheaper one — a download
+     * that does not match what was announced is thrown away before it is staged.
+     */
+    val sha256: String = "",
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
@@ -111,3 +118,10 @@ fun nextUpdateStep(
     !enoughSpace -> UpdateStep.NEED_SPACE
     else -> UpdateStep.DOWNLOAD
 }
+
+/**
+ * Whether a downloaded APK's digest is the one version.json announced. A blank [expectedHex]
+ * is a release published before the digest existed, and is accepted (see [UpdateInfo.sha256]).
+ */
+fun apkDigestAccepted(expectedHex: String, actualHex: String): Boolean =
+    expectedHex.isBlank() || expectedHex.equals(actualHex, ignoreCase = true)

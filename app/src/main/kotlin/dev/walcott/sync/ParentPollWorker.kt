@@ -55,7 +55,10 @@ object ParentPoll {
                     DebugLog.w(TAG, "poll rejected: HTTP ${resp.code}")
                     return@runCatching emptyList()
                 }
-                resp.body?.string()?.lines().orEmpty()
+                // Bounded: a topic anyone who knows its name can post to must not be read into
+                // memory whole, and a poll from `since=all` after a relay move is exactly when
+                // the backlog is longest.
+                resp.peekBody(MAX_POLL_BYTES).string().lines()
             }
         }.onFailure { DebugLog.w(TAG, "poll failed", it) }.getOrDefault(emptyList())
 
@@ -111,3 +114,6 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
         }
     }
 }
+
+/** The most one poll reads from the relay; a message is under 4 kB, so this is hundreds of them. */
+private const val MAX_POLL_BYTES = 4L * 1024 * 1024

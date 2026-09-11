@@ -207,4 +207,21 @@ class BlockedPackagesTest {
         )
         assertEquals(setOf(game, chat), RuleEngine.blockedPackages(cfg, managed, monday, usageToday = burned))
     }
+
+    @Test
+    fun `failing closed never touches the phone and contacts`() {
+        // The one promise that outranks every rule, kept on the one path that used to break it: a
+        // dialer or contacts app that is an ordinary installed one is in the managed set, and the
+        // fail-closed branches returned that set whole.
+        val cfg = config(defaultBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1)))
+            .copy(essentialPackages = setOf(chat))
+        assertEquals(
+            setOf(game, edu),
+            RuleEngine.blockedPackages(cfg, managed, monday, usageCountingAvailable = false),
+        )
+        assertEquals(
+            setOf(game, edu),
+            RuleEngine.blockedPackages(cfg, managed, monday, clockTrusted = false),
+        )
+    }
 }

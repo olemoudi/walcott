@@ -47,7 +47,13 @@ object PolicyDiff {
         if (deployed == null) return emptySet()
         val changed = mutableSetOf<String>()
 
-        if (deployed.defaultAppBudget != current.defaultAppBudget) changed += DEFAULT_BUDGET
+        // The day's total is edited on the same screen as the default, and it is the strongest
+        // rule in the app: an edit to it that showed no "pending" was one the parent redid.
+        if (deployed.defaultAppBudget != current.defaultAppBudget ||
+            deployed.dailyScreenBudget != current.dailyScreenBudget
+        ) {
+            changed += DEFAULT_BUDGET
+        }
         if (deployed.bedtime != current.bedtime) changed += BEDTIME
         if (deployed.allAppsBlockedWindows != current.allAppsBlockedWindows) changed += SCREEN_FREE
         if (deployed.blockedDomains != current.blockedDomains ||

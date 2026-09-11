@@ -37,4 +37,35 @@ class DeviceRestrictionsTest {
         assertEquals(allKeys.size, allKeys.toSet().size)
         assertTrue(DeviceRestrictions.FEATURES.isNotEmpty())
     }
+
+    @Test
+    fun `a child starts with the three doors closed, and an adult being helped does not`() {
+        // A guest user is a phone where this app does not exist; adb and safe mode are the two
+        // ways round every rule the phone enforces. All three are on for a child from the start,
+        // and seeded once more into families that predate them (see RECOMMENDED_SINCE_107).
+        for (key in listOf(DeviceRestrictions.KEY_ADD_USER, DeviceRestrictions.KEY_DEBUGGING, DeviceRestrictions.KEY_SAFE_BOOT)) {
+            assertTrue(key in DeviceRestrictions.RECOMMENDED_DEFAULTS, key)
+            assertTrue(key in DeviceRestrictions.RECOMMENDED_SINCE_107, key)
+        }
+        // An adult keeps developer options and safe mode: those are theirs. A second user is
+        // still a setting nobody changes on purpose.
+        assertTrue(DeviceRestrictions.KEY_ADD_USER in DeviceRestrictions.RECOMMENDED_FOR_ADULT)
+        assertTrue(DeviceRestrictions.KEY_DEBUGGING !in DeviceRestrictions.RECOMMENDED_FOR_ADULT)
+        assertTrue(DeviceRestrictions.KEY_SAFE_BOOT !in DeviceRestrictions.RECOMMENDED_FOR_ADULT)
+    }
+
+    @Test
+    fun `blocking a second user blocks switching to one as well`() {
+        val users = DeviceRestrictions.FEATURES.first { it.key == DeviceRestrictions.KEY_ADD_USER }
+        assertTrue(android.os.UserManager.DISALLOW_ADD_USER in users.restrictions)
+        assertTrue(android.os.UserManager.DISALLOW_USER_SWITCH in users.restrictions)
+        assertEquals(
+            listOf(android.os.UserManager.DISALLOW_DEBUGGING_FEATURES),
+            DeviceRestrictions.FEATURES.first { it.key == DeviceRestrictions.KEY_DEBUGGING }.restrictions,
+        )
+        assertEquals(
+            listOf(android.os.UserManager.DISALLOW_SAFE_BOOT),
+            DeviceRestrictions.FEATURES.first { it.key == DeviceRestrictions.KEY_SAFE_BOOT }.restrictions,
+        )
+    }
 }

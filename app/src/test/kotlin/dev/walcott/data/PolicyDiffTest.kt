@@ -103,4 +103,12 @@ class PolicyDiffTest {
         val andBack = there.copy(defaultAppBudget = mapOf("WEEKDAY" to 60))
         assertTrue(PolicyDiff.changedKeys(deployed, andBack).isEmpty())
     }
+
+    @Test
+    fun `editing the day's total is pending like editing the default`() {
+        assertEquals(
+            setOf(PolicyDiff.DEFAULT_BUDGET),
+            PolicyDiff.changedKeys(deployed, deployed.copy(dailyScreenBudget = mapOf("WEEKDAY" to 180))),
+        )
+    }
 }

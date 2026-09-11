@@ -93,8 +93,18 @@ object Curfew {
      * what keeps the lift exact: there is no stored deadline to honour, because the question is
      * asked again.
      */
-    fun standing(config: FamilyConfig, browsers: Set<String>, now: java.time.LocalDateTime): Standing {
-        val windowOpen = RuleEngine.deviceWideBlock(config, now) != null
+    fun standing(
+        config: FamilyConfig,
+        browsers: Set<String>,
+        now: java.time.LocalDateTime,
+        /**
+         * A rescue code is running on this phone (see `RescueCode`). It opens EVERYTHING, and a
+         * browser that resolves nothing would be the one thing it left shut — so no window is
+         * standing while it runs, and with it the observed half is lifted too (see [Standing.with]).
+         */
+        rescued: Boolean = false,
+    ): Standing {
+        val windowOpen = !rescued && RuleEngine.deviceWideBlock(config, now) != null
         return Standing(
             windowOpen = windowOpen,
             packages = cutOff(

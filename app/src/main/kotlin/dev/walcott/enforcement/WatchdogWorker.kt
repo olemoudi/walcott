@@ -31,11 +31,12 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
             runCatching { dev.walcott.location.LocationPolicy.ensureEnforced(applicationContext) }
             runCatching {
                 val settings = app.repository.settingsFlow.first()
-                DeviceRestrictions.apply(
-                    applicationContext,
-                    settings.restrictionKeysToApply(),
-                    app.syncManager.installExemption.value,
-                )
+                // Null while the stored policy cannot be read: nothing to apply, and above all
+                // nothing to clear (see PolicySettings.fallback).
+                settings.restrictionKeysToApply()?.let { keys ->
+                    val refused = DeviceRestrictions.apply(applicationContext, keys, app.syncManager.installExemption.value)
+                    runCatching { app.syncManager.recordRestrictionGaps(refused) }
+                }
                 // The DNS filter can be torn down without us: another VPN app takes the tun,
                 // or the system revokes it. Nothing else notices — the enforcement service only
                 // reacts to rule *changes* — so re-assert it here like every other policy.
@@ -68,6 +69,8 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
             // years would accumulate a row per category (and per app with its own budget) per
             // day forever. Nothing reads past the weekly report.
             runCatching { app.repository.pruneOldUsage() }
+            // Retention is a window of hours; a phone whose notifications stopped never writes.
+            runCatching { dev.walcott.notifications.NotificationLog.prune(app.repository.notifications) }
                 .onFailure { DebugLog.w(TAG, "usage prune failed", it) }
             // Doze-resilient check-in: the in-process re-emit freezes while the device
             // sleeps, but this worker still runs in Doze maintenance windows — so a phone

@@ -3,6 +3,126 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.107.0 — the review before other families
+
+A review asked for one thing: what must be fixed before children the author does not know carry
+this app. Three inventories (enforcement and the updater; the sync protocol and its crypto; the
+rules, the data and the screens), every finding read back in the code before it counted. The
+plan with all of it, ranked, is in the session's plan file; what shipped is below, in the order it
+mattered.
+
+**The signing key was public.** `walcott-release.jks` had been committed on purpose, password
+and all, for a family beta "with no secrets" — and with other families it stopped being one:
+anyone could build an APK a child's phone accepts as an update and inherit Device Owner. Fixed
+without a factory reset anywhere: the key was **rotated with APK Signature Scheme v3**.
+`signing/walcott.lineage` is the proof, signed once by the original key, that the 2026 key
+succeeds it; a phone on the original key takes a rotated build as an update, and from then on
+refuses anything signed with the original alone (no `rollback` capability in the lineage —
+measured on the emulator: the rotated install keeps Device Owner, and an APK signed with the old
+key answers `INSTALL_FAILED_UPDATE_INCOMPATIBLE`). CI signs in a separate step with
+`scripts/sign-apk.sh` from the `SIGNING_*` secrets, **v3 only**: neither v1 nor v2 can express a
+rotation, so producing them would need the original key at every release, which is the thing no
+build may depend on any more. `docs/signing.md` has the whole story and how to rotate again.
+`version.json` now carries the APK's `sha256` and the download is bounded and checked — defence
+in depth, the signature at install is the gate.
+
+**The release could never take off a lock it set.** `PanicRelease` cleared the reset-password
+token in step 3 and asked step 4 to use it; and `LockScreen.register` refused during
+`inProgress`, so the token handed to `apply` was always null. Two independent reasons the step
+was a guaranteed no-op, and neither test suite looked at the keyguard. A family that set a child's
+PIN from a distance, lost the parent phone and served the twelve hours got back a phone nobody
+could open. The lock now comes off BEFORE the handback, with the token already registered, and a
+lock that would not come off is named in the release report. `LockScreenReleaseScenarioTest`
+(destructive) proves it, and skips honestly when the platform will not arm the token.
+
+**A four-digit PIN was the root of trust.** Ten thousand guesses against a lockout the wall clock
+alone enforced (three wrong, the date forward, three more), and against the hash every child
+carries in its policy. Worse: the nightly on-device copies in `Documents/Walcott/` — the family
+key AND the parent's signing key — were sealed with it. Ten thousand candidates through PBKDF2 is
+minutes on a graphics card; a million (six digits) is still an afternoon, so a longer PIN does not
+mend that. New PINs are six digits (old ones keep working; the PIN card says when one is short),
+the lockout holds on the monotonic clock too (with the boot count, so a reboot does not read as
+hours of lockout), and the local copies are sealed with a **passphrase the parent chooses**
+(`SyncManager.enableLocalBackups`), never with the PIN; PIN-sealed copies stop being written and
+are overwritten the moment a passphrase is set. Restoring an old PIN-sealed file still works.
+
+**Rules that were half true:**
+- `standDown()` (leaving child mode by PIN) ran the handback without waiting for the enforcement
+  loop to die — the race 0.102 closed in `PanicRelease`, open on the other door. Both share
+  `EnforcementService.stopAndAwait` now, and the loop leaves by itself when the device stops
+  enforcing.
+- A rescue code opened only the Device Owner path: the accessibility blocker (the whole
+  enforcement on a phone protected without being managed) and the DNS curfew ignored it — a
+  child rescued at bedtime had their apps back and a browser that resolved nothing.
+- The fail-closed branches returned the managed set whole, phone and contacts included, on a
+  phone whose dialer or contacts app is an installed one. The one promise the README makes in
+  absolute terms, broken on the one path nobody tested.
+- A policy file that would not decode fell back to an EMPTY policy: nothing blocked, and — the
+  restriction set being empty — every device restriction actively cleared. The comment that said
+  "everything gets blocked" was from the era of categories. The last good policy is kept in
+  memory, and a fallback (`PolicySettings.fallback`) refuses to say which restrictions to apply.
+- Minutes granted to one app never widened the day's total, so approving a child's request on a
+  spent day credited minutes the app could not use. A named grant widens the day by its amount,
+  and the request card shows the phone's total beside the app's.
+
+**The channel and its commands:**
+- After a key rotation (a legacy family restored from backup) `handleIncoming` kept reading the
+  identity captured at connect time, so every later message failed the direct check, went in by
+  certificate and counted as a rotation — which is what switches the replay gate off. It reads
+  the identity fresh, and only a key that changes is a rotation.
+- `RelayServer.normalize` accepted `http://` while the release build refuses cleartext at the
+  platform level: a migration to one put parent and children on an address none could open, with
+  a week before a second move. Cleartext is accepted only where the build permits it (the debug
+  harness), and a migration can now move on from one still in flight.
+- Every command has a life: the parent's own queue keeps nothing past `COMMAND_TTL_MS`, so
+  `LOST_MODE` and `SET_RELAY` arriving later can only be replays. The child keeps a high-water
+  mark per action (`appliedCommandMarks`) beside the bounded id ledger, judges age on the clock
+  corrected by the measured skew, and credits a bonus only for today or yesterday.
+- A rescue code is bound to the phone it is for (`RescueCode.codeFor(…, deviceId)`): the same
+  six digits used to open every sibling's phone in that half hour. Gated on
+  `PER_DEVICE_MIN_CHILD_VERSION`; the parent's card picks whose phone and shows the family-wide
+  code to a child too old to bind.
+
+**The child, closed:** `DISALLOW_ADD_USER` was cleared on every sync and absent from the
+defaults (a guest user is a phone where this app does not exist); it is on by default now, with
+`DISALLOW_USER_SWITCH`, and `DISALLOW_DEBUGGING_FEATURES` and `DISALLOW_SAFE_BOOT` are offered
+and on by default for a child — the "recovery paths while beta" argument stopped holding once
+three release doors and an offline rescue existed. Seeded once more into families that predate
+them (`hardeningSeededV2`), never re-imposed on a parent who turns one off. And restrictions are
+read back: `DeviceRestrictions.apply` answers what the phone refused, which travels as
+`ChildSnapshot.restrictionGaps` to a card on the member's page instead of a switch that is on
+and does nothing. Also: the install block lifted around the self-update is backstopped by the
+alarm and re-armed under `NonCancellable`; the two service collectors that could die on a throw
+are guarded like the loop; the DNS loop bounds its fan-out (16 in flight, SERVFAIL past that,
+and for the packets it used to drop silently); `startForeground` says when it is refused and
+stops rather than being killed in a loop.
+
+**Polish:** durations read in the phone's language (`DurationUnits`, "20 min" in Spanish);
+the child's home resolves labels and aggregates a month of history off the main thread, at most
+once a minute; the database opens off the main thread at start-up; the ringer prepares
+asynchronously; the parent's poll reads a bounded body; the transport waits on one timer thread
+instead of one per retry; the notification log prunes on every write and from the watchdog; a
+shared backup does not stay in the cache.
+
+**The harness, twice.** `ScreenBudgetScenarioTest.spendTheDay` seeded past the blanket and
+earned extras only, because those were the only ones that widened the day; now a named grant
+does too, so it seeds past every extra. And the destructive suite failed on its first scenario
+for a reason that had nothing to do with releases: `ScheduleScenarioTest` grants the FIRST
+fixture an hour, that hour lives in Room until midnight, and every later scenario expecting a
+zero-minute budget on that fixture to bite found an hour of allowance instead — on an AVD that
+had never run the destructive suite the same day, so FIRST carried little usage to spend it.
+`DeviceScenario.pairFreshFamily` now clears granted extra (`--es mode clear_extra`) at every
+pairing. Verified: 133/133 non-destructive (129 in the sweep, the four `ScreenBudget` ones
+green on the re-run with the seeding fixed), `e2eReleaseTest` 8/8 twice, and the lineage check
+on the emulator by hand.
+
+**Not done, on purpose:** `hhmm` stays 24-hour (a 12-hour clock on the English locale would
+change strings the e2e reads); `TimeWindow.lengthMinutes` is still minute-of-day arithmetic
+across a DST night; `DomainMonitor.record` still sorts per query (only during a session);
+signing the envelope header would break every older child and is a protocol change for its own
+release. The pairing QR is still a permanent credential and child→parent messages are still
+unsigned — both are design decisions with their own entries in the plan, not fixes.
+
 ## Shipped in v0.102.0 — a release that cannot leave a phone half-freed
 
 A review of the one thing that must never fail once strangers' children carry this app: giving

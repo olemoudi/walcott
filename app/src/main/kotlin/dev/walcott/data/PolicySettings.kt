@@ -711,6 +711,15 @@ data class PolicySettings(
     /** Enabled device-protection features (keys from DeviceRestrictions; Device Owner only). */
     val deviceRestrictions: Set<String> = emptySet(),
     /**
+     * True when this is NOT a policy anybody wrote: the stored one would not decode and nothing
+     * better was in memory (see [SettingsStore]). Never serialized — the next decode of a good
+     * blob is a real policy again — and read by exactly one thing: [restrictionKeysToApply],
+     * which refuses to answer, because "apply an empty set" would strip every device restriction
+     * off a child over a broken file.
+     */
+    @kotlinx.serialization.Transient
+    val fallback: Boolean = false,
+    /**
      * How the "no unapproved apps" rule is enforced (see [dev.walcott.enforcement.AppUpdates]).
      *
      * A string rather than an enum because it travels: a child on an older build decodes an
@@ -777,6 +786,8 @@ data class PolicySettings(
     val locationHistoryEnabled: Boolean = false,
     /** True once recommended anti-tamper defaults were seeded (so we only seed once). */
     val hardeningSeeded: Boolean = false,
+    /** True once the defaults 0.107 added were seeded (see [seedRestrictionsV2]). */
+    val hardeningSeededV2: Boolean = false,
     /**
      * Family default for keeping a device's ringer audible (see [ChildOverrides.keepRingerAudible]).
      * Off: a family of teenagers has not asked for their phones to un-silence themselves.
@@ -829,6 +840,17 @@ data class PolicySettings(
             installMode = dev.walcott.enforcement.AppUpdates.MODE_GUARDED,
             hardeningSeeded = true,
         )
+
+    /**
+     * The same, once more, for the defaults that arrived later
+     * ([dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_SINCE_107]): a family that
+     * existed before them gets them once, and a parent who then turns one off is not
+     * overruled again. Members with restrictions of their own (an adult being helped) keep
+     * theirs — an override replaces the family set rather than adding to it.
+     */
+    fun seedRestrictionsV2(defaults: Set<String>): PolicySettings =
+        if (hardeningSeededV2) this
+        else copy(deviceRestrictions = deviceRestrictions + defaults, hardeningSeededV2 = true)
     /**
      * Family policy with [childId]'s overrides applied (null override field = inherit).
      * Blank/unknown ids return the family policy unchanged, so legacy children degrade cleanly.
@@ -967,12 +989,16 @@ data class PolicySettings(
      * apps", and the install guard reads it there to know it must judge arrivals — while the
      * platform is never told, so Play keeps working. Everything else applies as written.
      */
-    fun restrictionKeysToApply(): Set<String> =
-        if (dev.walcott.enforcement.AppUpdates.modeOf(installMode) == dev.walcott.enforcement.AppUpdates.MODE_GUARDED) {
+    fun restrictionKeysToApply(): Set<String>? {
+        // Null, not empty: an empty set is an instruction to CLEAR every restriction, and a
+        // policy that stands in for one that could not be read is not an instruction at all.
+        if (fallback) return null
+        return if (dev.walcott.enforcement.AppUpdates.modeOf(installMode) == dev.walcott.enforcement.AppUpdates.MODE_GUARDED) {
             deviceRestrictions - dev.walcott.enforcement.DeviceRestrictions.KEY_INSTALLS
         } else {
             deviceRestrictions
         }
+    }
 
     /**
      * Builds the engine's [FamilyConfig] from these rules.

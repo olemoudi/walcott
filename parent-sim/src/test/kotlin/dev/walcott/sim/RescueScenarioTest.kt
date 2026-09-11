@@ -39,7 +39,7 @@ class RescueScenarioTest : DeviceScenario() {
         // And now there is no channel at all. Nothing below this line sends anything.
         relay.stop()
 
-        type(parent.rescueCode(RescueCode.ACTION_OPEN_1H))
+        type(parent.rescueCode(RescueCode.ACTION_OPEN_1H, deviceId))
         awaitDevice("the phone opened by a code, with the relay stopped", timeoutMs = APPLY_TIMEOUT_MS) {
             !device.isSuspended(app)
         }
@@ -55,7 +55,7 @@ class RescueScenarioTest : DeviceScenario() {
         awaitDevice("the app shut by the rule", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
         relay.stop()
 
-        val code = parent.rescueCode(RescueCode.ACTION_OPEN_1H)
+        val code = parent.rescueCode(RescueCode.ACTION_OPEN_1H, deviceId)
         type(code)
         awaitDevice("the phone opened once", timeoutMs = APPLY_TIMEOUT_MS) { !device.isSuspended(app) }
 
@@ -80,7 +80,7 @@ class RescueScenarioTest : DeviceScenario() {
 
         // Six digits that are not the ones. Deliberately derived from a real code so this cannot
         // pass by being the wrong LENGTH or otherwise rejected before it is even compared.
-        val real = parent.rescueCode(RescueCode.ACTION_OPEN_1H)
+        val real = parent.rescueCode(RescueCode.ACTION_OPEN_1H, deviceId)
         val wrong = real.map { if (it == '0') '1' else '0' }.joinToString("")
         type(wrong)
         assertDeviceNever("a wrong code opened the phone") { !device.isSuspended(app) }
@@ -94,7 +94,7 @@ class RescueScenarioTest : DeviceScenario() {
         parent.pushPolicy(PolicyJson.build(version = 2, dailyMinutes = mapOf(app to 0)))
         childEventuallyReports { it.appliedPolicyVersion >= parent.currentVersion() }
 
-        type(parent.rescueCode(RescueCode.ACTION_OPEN_1H))
+        type(parent.rescueCode(RescueCode.ACTION_OPEN_1H, deviceId))
         val snapshot = childEventuallyReports { snap ->
             snap.ruleEvents.any { it.kind == dev.walcott.sync.ChildEvent.KIND_RESCUE }
         }

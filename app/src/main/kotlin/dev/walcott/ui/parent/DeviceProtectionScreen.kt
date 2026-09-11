@@ -68,6 +68,8 @@ private val RESTRICTIONS = listOf(
     RestrictionUi(DeviceRestrictions.KEY_DATETIME, R.string.restriction_datetime_title, R.string.restriction_datetime_desc, DeviceRestrictions.Group.TAMPER),
     RestrictionUi(DeviceRestrictions.KEY_BIOMETRICS, R.string.restriction_biometrics_title, R.string.restriction_biometrics_desc, DeviceRestrictions.Group.TAMPER),
     RestrictionUi(DeviceRestrictions.KEY_ADD_USER, R.string.restriction_add_user_title, R.string.restriction_add_user_desc, DeviceRestrictions.Group.TAMPER),
+    RestrictionUi(DeviceRestrictions.KEY_DEBUGGING, R.string.restriction_debugging_title, R.string.restriction_debugging_desc, DeviceRestrictions.Group.TAMPER),
+    RestrictionUi(DeviceRestrictions.KEY_SAFE_BOOT, R.string.restriction_safe_boot_title, R.string.restriction_safe_boot_desc, DeviceRestrictions.Group.TAMPER),
 
     RestrictionUi(DeviceRestrictions.KEY_AIRPLANE, R.string.restriction_airplane_title, R.string.restriction_airplane_desc, DeviceRestrictions.Group.SETTINGS),
     RestrictionUi(DeviceRestrictions.KEY_LOCALE, R.string.restriction_locale_title, R.string.restriction_locale_desc, DeviceRestrictions.Group.SETTINGS),
@@ -84,6 +86,9 @@ private val RESTRICTIONS = listOf(
     RestrictionUi(DeviceRestrictions.KEY_APPS_CONTROL, R.string.restriction_apps_control_title, R.string.restriction_apps_control_desc, DeviceRestrictions.Group.APPS),
     RestrictionUi(DeviceRestrictions.KEY_DEFAULT_APPS, R.string.restriction_default_apps_title, R.string.restriction_default_apps_desc, DeviceRestrictions.Group.APPS),
 )
+
+/** The switch's title for a restriction key, so other screens can name one the phone refused. */
+internal fun restrictionTitleRes(key: String): Int? = RESTRICTIONS.firstOrNull { it.key == key }?.titleRes
 
 private fun groupTitle(group: DeviceRestrictions.Group): Int = when (group) {
     DeviceRestrictions.Group.TAMPER -> R.string.restriction_group_tamper

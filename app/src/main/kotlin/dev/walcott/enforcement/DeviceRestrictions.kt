@@ -1,6 +1,7 @@
 package dev.walcott.enforcement
 
 import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.UserManager
@@ -13,12 +14,14 @@ import dev.walcott.WalcottAdminReceiver
  * No-ops on devices that aren't Device Owner. Only the restrictions listed here are
  * ever touched, so Walcott never clears a restriction it doesn't own.
  *
- * Deliberately NOT offered while the app is beta: blocking factory reset, safe mode,
- * sideloading or USB debugging. Those are the recovery paths if Walcott itself
- * misbehaves — locking them could leave the device unrecoverable. The parent gets a
- * check-in staleness alert instead (see StaleChildWorker). [KEY_NETWORK_RESET] is not one of
- * those: it undoes Wi-Fi and mobile settings, not this app, and it is one of the buttons an
- * adult being helped presses while looking for something else.
+ * Factory reset is deliberately NOT offered: it is the one way out that does not depend on
+ * this app, and the README promises it. USB debugging and safe mode used to be left out for
+ * the same reason — recovery paths if Walcott itself misbehaves — but a phone now has three
+ * doors of its own (the parent PIN, the remote release, the twelve-hour request) and a rescue
+ * code that needs no network, so those two are offered and on by default for a child: a
+ * laptop with adb, or a boot with every third-party app off, is a way round every rule here.
+ * [KEY_NETWORK_RESET] is not one of those: it undoes Wi-Fi and mobile settings, not this app,
+ * and it is one of the buttons an adult being helped presses while looking for something else.
  *
  * Note: Android has no restriction that prevents the primary user from CHANGING the
  * screen lock; the closest supported control is disabling biometric unlock entirely
@@ -37,6 +40,8 @@ object DeviceRestrictions {
     const val KEY_BIOMETRICS = "biometrics"
     const val KEY_INSTALLS = "installs"
     const val KEY_ADD_USER = "add_user"
+    const val KEY_DEBUGGING = "debugging"
+    const val KEY_SAFE_BOOT = "safe_boot"
     const val KEY_APPS_CONTROL = "apps_control"
     const val KEY_UNKNOWN_SOURCES = "unknown_sources"
 
@@ -73,8 +78,17 @@ object DeviceRestrictions {
      * apps quietly stop updating, in exchange for a promise ("nothing installs, ever") most
      * families did not know they were making.
      */
-    val RECOMMENDED_DEFAULTS =
-        setOf(KEY_DATETIME, KEY_VPN, KEY_APPS_CONTROL, KEY_UNKNOWN_SOURCES, KEY_INSTALLS)
+    val RECOMMENDED_DEFAULTS = setOf(
+        KEY_DATETIME, KEY_VPN, KEY_APPS_CONTROL, KEY_UNKNOWN_SOURCES, KEY_INSTALLS,
+        KEY_ADD_USER, KEY_DEBUGGING, KEY_SAFE_BOOT,
+    )
+
+    /**
+     * What 0.107 added to the defaults, seeded once more into families that already existed
+     * (see PolicySettings.seedRestrictionsV2). A guest user is a phone where this app does not
+     * exist and nothing is suspended; the other two are the two doors the beta left open.
+     */
+    val RECOMMENDED_SINCE_107 = setOf(KEY_ADD_USER, KEY_DEBUGGING, KEY_SAFE_BOOT)
 
     /**
      * What an adult being helped is offered as a starting point: the accidents, plus not installing
@@ -89,6 +103,9 @@ object DeviceRestrictions {
         KEY_AIRPLANE, KEY_LOCALE, KEY_BRIGHTNESS, KEY_SCREEN_TIMEOUT,
         KEY_MOBILE_NETWORKS, KEY_DEFAULT_APPS, KEY_ACCOUNTS, KEY_UNINSTALL,
         KEY_NETWORK_RESET, KEY_INSTALLS, KEY_APPS_CONTROL, KEY_DATETIME,
+        // A second user is a setting nobody changes on purpose, and a phone that has switched
+        // to one is a phone whose owner cannot find their own apps.
+        KEY_ADD_USER,
     )
 
     /** Which part of the screen a feature belongs under, so twenty switches read as three lists. */
@@ -105,7 +122,15 @@ object DeviceRestrictions {
         Feature(KEY_LOCATION, listOf(UserManager.DISALLOW_CONFIG_LOCATION)),
         Feature(KEY_DATETIME, listOf(UserManager.DISALLOW_CONFIG_DATE_TIME)),
         Feature(KEY_BIOMETRICS, emptyList()), // keyguard feature, not a user restriction
-        Feature(KEY_ADD_USER, listOf(UserManager.DISALLOW_ADD_USER)),
+        // Both halves: a user that cannot be created, and one that already exists (a guest,
+        // an OEM's second profile) that cannot be switched to. Suspension is per user, so
+        // either is a phone with none of the rules on it.
+        Feature(KEY_ADD_USER, listOf(UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_USER_SWITCH)),
+        // Developer options and adb: `am force-stop`, `settings put`, a sideload past the
+        // install block — a laptop is the way round every rule the phone itself enforces.
+        Feature(KEY_DEBUGGING, listOf(UserManager.DISALLOW_DEBUGGING_FEATURES)),
+        // Safe mode boots with every third-party app off, this one and its filter included.
+        Feature(KEY_SAFE_BOOT, listOf(UserManager.DISALLOW_SAFE_BOOT)),
 
         // Settings somebody changes by accident.
         Feature(KEY_AIRPLANE, listOf(UserManager.DISALLOW_AIRPLANE_MODE), Group.SETTINGS),
@@ -133,12 +158,21 @@ object DeviceRestrictions {
     fun effectiveKeys(enabledKeys: Set<String>, installExemptUntilMs: Long, nowMs: Long): Set<String> =
         if (nowMs < installExemptUntilMs) enabledKeys - KEY_INSTALLS else enabledKeys
 
-    /** Applies exactly the [enabledKeys] feature set (clears the rest). Device Owner only. */
-    fun apply(context: Context, enabledKeys: Set<String>, installExemptUntilMs: Long = 0) {
-        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
-        if (!dpm.isDeviceOwnerApp(context.packageName)) return
+    /**
+     * Applies exactly the [enabledKeys] feature set (clears the rest). Device Owner only.
+     *
+     * Answers with the keys the phone REFUSED — features that are on in the policy and whose
+     * restriction the system does not report in force afterwards. Every other enforcement
+     * surface here measures rather than assumes (the suspension reconciler, the handback), and
+     * this one, which is the whole anti-tamper story, used to fire and forget: an OEM refusing
+     * `DISALLOW_CONFIG_VPN` left the parent looking at a switch that was on and a filter the
+     * child could turn off in Settings. Empty on a device that is not Device Owner.
+     */
+    fun apply(context: Context, enabledKeys: Set<String>, installExemptUntilMs: Long = 0): Set<String> {
+        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return emptySet()
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return emptySet()
         // An alarm firing mid-release would put back what the handback is taking off, for good.
-        if (PanicRelease.inProgress) return
+        if (PanicRelease.inProgress) return emptySet()
         val admin = WalcottAdminReceiver.componentName(context)
         val effective = effectiveKeys(enabledKeys, installExemptUntilMs, System.currentTimeMillis())
 
@@ -162,8 +196,14 @@ object DeviceRestrictions {
                 runCatching {
                     if (enabled) dpm.addUserRestriction(admin, restriction)
                     else dpm.clearUserRestriction(admin, restriction)
+                }.onFailure {
+                    dev.walcott.debug.DebugLog.w(TAG, "the system refused $restriction for ${feature.key}", it)
                 }
             }
+        }
+        val refused = refusedFeatures(dpm, admin, effective)
+        if (refused.isNotEmpty()) {
+            dev.walcott.debug.DebugLog.w(TAG, "restrictions not in force after applying: ${refused.sorted().joinToString()}")
         }
 
         // Side effects: locking the setting is only useful if the setting is in the safe state.
@@ -185,5 +225,23 @@ object DeviceRestrictions {
                 else DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE,
             )
         }
+        return refused
     }
+
+    /**
+     * The features in [enabled] whose restrictions the system does not report as set by this
+     * admin. Asked of the system, not tallied from exceptions: a call can return normally and
+     * change nothing. Empty when the system will not answer — an unreadable answer is not a
+     * refusal, and reporting one would alarm every parent on a phone that merely declined the
+     * question.
+     */
+    private fun refusedFeatures(dpm: DevicePolicyManager, admin: ComponentName, enabled: Set<String>): Set<String> {
+        val inForce = runCatching { dpm.getUserRestrictions(admin) }.getOrNull() ?: return emptySet()
+        return FEATURES
+            .filter { it.key in enabled && it.restrictions.any { restriction -> !inForce.getBoolean(restriction) } }
+            .map { it.key }
+            .toSet()
+    }
+
+    private const val TAG = "WalcottRestrict"
 }

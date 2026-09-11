@@ -40,4 +40,24 @@ class UpdateInfoTest {
     fun `isNewerThan is false without an apk url`() {
         assertFalse(UpdateInfo(versionCode = 9, apk = "").isNewerThan(1))
     }
+
+    @Test
+    fun `parses the published digest and defaults it to blank`() {
+        val withDigest = UpdateInfo.parse("""{"versionCode": 7, "apk": "https://x/a.apk", "sha256": "ABCD"}""")
+        assertEquals("ABCD", withDigest?.sha256)
+        assertEquals("", UpdateInfo.parse("""{"versionCode": 7}""")?.sha256)
+    }
+
+    @Test
+    fun `a download is accepted only when its digest matches the announced one`() {
+        assertTrue(apkDigestAccepted("abcd", "abcd"))
+        assertTrue(apkDigestAccepted("ABCD", "abcd"), "hex case must not matter")
+        assertFalse(apkDigestAccepted("abcd", "abce"))
+        assertFalse(apkDigestAccepted("abcd", ""))
+    }
+
+    @Test
+    fun `a release published without a digest is still accepted`() {
+        assertTrue(apkDigestAccepted("", "abcd"))
+    }
 }

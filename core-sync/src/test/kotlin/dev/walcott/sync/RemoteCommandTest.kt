@@ -167,4 +167,37 @@ class RemoteCommandTest {
     }
 
     private fun keyPair() = FamilyCrypto.generateSigningKeyPair()
+
+    @Test
+    fun `a command older than the newest one of its kind already applied is a replay`() {
+        // The applied ledger is bounded, so a captured envelope published long enough after the
+        // fact carries ids that have fallen off it. The high-water mark does not forget.
+        val old = command("old", action = RemoteAction.LOST_MODE, issuedAtMs = now - 60_000)
+        val newer = command("newer", action = RemoteAction.LOST_MODE, issuedAtMs = now)
+        val marks = SyncEngine.markApplied(emptyMap(), newer)
+        assertTrue(SyncEngine.newCommands(parent(old), "child-1", emptySet(), marks).isEmpty())
+        // Another action is judged on its own mark.
+        val other = command("ring", action = RemoteAction.RING_NOW, issuedAtMs = now - 60_000)
+        assertEquals(listOf("ring"), SyncEngine.newCommands(parent(other), "child-1", emptySet(), marks).map { it.id })
+    }
+
+    @Test
+    fun `two commands of one action issued in the same instant both run, on their ids`() {
+        // A catch-up queues two at once; the mark alone would refuse the second.
+        val first = command("first", action = RemoteAction.UPDATE_NOW, issuedAtMs = now)
+        val second = command("second", action = RemoteAction.UPDATE_NOW, issuedAtMs = now)
+        val marks = SyncEngine.markApplied(emptyMap(), first)
+        assertEquals(
+            listOf("second"),
+            SyncEngine.newCommands(parent(first, second), "child-1", setOf("first"), marks).map { it.id },
+        )
+    }
+
+    @Test
+    fun `the mark only ever moves forward`() {
+        val newer = command("newer", issuedAtMs = now)
+        val older = command("older", issuedAtMs = now - 1)
+        val marks = SyncEngine.markApplied(SyncEngine.markApplied(emptyMap(), newer), older)
+        assertEquals(now, marks[RemoteAction.UPDATE_NOW])
+    }
 }

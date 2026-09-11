@@ -193,8 +193,9 @@ cannot be undone: enrolling it again means setting it up from scratch, so the ap
 And if your phone is the one that is gone, there are two ways out from the child's phone:
 
 - **With the parent PIN** — settings → *Remove Walcott from this device*. Unblocks every app,
-  gives back every setting, erases the rules and history and drops out of management. Nothing
-  is left to suggest the phone was ever enrolled.
+  gives back every setting (an unlock PIN you set from your phone included), erases the rules
+  and history and drops out of management. Nothing is left to suggest the phone was ever
+  enrolled.
 - **Without the PIN** — the child can request the same release from their home screen, and it
   takes 12 hours of being *loud*: parents are notified immediately and again every hour,
   each alert carrying a one-tap refusal. The phone must keep reaching the family channel the
@@ -209,16 +210,17 @@ does not block, was always the faster way out anyway.
 
 A rescue code opens a child's phone with nothing arriving: no data, no Wi-Fi, a phone abroad, or
 one that has locked itself down because its clock or its permissions went wrong. The parent's
-settings show six digits; the child types them into their own Walcott, with no PIN, and the phone
-opens for an hour, three hours, or long enough to install something.
+settings show six digits for the phone you pick; the child types them into their own Walcott,
+with no PIN, and the phone opens for an hour, three hours, or long enough to install something.
 
 It is deliberately not the parent's PIN. That PIN releases a device permanently, so spending it
 to buy an hour — in front of the person it exists to keep out — is spending the wrong thing, and
 a PIN just changed does not work offline until the new policy arrives anyway. The code is derived
 from the family key both phones already hold (HMAC-SHA256, truncated the way an authenticator
-app does it) over a thirty-minute slot: nothing is sent, nothing is enrolled, and no new secret
-exists. It works once — the phone remembers the newest slot it accepted — so a code overheard or
-remembered is worth nothing twice, and a clock moved backwards only reaches slots already spent.
+app does it) over a thirty-minute slot and the phone it is for: nothing is sent, nothing is
+enrolled, and no new secret exists. It works once — the phone remembers the newest slot it
+accepted — so a code overheard or remembered is worth nothing twice, a clock moved backwards only
+reaches slots already spent, and a sibling who hears it has nothing.
 
 ## Honest limitations
 

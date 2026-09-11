@@ -103,6 +103,17 @@ internal fun ParentPinCard(viewModel: WalcottViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = spacing.sm),
             )
+            // A PIN from before the minimum went up still works, and is still four digits: said
+            // here, where the button to change it is, rather than enforced on a PIN that guards
+            // every child's phone right now.
+            if (readablePin.isNotBlank() && readablePin.length < dev.walcott.data.Pin.MIN_LENGTH) {
+                Text(
+                    stringResource(R.string.parent_pin_short_warning, dev.walcott.data.Pin.MIN_LENGTH),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = spacing.xs),
+                )
+            }
             // Who can already verify this PIN. A child only adopts rules strictly newer than
             // the ones it applied, so "up to date" is proof it has the current PIN; anything
             // else is "can't tell yet", never "definitely stale".
@@ -395,7 +406,7 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
         if (busy) return
         when {
             // Same rules as creating the first PIN (see PinGateScreen).
-            next.length < 4 -> error = tooShort
+            next.length < dev.walcott.data.Pin.MIN_LENGTH -> error = tooShort
             next != repeat -> error = mismatch
             else -> {
                 busy = true

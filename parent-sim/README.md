@@ -73,10 +73,11 @@ survive its own repetition, is it compressing something the phone spaces out.
 The scenarios need the debug build, Device Owner, and a network.
 
 ```sh
-# 1. Build and sign with the release key (the AVD's Device Owner is bound to it)
+# 1. Build and sign with the release key AND its lineage (the AVD's Device Owner is bound to
+#    the key; the lineage is what lets a device on the original key take the rotated one —
+#    see docs/signing.md). Needs walcott.signing.* in local.properties.
 ./gradlew assembleDebug
-apksigner sign --ks walcott-release.jks --ks-pass pass:walcott --key-pass pass:walcott \
-  --ks-key-alias walcott --out walcott-debug.apk app/build/outputs/apk/debug/app-debug.apk
+scripts/sign-apk.sh app/build/outputs/apk/debug/app-debug.apk walcott-debug.apk
 
 # 2. Install (the install block must be off, or adb itself is refused — see below)
 adb install -r walcott-debug.apk
@@ -153,6 +154,7 @@ All in `PolicySeedReceiver` (debug builds only; absent from release):
 | --- | --- |
 | `--es mode pair --es pair_with <walcott1:…> [--ez fresh true]` | Pair through the real path. `fresh` wipes identity and state first, in the same coroutine — as two broadcasts the wipe can land *after* the pairing. |
 | `--es mode reset` | Forget everything, as a fresh install would start. |
+| `--es mode clear_extra` | Forget every minute of extra time granted today. Extra time lives in Room until midnight and outlives a re-pairing, so `DeviceScenario` runs this at every pairing: an hour a schedule scenario granted a fixture otherwise keeps a later zero-minute budget on that fixture from ever biting. |
 | `--es policy_b64 <b64>` | Replace the stored policy locally. |
 | `--es publish now` | Publish the snapshot now (the heartbeat publish is throttled by design). |
 | `--es heartbeat now` | The whole ~30-minute check-in, on demand. |

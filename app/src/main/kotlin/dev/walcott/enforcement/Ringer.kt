@@ -129,8 +129,15 @@ object Ringer {
                 // The CPU stays up for as long as the sound does: a phone ringing from a drawer
                 // with its screen off is the whole use case.
                 setWakeMode(app, PowerManager.PARTIAL_WAKE_LOCK)
-                prepare()
-                start()
+                // Prepared asynchronously: a synchronous prepare decodes on the caller's thread,
+                // which here is the main one, and a tone that resolves to a slow provider held
+                // the UI for its whole load.
+                setOnPreparedListener { it.start() }
+                setOnErrorListener { _, what, extra ->
+                    DebugLog.e(TAG, "the ring tone failed to play (what=$what extra=$extra)")
+                    true
+                }
+                prepareAsync()
             }
         }.onFailure { DebugLog.e(TAG, "could not play the ring tone", it) }.getOrNull()
         if (created == null) {

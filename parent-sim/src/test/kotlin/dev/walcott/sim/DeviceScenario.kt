@@ -69,6 +69,11 @@ abstract class DeviceScenario {
         // The policy goes first — a leftover install block would refuse the next `adb install`
         // and, worse, would make an unrelated scenario fail for a reason it never mentions.
         device.seedPolicy(PolicyJson.minimal())
+        // And no extra time from anything that ran before: it lives in Room until midnight, so
+        // an hour a schedule scenario granted the FIRST fixture left every later zero-minute
+        // budget on that fixture an hour of allowance — which read as a phone that had stopped
+        // enforcing, on the destructive suite first of all.
+        device.clearExtra()
         // Wait for it to be real before going on: a seed broadcast returns when the receiver was
         // dispatched, not when the OS has acted, and a scenario that starts while the previous
         // one's install block is still armed fails on its first `adb install` for no reason of

@@ -301,6 +301,9 @@ data class SyncState(
     /** Consecutive wrong codes, and the lockout they have earned (see [dev.walcott.data.PinLockout]). */
     val rescueFails: Int = 0,
     val rescueLockedUntilMs: Long = 0,
+    /** The same lockout on the monotonic clock, and the boot it was measured in (see PinLockout). */
+    val rescueLockedUntilElapsedMs: Long = 0,
+    val rescueLockBootCount: Int = -1,
     /** Wall-clock ms of the last accepted code, for the parent's wall. 0 = never. */
     val rescueUsedAtMs: Long = 0,
     /**
@@ -382,6 +385,9 @@ data class SyncState(
     /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */
     val pinFailedAttempts: Int = 0,
     val pinLockedUntilMs: Long = 0,
+    /** The same lockout on the monotonic clock, and the boot it was measured in (see PinLockout). */
+    val pinLockedUntilElapsedMs: Long = 0,
+    val pinLockBootCount: Int = -1,
     /** Monotonic tally of wrong PINs (never reset), reported to the parent, and the last one's time. */
     val pinWrongTotal: Int = 0,
     val lastWrongPinMs: Long = 0,
@@ -391,6 +397,8 @@ data class SyncState(
      * command from its queue after [SyncEngine.COMMAND_TTL_MS], well inside the cap.
      */
     val appliedCommandIds: Set<String> = emptySet(),
+    /** The newest `issuedAtMs` applied per action — the replay line (see SyncEngine.newCommands). */
+    val appliedCommandMarks: Map<String, Long> = emptyMap(),
     /** Banked idle seconds not yet converted into earned extra time (idle-earn model). */
     val idleEarnBankSeconds: Long = 0,
     /** Idle-earn grants over the last week, for the rolling-window and weekly caps. */
@@ -401,6 +409,8 @@ data class SyncState(
     val updateError: String = "",
     /** Blocked-but-not-suspended packages from the last heartbeat self-test (capped; [] = passed). */
     val enforcementGaps: List<String> = emptyList(),
+    /** Device-protection keys the phone refused (see ChildSnapshot.restrictionGaps). */
+    val restrictionGaps: List<String> = emptyList(),
     /** Local minus server clock in ms, as last measured by [ClockGuard]; 0 until measured. */
     val clockSkewMs: Long = 0,
     /**
@@ -629,6 +639,14 @@ data class SyncState(
      */
     val localBackupKeyB64: String = "",
     val localBackupSaltB64: String = "",
+    /**
+     * What [localBackupKeyB64] was derived from: `FamilyBackup.SOURCE_PASSPHRASE` for a key the
+     * parent chose, blank for one derived from the PIN by builds before 0.107. The PIN-derived
+     * key is never used again: a four-digit PIN sealing the family's signing key in shared
+     * storage was an offline brute force away from the whole family, so the copies are only
+     * written under a passphrase now.
+     */
+    val localBackupKeySource: String = "",
     /** Epoch day each rotation slot was last written on, keyed by [BackupRotation.Slot] name. */
     val localBackupDays: Map<String, Long> = emptyMap(),
     /**

@@ -56,8 +56,8 @@ import java.util.Locale
  *
  * Deliberately manual. It used to offer to keep a chosen file refreshed by itself, which read as
  * "backups are handled" while only ever writing to this same phone — exactly what the nightly
- * on-device copies now do properly, under the parent PIN and with no setup at all. Two automatic
- * local backups is one too many, and the confusing one was this.
+ * on-device copies now do properly, under a passphrase of their own. Two automatic local
+ * backups is one too many, and the confusing one was this.
  */
 @Composable
 internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
@@ -113,9 +113,13 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
             runCatching {
                 val text = viewModel.createBackup(passphrase.toCharArray())
                 val file = withContext(Dispatchers.IO) {
-                    File(context.cacheDir, "backups").apply { mkdirs() }
-                        .resolve("walcott-family-backup.json")
-                        .apply { writeText(text) }
+                    val folder = File(context.cacheDir, "backups").apply { mkdirs() }
+                    // Whatever an earlier share left behind goes first: the sheet's target has
+                    // long since read it, and a sealed copy of the family is not something to
+                    // leave lying in a cache for the life of the install.
+                    folder.listFiles()?.filter { it.lastModified() < System.currentTimeMillis() - SHARED_BACKUP_TTL_MS }
+                        ?.forEach { runCatching { it.delete() } }
+                    folder.resolve("walcott-family-backup.json").apply { writeText(text) }
                 }
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     context, "${context.packageName}.fileprovider", file,
@@ -184,13 +188,14 @@ internal fun FamilyBackupCard(viewModel: WalcottViewModel) {
             // The nightly on-device copies. Stated plainly, and stated as NOT covering the case
             // this card is really about: a phone that is lost or broken takes them with it.
             //
-            // And stated CONDITIONALLY, because they are conditional. They are sealed with the
-            // family PIN, so until one is set AND entered once there are none at all — and when a
-            // night's write fails, nothing anywhere said so: the flag was recorded and never read.
-            // Either way this line used to promise copies that did not exist, about the one
-            // disaster it exists to cover.
+            // And stated CONDITIONALLY, because they are conditional. They are sealed with a
+            // passphrase the parent chooses for them (never the PIN — see
+            // SyncManager.enableLocalBackups), so until one is chosen there are none at all — and
+            // when a night's write fails, nothing anywhere said so: the flag was recorded and
+            // never read. Either way this line used to promise copies that did not exist, about
+            // the one disaster it exists to cover.
             val syncState by viewModel.syncState.collectAsStateWithLifecycle()
-            val localKeyed = syncState.localBackupKeyB64.isNotBlank()
+            val localKeyed = viewModel.localBackupsOn(syncState)
             val localFailing = syncState.localBackupError
             Text(
                 when {
@@ -378,3 +383,6 @@ class BackupSharedReceiver : android.content.BroadcastReceiver() {
             ).intentSender
     }
 }
+
+/** How long a backup handed to the share sheet stays in the cache before the next share deletes it. */
+private const val SHARED_BACKUP_TTL_MS = 60L * 60 * 1000

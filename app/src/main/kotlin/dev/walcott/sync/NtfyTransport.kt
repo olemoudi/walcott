@@ -10,6 +10,8 @@ import dev.walcott.debug.DebugLog
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -46,6 +48,15 @@ class NtfyTransport(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val closed = AtomicBoolean(false)
+
+    /**
+     * The one thread every delayed step here waits on. Each retry and each reconnect used to
+     * start a thread of its own and sleep on it; a flapping network on a busy child kept a
+     * growing pile of them asleep at once.
+     */
+    private val timer = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "ntfy-timer").apply { isDaemon = true }
+    }
     private val reconnectAttempts = AtomicInteger(0)
 
     /**
@@ -165,13 +176,12 @@ class NtfyTransport(
         })
     }
 
-    /** Retries after a short backoff on a daemon thread, like the socket's reconnect. */
+    /** Retries after a short backoff on the shared timer, like the socket's reconnect. */
     private fun retryPublish(message: String, attempt: Int) {
         val delayMillis = PUBLISH_RETRY_BASE_MS shl (attempt - 1)
-        Thread {
-            Thread.sleep(delayMillis)
-            if (!closed.get()) publish(message, attempt + 1)
-        }.apply { isDaemon = true }.start()
+        runCatching {
+            timer.schedule({ if (!closed.get()) publish(message, attempt + 1) }, delayMillis, TimeUnit.MILLISECONDS)
+        }
     }
 
     /**
@@ -252,14 +262,15 @@ class NtfyTransport(
         val delayMillis = (RECONNECT_BASE_MS shl attempt).coerceAtMost(RECONNECT_MAX_MS)
         val generation = reconnectGeneration.incrementAndGet()
         DebugLog.i(TAG, "reopening the relay socket in $delayMillis ms (attempt ${attempt + 1})")
-        Thread {
-            Thread.sleep(delayMillis)
-            if (closed.get()) return@Thread
-            // Superseded while asleep by [onNetworkAvailable], which has already opened one.
-            if (reconnectGeneration.get() != generation) return@Thread
-            reconnectPending.set(false)
-            openSocket()
-        }.apply { isDaemon = true }.start()
+        runCatching {
+            timer.schedule({
+                if (closed.get()) return@schedule
+                // Superseded while waiting by [onNetworkAvailable], which has already opened one.
+                if (reconnectGeneration.get() != generation) return@schedule
+                reconnectPending.set(false)
+                openSocket()
+            }, delayMillis, TimeUnit.MILLISECONDS)
+        }
     }
 
     /**
@@ -291,6 +302,7 @@ class NtfyTransport(
         reconnectPending.set(false)
         webSocket?.cancel()
         webSocket = null
+        timer.shutdownNow()
     }
 
     companion object {

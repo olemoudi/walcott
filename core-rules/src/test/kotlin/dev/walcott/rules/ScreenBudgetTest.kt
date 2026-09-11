@@ -199,4 +199,26 @@ class ScreenBudgetTest {
         )
         assertTrue(blocks.none { it.kind == ActiveBlock.Kind.SCREEN_BUDGET }, "$blocks")
     }
+
+    @Test
+    fun `minutes granted to one app widen the day by the same amount`() {
+        // The request a family answers most: "fifteen more minutes of that game" on a day that
+        // is already spent. Credited to the app alone, the minutes bought nothing — the day's
+        // total shut the app before its own allowance was ever read.
+        val config = config(
+            total = Duration.ofHours(2),
+            perApp = mapOf(game to AppPolicy(dailyBudget = mapOf(DayType.SCHOOL to Duration.ofHours(1)))),
+        )
+        val spent = used(game to Duration.ofHours(1), chat to Duration.ofHours(1))
+        assertEquals(
+            Verdict.Blocked(BlockReason.SCREEN_BUDGET),
+            RuleEngine.evaluate(config, game, monday, spent),
+        )
+        val granted = mapOf(game to Duration.ofMinutes(15))
+        assertEquals(
+            Verdict.AllowedWithBudget(Duration.ofMinutes(15)),
+            RuleEngine.evaluate(config, game, monday, spent, granted),
+        )
+        assertEquals(Duration.ofMinutes(15), config.screenTimeLeftAt(DayType.SCHOOL, ScreenTime.of(spent), granted))
+    }
 }

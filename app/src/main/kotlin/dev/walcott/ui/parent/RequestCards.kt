@@ -151,6 +151,23 @@ private fun SpentTodayLine(pending: SyncManager.PendingRequest, settings: dev.wa
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    // The phone's own total, when the family has one: the minutes granted here widen it by the
+    // same amount (see FamilyConfig.screenAllowanceAt), and a parent answering "fifteen more of
+    // that game" on a day that is already spent should know they are opening the whole phone.
+    val phoneLimit = config.dailyScreenBudget[config.calendar.dayTypeOf(childNow)] ?: return
+    val phoneUsed = dev.walcott.data.ChildStats.usedTodayOn(
+        target = dev.walcott.rules.ExtraTime.ALL_APPS,
+        usage = pending.usage,
+        epochDay = pending.epochDay,
+        tzOffsetMinutes = pending.tzOffsetMinutes,
+        nowMs = System.currentTimeMillis(),
+        parentNow = parentNow,
+    ) ?: return
+    Text(
+        stringResource(R.string.request_phone_today_of, phoneUsed.humanize(), phoneLimit.humanize()),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**

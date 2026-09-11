@@ -316,7 +316,7 @@ class PolicySettingsTest {
         assertTrue(DeviceRestrictions.KEY_INSTALLS in seeded.deviceRestrictions, "the guard is armed")
         assertEquals(AppUpdates.MODE_GUARDED, AppUpdates.modeOf(seeded.installMode))
         assertFalse(
-            DeviceRestrictions.KEY_INSTALLS in seeded.restrictionKeysToApply(),
+            DeviceRestrictions.KEY_INSTALLS in seeded.restrictionKeysToApply()!!,
             "the platform is never told to refuse installs in this mode",
         )
     }
@@ -333,7 +333,7 @@ class PolicySettingsTest {
             """{"version":5,"deviceRestrictions":["installs"]}""",
         )
         assertEquals(AppUpdates.MODE_STRICT, AppUpdates.modeOf(legacy.installMode))
-        assertTrue(DeviceRestrictions.KEY_INSTALLS in legacy.restrictionKeysToApply())
+        assertTrue(DeviceRestrictions.KEY_INSTALLS in legacy.restrictionKeysToApply()!!)
     }
 
     // --- Leaving categories behind (see migratedFromCategories) ---
@@ -414,5 +414,36 @@ class PolicySettingsTest {
         val old = PolicySettings(budgets = mapOf("other" to mapOf("SCHOOL" to 60)))
         val once = old.migratedFromCategories()
         assertEquals(once, once.migratedFromCategories())
+    }
+
+    @Test
+    fun `a fallback policy refuses to say which restrictions to apply`() {
+        // An empty set is an instruction to clear every device restriction; a policy standing in
+        // for one that could not be read is not an instruction. And the flag never travels: the
+        // next good blob decodes as a real policy again.
+        val real = PolicySettings(deviceRestrictions = setOf(DeviceRestrictions.KEY_DATETIME))
+        assertEquals(setOf(DeviceRestrictions.KEY_DATETIME), real.restrictionKeysToApply())
+        assertNull(PolicySettings(fallback = true).restrictionKeysToApply())
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val roundTripped = json.decodeFromString(
+            PolicySettings.serializer(),
+            json.encodeToString(PolicySettings.serializer(), real.copy(fallback = true)),
+        )
+        assertFalse(roundTripped.fallback)
+    }
+
+    @Test
+    fun `the later defaults are seeded once into a family that predates them, and never re-imposed`() {
+        val old = PolicySettings(deviceRestrictions = setOf(DeviceRestrictions.KEY_DATETIME), hardeningSeeded = true)
+        val seeded = old.seedRestrictionsV2(DeviceRestrictions.RECOMMENDED_SINCE_107)
+        assertTrue(seeded.hardeningSeededV2)
+        assertTrue(DeviceRestrictions.KEY_DATETIME in seeded.deviceRestrictions)
+        assertTrue(DeviceRestrictions.RECOMMENDED_SINCE_107.all { it in seeded.deviceRestrictions })
+        // The parent turns one off afterwards: the seed does not put it back.
+        val loosened = seeded.copy(deviceRestrictions = seeded.deviceRestrictions - DeviceRestrictions.KEY_DEBUGGING)
+        assertEquals(loosened, loosened.seedRestrictionsV2(DeviceRestrictions.RECOMMENDED_SINCE_107))
+        // A brand-new family gets everything from the first seed, and the second is a no-op.
+        val fresh = PolicySettings().seedRestrictions(DeviceRestrictions.RECOMMENDED_DEFAULTS)
+        assertTrue(DeviceRestrictions.RECOMMENDED_SINCE_107.all { it in fresh.deviceRestrictions })
     }
 }

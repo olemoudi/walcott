@@ -97,7 +97,7 @@ fun PinGateScreen(
             }
         } else if (creating) {
             when {
-                pin.length < 4 -> error = tooShort
+                pin.length < dev.walcott.data.Pin.MIN_LENGTH -> error = tooShort
                 pin != confirm -> error = mismatch
                 else -> {
                     viewModel.setPin(pin)
