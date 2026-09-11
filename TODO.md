@@ -3,6 +3,49 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.108.0 — the secrets a family types
+
+ole asked for a pass over "the dialogs and inputs for passwords and PINs, especially the ones for
+setting them up the first time, and make them prettier and friendlier". There were eleven such
+surfaces and every one of them was a hand-rolled `OutlinedTextField` with dots behind it — which
+tells the person typing nothing: not how many digits are expected, not how many they have got,
+not whether the thing they typed twice agrees with itself, and with no way to check what they
+actually typed.
+
+Two shared components now (`ui/components/SecretFields.kt`), used by all eleven:
+
+- **`PinEntryField`** — one box per digit, the shape every phone's own lock screen uses. It is a
+  real `BasicTextField` with its decoration replaced, so the keyboard, pasting a code somebody
+  sent and TalkBack all still work. The boxes are sized against the room there actually is
+  (`BoxWithConstraints`), because six boxes and an eye inside an `AlertDialog` came out as tall
+  thin slivers and six across a whole screen as billboards. A filled box is tinted as well as
+  dotted, so progress reads at arm's length. `slots` is a MINIMUM: a seventh and eighth box
+  appear for a longer PIN rather than a fixed six quietly refusing one the app accepts.
+- **`PassphraseField`** — an eye, and an honest answer to "is that long enough yet": a bar that
+  fills and a line that counts down ("3 characters to go") instead of a complaint once you have
+  finished. A repeat field ticks the moment the two agree, rather than waiting for a button to
+  say they do not. The eye matters most here: a backup passphrase has no reset, and nobody can
+  proof-read twelve characters of dots.
+
+**Creating the family PIN is two steps now** (`PinSetup`, pure and unit-tested): choose it, then
+type it again from memory. A second box you can read the first one into confirms nothing, which
+is why every lock screen on earth asks this way. A disagreement throws BOTH halves away — either
+could have been the typo and nobody knows which — says so kindly, and starts over.
+
+**Three smaller things that were each their own small cruelty.** A refused PIN used to leave six
+digits in the field for you to delete before trying again; it clears itself and takes the
+keyboard back. A wrong entry shakes and buzzes once, which is what a lock refusing feels like.
+And the six digits of a rescue code now act on the sixth — no button to find afterwards, which
+matters because the whole situation that code exists for is a phone nobody can reach.
+
+Checked on the emulator, light and dark, on every surface: first PIN (both steps and the
+mismatch), the PIN gate, the app lock (empty, typing, refused, cleared), change PIN, show PIN,
+the backup passphrase (short, matching), the on-device copies passphrase, and the child's rescue
+code (typing, auto-submit, refusal). 2100 JVM tests.
+
+**Deliberately not changed:** the PIN minimum stays six digits and the passphrase minimum twelve
+— this pass was about how they are asked for, not what is accepted.
+
 ## Shipped in v0.107.0 — the review before other families
 
 A review asked for one thing: what must be fixed before children the author does not know carry

@@ -262,16 +262,38 @@ internal fun RestorePassphraseDialog(
         title = { Text(stringResource(if (fromPin) R.string.restore_pin_title else R.string.restore_pass_title)) },
         text = {
             Column {
-                OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = { passphrase = it; failed = false },
-                    label = { Text(stringResource(if (fromPin) R.string.restore_pin_label else R.string.backup_pass_label)) },
-                    isError = failed,
-                    supportingText = { if (failed) Text(stringResource(if (fromPin) R.string.restore_pin_failed else R.string.restore_failed)) },
-                    singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                // A PIN-sealed copy asks in boxes, a passphrase in a field with an eye: the
+                // shape of the question is half of telling somebody which secret is wanted.
+                if (fromPin) {
+                    dev.walcott.ui.components.PinEntryField(
+                        value = passphrase,
+                        onValueChange = { passphrase = it; failed = false },
+                        label = stringResource(R.string.restore_pin_label),
+                        maxLength = dev.walcott.data.Pin.MAX_LENGTH,
+                        enabled = !restoring,
+                        isError = failed,
+                        autoFocus = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (failed) {
+                        Text(
+                            stringResource(R.string.restore_pin_failed),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = spacing.sm),
+                        )
+                    }
+                } else {
+                    dev.walcott.ui.components.PassphraseField(
+                        value = passphrase,
+                        onValueChange = { passphrase = it; failed = false },
+                        label = stringResource(R.string.backup_pass_label),
+                        enabled = !restoring,
+                        isError = failed,
+                        supportingText = if (failed) stringResource(R.string.restore_failed) else null,
+                        autoFocus = true,
+                    )
+                }
             }
         },
         confirmButton = {

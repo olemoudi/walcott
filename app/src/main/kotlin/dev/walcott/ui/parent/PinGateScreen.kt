@@ -1,5 +1,11 @@
 package dev.walcott.ui.parent
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,8 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
@@ -16,8 +20,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,23 +31,28 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.Pin
 import dev.walcott.data.PinResult
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.PinEntryField
+import dev.walcott.ui.components.PinSetup
 import dev.walcott.ui.components.WalcottTopBar
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.launch
 
-/** Creates the PIN the first time, or asks for it to enter parent mode. */
+/**
+ * Creates the PIN the first time, or asks for it to enter parent mode.
+ *
+ * Creating is two steps — choose it, then type it again from memory (see [PinSetup]) — rather
+ * than two boxes on one screen. It is what every phone's own lock screen does, and for the same
+ * reason: a second box you can compare against the first by looking at it confirms nothing.
+ */
 @Composable
 fun PinGateScreen(
     viewModel: WalcottViewModel,
@@ -60,50 +69,41 @@ fun PinGateScreen(
     val creating = !hasPin && allowCreate
     val blocked = !hasPin && !allowCreate
 
+    var setup by remember { mutableStateOf(PinSetup()) }
     var pin by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     // Deriving PBKDF2 takes a beat even off-main; the button says so instead of going dead.
     var verifying by remember { mutableStateOf(false) }
 
-    val tooShort = stringResource(R.string.pin_too_short)
-    val mismatch = stringResource(R.string.pin_mismatch)
     val wrongPin = stringResource(R.string.pin_incorrect)
     val lockedFmt = stringResource(R.string.pin_locked)
 
-    val pinFocus = remember { FocusRequester() }
-    val confirmFocus = remember { FocusRequester() }
-
-    // Open the keyboard on the PIN field straight away so there's no extra tap.
-    LaunchedEffect(blocked) { if (!blocked) pinFocus.requestFocus() }
-
     fun submit() {
-        if (verifying) return
-        if (hasPin) {
-            verifying = true
-            scope.launch {
-                when (val result = viewModel.verifyPin(pin)) {
-                    is PinResult.Ok -> onUnlocked()
-                    is PinResult.Wrong -> error = wrongPin
-                    is PinResult.Locked -> {
-                        val mins = ((result.remainingMs + 59_999) / 60_000).toInt()
-                        error = lockedFmt.format(mins)
-                    }
-                    // Unreachable while `hasPin` gates this branch; if the PIN is cleared
-                    // under us the screen re-renders into create mode by itself.
-                    is PinResult.NotSet -> Unit
+        if (verifying || !hasPin) return
+        verifying = true
+        scope.launch {
+            when (val result = viewModel.verifyPin(pin)) {
+                is PinResult.Ok -> onUnlocked()
+                // Cleared as well as refused, like every lock screen on the phone.
+                is PinResult.Wrong -> { error = wrongPin; pin = "" }
+                is PinResult.Locked -> {
+                    val mins = ((result.remainingMs + 59_999) / 60_000).toInt()
+                    error = lockedFmt.format(mins)
+                    pin = ""
                 }
-                verifying = false
+                // Unreachable while `hasPin` gates this branch; if the PIN is cleared
+                // under us the screen re-renders into create mode by itself.
+                is PinResult.NotSet -> Unit
             }
-        } else if (creating) {
-            when {
-                pin.length < dev.walcott.data.Pin.MIN_LENGTH -> error = tooShort
-                pin != confirm -> error = mismatch
-                else -> {
-                    viewModel.setPin(pin)
-                    onUnlocked()
-                }
-            }
+            verifying = false
+        }
+    }
+
+    // Saved the moment both halves agree, so the last digit is the last thing anybody types.
+    LaunchedEffect(setup.completed) {
+        setup.completed?.let {
+            viewModel.setPin(it)
+            onUnlocked()
         }
     }
 
@@ -133,54 +133,108 @@ fun PinGateScreen(
                 )
                 return@Column
             }
+
+            if (creating) {
+                // The two steps slide past each other, so "type it again" reads as a step
+                // forward rather than as the same box having emptied itself.
+                AnimatedContent(
+                    targetState = setup.confirming,
+                    transitionSpec = {
+                        val forward = targetState
+                        (slideInHorizontally { if (forward) it else -it } + fadeIn())
+                            .togetherWith(slideOutHorizontally { if (forward) -it else it } + fadeOut())
+                    },
+                    label = "pin step",
+                ) { confirming ->
+                    Text(
+                        stringResource(if (confirming) R.string.pin_step_repeat else R.string.pin_step_choose),
+                        style = MaterialTheme.typography.titleLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
+                    )
+                }
+                Text(
+                    stringResource(R.string.pin_length_hint, Pin.MIN_LENGTH, Pin.MAX_LENGTH),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = spacing.xs, bottom = spacing.lg),
+                )
+                PinEntryField(
+                    value = setup.entry,
+                    onValueChange = { setup = setup.typed(it, Pin.MAX_LENGTH) },
+                    label = stringResource(R.string.pin_label),
+                    slots = Pin.MIN_LENGTH,
+                    maxLength = Pin.MAX_LENGTH,
+                    isError = setup.mismatch,
+                    autoFocus = true,
+                    imeAction = ImeAction.Done,
+                    onImeAction = { setup = setup.advance(Pin.MIN_LENGTH) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (setup.mismatch) {
+                    Text(
+                        stringResource(R.string.pin_mismatch_restart),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
+                    )
+                }
+                // Why this is being asked for at all, said where somebody is actually reading.
+                if (!setup.confirming) {
+                    Text(
+                        stringResource(R.string.parent_pin_create_why),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = spacing.lg),
+                    )
+                }
+                Button(
+                    onClick = { setup = setup.advance(Pin.MIN_LENGTH) },
+                    enabled = setup.canAdvance(Pin.MIN_LENGTH),
+                    modifier = Modifier.fillMaxWidth().padding(top = spacing.lg),
+                ) {
+                    Text(
+                        stringResource(
+                            if (setup.confirming) R.string.action_create_pin else R.string.action_continue,
+                        ),
+                    )
+                }
+                if (setup.confirming) {
+                    TextButton(onClick = { setup = PinSetup() }) {
+                        Text(stringResource(R.string.pin_step_back))
+                    }
+                }
+                return@Column
+            }
+
             Text(
-                stringResource(if (creating) R.string.pin_subtitle_create else R.string.pin_subtitle_enter),
+                stringResource(R.string.pin_subtitle_enter),
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(vertical = spacing.md),
             )
-
-            OutlinedTextField(
+            PinEntryField(
                 value = pin,
-                onValueChange = { pin = it.filter(Char::isDigit).take(8); error = null },
-                label = { Text(stringResource(R.string.pin_label)) },
-                singleLine = true,
+                onValueChange = { pin = it; error = null },
+                label = stringResource(R.string.pin_label),
+                maxLength = Pin.MAX_LENGTH,
+                enabled = !verifying,
                 isError = error != null,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.NumberPassword,
-                    imeAction = if (creating) ImeAction.Next else ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = { submit() },
-                    onNext = { confirmFocus.requestFocus() },
-                ),
-                modifier = Modifier.fillMaxWidth().focusRequester(pinFocus),
+                autoFocus = true,
+                onImeAction = ::submit,
+                modifier = Modifier.fillMaxWidth(),
             )
-            if (creating) {
-                OutlinedTextField(
-                    value = confirm,
-                    onValueChange = { confirm = it.filter(Char::isDigit).take(8); error = null },
-                    label = { Text(stringResource(R.string.pin_repeat_label)) },
-                    singleLine = true,
-                    isError = error != null,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.NumberPassword,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { submit() }),
-                    modifier = Modifier.fillMaxWidth().padding(top = spacing.sm).focusRequester(confirmFocus),
-                )
-            }
             error?.let {
                 Text(
                     it, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = spacing.sm),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
                 )
             }
-
             Button(
                 onClick = ::submit,
                 enabled = pin.isNotEmpty() && !verifying,
@@ -193,7 +247,7 @@ fun PinGateScreen(
                         color = LocalContentColor.current,
                     )
                 } else {
-                    Text(stringResource(if (creating) R.string.action_create_pin else R.string.action_enter))
+                    Text(stringResource(R.string.action_enter))
                 }
             }
         }

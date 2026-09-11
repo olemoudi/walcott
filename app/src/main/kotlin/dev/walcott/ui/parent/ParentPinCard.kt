@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.HelpOutline
@@ -20,7 +19,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,16 +32,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.Pin
 import dev.walcott.data.PinResult
 import dev.walcott.ui.BiometricAuth
 import dev.walcott.ui.WalcottViewModel
+import dev.walcott.ui.components.PinEntryField
+import dev.walcott.ui.components.PinReadout
+import dev.walcott.ui.components.PinSetup
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.launch
@@ -200,13 +198,9 @@ private fun RevealPinDialog(viewModel: WalcottViewModel, pin: String, onDismiss:
         text = {
             Column {
                 if (shown) {
-                    Text(
-                        pin,
-                        style = MaterialTheme.typography.headlineMedium,
-                        letterSpacing = 8.sp,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = spacing.md),
-                        textAlign = TextAlign.Center,
-                    )
+                    // The same boxes it is typed into everywhere else, so the thing being read
+                    // off the screen looks like the thing that will be typed into a phone.
+                    PinReadout(pin, Modifier.padding(vertical = spacing.md))
                     Text(
                         stringResource(R.string.parent_pin_show_note),
                         style = MaterialTheme.typography.bodySmall,
@@ -350,16 +344,13 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
     // there is nothing to prove and asking would be a door with no lock behind it.
     var authorized by remember(hasPin) { mutableStateOf(!hasPin) }
     var current by remember { mutableStateOf("") }
-    var next by remember { mutableStateOf("") }
-    var repeat by remember { mutableStateOf("") }
+    var setup by remember { mutableStateOf(PinSetup()) }
     var error by remember { mutableStateOf<String?>(null) }
     // PBKDF2 at 120k iterations runs off-main but still takes a beat.
     var busy by remember { mutableStateOf(false) }
 
     val wrongPin = stringResource(R.string.pin_incorrect)
     val lockedFmt = stringResource(R.string.pin_locked)
-    val tooShort = stringResource(R.string.pin_too_short)
-    val mismatch = stringResource(R.string.pin_mismatch)
     val promptTitle = stringResource(R.string.pin_forgot_biometric_title)
     val promptSubtitle = stringResource(R.string.pin_forgot_biometric_subtitle)
     val cancelLabel = stringResource(R.string.action_cancel)
@@ -393,8 +384,11 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
         scope.launch {
             when (val result = viewModel.verifyPin(current)) {
                 is PinResult.Ok -> { authorized = true; error = null }
-                is PinResult.Wrong -> error = wrongPin
-                is PinResult.Locked -> error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                is PinResult.Wrong -> { error = wrongPin; current = "" }
+                is PinResult.Locked -> {
+                    error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                    current = ""
+                }
                 // There is no current PIN to prove; the dialog is already in create mode.
                 is PinResult.NotSet -> { authorized = true; error = null }
             }
@@ -402,21 +396,13 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
         }
     }
 
-    fun save() {
-        if (busy) return
-        when {
-            // Same rules as creating the first PIN (see PinGateScreen).
-            next.length < dev.walcott.data.Pin.MIN_LENGTH -> error = tooShort
-            next != repeat -> error = mismatch
-            else -> {
-                busy = true
-                scope.launch {
-                    viewModel.setPin(next).join()
-                    busy = false
-                    onDismiss()
-                }
-            }
-        }
+    // Saved the moment the two halves agree, exactly as the first PIN is (see PinGateScreen).
+    LaunchedEffect(setup.completed) {
+        val chosen = setup.completed ?: return@LaunchedEffect
+        busy = true
+        viewModel.setPin(chosen).join()
+        busy = false
+        onDismiss()
     }
 
     AlertDialog(
@@ -438,12 +424,16 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
                 }
                 if (!authorized) {
                     Text(stringResource(R.string.parent_pin_change_prompt))
-                    PinField(
+                    PinEntryField(
                         value = current,
                         onValueChange = { current = it; error = null },
                         label = stringResource(R.string.pin_current_label),
-                        isError = error != null,
+                        maxLength = Pin.MAX_LENGTH,
                         enabled = !busy,
+                        isError = error != null,
+                        autoFocus = true,
+                        onImeAction = ::verifyCurrent,
+                        modifier = Modifier.padding(top = spacing.md),
                     )
                     when (resetPath) {
                         PinResetPath.BIOMETRIC, PinResetPath.DIRECT -> TextButton(
@@ -465,21 +455,37 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
                         )
                     }
                 } else {
-                    Text(stringResource(R.string.parent_pin_new_prompt))
-                    PinField(
-                        value = next,
-                        onValueChange = { next = it; error = null },
+                    Text(
+                        stringResource(
+                            if (setup.confirming) R.string.pin_step_repeat else R.string.parent_pin_new_prompt,
+                        ),
+                    )
+                    Text(
+                        stringResource(R.string.pin_length_hint, Pin.MIN_LENGTH, Pin.MAX_LENGTH),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = spacing.xs),
+                    )
+                    PinEntryField(
+                        value = setup.entry,
+                        onValueChange = { setup = setup.typed(it, Pin.MAX_LENGTH); error = null },
                         label = stringResource(R.string.pin_new_label),
-                        isError = error != null,
+                        slots = Pin.MIN_LENGTH,
+                        maxLength = Pin.MAX_LENGTH,
                         enabled = !busy,
+                        isError = setup.mismatch,
+                        autoFocus = true,
+                        onImeAction = { setup = setup.advance(Pin.MIN_LENGTH) },
+                        modifier = Modifier.padding(top = spacing.md),
                     )
-                    PinField(
-                        value = repeat,
-                        onValueChange = { repeat = it; error = null },
-                        label = stringResource(R.string.pin_repeat_label),
-                        isError = error != null,
-                        enabled = !busy,
-                    )
+                    if (setup.mismatch) {
+                        Text(
+                            stringResource(R.string.pin_mismatch_restart),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = spacing.sm),
+                        )
+                    }
                 }
                 error?.let {
                     Text(
@@ -494,9 +500,13 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
         confirmButton = {
             if (authorized) {
                 TextButton(
-                    enabled = next.isNotEmpty() && repeat.isNotEmpty() && !busy,
-                    onClick = ::save,
-                ) { Text(stringResource(R.string.action_save)) }
+                    enabled = setup.canAdvance(Pin.MIN_LENGTH) && !busy,
+                    onClick = { setup = setup.advance(Pin.MIN_LENGTH) },
+                ) {
+                    Text(
+                        stringResource(if (setup.confirming) R.string.action_save else R.string.action_continue),
+                    )
+                }
             } else {
                 TextButton(enabled = current.isNotEmpty() && !busy, onClick = ::verifyCurrent) {
                     Text(stringResource(R.string.action_continue))
@@ -509,23 +519,3 @@ internal fun ChangePinDialog(viewModel: WalcottViewModel, onDismiss: () -> Unit)
     )
 }
 
-@Composable
-private fun PinField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    isError: Boolean,
-    enabled: Boolean,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { onValueChange(it.filter(Char::isDigit).take(8)) },
-        label = { Text(label) },
-        singleLine = true,
-        isError = isError,
-        enabled = enabled,
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-        modifier = Modifier.fillMaxWidth().padding(top = Tokens.spacing.md),
-    )
-}

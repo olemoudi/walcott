@@ -18,6 +18,9 @@ object Pin {
      */
     const val MIN_LENGTH = 6
 
+    /** Longest PIN accepted, everywhere one is typed. Beyond this nobody reads one out loud. */
+    const val MAX_LENGTH = 8
+
     private const val ITERATIONS = 120_000
     private const val KEY_BITS = 256
 

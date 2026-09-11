@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.ui.components.PinEntryField
 import dev.walcott.WalcottApplication
 import dev.walcott.data.PinResult
 import dev.walcott.enforcement.DeviceRestrictions
@@ -434,14 +435,14 @@ private fun PinConfirmDialog(
         text = {
             Column {
                 Text(message)
-                OutlinedTextField(
+                PinEntryField(
                     value = pin,
-                    onValueChange = { pin = it.filter(Char::isDigit).take(8); pinError = null },
-                    label = { Text(stringResource(R.string.pin_label)) },
-                    singleLine = true,
+                    onValueChange = { pin = it; pinError = null },
+                    label = stringResource(R.string.pin_label),
+                    maxLength = dev.walcott.data.Pin.MAX_LENGTH,
+                    enabled = !busy,
                     isError = pinError != null,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    autoFocus = true,
                     modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
                 )
                 pinError?.let {
@@ -454,9 +455,11 @@ private fun PinConfirmDialog(
                 scope.launch {
                     when (val result = viewModel.verifyPin(pin)) {
                         is PinResult.Ok -> onConfirmed()
-                        is PinResult.Wrong -> pinError = wrongPin
-                        is PinResult.Locked ->
+                        is PinResult.Wrong -> { pinError = wrongPin; pin = "" }
+                        is PinResult.Locked -> {
                             pinError = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                            pin = ""
+                        }
                         // Nothing to check against — the family never set a PIN. Rejecting
                         // every entry as "wrong" is what used to wall this door up for good.
                         is PinResult.NotSet -> pinError = noPin

@@ -44,6 +44,7 @@ import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.RemoteAction
 import dev.walcott.ui.components.CardGroup
 import dev.walcott.ui.components.CardPosition
+import dev.walcott.ui.components.PinEntryField
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
@@ -385,15 +386,17 @@ private fun SetLockPinDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit)
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.sm)) {
                 Text(stringResource(R.string.lock_set_pin_hint))
-                OutlinedTextField(
+                // Shown rather than hidden: the parent is about to read these digits out loud
+                // to the person whose phone it is, and this screen is the only place they exist.
+                PinEntryField(
                     value = pin,
-                    onValueChange = { entered -> pin = entered.filter { it.isDigit() }.take(8) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.NumberPassword,
-                        imeAction = ImeAction.Done,
-                    ),
-                    label = { Text(stringResource(R.string.lock_pin_label)) },
+                    onValueChange = { pin = it },
+                    label = stringResource(R.string.lock_pin_label),
+                    slots = 4,
+                    maxLength = 8,
+                    autoFocus = true,
+                    masked = false,
+                    onImeAction = { if (valid) onConfirm(pin) },
                 )
             }
         },

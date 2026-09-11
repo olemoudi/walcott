@@ -1474,25 +1474,16 @@ private fun LocalBackupPinDialog(viewModel: WalcottViewModel, onDismiss: () -> U
         text = {
             Column {
                 Text(stringResource(R.string.local_backup_pass_prompt), style = MaterialTheme.typography.bodyMedium)
-                val tooShort = pin.isNotEmpty() && pin.length < dev.walcott.sync.FamilyBackup.MIN_PASSPHRASE_CHARS
-                OutlinedTextField(
+                dev.walcott.ui.components.PassphraseField(
                     value = pin,
                     onValueChange = { pin = it; failed = false },
-                    label = { Text(stringResource(R.string.backup_pass_label)) },
-                    isError = failed || tooShort,
-                    supportingText = {
-                        if (tooShort) {
-                            Text(stringResource(R.string.backup_pass_short, dev.walcott.sync.FamilyBackup.MIN_PASSPHRASE_CHARS))
-                        } else if (failed) {
-                            Text(stringResource(R.string.backup_save_failed))
-                        }
-                    },
-                    singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
-                    ),
-                    modifier = Modifier.fillMaxWidth().padding(top = Tokens.spacing.sm),
+                    label = stringResource(R.string.backup_pass_label),
+                    minLength = dev.walcott.sync.FamilyBackup.MIN_PASSPHRASE_CHARS,
+                    enabled = !busy,
+                    isError = failed,
+                    supportingText = if (failed) stringResource(R.string.backup_save_failed) else null,
+                    autoFocus = true,
+                    modifier = Modifier.padding(top = Tokens.spacing.sm),
                 )
             }
         },

@@ -181,6 +181,19 @@
 
     <!-- PIN gate -->
     <string name="pin_title_enter">Enter the PIN</string>
+    <!-- Shared PIN and passphrase fields (see SecretFields.kt) -->
+    <string name="secret_show">Show</string>
+    <string name="secret_hide">Hide</string>
+    <string name="secret_matches">They match</string>
+    <plurals name="secret_chars_left">
+        <item quantity="one">%d character to go</item>
+        <item quantity="other">%d characters to go</item>
+    </plurals>
+    <string name="pin_step_choose">Choose a PIN</string>
+    <string name="pin_step_repeat">Type it again</string>
+    <string name="pin_length_hint">%1$d to %2$d digits</string>
+    <string name="pin_step_back">Choose a different PIN</string>
+    <string name="pin_mismatch_restart">Those two didn\'t match. Let\'s start again.</string>
     <string name="pin_title_create">Create a PIN</string>
     <string name="pin_subtitle_enter">Adults only</string>
     <string name="pin_subtitle_create">Choose a PIN for parent mode</string>
@@ -1855,6 +1868,12 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_108_0">
+        <item>Every PIN in the app is typed into boxes now — one per digit, the way your phone\'s own lock screen asks. You can see how many digits are expected and how many you have got, there is an eye to check what you typed, and a PIN that is refused clears itself instead of leaving you to delete six digits before trying again.</item>
+        <item>Choosing the family PIN is now two steps: pick it, then type it again from memory. A second box you can read the first one into confirms nothing, which is why every lock screen asks this way. If the two do not match, it says so kindly and starts over.</item>
+        <item>Passphrase boxes count down to the length they need ("3 characters to go") instead of telling you off once you have finished, both have an eye, and the repeat field ticks the moment the two agree.</item>
+        <item>The six digits of a rescue code go in as you read them out, and the phone acts on the sixth — no button to find afterwards — and empties the boxes if the code was wrong.</item>
     </string-array>
     <string-array name="whats_new_0_107_0">
         <item>The key that signs Walcott used to be public — anyone could have built an app a child\'s phone would accept as an update to this one, and inherit everything it can do. This version rotates it. Once a phone has taken it, only releases signed with the new, private key are accepted; there is nothing to do on your side.</item>

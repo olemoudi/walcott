@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
@@ -17,8 +15,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,14 +29,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.data.Pin
 import dev.walcott.data.PinResult
+import dev.walcott.ui.components.PinEntryField
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.launch
 
@@ -90,8 +85,13 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
         scope.launch {
             when (val result = viewModel.verifyPin(pin)) {
                 is PinResult.Ok -> onUnlocked()
-                is PinResult.Wrong -> error = wrongPin
-                is PinResult.Locked -> error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                // Cleared as well as refused: the next attempt starts from empty boxes, the
+                // way every lock screen on the phone behaves.
+                is PinResult.Wrong -> { error = wrongPin; pin = "" }
+                is PinResult.Locked -> {
+                    error = lockedFmt.format(((result.remainingMs + 59_999) / 60_000).toInt())
+                    pin = ""
+                }
                 // The lock is on and the family has no PIN: a gate with nothing behind it,
                 // which would otherwise shut the parent out of their own app for good.
                 is PinResult.NotSet -> onUnlocked()
@@ -128,36 +128,29 @@ fun AppLockScreen(viewModel: WalcottViewModel, onUnlocked: () -> Unit) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(vertical = spacing.md),
             )
-            OutlinedTextField(
+            PinEntryField(
                 value = pin,
-                onValueChange = { pin = it.filter(Char::isDigit).take(8); error = null },
-                label = { Text(stringResource(R.string.pin_label)) },
-                singleLine = true,
-                isError = error != null,
+                onValueChange = { pin = it; error = null },
+                label = stringResource(R.string.pin_label),
+                maxLength = Pin.MAX_LENGTH,
                 enabled = !verifying,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.NumberPassword,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-                trailingIcon = if (verifying) {
-                    {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    }
-                } else {
-                    null
-                },
-                modifier = Modifier.fillMaxWidth().focusRequester(pinFocus),
+                isError = error != null,
+                focusRequester = pinFocus,
+                onImeAction = ::submit,
+                modifier = Modifier.fillMaxWidth(),
             )
+            if (verifying) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp).padding(top = spacing.sm),
+                    strokeWidth = 2.dp,
+                )
+            }
             error?.let {
                 Text(
                     it, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = spacing.sm),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
                 )
             }
             if (biometricEnabled) {

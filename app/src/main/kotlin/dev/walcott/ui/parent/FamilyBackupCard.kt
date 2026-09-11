@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
+import dev.walcott.ui.components.PassphraseField
 import dev.walcott.sync.FamilyBackup
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.WalcottCard
@@ -295,28 +296,31 @@ private fun BackupPassphraseDialog(
         text = {
             Column {
                 Text(stringResource(R.string.backup_pass_desc), style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(
+                PassphraseField(
                     value = passphrase,
                     onValueChange = { passphrase = it },
-                    label = { Text(stringResource(R.string.backup_pass_label)) },
-                    supportingText = {
-                        if (tooShort && passphrase.isNotEmpty()) {
-                            Text(stringResource(R.string.backup_pass_short, FamilyBackup.MIN_PASSPHRASE_CHARS))
-                        }
-                    },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = spacing.md),
+                    label = stringResource(R.string.backup_pass_label),
+                    minLength = FamilyBackup.MIN_PASSPHRASE_CHARS,
+                    enabled = !busy,
+                    autoFocus = true,
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Next,
+                    modifier = Modifier.padding(top = spacing.md),
                 )
-                OutlinedTextField(
+                PassphraseField(
                     value = repeat,
                     onValueChange = { repeat = it },
-                    label = { Text(stringResource(R.string.backup_pass_repeat)) },
-                    isError = mismatch,
-                    supportingText = { if (mismatch) Text(stringResource(R.string.backup_pass_mismatch)) },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
+                    label = stringResource(R.string.backup_pass_repeat),
+                    enabled = !busy,
+                    // Judged only once there is something to judge: a tick as soon as the two
+                    // agree, and the complaint kept for a repeat that is finished and wrong.
+                    matches = when {
+                        repeat.isEmpty() -> null
+                        repeat == passphrase -> true
+                        passphrase.startsWith(repeat) -> null
+                        else -> false
+                    },
+                    supportingText = if (mismatch) stringResource(R.string.backup_pass_mismatch) else null,
+                    modifier = Modifier.padding(top = spacing.sm),
                 )
             }
         },

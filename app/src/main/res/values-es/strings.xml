@@ -182,6 +182,19 @@
 
     <!-- Puerta del PIN -->
     <string name="pin_title_enter">Introduce el PIN</string>
+    <!-- Campos compartidos de PIN y contraseña (ver SecretFields.kt) -->
+    <string name="secret_show">Mostrar</string>
+    <string name="secret_hide">Ocultar</string>
+    <string name="secret_matches">Coinciden</string>
+    <plurals name="secret_chars_left">
+        <item quantity="one">falta %d carácter</item>
+        <item quantity="other">faltan %d caracteres</item>
+    </plurals>
+    <string name="pin_step_choose">Elige un PIN</string>
+    <string name="pin_step_repeat">Escríbelo otra vez</string>
+    <string name="pin_length_hint">De %1$d a %2$d dígitos</string>
+    <string name="pin_step_back">Elegir otro PIN</string>
+    <string name="pin_mismatch_restart">Esos dos no coinciden. Empezamos de nuevo.</string>
     <string name="pin_title_create">Crea un PIN</string>
     <string name="pin_subtitle_enter">Solo para adultos</string>
     <string name="pin_subtitle_create">Elige un PIN para el modo padre</string>
@@ -1846,6 +1859,12 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_108_0">
+        <item>Todos los PIN de la app se teclean ahora en casillas, una por dígito, como los pide la pantalla de bloqueo de tu móvil. Se ve cuántos dígitos se esperan y cuántos llevas, hay un ojo para comprobar lo que has escrito, y un PIN rechazado se borra solo en vez de dejarte borrar seis dígitos a mano antes de volver a intentarlo.</item>
+        <item>Elegir el PIN de la familia son ahora dos pasos: lo eliges y lo escribes otra vez de memoria. Una segunda casilla en la que puedes copiar la primera mirándola no confirma nada, y por eso lo piden así todas las pantallas de bloqueo. Si los dos no coinciden, te lo dice con buenos modos y se empieza de nuevo.</item>
+        <item>Las casillas de contraseña cuentan atrás hasta la longitud que necesitan («faltan 3 caracteres») en vez de reñirte cuando ya has terminado, las dos llevan ojo, y la de repetir marca un visto en cuanto coinciden.</item>
+        <item>Las seis cifras de un código de rescate entran según te las dictan, y el móvil actúa con la sexta —sin botón que buscar después— y vacía las casillas si el código no valía.</item>
     </string-array>
     <string-array name="whats_new_0_107_0">
         <item>La clave con la que se firma Walcott era pública: cualquiera podría haber construido una app que el móvil de un hijo aceptara como actualización de esta, y heredar todo lo que puede hacer. Esta versión la rota. Una vez que un móvil la ha instalado, solo acepta versiones firmadas con la clave nueva, que es privada; no tienes que hacer nada.</item>
