@@ -3,6 +3,62 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.111.0 — a phone that keeps changing its mind about which network it is on
+
+ole asked what `../malachi` had done about Wi-Fi/mobile hand-offs and poor Wi-Fi specifically, in
+case anything was still outstanding. Four things were, and one of them was not in the filter at all.
+
+**An empty resolver list was adopted, and briefly sent the whole phone to a public resolver.**
+`LinkProperties` arrive in stages: the first one for a network the phone is joining routinely carries
+no DNS servers yet. `adoptUpstreams` had a guard for "these are only our own sentinel" but it
+required a non-empty list, so an empty one fell through to `DnsUpstreams.choose(emptyList())`, which
+is the last resort — replacing the resolvers of the network being left, and clearing the remembered
+good one, on *every single hand-off*. On a school or office network that blocks outbound 53 that is a
+phone with no DNS at all; everywhere else it loses the names only the local resolver knows.
+
+The rule is now `DnsUpstreams.worthAdopting`, pure and tested, and it goes one step further than
+malachi's: the emptiness rule has an opt-out for the single caller that has earned it. A list arriving
+from a callback is a network still describing itself, so empty means "not yet". A list re-read by
+`recheckResolvers` — which runs only because every resolver in hand has already failed — means "this
+network really offers none", and the fallback is the right answer. Same predicate, one flag, and
+neither caller has to know what the other assumes.
+
+**A lookup in flight when the network changed spent its whole budget asking resolvers that had
+gone** — up to three at two seconds each, and the client's own retry, which would have used the new
+ones, delayed by exactly that. On a weak Wi-Fi that hands over repeatedly that is most of the time
+the phone feels broken. A `networkGeneration` counter is bumped whenever the resolvers really change,
+snapshotted per lookup, and compared between attempts: not before the first, because a change that
+arrived before the list was read costs nothing, but after one attempt everything left in that list
+belongs to a network the phone no longer has. The answer is SERVFAIL rather than malachi's silent
+drop, for the reason written all over this file: the app then asks again at once, against the
+resolvers that work.
+
+**`onLost` waited for the new network to introduce itself.** Keeping the old resolvers there is
+deliberate and stays — a query arriving between networks is better served by the last known resolver
+than by nothing — but the platform announces a new default before the old one has finished
+disappearing, so by the time `onLost` runs there usually is one. Taking it there makes the gap one
+callback long instead of however long the new network takes to get round to its link properties.
+
+**And the one outside the filter.** `SyncManager.watchNetwork` brings a pending relay reconnect
+forward the moment the phone has a network again, and it was watching the DEFAULT network — which,
+on a child running the web filter, is Walcott's own tunnel, whose `Network` object does not change
+when the thing underneath it does. So the one event it exists for never arrived. This is the exact
+bug the filter's own callback was rewritten for in 0.109, in a second place, with no symptom loud
+enough to find it: the four-minute WebSocket ping notices a dead socket within about eight minutes
+and the half-hourly heartbeat rebuilds whatever that misses, so nothing ever looked broken. The cost
+was up to eight minutes per hand-off in which rules, granted minutes and every remote command
+stopped arriving while the child still looked perfectly healthy to the parent. It asks for a network
+that is not a VPN now, and on its own thread rather than the main looper, because its body opens a
+socket.
+
+**Looked at and left.** The pooled HTTP connections are not evicted on a network change, so the
+first blocklist download or update check after a hand-off can fail once; the WebSocket is handled
+separately and the updater retries, so the visible cost is a line on the lists screen until the next
+refresh. The log still does not name the interface or how long ago the resolvers were adopted, which
+is the line that let malachi diagnose an eleven-hour outage at a glance. `onCapabilitiesChanged` is
+not observed: it matters there because a captive portal decides which resolvers that app may use at
+all, and walcott always prefers the network's own.
+
 ## Shipped in v0.110.0 — the second pass over the filter, and a number nobody had checked
 
 ole asked for the review of `../malachi` to continue, pointing at its changelog for August in

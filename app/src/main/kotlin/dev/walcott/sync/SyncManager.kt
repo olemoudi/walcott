@@ -248,19 +248,48 @@ class SyncManager(
      * Registered once for the process and never unregistered — it outlives every pairing, and a
      * healthy socket ignores the callback anyway, so there is nothing to leak but the callback
      * itself.
+     *
+     * **It asks about networks that are not VPNs, which is the only way to be told anything here.**
+     * This used to watch the DEFAULT network, and on a child running the web filter the default
+     * network is Walcott's own tunnel — whose `Network` object does not change when the thing
+     * underneath it does. So the one event this exists for, a hand-off from Wi-Fi to mobile data,
+     * never arrived. Nothing broke visibly, because the four-minute WebSocket ping notices a dead
+     * socket within about eight minutes and the half-hourly heartbeat rebuilds whatever that
+     * misses; the cost was up to eight minutes per hand-off in which rules, granted minutes and
+     * every remote command stopped arriving while the child still looked healthy to the parent.
+     * The filter's own callback was rewritten for exactly this reason (see
+     * [dev.walcott.net.WalcottVpnService]); this one had the same bug and no symptom loud enough
+     * to find it.
+     *
+     * Below Android 12 every matching network reports itself rather than only the best, so this can
+     * fire more than once for one hand-off. Harmless: a healthy socket ignores it.
      */
     private fun watchNetwork() {
         if (!networkCallbackRegistered.compareAndSet(false, true)) return
         val manager = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                transport?.onNetworkAvailable()
+                legacyTransport?.onNetworkAvailable()
+            }
+        }
+        val request = android.net.NetworkRequest.Builder()
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        // Its own thread, not the main looper: the body opens a socket, and this fires several
+        // times a minute on a phone being carried around. The thread lives as long as the callback,
+        // which is the life of the process.
+        val handler = android.os.Handler(
+            android.os.HandlerThread("walcott-sync-net").apply { start() }.looper,
+        )
         runCatching {
-            manager.registerDefaultNetworkCallback(
-                object : android.net.ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: android.net.Network) {
-                        transport?.onNetworkAvailable()
-                        legacyTransport?.onNetworkAvailable()
-                    }
-                },
-            )
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                // Android 12 and up names its best match and nothing else, which is the question.
+                manager.registerBestMatchingNetworkCallback(request, callback, handler)
+            } else {
+                manager.registerNetworkCallback(request, callback, handler)
+            }
         }.onFailure {
             networkCallbackRegistered.set(false)
             dev.walcott.debug.DebugLog.w(TAG, "could not follow the network: ${it.javaClass.simpleName}")

@@ -136,6 +136,17 @@ class WalcottVpnService : VpnService() {
      */
     @Volatile private var lastGoodUpstream: String? = null
 
+    /**
+     * Bumped every time the resolvers change under us.
+     *
+     * A lookup already in flight when the phone hands over from Wi-Fi to mobile data is asking
+     * resolvers that have gone. Without this it spends its whole budget doing so — three resolvers
+     * at [UPSTREAM_TIMEOUT_MS] each — and the client's own retry, which WOULD use the new ones, is
+     * delayed by exactly that. On a weak Wi-Fi that hands over repeatedly, that is most of the
+     * time the phone feels broken.
+     */
+    @Volatile private var networkGeneration = 0
+
     /** UID → package, for as long as this tunnel lives (see [ownerPackage]). */
     private val uidPackages = java.util.concurrent.ConcurrentHashMap<Int, String>()
 
@@ -212,14 +223,28 @@ class WalcottVpnService : VpnService() {
             }
 
         override fun onLost(network: android.net.Network) = guarded("losing a network") {
-            // The resolvers are KEPT: a query arriving between networks is better served by the
-            // last known one than by nothing, and the next onLinkPropertiesChanged fixes it.
-            //
-            // What is not kept is the declaration. Everything the platform knows about this
-            // tunnel — what carries it, whether that is metered, whether it is validated — comes
-            // from what we declare, and a declaration naming a network the phone has left is a
-            // tunnel describing a network that no longer exists.
-            if (bestUnderlying(null) == null) followSystemDefault()
+            // The replacement is adopted HERE rather than waited for. The platform announces a new
+            // default before the old one has finished disappearing, so by now there usually is one
+            // — and taking it now makes the gap one callback long instead of however long the new
+            // network takes to get round to describing its link properties.
+            val replacement = bestUnderlying(null)
+            if (replacement == null) {
+                // Nothing to name. The resolvers are KEPT even so: a query arriving between
+                // networks is better served by the last known one than by nothing, and an empty
+                // list is never adopted anyway.
+                //
+                // What is not kept is the declaration. Everything the platform knows about this
+                // tunnel — what carries it, whether that is metered, whether it is validated —
+                // comes from what we declare, and naming a network the phone has left is a tunnel
+                // describing something that no longer exists.
+                followSystemDefault()
+                return@guarded
+            }
+            val properties = runCatching { cm.getLinkProperties(replacement) }.getOrNull()
+            synchronized(adoptLock) {
+                properties?.let { adoptUpstreams(it) }
+                declareUnderlying(replacement)
+            }
         }
     }
 
@@ -364,19 +389,20 @@ class WalcottVpnService : VpnService() {
      *
      * Callers hold [adoptLock]; this is one half of the adoption, not a thing to do on its own.
      */
-    private fun adoptUpstreams(link: android.net.LinkProperties) {
+    private fun adoptUpstreams(link: android.net.LinkProperties, acceptEmpty: Boolean = false) {
         val offered = runCatching { link.dnsServers.mapNotNull { it.hostAddress } }.getOrDefault(emptyList())
-        // Belt and braces on top of the NOT_VPN request: a link whose only resolvers are our own
-        // sentinel is this tunnel describing itself, and adopting it would send every lookup on
-        // the phone to the public fallback — or, on a network that blocks outbound 53, nowhere.
-        if (offered.isNotEmpty() && offered.all { it.substringBefore('%') in setOf(TUN_ADDR, SENTINEL_DNS) }) {
-            return
-        }
-        val chosen = DnsUpstreams.choose(offered, exclude = setOf(TUN_ADDR, SENTINEL_DNS))
+        // An empty list is a network that has not finished describing itself, not a network with no
+        // resolvers, and a link whose only resolvers are our own sentinel is this tunnel describing
+        // itself. Neither is worth adopting; both used to send every lookup on the phone to the
+        // public fallback (see [DnsUpstreams.worthAdopting]).
+        if (!DnsUpstreams.worthAdopting(offered, OURS, acceptEmpty)) return
+        val chosen = DnsUpstreams.choose(offered, exclude = OURS)
         if (chosen != upstreams) {
             DebugLog.i(TAG, "DNS upstreams: ${chosen.joinToString()}")
             upstreams = chosen
             lastGoodUpstream = null
+            // Anything already asking the old list is now asking a network that has gone.
+            networkGeneration++
         }
     }
 
@@ -669,8 +695,21 @@ class WalcottVpnService : VpnService() {
      */
     private fun forward(packet: ByteArray, dnsStart: Int, dnsEnd: Int) {
         val query = packet.copyOfRange(dnsStart, dnsEnd)
+        val candidates = orderedUpstreams()
+        // The list we are about to walk belongs to this generation of the network.
+        val generation = networkGeneration
         var refusal: ByteArray? = null
-        for (upstream in orderedUpstreams()) {
+        for ((index, upstream) in candidates.withIndex()) {
+            // Checked between attempts, not before the first: a change that arrived before we
+            // started costs nothing, because the list above was already read after it. Once an
+            // attempt has been spent, though, everything left in this list belongs to a network
+            // the phone no longer has, and SERVFAIL now beats silence for the rest of the budget —
+            // the app retries at once, against the resolvers that do work.
+            if (index > 0 && networkGeneration != generation) {
+                DebugLog.i(TAG, "the network changed mid-lookup; SERVFAIL so the app asks again")
+                respond(packet, dnsStart, DnsMessage.RCODE_SERVER_FAILURE)
+                return
+            }
             val answer = exchange(upstream, query) ?: continue
             if (DnsMessage.isServerFailure(DnsMessage.rcode(answer))) {
                 // Kept, in case nobody does better than a refusal.
@@ -703,7 +742,9 @@ class WalcottVpnService : VpnService() {
         val last = lastRecheckMs.get()
         if (now - last < RECHECK_INTERVAL_MS || !lastRecheckMs.compareAndSet(last, now)) return
         val link = runCatching { cm.getLinkProperties(bestUnderlying(null) ?: cm.activeNetwork) }.getOrNull()
-        if (link != null) synchronized(adoptLock) { adoptUpstreams(link) }
+        // The one caller that may believe an empty answer: we are here because the list in hand
+        // already failed, so "this network offers none" is real and the fallback is right.
+        if (link != null) synchronized(adoptLock) { adoptUpstreams(link, acceptEmpty = true) }
     }
 
     /**
@@ -944,6 +985,9 @@ class WalcottVpnService : VpnService() {
 
         /** The only port this tunnel serves. */
         private const val DNS_PORT = 53
+
+        /** This tunnel's own addresses, which can never be an upstream. */
+        private val OURS = setOf(TUN_ADDR, SENTINEL_DNS)
 
         /** IPv4 + UDP headers, the overhead every relayed answer is measured against. */
         private const val IP_UDP_OVERHEAD = 28

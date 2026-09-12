@@ -38,6 +38,33 @@ object DnsUpstreams {
     const val MAX_UPSTREAMS = 3
 
     /**
+     * Whether the resolver list a network just offered is worth adopting at all.
+     *
+     * **An empty list is not**, and that is the whole reason this exists. `LinkProperties` arrive
+     * in stages: the first one for a network the phone is joining routinely carries no DNS servers
+     * yet, and adopting it replaced the resolvers of the network being left with the public
+     * fallback — for every single hand-off between Wi-Fi and mobile data. On a school or office
+     * network that blocks outbound 53 that is a phone with no DNS at all, and everywhere it loses
+     * the names only the local resolver knows: the printer, the NAS, a captive portal's own host.
+     *
+     * [acceptEmpty] is for the one caller that knows better: the re-read that happens because every
+     * resolver already failed (see `WalcottVpnService.recheckResolvers`). Arriving there means the
+     * list in hand is not working, so an empty answer is the network's real answer and the public
+     * fallback is the right thing to fall to.
+     *
+     * A list whose every entry is [exclude] is not worth adopting either: those are this tunnel's
+     * own addresses, so the link is describing us, and forwarding there is a loop.
+     */
+    fun worthAdopting(
+        offered: List<String>,
+        exclude: Set<String> = emptySet(),
+        acceptEmpty: Boolean = false,
+    ): Boolean {
+        if (offered.isEmpty()) return acceptEmpty
+        return offered.any { it.substringBefore('%') !in exclude }
+    }
+
+    /**
      * The resolvers to try, in order: the network's own, then [FALLBACKS].
      *
      * IPv6 resolvers count. They used to be filtered out on the grounds that the tunnel is IPv4

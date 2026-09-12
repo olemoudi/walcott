@@ -106,4 +106,40 @@ class DnsUpstreamsTest {
         assertFalse(DnsUpstreams.isLinkLocal("192.168.1.1"))
         assertFalse(DnsUpstreams.isLinkLocal("fee1::1"), "not every fe- prefix is link-local")
     }
+
+    // ---- what is worth adopting at all ---------------------------------------------------
+
+    @Test
+    fun `a network that has not said what its resolvers are yet is not adopted`() {
+        // LinkProperties arrive in stages, so the first one for a network the phone is joining
+        // routinely carries no DNS servers. Adopting that replaced the resolvers of the network
+        // being left with the public fallback, on every single hand-off — and on a network that
+        // blocks outbound 53, that is a phone with no DNS at all.
+        assertFalse(DnsUpstreams.worthAdopting(emptyList()))
+    }
+
+    @Test
+    fun `the one caller that already tried everything may believe an empty answer`() {
+        // Reached only because every resolver in hand had failed, so "this network offers none" is
+        // the network's real answer and the last resort is the right thing to fall to.
+        assertTrue(DnsUpstreams.worthAdopting(emptyList(), acceptEmpty = true))
+    }
+
+    @Test
+    fun `a link describing only our own tunnel is never adopted`() {
+        val ours = setOf("10.111.222.1", "10.111.222.2")
+        assertFalse(DnsUpstreams.worthAdopting(listOf("10.111.222.2"), ours))
+        assertFalse(DnsUpstreams.worthAdopting(listOf("10.111.222.2", "10.111.222.1"), ours))
+        // Even when it is the exhausted-list caller asking: forwarding there is a loop, and no
+        // amount of having tried everything makes it worth doing.
+        assertFalse(DnsUpstreams.worthAdopting(listOf("10.111.222.2"), ours, acceptEmpty = true))
+        // One real resolver beside ours is worth having.
+        assertTrue(DnsUpstreams.worthAdopting(listOf("10.111.222.2", "192.168.1.1"), ours))
+    }
+
+    @Test
+    fun `a zone id does not hide one of our own addresses`() {
+        val ours = setOf("10.111.222.2")
+        assertFalse(DnsUpstreams.worthAdopting(listOf("10.111.222.2%tun0"), ours))
+    }
 }

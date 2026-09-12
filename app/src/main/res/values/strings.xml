@@ -1869,6 +1869,12 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_111_0">
+        <item>Moving between wi-fi and mobile data, and weak wi-fi that keeps swapping. Every time a phone changed network, the filter could spend a moment sending every lookup to a public DNS server instead of the one the new network offers — because a network that is still joining has not said what its servers are yet, and an empty answer was believed. On a school or office wi-fi that blocks outside servers that meant nothing loaded at all, and anywhere it meant losing the names only the local network knows, like a printer.</item>
+        <item>A lookup already under way when the phone swaps network no longer waits out the full six seconds asking servers that have gone. It gives up at once so the app can ask again straight away, against the network it is actually on.</item>
+        <item>When a network disappears, the filter now takes up the replacement immediately instead of waiting for it to describe itself, which on a weak wi-fi that swaps repeatedly is most of the time things felt broken.</item>
+        <item>The channel a child\'s phone receives rules and requests on was not being told about a network change while the web filter was on, so after every swap it could take up to eight minutes to reconnect. Nothing looked wrong from the family\'s side in the meantime, which is why it lasted this long. It reconnects as soon as the phone has a network again.</item>
+    </string-array>
     <string-array name="whats_new_0_110_0">
         <item>The number of blocked lookups a family is shown was two to three times the truth. A phone asks for every web address twice at once — once for each kind of internet address — and a browser asks a third time, so one tap on one link was counted as two or three blocks. They are counted as one now. Something that keeps retrying a blocked address still shows up as trying repeatedly, which is the part worth seeing.</item>
         <item>A new app installed on a child\'s phone was announced with "it stays blocked until you classify it", which had stopped being true: there is nothing to classify any more, and an app nobody has given a limit works normally within the family\'s bedtime, windows and daily total. The notice now says it simply has no limit of its own yet.</item>
