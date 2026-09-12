@@ -73,4 +73,51 @@ object ClockGuard {
     /** One-shot: alert on entering the tampered state, not on every snapshot while it lasts. */
     fun shouldAlert(skewMs: Long, alreadyAlerted: Boolean): Boolean =
         isTampered(skewMs) && !alreadyAlerted
+
+    // --- The phone watching its own clock, with no network ---
+
+    /**
+     * A moment the wall clock and the monotonic clock were read together.
+     *
+     * Everything above needs a message from the relay, which is what a child who wants to move
+     * the clock takes away first: airplane mode at half past nine, the clock to seven tomorrow,
+     * a fresh day with no bedtime in it — and no message ever arrives to measure anything by.
+     * The monotonic clock cannot be set by anybody and keeps counting through deep sleep, so
+     * the wall clock drifting away from it is the move itself, seen on the phone.
+     *
+     * [verified] when the anchor was taken while a message from the relay had just shown the wall
+     * clock right; a wall clock verified that way can only be nudged by the phone's own time sync
+     * by less than [CLEAR_THRESHOLD_MS], so any bigger move afterwards is somebody's hand.
+     */
+    data class Anchor(val wallMs: Long, val elapsedMs: Long, val bootCount: Int, val verified: Boolean)
+
+    /**
+     * How far the wall clock moved relative to the monotonic one since [anchor], positive when
+     * forwards. Null when there is nothing to compare: no anchor yet, or a different boot, whose
+     * monotonic clock started again from zero.
+     */
+    fun localJumpMs(anchor: Anchor?, nowWallMs: Long, nowElapsedMs: Long, bootCount: Int): Long? {
+        if (anchor == null || anchor.wallMs <= 0 || bootCount < 0 || anchor.bootCount != bootCount) return null
+        return (nowWallMs - anchor.wallMs) - (nowElapsedMs - anchor.elapsedMs)
+    }
+
+    /**
+     * Whether a jump is a person moving the clock rather than the phone correcting it.
+     *
+     * A big jump from an UNVERIFIED anchor is ambiguous: a phone whose clock was wrong when the
+     * anchor was taken is put right by network time, and that is a jump too. Network time only
+     * moves a clock while automatic time is on, and a person can only move one by hand while it
+     * is off — so with automatic time on, a jump from an unverified anchor is given the benefit
+     * of the doubt. Getting this wrong the other way closes every limited app on a child's phone
+     * for the crime of its clock being fixed.
+     */
+    fun jumpIsTampering(jumpMs: Long, anchorVerified: Boolean, autoTimeOn: Boolean): Boolean =
+        abs(jumpMs) >= TAMPER_THRESHOLD_MS && (anchorVerified || !autoTimeOn)
+
+    /**
+     * The skew the rules should believe: the larger of the one measured against the relay and
+     * the one the phone saw on its own, sign kept, so it can also correct a clock by subtraction.
+     */
+    fun effectiveSkew(relaySkewMs: Long, localDriftMs: Long): Long =
+        if (abs(localDriftMs) > abs(relaySkewMs)) localDriftMs else relaySkewMs
 }

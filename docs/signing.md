@@ -61,3 +61,19 @@ apksigner rotate --in signing/walcott.lineage --out signing/walcott.lineage \
 
 Then move the secrets and `local.properties` to the next key. Never sign a release without the
 lineage: a phone that took a rotated build will refuse it.
+
+## The enrollment QR names the ORIGINAL certificate
+
+A factory-reset phone checks the APK it downloads against the certificate checksum in the parent's
+enrollment QR, and Android's provisioning reads it with `GET_SIGNATURES` — which, for an APK that
+carries a rotation lineage, reports the **oldest** certificate in the lineage, not the one that
+signed it. So the QR carries the SHA-256 of the original 2026-07 certificate
+(`9e85b46c…d823`), as a constant: `DeviceOwnerProvisioning.PUBLISHED_SIGNATURE_CHECKSUM`.
+
+Rotating again does not change it — a lineage keeps its first certificate. Starting a new lineage
+from scratch would, and that already means re-enrolling every child.
+
+The original key is public, so this checksum is not a secret and proves nothing about who built an
+APK. What protects enrollment is where the APK comes from: a fixed `github.com` release URL over
+HTTPS. The QR is shown on the parent's own phone, next to the phone being set up.
+

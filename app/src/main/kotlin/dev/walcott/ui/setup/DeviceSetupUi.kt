@@ -376,6 +376,7 @@ internal fun iconFor(requirement: DeviceRequirement): ImageVector = when (requir
     DeviceRequirement.WEB_FILTER -> Icons.Outlined.Language
     DeviceRequirement.LOCATION_PERMISSION, DeviceRequirement.LOCATION_SERVICE -> Icons.Outlined.LocationOff
     DeviceRequirement.BATTERY_OPTIMIZATION -> Icons.Outlined.BatteryAlert
+    DeviceRequirement.BACKGROUND_RESTRICTION -> Icons.Outlined.BatteryAlert
 }
 
 internal fun warningIcon(): ImageVector = Icons.Filled.Warning

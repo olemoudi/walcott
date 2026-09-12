@@ -110,6 +110,9 @@ data class ParentEvent(
         /** A child sent a selection of domains to block; [detail] is the app, [count] how many. */
         const val TYPE_DOMAINS = "domains"
 
+        /** A child checked in from a phone this family had not seen before (a replacement). */
+        const val TYPE_DEVICE_REPLACED = "device_replaced"
+
         /**
          * The everyday rhythm, reported by the child itself (see [ChildEvent]): one app's daily
          * limit ran out ([detail] names it), bedtime began, a screen-free window began. No
@@ -380,6 +383,15 @@ data class SyncState(
     val appliedLocationRequestMs: Long = 0,
     /** Version of the newest parent snapshot whose rules this child has adopted. */
     val appliedParentVersion: Long = 0,
+    /**
+     * The family [appliedParentVersion] belongs to, by topic. Pairing writes the identity and
+     * this baseline to two separate stores, and a process death between the two left a phone in
+     * a NEW family holding the OLD family's version — refusing every rule its new parent sent,
+     * for as long as that parent's counter stayed below the old one's, while looking healthy.
+     * A mismatch now reads as "no baseline". Blank on installs that predate it: treated as the
+     * current family, so an update cannot open a one-off window for a replayed older snapshot.
+     */
+    val appliedParentTopic: String = "",
     /** The parents' latest answer (approval/denial/bonus), shown until the child dismisses it. */
     val lastNotice: NoticeEntry? = null,
     /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */
@@ -413,6 +425,20 @@ data class SyncState(
     val restrictionGaps: List<String> = emptyList(),
     /** Local minus server clock in ms, as last measured by [ClockGuard]; 0 until measured. */
     val clockSkewMs: Long = 0,
+    /**
+     * How far this phone's wall clock has moved against its monotonic clock, measured on the phone
+     * with no network (see [dev.walcott.sync.ClockGuard.localJumpMs]); 0 when nothing has moved.
+     * The rules believe the worse of this and [clockSkewMs] ([effectiveClockSkewMs]).
+     */
+    val localClockDriftMs: Long = 0,
+    /** The anchor [localClockDriftMs] was measured against, so a new anchor cannot clear it. */
+    val clockDriftAnchorWallMs: Long = 0,
+    /** When the wall and monotonic clocks were last read together (see ClockGuard.Anchor). */
+    val clockAnchorWallMs: Long = 0,
+    val clockAnchorElapsedMs: Long = 0,
+    val clockAnchorBoot: Int = -1,
+    /** Whether that anchor was taken just after the relay showed the clock right. */
+    val clockAnchorVerified: Boolean = false,
     /**
      * What the rules have just done here, waiting to be seen by the parent (see [ChildEvent]).
      * Bounded by [ChildEventLog]; there is no acknowledgement, the parent folds each in by id.
@@ -465,6 +491,23 @@ data class SyncState(
     val panicNoticeUnconfirmed: Boolean = false,
     // Parent side
     val parentVersion: Long = 0,
+    /**
+     * This phone's identity as the parent of this family, minted on its first publish. It rides
+     * in every [dev.walcott.sync.ParentSnapshot] so this phone can recognise its own snapshots
+     * coming back off the relay, and so it can recognise one that is NOT its own (see
+     * [dev.walcott.sync.SyncEngine.parentSuperseded]). Device-local: never in a backup, so a
+     * restore — on this phone or another — always starts a new one.
+     */
+    val parentInstanceId: String = "",
+    /**
+     * When another phone was seen managing this family (0 = never). It is set by restoring this
+     * family's backup somewhere else, which is how a household tries to give a second parent a
+     * phone — and, until this was noticed, the way it silently stopped this one's rule edits
+     * from ever reaching a child again.
+     */
+    val supersededAtMs: Long = 0,
+    /** The version that other phone published at, so taking the family back can outrank it. */
+    val supersededVersion: Long = 0,
     val resolutions: List<Resolution> = emptyList(),
     val bonuses: List<Bonus> = emptyList(),
     /** Pending "locate now" asks, at most one per target device. */
@@ -476,6 +519,11 @@ data class SyncState(
     val lastSeen: Map<String, Long> = emptyMap(),
     /** deviceId -> the lastSeen value we already alerted about (one alert per outage). */
     val staleNotifiedLastSeen: Map<String, Long> = emptyMap(),
+    /**
+     * deviceIds announced as a child's NEW phone, so the "this member has two phones" alert is
+     * said once per replacement rather than on every check-in.
+     */
+    val replacementNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for having enforcement inactive (cleared when it recovers). */
     val enforcementNotified: Set<String> = emptySet(),
     /** deviceId -> the child's pinWrongTotal we already alerted about (one alert per new failure). */
@@ -700,6 +748,10 @@ data class SyncState(
      */
     val ntfySinceSec: Long = 0,
 ) {
+    /** The clock skew the rules act on (see [dev.walcott.sync.ClockGuard.effectiveSkew]). */
+    val effectiveClockSkewMs: Long
+        get() = dev.walcott.sync.ClockGuard.effectiveSkew(clockSkewMs, localClockDriftMs)
+
     /** The feed with [event] appended, dropping whatever fell out of the retention window. */
     fun plusEvent(event: ParentEvent): SyncState = copy(events = pruneEvents(events + event, event.atMs))
 

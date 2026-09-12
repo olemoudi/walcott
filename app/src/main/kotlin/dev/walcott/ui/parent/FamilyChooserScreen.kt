@@ -75,6 +75,8 @@ fun FamilyChooserScreen(
     var creating by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<FamilySummary?>(null) }
     var backupText by remember { mutableStateOf<String?>(null) }
+    // File + passphrase kept while the takeover is confirmed, so it is asked for once.
+    var takeover by remember { mutableStateOf<Pair<String, String>?>(null) }
     var busy by remember { mutableStateOf(false) }
     val readFailed = stringResource(R.string.backup_read_failed)
     val duplicateFamily = stringResource(R.string.add_family_duplicate)
@@ -154,6 +156,18 @@ fun FamilyChooserScreen(
         )
     }
 
+    takeover?.let { (text, passphrase) ->
+        dev.walcott.ui.TakeoverDialog(
+            onDismiss = { takeover = null },
+            onConfirm = {
+                viewModel.addFamilyFromBackup(text, passphrase.toCharArray(), takeover = true) { result ->
+                    takeover = null
+                    if (result == FamilyHub.AddResult.OK) onOpenFamily()
+                }
+            },
+        )
+    }
+
     backupText?.let { text ->
         RestorePassphraseDialog(
             fromPin = dev.walcott.sync.FamilyBackup.keySourceOf(text) == dev.walcott.sync.FamilyBackup.SOURCE_PIN,
@@ -172,6 +186,11 @@ fun FamilyChooserScreen(
                             android.widget.Toast
                                 .makeText(context, duplicateFamily, android.widget.Toast.LENGTH_LONG)
                                 .show()
+                        }
+                        // The passphrase was right; the family is live on another phone.
+                        FamilyHub.AddResult.ALREADY_MANAGED_ELSEWHERE -> {
+                            takeover = text to passphrase
+                            backupText = null
                         }
                         FamilyHub.AddResult.BAD_FILE -> onError()
                     }

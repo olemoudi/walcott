@@ -1,5 +1,10 @@
 package dev.walcott.ui
 
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -10,7 +15,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -19,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -95,7 +100,7 @@ fun WalcottApp(
         return
     }
 
-    var screen by remember {
+    var screen by rememberSaveable {
         mutableStateOf(
             when (loadedMode) {
                 DeviceMode.PARENT -> Screen.FAMILIES
@@ -104,45 +109,45 @@ fun WalcottApp(
             },
         )
     }
-    var childDetailId by remember { mutableStateOf<String?>(null) }
+    var childDetailId by rememberSaveable { mutableStateOf<String?>(null) }
     // Whose notification log is open. The device, not the member: the log belongs to one phone,
     // and a member who is re-paired to another one has not inherited what the old phone received.
-    var notificationDeviceId by remember { mutableStateOf<String?>(null) }
+    var notificationDeviceId by rememberSaveable { mutableStateOf<String?>(null) }
     // Which domain request the parent is reviewing (DOMAIN_REVIEW screen).
-    var domainBatchId by remember { mutableStateOf<String?>(null) }
+    var domainBatchId by rememberSaveable { mutableStateOf<String?>(null) }
     // Where "Special days" was opened from, so Back lands on the screen that sent the parent
     // there instead of the hub. Null = reached from the hub itself.
-    var calendarReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var calendarReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
     // Same for "Limits and schedules" and the child map: both are reachable straight from the
     // home now, and Back must land where the parent came from. Null = the historical origin
     // (the hub for budgets, the child detail for the map).
-    var budgetsReturnTo by remember { mutableStateOf<Screen?>(null) }
-    var appsReturnTo by remember { mutableStateOf<Screen?>(null) }
-    var mapReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var budgetsReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
+    var appsReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
+    var mapReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
     // Where the guided setup was opened from: the child home after enrolling, or the device
     // setup list. Null = the child home (the case that matters, and the only one on a child).
-    var setupReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var setupReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
     // Which guided-setup preset is running (SETUP_WIZARD screen).
     var wizardPreset by remember { mutableStateOf<SetupPreset?>(null) }
     // Where a wizard run should land when it finishes. Null = the families hub, which is where
     // the full guided setup belongs; the short filter run returns to the screen that opened it.
-    var wizardReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var wizardReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
     // When set, EARN/WEBFILTER/PROTECTION edit this child's override instead of the family
     // policy, and back returns to the child detail.
-    var overrideChildId by remember { mutableStateOf<String?>(null) }
+    var overrideChildId by rememberSaveable { mutableStateOf<String?>(null) }
     // Where a "who is not following this?" button jumped from, and whether the child screen it
     // landed on should open on their rules. A family editor that names a member and offers the
     // way to them is offering a LOOK, not a departure — so Back comes back here rather than
     // dropping the parent on the family list with their edit half-made.
-    var childDetailReturnTo by remember { mutableStateOf<Screen?>(null) }
-    var childDetailOnRules by remember { mutableStateOf(false) }
+    var childDetailReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
+    var childDetailOnRules by rememberSaveable { mutableStateOf(false) }
     // Selected package for the per-app detail screen (Apps & categories).
-    var appDetailPkg by remember { mutableStateOf<String?>(null) }
+    var appDetailPkg by rememberSaveable { mutableStateOf<String?>(null) }
     // Where the per-app editor was opened from: the app list, or the report a parent was reading
     // when they decided this app needed a limit. Null = the list, which is the historical origin.
-    var appDetailReturnTo by remember { mutableStateOf<Screen?>(null) }
+    var appDetailReturnTo by rememberSaveable { mutableStateOf<Screen?>(null) }
     // Only the parent's own initial setup may CREATE a PIN at the gate; a child never can.
-    var gateAllowCreate by remember { mutableStateOf(false) }
+    var gateAllowCreate by rememberSaveable { mutableStateOf(false) }
     val parentMode = identity.effectiveMode == DeviceMode.PARENT
     // Which of the two homes this phone shows. Read from the registry the parent pushes, so a
     // member's kind corrected on the parent's phone reaches this one with the next policy — and an
@@ -204,6 +209,10 @@ fun WalcottApp(
     // when it leaves the foreground. Toggling the setting on mid-session must not lock
     // the current session, so an unlocked state is assumed whenever the lock is off.
     val appLockOn = parentMode && identity.appLock
+    // Deliberately NOT rememberSaveable, unlike the navigation above it. Saved state outlives
+    // the process being killed in the background, so persisting this would mean a phone picked
+    // up hours later reopening the parent's app already past its lock. A rotation no longer
+    // costs a PIN either way: the activity is not recreated for one (see configChanges).
     var unlocked by remember { mutableStateOf(false) }
     LaunchedEffect(appLockOn) { if (!appLockOn) unlocked = true }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -241,7 +250,7 @@ fun WalcottApp(
 
     if (appLockOn && !unlocked) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Box(Modifier.fillMaxSize().systemBarsPadding()) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(ContentInsets)) {
                 AppLockScreen(viewModel, onUnlocked = { unlocked = true })
             }
         }
@@ -323,7 +332,7 @@ fun WalcottApp(
         androidx.compose.runtime.CompositionLocalProvider(
             dev.walcott.ui.components.LocalSnackbar provides snackbar,
         ) {
-        Box(Modifier.fillMaxSize().systemBarsPadding()) {
+        Box(Modifier.fillMaxSize().windowInsetsPadding(ContentInsets)) {
             AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
@@ -642,3 +651,15 @@ fun WalcottApp(
         }
     }
 }
+
+/**
+ * What the app's content keeps clear of: the system bars, and the camera cutout.
+ *
+ * The cutout was missing. At targetSdk 35 every window is laid out into it, and in portrait it
+ * hides inside the status bar, so nothing showed — until a parent turned a notched phone sideways
+ * on the map and the first column of the screen sat under the camera. The keyboard is left out on
+ * purpose: the screens with a field already make room for it themselves.
+ */
+private val ContentInsets: WindowInsets
+    @Composable get() = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+

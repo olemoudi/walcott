@@ -3,6 +3,156 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Prepared for v0.112.0 — the second review (not released)
+
+ole asked what important problems the app still has, and then for the plan to be carried out.
+Three cuts this time, so as not to walk the 0.107 review again: what happens on real phones over
+months; a concrete threat model — a child, a sibling, and a photograph of the pairing QR taken
+while the parent shows it; and what a family that is not the author's meets on its own. Every item
+was read back in the code before it counted. The plan with all of it is
+`/home/ole/.claude/plans/puedes-hacer-una-revisi-n-dapper-hollerith.md`.
+
+**No family could enroll a child's phone from the QR, from 0.107 to 0.111.** The enrollment QR
+carries a certificate checksum, and Android's provisioning reads the downloaded APK with
+`GET_SIGNATURES` and hashes `PackageInfo.signatures` — which, for an APK with a v3 rotation
+lineage, the platform fills with the OLDEST certificate "so that programmatic checks keep working".
+The app hashed `apkContentsSigners`, the current one. Every QR shown since the key rotation named a
+certificate provisioning never sees, and a factory-reset phone refused to set up with nothing
+saying why. Nothing tested it: the harness makes Device Owner with adb. The checksum is now a
+constant, `DeviceOwnerProvisioning.PUBLISHED_SIGNATURE_CHECKSUM` (the original certificate, which a
+lineage keeps for ever), pinned by a test, and proven on the AVD with the debug hook
+`--es mode provisioning_checksum` (`match=true`). The release checklist runs that hook, and
+`docs/signing.md` explains why the QR names the old key.
+
+**What a family meets on its own:**
+
+- **A second parent restoring the backup took the family away from the first, silently.** The
+  restore leaps the version counter a million, every child follows it, and the first phone's
+  edits are refused for ever while its screen says "sending". The parent now listens to parent
+  snapshots on its own topic, and one from another phone a whole leap above its own
+  (`SyncEngine.parentSuperseded`, keyed by a per-phone `parentInstanceId`) raises an urgent alert
+  and a home card with "Take it back" (`takeoverVersion`) or "Leave it with them". A restore first
+  reads the last hour of the topic over HTTP and, if a phone is live there, asks before taking the
+  family over (`RestoreResult.ALREADY_MANAGED_ELSEWHERE`, `TakeoverDialog`); it fails open without
+  a network, because the lost-phone case is the one restoring exists for. The README says one
+  parent phone manages a family.
+- **A replaced child phone left a ghost row that every screen and every action used.** A factory
+  reset cannot keep the deviceId, so the replacement was appended beside the dead phone and 26
+  `firstOrNull { childId }` lookups took the dead one. The ViewModel now serves one device per child,
+  the one heard from most recently (`SyncEngine.currentDevices`); earlier phones get a card on the
+  member's page to retire or free them, and a "checked in from a new phone" notice. (Usage history
+  was never lost: it is filed by childId.)
+- **"Change device mode" left the phone enforcing a family it no longer belonged to** — worse than
+  the review said. A blank identity is UNSET and UNSET enforces, so the transition never flipped the
+  flag that runs the hand-back at all. `resetDeviceMode` now stops the loop, hands the device back,
+  unlinks and drops the rules; `ChangeModeScenarioTest` proves it at bedtime (new debug mode
+  `change_mode`). The first version of that fix had a bug of its own, and the device suite
+  is what found it: it stopped the enforcement service for the hand-back and nothing started it
+  again — child to UNSET does not change whether a phone enforces, so the mode observer saw no
+  transition. The scenario passed; the four after it (the curfew's tunnel, the low-battery word)
+  failed on a phone whose loop was not running, until the watchdog brought it back. The reset now
+  restarts the service, and the scenario pairs again afterwards and waits for the next bedtime to
+  bite, so a stopped loop fails the scenario that stopped it.
+- **Pairing said "couldn't read that code" for every mistake and "linked" for some failures.** The
+  scan is classified (`CodeScan`: pairing code, enrollment code, download link), a confirm dialog
+  names the child and the family before joining, and `pairAsChild` waits for the relay's receipt and
+  says so when it did not come (`PairResult.PAIRED_NO_CONTACT`).
+- **Turning the phone, changing font size or dark mode threw a parent back to the home screen and
+  the app lock.** `MainActivity` handles those configuration changes, and the navigation cursor is
+  `rememberSaveable`. The app-lock flag deliberately is not (saved state outlives the process).
+
+**What a photograph of the QR bought, closed where it can be closed locally** (the structural fix is
+D1, pairing v2, in the plan):
+
+- A forged child snapshot at `Long.MAX_VALUE` froze a sibling's row for ever. `mergeChild` refuses a
+  version jump larger than what a phone could publish in the time since it was last heard
+  (`maxChildVersionJump`: 10 000 plus one a second). A speed bump, and said so in the KDoc.
+- A forged ack retired any command, the refusal of an emergency release included; now only a
+  command addressed to that device. A forged `RELEASE_DEVICE` ack deleted a sibling; now it must
+  answer a release this parent issued. `panic == null` cancelled the alert with no version guard;
+  it has the guard now, and a countdown that stops by any means other than the parent's own refusal
+  says so out loud (`notifyPanicStopped`).
+- Approve and "Allow it to stay" fired from the parent's lock screen; both need an unlocked phone
+  (`setAuthenticationRequired`), and "Allow" answers to the app lock like the other answers.
+- A redeemed rescue code was a wall line that aged out in six hours. It is an urgent notification
+  now, and child events travel for 48 hours.
+- A gzip of a few kilobytes inflated to megabytes on every phone, on every reconnect; inflation is
+  capped at 100× the message cap. A reconnect cursor is floored at twelve hours.
+- The relay refusing this phone's messages (a rate limit a household shares, or an outage) was a
+  line on a settings card; it is an alert now, worded for the rate-limit case.
+- The emergency-release alert is alarm-category and ongoing while the countdown runs, and asks to
+  bypass Do Not Disturb (granted only with notification-policy access, which is not requested).
+
+**The child, closed a second time:** `dataExtractionRules` exclude everything from cloud backup and
+device transfer (allowBackup alone stops only the cloud half from Android 12); `BootReceiver` and
+`AppUpdateWindowReceiver` are no longer exported; work profiles and private space are refused under
+the add-user switch; the best-known public resolvers are routed into the tunnel by IPv4 address
+(`PublicResolvers`), so asking one directly, or a browser's secure DNS pointed at one, goes through
+the filter and the curfew; the clock is watched on the phone itself when nothing arrives from the
+relay (`ClockGuard.localJumpMs`/`jumpIsTampering`, anchored only at relay-verified moments, and a
+jump from an unverified anchor counts only with automatic time off, so network time fixing a clock
+never closes a child's apps); the replay baseline remembers which family it belongs to
+(`appliedParentTopic`); and the permission cards explain Android 13's "Allow restricted settings".
+
+**Battery and size:** screen time is credited in memory and written once a minute (`UsageBatch`,
+about 7 000 commits a day before); the suspension reconciliation asks only about packages whose
+wanted state moved, with a full sweep every five minutes (`Enforcer.packagesToCheck`, twelve
+thousand binder calls an hour of use before); `DeviceRestrictions.apply` reads what is in force and
+writes only the differences; "Restricted" battery use is a critical requirement
+(`BACKGROUND_RESTRICTION`); the debug log trims by bytes and caps entries; the two alarm receivers
+hold the broadcast open for a bounded eight seconds (`runHeld`); release builds are shrunk by R8 with
+app classes kept whole and nothing renamed — **51.5 MB to 8.9 MB**; and new families get child
+updates on Wi-Fi only (set in `becomeParent`, not as the field default, which is what old policies
+decode to; the parent phone ignores the switch, being the canary).
+
+**Polish and CI:** content keeps clear of the camera cutout; the warning amber is a theme token with
+a dark variant; `StringsParityTest` compares placeholders and plural forms; the README is corrected
+(rules take about half a minute, one parent phone, resolvers routed, app clones); CI runs Android
+Lint against `app/lint-baseline.xml` and refuses coverage below 95% of instructions and 87% of
+branches (`jacocoAggregatedVerification`).
+
+**Deliberately not done, with the reason:**
+
+- **D1 (pairing v2, a key per device) and D2 (two parents that converge).** Protocol changes with
+  their own cycle and version gates; everything above is local and does not need them.
+- **One socket for several families.** A rewrite of the transport with the most delicate history in
+  this repo, for a minority of parents, and not verifiable without several real families.
+- **The clone-profile restriction** (Samsung Dual Messenger, Xiaomi Dual Apps). Hidden from the
+  public SDK; asking for it would put a false "the phone refused this" card in front of the parent.
+  Needs checking on those phones.
+- **Wrapping the identity DataStore with a Keystore key.** Device transfer is closed by the rules,
+  root can use a Keystore key from inside the process anyway, and a failed migration would leave a
+  family with no identity.
+- **A quiet window for the emergency release**, which would change "twelve hours" into "twelve waking
+  hours". And a publish the relay refuses still cancels a release: that contract is deliberate
+  ("twelve hours of a phone that can be reached"); what changed is that the parent is told.
+- **IPv6 resolver routes** (the tunnel cannot read IPv6) and **the bypass list on by default** (a
+  curfewed app already resolves nothing; address literals were the gap, and they are routed).
+- **The dependency train** (Room, OkHttp 5, AGP, Kotlin, Compose BOM), **splitting `SyncManager`** and
+  **ktlint**. Each wants a device-verified release of its own; the pure decisions this batch needed
+  went into `SyncEngine`, where they are tested, and Lint with a baseline covers what ktlint would
+  have added of value.
+
+**Emulator notes from this batch:**
+
+- `bmgr` answers "Backup Manager is not activated for user 0" on a Device Owner AVD: the platform
+  disables backup for a managed device, so device transfer was never open on a child. The exposure
+  was the parent's phone, which is not managed — so the transfer rules could not be observed on
+  `walcott-mapview`.
+- The harness simulates the PARENT, so none of the parent-side guards above can be exercised there;
+  they are covered by `SyncEngineTest`, `ParentTakeoverTest` and `CurrentDeviceTest`.
+
+**Verification:** `./gradlew test` green, Lint against its new baseline, the coverage floor met
+(95.4% instructions, 87.8% branches). On `walcott-mapview` (Device Owner, rotated key): the enrollment
+checksum hook says `match=true`. The first non-destructive sweep ran 125 scenarios with 4 failures —
+the curfew's tunnel and the low-battery word, every one of them right after the change-mode scenario,
+which had stopped the enforcement loop and not started it again (see above); the sweep was also cut
+by its own time limit before `SystemApp`, `TimeWarning`, `UpdateWindow` and `WebFilter` finished. With
+the fix: those seven classes again, 19/19. Destructive suite: 8/8 twice in a row. Release APK: 8.9 MB, v3 with
+the lineage, app classes and serializers present in the shrunk DEX; installed over the Device
+Owner on the emulator it starts, draws its screens, runs the enforcement service and keeps the
+device owner, with nothing in the crash buffer.
+
 ## Shipped in v0.111.0 — a phone that keeps changing its mind about which network it is on
 
 ole asked what `../malachi` had done about Wi-Fi/mobile hand-offs and poor Wi-Fi specifically, in

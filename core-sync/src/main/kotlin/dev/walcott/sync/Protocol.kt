@@ -401,8 +401,17 @@ object ChildEventLog {
     /** How many events ride in a snapshot at once. Small: they are one line each on a wall. */
     const val MAX = 8
 
-    /** How long an uncollected event keeps travelling. Longer than any re-emit interval. */
-    const val RETENTION_MS = 6 * 60 * 60 * 1000L
+    /**
+     * How long an uncollected event keeps travelling.
+     *
+     * Two days, not the six hours it was. The bound is meant to cover a phone that could not
+     * reach the family, and six hours does not: an evening with the data off outlives it, which
+     * is exactly the evening whose events a parent most wants — a rescue code redeemed, a curfew
+     * cut. The cost of the longer window is nothing in steady state, because [MAX] is what
+     * actually bounds the payload and events are collected within seconds of the phone having a
+     * network.
+     */
+    const val RETENTION_MS = 48 * 60 * 60 * 1000L
 
     /** [existing] plus [fresh], oldest first, pruned to the two bounds. */
     fun plus(existing: List<ChildEvent>, fresh: List<ChildEvent>, nowMs: Long): List<ChildEvent> =
@@ -1204,6 +1213,17 @@ data class ParentSnapshot(
      * and reassembly is idempotent.
      */
     val domainAcks: List<String> = emptyList(),
+    /**
+     * Which parent phone published this, so a parent can tell its own snapshot coming back off
+     * the relay from one another phone put there. Random per parent scope, minted on the first
+     * publish and never sent anywhere else; it identifies a PHONE, not a family or a person.
+     *
+     * Empty from a parent build older than this field. That is not the same as "ours": the
+     * comparison that uses it (see [SyncEngine.parentSuperseded]) also demands a version a
+     * whole restore-leap above our own, which our own older snapshots replayed out of the
+     * relay's backlog can never have.
+     */
+    val parentInstanceId: String = "",
 )
 
 /** One app icon, compressed small (WebP) and base64'd, sent child→parent on request. */
@@ -1546,9 +1566,34 @@ object SyncProtocol {
      * Gunzips if the payload carries the gzip magic (0x1f 0x8b); passes legacy uncompressed
      * JSON through untouched (JSON starts with '{' = 0x7b, so there is no ambiguity).
      */
-    private fun gunzipIfNeeded(bytes: ByteArray): ByteArray {
+    /**
+     * The most a message is allowed to inflate to.
+     *
+     * A relay message is capped at [SnapshotFit.MAX_BYTES] on the way out, and DEFLATE reaches
+     * about a thousand to one, so a few kilobytes of crafted input can ask for megabytes of heap
+     * — per message, on every phone in the family, replayed out of the backlog on each
+     * reconnect. Getting there needs the family key, which every child has, so "only a family
+     * member could do this" is not a bound. A hundred times the cap is far above anything this
+     * app produces (a full snapshot gzips to well under it) and far below anything that hurts.
+     */
+    private const val MAX_INFLATED_BYTES = SnapshotFit.MAX_BYTES * 100
+
+    /** Null when the payload claims to be larger than [MAX_INFLATED_BYTES]. */
+    private fun gunzipIfNeeded(bytes: ByteArray): ByteArray? {
         val gzipped = bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
         if (!gzipped) return bytes
-        return java.util.zip.GZIPInputStream(bytes.inputStream()).use { it.readBytes() }
+        return java.util.zip.GZIPInputStream(bytes.inputStream()).use { stream ->
+            // Read one byte past the ceiling: reaching it is what says the stream is bigger,
+            // and stopping there is what keeps the memory bounded.
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                out.write(buffer, 0, read)
+                if (out.size() > MAX_INFLATED_BYTES) return null
+            }
+            out.toByteArray()
+        }
     }
 }

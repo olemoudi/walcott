@@ -209,10 +209,15 @@ fun ChildStatusScreen(
     // every resume (see DeviceSetup). It replaced two hand-rolled cards here that between them
     // covered a third of the list.
     val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
-    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { text ->
-            scope.launch {
-                if (viewModel.pairAsChild(text)) {
+    // The pairing code that has been scanned and read but not acted on yet: it names a child and
+    // a family, and both are worth showing before this phone becomes one of them. Two children
+    // set up on the same afternoon is all it takes to put Bruno's phone in Ana's place, and
+    // nothing afterwards says so — the parent simply watches a phone that never checks in.
+    var confirmPairing by remember { mutableStateOf<dev.walcott.sync.PairingPayload?>(null) }
+    fun pair(payload: dev.walcott.sync.PairingPayload) {
+        scope.launch {
+            when (viewModel.pairAsChild(payload.encode())) {
+                dev.walcott.sync.PairResult.PAIRED -> {
                     // Positive confirmation: scanning worked and this phone now belongs
                     // to the family — otherwise success just looks like "nothing happened".
                     Toast.makeText(context, R.string.pairing_success, Toast.LENGTH_SHORT).show()
@@ -221,11 +226,42 @@ fun ChildStatusScreen(
                     // as cards on this screen is read by the child, an hour later, and acted
                     // on by nobody. Pairing has just reset the flag (see pairAsChild).
                     onOpenSetupJourney()
-                } else {
-                    Toast.makeText(context, R.string.pairing_failed, Toast.LENGTH_SHORT).show()
                 }
+                // Linked, but nothing got out. Long, because it names something to go and fix.
+                dev.walcott.sync.PairResult.PAIRED_NO_CONTACT -> {
+                    Toast.makeText(context, R.string.pairing_no_contact, Toast.LENGTH_LONG).show()
+                    onOpenSetupJourney()
+                }
+                dev.walcott.sync.PairResult.BAD_CODE ->
+                    Toast.makeText(context, R.string.pairing_failed, Toast.LENGTH_SHORT).show()
             }
         }
+    }
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { text ->
+            // Which of the three codes a family handles during setup this is. Answering all of
+            // them with "couldn't read that code" is what left a parent with nothing to correct.
+            when (val scanned = dev.walcott.sync.CodeScan.classify(text)) {
+                is dev.walcott.sync.ScannedCode.Pairing -> confirmPairing = scanned.payload
+                dev.walcott.sync.ScannedCode.EnrollmentCode ->
+                    Toast.makeText(context, R.string.pairing_is_enrollment, Toast.LENGTH_LONG).show()
+                dev.walcott.sync.ScannedCode.DownloadLink ->
+                    Toast.makeText(context, R.string.pairing_is_download, Toast.LENGTH_LONG).show()
+                dev.walcott.sync.ScannedCode.Unknown ->
+                    Toast.makeText(context, R.string.pairing_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    confirmPairing?.let { payload ->
+        ConfirmPairingDialog(
+            payload = payload,
+            onDismiss = { confirmPairing = null },
+            onConfirm = {
+                confirmPairing = null
+                pair(payload)
+            },
+        )
     }
 
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -1631,4 +1667,44 @@ private fun blockedReasonText(app: AppStatusUi): String = when (app.blockReason)
         }
     BlockReason.FAIL_CLOSED -> stringResource(R.string.reason_fail_closed)
     null -> ""
+}
+
+/**
+ * Shows who this phone is about to become before it becomes them.
+ *
+ * A pairing code carries the child's name and the family's, and until this dialog existed
+ * neither was ever shown: scanning the wrong child's code — two phones being set up on the same
+ * afternoon — silently made this phone report as that child, and the only symptom was the other
+ * one never checking in.
+ */
+@Composable
+private fun ConfirmPairingDialog(
+    payload: dev.walcott.sync.PairingPayload,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val name = payload.childName.ifBlank { stringResource(R.string.pairing_confirm_unnamed) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.pairing_confirm_title)) },
+        text = {
+            Text(
+                if (payload.familyName.isBlank()) {
+                    stringResource(R.string.pairing_confirm_body, name)
+                } else {
+                    stringResource(R.string.pairing_confirm_body_family, name, payload.familyName)
+                },
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.pairing_confirm_action))
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
 }

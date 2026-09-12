@@ -125,7 +125,18 @@ object DeviceRestrictions {
         // Both halves: a user that cannot be created, and one that already exists (a guest,
         // an OEM's second profile) that cannot be switched to. Suspension is per user, so
         // either is a phone with none of the rules on it.
-        Feature(KEY_ADD_USER, listOf(UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_USER_SWITCH)),
+        //
+        // And the containers that are users underneath: a work profile, and Android 15's private
+        // space. An app in one runs as another user, so it is neither suspended nor counted nor
+        // seen by the blocker. Added by platform version, because the read-back below would
+        // otherwise report a key the platform has never heard of as a restriction the phone
+        // refused.
+        //
+        // NOT the clone profile behind Samsung's Dual Messenger and Xiaomi's Dual Apps: its
+        // restriction is hidden from the public SDK, and asking for a key a device owner may not
+        // set would put a false "the phone refused this" card in front of the parent. Whether
+        // those clones are closed on a given phone has to be checked on that phone.
+        Feature(KEY_ADD_USER, addUserRestrictions()),
         // Developer options and adb: `am force-stop`, `settings put`, a sideload past the
         // install block — a laptop is the way round every rule the phone itself enforces.
         Feature(KEY_DEBUGGING, listOf(UserManager.DISALLOW_DEBUGGING_FEATURES)),
@@ -154,6 +165,15 @@ object DeviceRestrictions {
         Feature(KEY_DEFAULT_APPS, listOf(UserManager.DISALLOW_CONFIG_DEFAULT_APPS), Group.APPS),
     )
 
+    private fun addUserRestrictions(): List<String> = buildList {
+        add(UserManager.DISALLOW_ADD_USER)
+        add(UserManager.DISALLOW_USER_SWITCH)
+        add(UserManager.DISALLOW_ADD_MANAGED_PROFILE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            add(UserManager.DISALLOW_ADD_PRIVATE_PROFILE)
+        }
+    }
+
     /** [enabledKeys] minus the install block while a PIN-gated exemption window is open. */
     fun effectiveKeys(enabledKeys: Set<String>, installExemptUntilMs: Long, nowMs: Long): Set<String> =
         if (nowMs < installExemptUntilMs) enabledKeys - KEY_INSTALLS else enabledKeys
@@ -176,8 +196,20 @@ object DeviceRestrictions {
         val admin = WalcottAdminReceiver.componentName(context)
         val effective = effectiveKeys(enabledKeys, installExemptUntilMs, System.currentTimeMillis())
 
+        // Every write below is made only when the system says the state differs. This runs from
+        // the policy observer and from the watchdog every fifteen minutes, and it used to issue
+        // every restriction's add or clear, the uninstall block and both support messages each
+        // time whether anything had changed or not — about thirty privileged calls, most of which
+        // rewrite the device-policy file in system_server. The READ is what makes skipping safe:
+        // nothing is remembered here, so a restriction the handback took off, or the install
+        // block the updater lifts, is seen as missing and put back like anything else.
+
         // Self-protection: as Device Owner, Walcott can't be uninstalled (always on).
-        runCatching { dpm.setUninstallBlocked(admin, context.packageName, true) }
+        runCatching {
+            if (!dpm.isUninstallBlocked(admin, context.packageName)) {
+                dpm.setUninstallBlocked(admin, context.packageName, true)
+            }
+        }
 
         // What the phone says on its own behalf wherever Android tells somebody an action is
         // "managed by your administrator" — changing the date, installing something, resetting
@@ -186,13 +218,19 @@ object DeviceRestrictions {
         // holding the phone, and what they need is which app to open and what it can do for
         // them. Cleared again on handback (see DeviceHandback).
         runCatching {
-            dpm.setShortSupportMessage(admin, context.getString(R.string.admin_support_short))
-            dpm.setLongSupportMessage(admin, context.getString(R.string.admin_support_long))
+            val short = context.getString(R.string.admin_support_short)
+            val long = context.getString(R.string.admin_support_long)
+            // Compared as text, so a change of the phone's language still rewrites them.
+            if (dpm.getShortSupportMessage(admin)?.toString() != short) dpm.setShortSupportMessage(admin, short)
+            if (dpm.getLongSupportMessage(admin)?.toString() != long) dpm.setLongSupportMessage(admin, long)
         }
 
+        // Null when the system will not say: then every restriction is written, as before.
+        val inForce = runCatching { dpm.getUserRestrictions(admin) }.getOrNull()
         for (feature in FEATURES) {
             val enabled = feature.key in effective
             for (restriction in feature.restrictions) {
+                if (inForce != null && inForce.getBoolean(restriction) == enabled) continue
                 runCatching {
                     if (enabled) dpm.addUserRestriction(admin, restriction)
                     else dpm.clearUserRestriction(admin, restriction)

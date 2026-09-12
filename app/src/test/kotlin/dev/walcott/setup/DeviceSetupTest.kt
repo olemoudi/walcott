@@ -206,6 +206,19 @@ class DeviceSetupTest {
     }
 
     @Test
+    fun `restricted battery use is asked about everywhere, and first`() {
+        // On a parent phone it is what silences the emergency-release alert; on any phone it is
+        // the switch that turns every other item on this list into a once-a-day affair.
+        val parent = healthy(enforcingChild = false, deviceOwner = false).copy(backgroundRestricted = true)
+        assertEquals(DeviceRequirement.BACKGROUND_RESTRICTION, DeviceSetup.unmet(parent).first())
+        val owner = healthy(deviceOwner = true).copy(backgroundRestricted = true)
+        assertTrue(DeviceRequirement.BACKGROUND_RESTRICTION in DeviceSetup.unmet(owner))
+        assertTrue(DeviceRequirement.BACKGROUND_RESTRICTION.critical)
+        // And a device that is not restricted is never shown it.
+        assertFalse(DeviceRequirement.BACKGROUND_RESTRICTION in DeviceSetup.unmet(healthy()))
+    }
+
+    @Test
     fun `requirement keys are stable and distinct`() {
         val keys = DeviceRequirement.entries.map { it.key }
         assertEquals(keys.distinct(), keys)
@@ -227,7 +240,11 @@ class DeviceSetupTest {
         // setup needs that list to tell "this phone is ready" from "nobody has looked".
         val healthy = healthy(deviceOwner = true)
         assertEquals(
-            listOf(DeviceRequirement.NOTIFICATIONS, DeviceRequirement.USAGE_ACCESS),
+            listOf(
+                DeviceRequirement.NOTIFICATIONS,
+                DeviceRequirement.USAGE_ACCESS,
+                DeviceRequirement.BACKGROUND_RESTRICTION,
+            ),
             DeviceSetup.applicable(healthy),
         )
         assertTrue(DeviceSetup.unmet(healthy).isEmpty())
@@ -253,6 +270,7 @@ class DeviceSetupTest {
                 locationServiceEnabled = false,
                 ignoringBatteryOptimizations = false,
                 webFilterRunning = false,
+                backgroundRestricted = true,
             )
             assertEquals(DeviceSetup.applicable(facts), DeviceSetup.applicable(broken))
             // And with everything broken, "unmet" is exactly "applicable".

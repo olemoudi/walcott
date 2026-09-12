@@ -28,8 +28,16 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test
 
+      # New findings fail the build; the ones recorded in app/lint-baseline.xml do not.
+      - name: Android Lint
+        run: ./gradlew :app:lintDebug
+
       - name: Aggregated coverage report
         run: ./gradlew jacocoAggregatedReport
+
+      # The badge below reports the number; this refuses to let it fall.
+      - name: Coverage floor
+        run: ./gradlew jacocoAggregatedVerification
 
       - name: Generate coverage badge
         run: python3 scripts/coverage_badge.py

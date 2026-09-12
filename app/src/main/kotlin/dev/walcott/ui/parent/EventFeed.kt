@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Redeem
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Timer
@@ -70,7 +71,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_SCREEN_FREE, ParentEvent.TYPE_WEB_FILTER_DOWN, ParentEvent.TYPE_WEB_FILTER_BACK,
     ParentEvent.TYPE_LIVE_TRACKING_ENDED, ParentEvent.TYPE_CURFEW_CUT, ParentEvent.TYPE_RESCUE,
     ParentEvent.TYPE_CHILD_CRASHED, ParentEvent.TYPE_RULES_APPLIED,
-    ParentEvent.TYPE_SETUP_PENDING, ParentEvent.TYPE_SETUP_DONE,
+    ParentEvent.TYPE_SETUP_PENDING, ParentEvent.TYPE_SETUP_DONE, ParentEvent.TYPE_DEVICE_REPLACED,
 )
 
 @Composable
@@ -142,7 +143,7 @@ private fun eventAge(event: ParentEvent, nowMs: Long, repeat: Int): String {
 
 @Composable
 private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
-    val warn = Color(0xFFB26A00)
+    val warn = dev.walcott.ui.theme.Tokens.warning
     val error = MaterialTheme.colorScheme.error
     val good = MaterialTheme.colorScheme.secondary
     val neutral = MaterialTheme.colorScheme.primary
@@ -175,6 +176,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_DOMAINS -> Icons.Outlined.Language to neutral
         ParentEvent.TYPE_INSTALL_WINDOW -> Icons.Outlined.InstallMobile to warn
         ParentEvent.TYPE_WRONG_APP -> Icons.Filled.Warning to error
+    ParentEvent.TYPE_DEVICE_REPLACED -> Icons.Outlined.PhoneAndroid to warn
         ParentEvent.TYPE_APP_TIME_OUT -> Icons.Outlined.Timer to neutral
         ParentEvent.TYPE_BEDTIME -> Icons.Outlined.Bedtime to neutral
         ParentEvent.TYPE_SCREEN_FREE -> Icons.Outlined.Schedule to neutral
@@ -266,6 +268,7 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_LIVE_TRACKING_ENDED -> stringResource(R.string.event_live_tracking_ended)
     ParentEvent.TYPE_CURFEW_CUT -> stringResource(R.string.event_curfew_cut, name, event.detail)
     ParentEvent.TYPE_RESCUE -> stringResource(R.string.event_rescue, name)
+    ParentEvent.TYPE_DEVICE_REPLACED -> stringResource(R.string.event_device_replaced, name)
     ParentEvent.TYPE_REMOTE_DONE -> stringResource(
         if (event.count > 0) R.string.event_remote_ok else R.string.event_remote_failed,
         name, remoteActionLabel(event.detail),

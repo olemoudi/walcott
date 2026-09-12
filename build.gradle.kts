@@ -52,3 +52,30 @@ tasks.register<JacocoReport>("jacocoAggregatedReport") {
         csv.required.set(true)
     }
 }
+
+// A floor under the number the badge paints. The badge only ever reported coverage; nothing
+// stopped it going down, and a rule engine whose tests quietly stop reaching a branch is exactly
+// the change nobody notices in review. Set at the level measured when it was introduced (0.112:
+// 95.4% of instructions, 87.8% of branches), so it can only be raised.
+tasks.register<JacocoCoverageVerification>("jacocoAggregatedVerification") {
+    group = "verification"
+    val report = tasks.named<JacocoReport>("jacocoAggregatedReport").get()
+    dependsOn(report)
+    executionData.setFrom(report.executionData)
+    sourceDirectories.setFrom(report.sourceDirectories)
+    classDirectories.setFrom(report.classDirectories)
+    violationRules {
+        rule {
+            limit {
+                counter = "INSTRUCTION"
+                value = "COVEREDRATIO"
+                minimum = "0.95".toBigDecimal()
+            }
+            limit {
+                counter = "BRANCH"
+                value = "COVEREDRATIO"
+                minimum = "0.87".toBigDecimal()
+            }
+        }
+    }
+}

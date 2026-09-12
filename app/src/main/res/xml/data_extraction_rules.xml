@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Nothing of this app's leaves the phone through Android's own backup machinery.
+
+    allowBackup="false" is not enough on its own from Android 12: it turns off cloud backup, and
+    device-to-device transfer ("copy apps and data" to a new phone) is governed separately, by
+    the <device-transfer> section below. With no section the transfer is fully enabled, and it
+    would carry the identity DataStore in the clear: the family key, the parent's signing key and
+    the parent PIN. A parent replacing their phone would get a working second parent without
+    knowing it; a child with a spare phone would get the family.
+
+    Every domain is listed rather than only "root", because the domains are separate namespaces
+    and excluding one does not exclude the others.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

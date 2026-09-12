@@ -1,5 +1,6 @@
 package dev.walcott.location
 
+import dev.walcott.runHeld
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -10,10 +11,7 @@ import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
 import dev.walcott.enforcement.EnforcementService
 import dev.walcott.sync.LocationPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 /**
  * The child's periodic location fix, driven by an alarm rather than by a timer inside the
@@ -238,9 +236,10 @@ class LocationSampleReceiver : BroadcastReceiver() {
         // The real interval is re-armed by the cycle itself and replaces this one.
         LocationAlarm.schedule(context, SAFETY_NET_MS)
         val lock = LocationAlarm.wakeLock(context)
-        // The broadcast returns at once and the wakelock — not goAsync — is what holds the CPU:
-        // a fix can take twenty seconds, which is far longer than a receiver may sit blocking.
-        CoroutineScope(Dispatchers.IO).launch {
+        // Two holds for two different things: the wakelock keeps the CPU up for a fix that can
+        // take twenty seconds, and the broadcast is held open so the process is not reaped before
+        // the cycle's first act — restarting the enforcement service — has taken over that job.
+        runHeld {
             try {
                 LocationAlarm.runCycle(context)
             } finally {

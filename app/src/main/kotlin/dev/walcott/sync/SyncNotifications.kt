@@ -36,6 +36,15 @@ object SyncNotifications {
     private const val STATUS_CHANNEL = "walcott_status"
     private const val OLD_ALERT_CHANNEL = "walcott_alerts"
 
+    /**
+     * Fixed: there is one family per scope, so a second takeover replaces the first alert
+     * rather than stacking beside it.
+     */
+    private const val SUPERSEDED_NOTIF_ID = 8801
+
+    /** Fixed too: one outage, one line in the shade. */
+    private const val RELAY_REFUSING_NOTIF_ID = 8802
+
     /** Intent extra + values used to deep-link a notification tap to a screen. */
     const val EXTRA_DEST = "walcott_dest"
     const val DEST_APPS = "apps"
@@ -145,6 +154,94 @@ object SyncNotifications {
         notifId = "enf".hashCode() + deviceId.hashCode(),
         dest = childDest(childId),
     )
+
+    /**
+     * Another phone restored this family's backup and is now the parent the children follow.
+     *
+     * URGENT, and it names the consequence rather than the mechanism: what a parent needs to know
+     * is that the rules they change here stop arriving, not that a version counter was outranked.
+     */
+    fun notifyFamilyTakenOver(context: Context, family: String?) = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = context.getString(R.string.superseded_title),
+        text = family?.let { context.getString(R.string.superseded_text_family, it) }
+            ?: context.getString(R.string.superseded_text),
+        notifId = SUPERSEDED_NOTIF_ID,
+    )
+
+    /** Taken back, or the parent said they meant it: the alert has nothing left to say. */
+    fun cancelFamilyTakenOver(context: Context) {
+        runCatching { androidx.core.app.NotificationManagerCompat.from(context).cancel(SUPERSEDED_NOTIF_ID) }
+    }
+
+    /**
+     * A child checked in from a phone this family had not seen before.
+     *
+     * Almost always a replacement the parent is holding — a factory reset cannot keep the old
+     * device id — and it needs saying because until the old row is retired both are on file, and
+     * the phone shown on the screens is chosen by which one spoke last rather than by which one
+     * the family means.
+     */
+    fun notifyDeviceReplaced(context: Context, childName: String, deviceId: String, childId: String) = post(
+        context, STATUS_CHANNEL, R.string.status_channel_name,
+        title = context.getString(R.string.device_replaced_title, childName),
+        text = context.getString(R.string.device_replaced_text),
+        notifId = "replaced".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
+    /**
+     * A phone that was counting down to freeing itself has stopped asking.
+     *
+     * Posted for every ending except the parent's own refusal: withdrawn by the child, killed by
+     * the connectivity rule — or claimed by a message this parent cannot verify, since child
+     * messages carry no signature. An alarm that ends by silently vanishing is indistinguishable
+     * from one somebody switched off.
+     */
+    fun notifyPanicStopped(context: Context, childName: String, deviceId: String, childId: String) = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = context.getString(R.string.panic_stopped_title, childName),
+        text = context.getString(R.string.panic_stopped_text),
+        notifId = "panicstop".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
+    /**
+     * A rescue code was typed into a child's phone and opened it.
+     *
+     * URGENT: the code lifts bedtime, every budget and the DNS curfew for up to three hours, and
+     * it is designed to work with no network and no PIN — so this notice, whenever the phone
+     * next reaches the family, is the only account of it a parent gets.
+     */
+    fun notifyRescueUsed(context: Context, childName: String, deviceId: String, childId: String) = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = context.getString(R.string.rescue_used_title, childName),
+        text = context.getString(R.string.rescue_used_text),
+        notifId = "rescue".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
+    /**
+     * The relay is refusing this phone's messages.
+     *
+     * Rate limiting gets its own wording because it has its own answer — the public server's
+     * limits are per visitor and a household shares one address, so the fix is a relay of the
+     * family's own rather than waiting.
+     */
+    fun notifyRelayRefusing(context: Context, family: String?, rateLimited: Boolean) = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = family?.let { context.getString(R.string.relay_refusing_title_family, it) }
+            ?: context.getString(R.string.relay_refusing_title),
+        text = context.getString(
+            if (rateLimited) R.string.relay_refusing_rate_limited else R.string.relay_refusing_text,
+        ),
+        notifId = RELAY_REFUSING_NOTIF_ID,
+    )
+
+    /** A publish got through: whatever was in the way is gone. */
+    fun cancelRelayRefusing(context: Context) {
+        runCatching { NotificationManagerCompat.from(context).cancel(RELAY_REFUSING_NOTIF_ID) }
+    }
 
     /** Alert when a registered child device has never checked in (enrollment likely didn't finish). */
     fun notifyNeverReported(context: Context, childName: String, childId: String) = post(
@@ -356,6 +453,9 @@ object SyncNotifications {
             },
             notifId = notifId,
             dest = childDest(childId),
+            // Only while the countdown is running. The closing "it has been released" notice is
+            // news, not an alarm, and an ongoing one could never be swiped away.
+            alarm = !released,
             actions = if (released) {
                 emptyList()
             } else {
@@ -390,10 +490,28 @@ object SyncNotifications {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return listOf(
-            NotificationCompat.Action(0, approveLabel, broadcast(RequestActionReceiver.ACTION_APPROVE)),
+            // Approving GRANTS something, so the phone has to be unlocked for it. A broadcast
+            // action otherwise fires straight from the lock screen: the child who sent the
+            // request only has to wait for the parent's phone to be face-up on the table.
+            guarded(approveLabel, broadcast(RequestActionReceiver.ACTION_APPROVE)),
             NotificationCompat.Action(0, context.getString(R.string.deny), broadcast(RequestActionReceiver.ACTION_DENY)),
         )
     }
+
+    /**
+     * A notification action that Android will not fire until the phone is unlocked.
+     *
+     * For the ones that hand something out — minutes, or leave to keep an app. Refusals are left
+     * ungated on purpose: they are the safe answer, and the emergency-release refusal in
+     * particular has to work at three in the morning without finding a PIN first.
+     *
+     * `setAuthenticationRequired` needs API 31; below it the platform has no such concept and the
+     * builder simply ignores the request.
+     */
+    private fun guarded(label: String, intent: PendingIntent): NotificationCompat.Action =
+        NotificationCompat.Action.Builder(0, label, intent)
+            .setAuthenticationRequired(true)
+            .build()
 
     /**
      * A child installed app(s) the family has not given a limit of its own.
@@ -527,6 +645,7 @@ object SyncNotifications {
         deviceId: String,
         childId: String = "",
         installer: String = "",
+        quickAnswer: Boolean = true,
     ) {
         fun action(intentAction: String, labelRes: Int): NotificationCompat.Action {
             val intent = Intent(context, UnauthorizedAppReceiver::class.java)
@@ -552,12 +671,35 @@ object SyncNotifications {
                 installerLine(context, installer)?.let { "\n" + it }.orEmpty(),
             notifId = UnauthorizedAppReceiver.notificationId(deviceId, pkg),
             dest = childDest(childId),
-            actions = listOf(
-                action(UnauthorizedAppReceiver.ACTION_REMOVE, R.string.unauthorized_app_remove),
-                action(UnauthorizedAppReceiver.ACTION_ALLOW, R.string.unauthorized_app_allow),
-            ),
+            // "Allow it to stay" un-suspends a sideloaded app on a child's phone, so it answers
+            // to the app lock like every other answer in the shade — and, when it is offered at
+            // all, only to an unlocked phone. Removing it stays available either way: it is what
+            // the child's phone is already doing.
+            actions = if (quickAnswer) {
+                listOf(
+                    action(UnauthorizedAppReceiver.ACTION_REMOVE, R.string.unauthorized_app_remove),
+                    NotificationCompat.Action.Builder(
+                        0,
+                        context.getString(R.string.unauthorized_app_allow),
+                        allowIntent(context, deviceId, pkg),
+                    ).setAuthenticationRequired(true).build(),
+                )
+            } else {
+                listOf(action(UnauthorizedAppReceiver.ACTION_REMOVE, R.string.unauthorized_app_remove))
+            },
         )
     }
+
+    private fun allowIntent(context: Context, deviceId: String, pkg: String): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            (UnauthorizedAppReceiver.ACTION_ALLOW + deviceId + pkg).hashCode(),
+            Intent(context, UnauthorizedAppReceiver::class.java)
+                .setAction(UnauthorizedAppReceiver.ACTION_ALLOW)
+                .putExtra(UnauthorizedAppReceiver.EXTRA_DEVICE_ID, deviceId)
+                .putExtra(UnauthorizedAppReceiver.EXTRA_PACKAGE, pkg),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
     /**
      * "Installed by the Play Store" / "by <package>" / "from outside the Play Store", or null
@@ -684,6 +826,12 @@ object SyncNotifications {
         notifId: Int,
         dest: String? = null,
         actions: List<NotificationCompat.Action> = emptyList(),
+        /**
+         * Treat this as an alarm: audible through Do Not Disturb, and categorised so the
+         * platform and any watch or car pairing know it is not chatter. Only the emergency
+         * release asks for it (see [notifyPanicRequest]).
+         */
+        alarm: Boolean = false,
     ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -691,7 +839,19 @@ object SyncNotifications {
             // makes an updated install actually quieten down (see URGENT_CHANNEL).
             nm.deleteNotificationChannel(OLD_ALERT_CHANNEL)
             nm.createNotificationChannel(
-                NotificationChannel(channel, context.getString(channelNameRes), importanceOf(channel)),
+                NotificationChannel(channel, context.getString(channelNameRes), importanceOf(channel)).apply {
+                    // ASKED, not assumed. A child picks the hour the emergency-release countdown
+                    // starts, so twelve hourly notices from seven in the evening put nine of them
+                    // inside a typical Do Not Disturb and the phone free by breakfast. Bypassing
+                    // it needs notification-policy access, which this app does not ask a family
+                    // for; without it the platform quietly drops the request, and the notice is
+                    // ongoing (below) so that it accumulates in the shade instead of being
+                    // missed. Channel settings are fixed at creation, so this can only be set
+                    // here and never per notification.
+                    if (channel == URGENT_CHANNEL) {
+                        runCatching { setBypassDnd(true) }
+                    }
+                },
             )
         }
         val openIntent = Intent(context, MainActivity::class.java)
@@ -706,7 +866,11 @@ object SyncNotifications {
             .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(title)
             .setContentText(text)
-            .setAutoCancel(true)
+            // An alarm-class notice stays until it is answered or the thing it is about ends.
+            // The emergency release is the case: an alert that a sleeve can swipe away is one a
+            // parent can lose without ever having read it, and the countdown goes on regardless.
+            .setAutoCancel(!alarm)
+            .setOngoing(alarm)
             .setContentIntent(tap)
             // Pre-O phones have no channels, so the priority is what separates them there.
             .setPriority(
@@ -716,7 +880,15 @@ object SyncNotifications {
                     NotificationCompat.PRIORITY_DEFAULT
                 },
             )
-            .apply { actions.forEach { addAction(it) } }
+            .apply {
+                actions.forEach { addAction(it) }
+                if (alarm) {
+                    setCategory(NotificationCompat.CATEGORY_ALARM)
+                    // Insistent rather than a glance: it re-alerts on every hourly notice
+                    // instead of arriving once and sitting quietly in a shade nobody opens.
+                    setOnlyAlertOnce(false)
+                }
+            }
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(notifId, notification) }
     }

@@ -10,6 +10,11 @@ parental-control app must never break.
    key and its lineage** installed (`scripts/sign-apk.sh`, see `parent-sim/README.md` and
    `docs/signing.md`). Do not rebuild while a suite is running.
 4. `./gradlew :parent-sim:e2eTest` — green, and it says how many scenarios ran.
+   Then `adb shell am broadcast -n dev.walcott/.debug.PolicySeedReceiver --es mode provisioning_checksum`
+   and check the log says `match=true`: the enrollment QR's checksum is what Android's provisioning
+   will compare against the published APK (see `DeviceOwnerProvisioning.PUBLISHED_SIGNATURE_CHECKSUM`).
+   No scenario enrolls a phone from the QR, and 0.107 to 0.111 shipped a QR no phone could use.
+   Whenever signing or provisioning changed, also enroll one factory-reset phone from the QR.
 5. `./gradlew :parent-sim:e2eReleaseTest` — green, **twice in a row**. Each scenario gives up
    Device Owner and puts it back; a red one is the scenario's fault until proven otherwise (see
    the four questions in `parent-sim/README.md`).

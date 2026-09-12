@@ -91,7 +91,7 @@ class AppBlockerService : AccessibilityService() {
         scope.launch { app.identityStore.identity.collectLatest { enforcing = it.enforcesLocally } }
         scope.launch {
             app.syncManager.state.collectLatest {
-                clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(it.clockSkewMs)
+                clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(it.effectiveClockSkewMs)
             }
         }
         scope.launch { app.syncManager.quarantined.collectLatest { quarantined = it } }

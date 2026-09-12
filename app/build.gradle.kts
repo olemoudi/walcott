@@ -25,8 +25,8 @@ android {
         applicationId = "dev.walcott"
         minSdk = 29
         targetSdk = 35
-        versionCode = 160
-        versionName = "0.111.0-beta"
+        versionCode = 161
+        versionName = "0.112.0-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -47,7 +47,14 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Shrunk, because every release is downloaded by every phone in the family: the APK was
+            // 51 MB, 47 of them code, nearly all of it libraries this app calls a sliver of (the
+            // extended icon set alone is tens of megabytes). Our own classes are kept whole and
+            // nothing is renamed (see proguard-rules.pro), so what R8 removes is only what no
+            // library path reaches — not serialised models, not receivers, not stack traces.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // CI signs the release APK in a separate step with apksigner, because the signing
             // LINEAGE (the proof that the 2026 key succeeds the original one, see
             // docs/signing.md) is something AGP cannot attach. A key configured here still
@@ -79,6 +86,16 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // Android Lint on every push. What it already finds is recorded in lint-baseline.xml and does
+    // not fail the build; anything NEW does. Missing content descriptions, exported components,
+    // hard-coded colours and inset mistakes are all things it catches for free that this project
+    // has shipped and fixed by hand.
+    lint {
+        baseline = file("lint-baseline.xml")
+        abortOnError = true
+        checkReleaseBuilds = false
     }
 
     testOptions {

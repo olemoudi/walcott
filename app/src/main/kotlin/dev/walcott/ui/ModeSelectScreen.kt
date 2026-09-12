@@ -187,6 +187,9 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var backupText by remember { mutableStateOf<String?>(null) }
+    // Set when a restore found this family live on another phone: file + passphrase, held so
+    // confirming does not ask for it a second time.
+    var takeover by remember { mutableStateOf<Pair<String, String>?>(null) }
     val readFailed = stringResource(R.string.backup_read_failed)
 
     // Accept any type: cloud providers often serve the .json as octet-stream or text.
@@ -219,6 +222,18 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
         onClick = { openLauncher.launch(arrayOf("*/*")) },
     )
 
+    takeover?.let { (text, passphrase) ->
+        TakeoverDialog(
+            onDismiss = { takeover = null },
+            onConfirm = {
+                viewModel.restoreBackup(text, passphrase.toCharArray(), takeover = true) { result ->
+                    takeover = null
+                    if (result == dev.walcott.sync.RestoreResult.OK) onRestored()
+                }
+            },
+        )
+    }
+
     backupText?.let { text ->
         RestorePassphraseDialog(
             fromPin = dev.walcott.sync.FamilyBackup.keySourceOf(text) == dev.walcott.sync.FamilyBackup.SOURCE_PIN,
@@ -226,12 +241,20 @@ private fun RestoreBackupCard(viewModel: WalcottViewModel, onRestored: () -> Uni
             onRestore = { passphrase, onError ->
                 // Not `scope.launch`: the work has to outlive this composition (see the
                 // ViewModel). A rotation here used to cancel the restore mid-write.
-                viewModel.restoreBackup(text, passphrase.toCharArray()) { ok ->
-                    if (ok) {
-                        backupText = null
-                        onRestored()
-                    } else {
-                        onError()
+                viewModel.restoreBackup(text, passphrase.toCharArray()) { result ->
+                    when (result) {
+                        dev.walcott.sync.RestoreResult.OK -> {
+                            backupText = null
+                            onRestored()
+                        }
+                        // The passphrase was right; the family is simply live somewhere else.
+                        // Blaming the passphrase here would send a parent looking for a typo
+                        // in the one thing that was correct.
+                        dev.walcott.sync.RestoreResult.ALREADY_MANAGED_ELSEWHERE -> {
+                            takeover = text to passphrase
+                            backupText = null
+                        }
+                        dev.walcott.sync.RestoreResult.BAD_FILE -> onError()
                     }
                 }
             },
@@ -371,4 +394,22 @@ internal class OpenBackupDocument : androidx.activity.result.contract.ActivityRe
             "primary:${dev.walcott.sync.LocalBackupStore.FOLDER}",
         )
     }.getOrNull()
+}
+
+/**
+ * Asked when a restore finds the family already live on another phone.
+ *
+ * The wording matters more than the buttons. Restoring is how a household tries to give a second
+ * parent a phone, so the person in front of this dialog usually believes they are ADDING one —
+ * and what they would actually be doing is taking the children off the phone that has them.
+ */
+@Composable
+internal fun TakeoverDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.takeover_title)) },
+        text = { Text(stringResource(R.string.takeover_body)) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.takeover_confirm)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }

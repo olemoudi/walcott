@@ -570,7 +570,7 @@
 
     <!-- Cambiar modo del dispositivo (área con PIN del hijo) -->
     <string name="change_device_mode">Cambiar modo del dispositivo</string>
-    <string name="change_device_mode_subtitle">Desvincula este dispositivo y vuelve a elegir padre o hijo</string>
+    <string name="change_device_mode_subtitle">Desvincula el dispositivo, le devuelve sus apps y ajustes, y vuelve a elegir padre o hijo</string>
     <string name="change_mode_confirm">¿Desvincular este dispositivo? Las reglas y el uso locales se conservan, pero dejará de seguir a la familia hasta que se vuelva a enrolar.</string>
     <string name="change_mode_confirm_button">Desvincular</string>
 
@@ -790,7 +790,7 @@
     <string name="req_usage_access_title">Activa el acceso de uso</string>
     <string name="req_usage_access_body">El tiempo de pantalla no se está contando, así que los límites diarios nunca se agotan. Walcott bloquea las apps limitadas hasta que vuelva.</string>
     <string name="req_accessibility_title">Activa el servicio de accesibilidad de Walcott</string>
-    <string name="req_accessibility_body">Ahora mismo no se está bloqueando nada en este móvil. Sin Device Owner, esto es lo único que aplica las reglas.</string>
+    <string name="req_accessibility_body">Ahora mismo no se está bloqueando nada en este móvil. Sin Device Owner, esto es lo único que aplica las reglas. Si Android dice que el ajuste está restringido, abre la información de la app de Walcott, toca ⋮, elige «Permitir ajustes restringidos» y vuelve a intentarlo.</string>
     <string name="req_web_filter_title">Vuelve a activar el filtro web</string>
     <string name="req_web_filter_body">Las webs bloqueadas se están cargando con normalidad. Puede que otra app de VPN haya tomado el control — solo puede haber una a la vez.</string>
     <string name="req_location_permission_title">Permite la ubicación</string>
@@ -1753,7 +1753,7 @@
     <string name="sync_help_ask_text">Ha pulsado el botón de ayuda en su móvil.</string>
 
     <string name="req_notification_access_title">Permite a Walcott leer las notificaciones</string>
-    <string name="req_notification_access_body">Tu familia ha pedido guardar un registro de lo que llega a este móvil, para poder responder «¿ha llegado?» sin que tengas que leerles la pantalla. Solo tú puedes darlo.</string>
+    <string name="req_notification_access_body">Tu familia ha pedido guardar un registro de lo que llega a este móvil, para poder responder «¿ha llegado?» sin que tengas que leerles la pantalla. Solo tú puedes darlo. Si Android dice que el ajuste está restringido, abre la información de la app de Walcott, toca ⋮, elige «Permitir ajustes restringidos» y vuelve a intentarlo.</string>
 
     <string name="restriction_group_tamper">Manipulación</string>
     <string name="restriction_group_settings">Ajustes que se cambian sin querer</string>
@@ -1859,6 +1859,15 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_112_0">
+        <item>Configurar el móvil de un hijo nuevo con el código de tu pantalla vuelve a funcionar. Desde la 0.107, un móvil recién reseteado rechazaba el código sin decir por qué: el código nombraba el certificado de firma equivocado de los dos que tiene Walcott.</item>
+        <item>Un segundo móvil de padre. Restaurar la copia de la familia en otro móvil no añade un padre, mueve la familia, y hasta ahora el primer móvil simplemente dejaba de poder cambiar ninguna regla. Ahora restaurar pregunta antes si la familia se está usando en otro sitio, y el móvil del que se ha ido la familia se entera y puede recuperarla.</item>
+        <item>El móvil de un hijo que se ha reemplazado o reseteado vuelve a aparecer como su móvil. Las pantallas seguían leyendo el antiguo, y localizar, pausar o liberar iban a él; ahora el antiguo tiene una tarjeta en su ficha para retirarlo.</item>
+        <item>Vincular el móvil de un hijo dice el nombre del hijo y de la familia antes de unirlo, avisa si has escaneado el código de configuración o el enlace de descarga, y te dice si el móvil aún no ha podido llegar a la familia.</item>
+        <item>Más difícil de esquivar: aprobar tiempo extra o dejar que una app se quede requiere tu móvil desbloqueado; se avisa cuando se usa un código de rescate y cuando se para una liberación de emergencia; el aviso de liberación de emergencia se queda hasta que lo contestas; y se te avisa si el relay rechaza los mensajes de este móvil.</item>
+        <item>En el móvil del hijo: cambiar su modo lo devuelve todo en vez de seguir con las reglas viejas; el filtro web cubre también las apps que preguntan directamente a servidores DNS como los de Google o Cloudflare; se nota un reloj movido en modo avión; y se avisa del uso de batería «Restringido», también en tu móvil.</item>
+        <item>Las actualizaciones pesan unos 9 MB en vez de 51 MB, y las familias nuevas actualizan los móviles de los hijos solo con wifi.</item>
     </string-array>
     <string-array name="whats_new_0_111_0">
         <item>Cambios entre wifi y datos, y wifis flojas que no paran de saltar. Cada vez que el móvil cambiaba de red, el filtro podía pasar un momento mandando todas las búsquedas a un servidor DNS público en vez de al que ofrece la red nueva, porque una red que todavía se está uniendo aún no ha dicho cuáles son sus servidores, y esa respuesta vacía se daba por buena. En una wifi de colegio u oficina que bloquea los servidores de fuera, eso era que no cargaba nada; en cualquier sitio, perder los nombres que solo conoce la red local, como una impresora.</item>
@@ -2120,4 +2129,39 @@
     <string name="map_last_gasp">%1$s: la localización estaba apagada, así que no pudo decir dónde.</string>
     <string name="event_last_gasp_battery">El móvil de %1$s estaba a punto de quedarse sin batería</string>
     <string name="event_last_gasp_shutdown">El móvil de %1$s se apagó</string>
+    <string name="takeover_title">Esta familia ya está en otro móvil</string>
+    <string name="takeover_body">Otro móvil está gestionando esta familia ahora mismo. Si restauras aquí, los hijos pasan a seguir a ESTE móvil y dejan de recibir reglas del otro, y eso no se puede deshacer desde aquí. Si solo querías un segundo móvil para ayudar, cierra esto y usa el otro.</string>
+    <string name="takeover_confirm">Gestionarla desde este móvil</string>
+    <string name="superseded_title">Otro móvil tomó el control de esta familia</string>
+    <string name="superseded_text">Los hijos siguen ahora a ese móvil. Las reglas que cambies aquí no les llegarán hasta que recuperes la familia.</string>
+    <string name="superseded_text_family">Los hijos de %1$s siguen ahora a ese móvil. Las reglas que cambies aquí no les llegarán hasta que recuperes la familia.</string>
+    <string name="superseded_card_title">Otro móvil está gestionando esta familia</string>
+    <string name="superseded_card_body">Alguien restauró la copia de esta familia en otro móvil, así que los hijos toman de allí sus reglas. Lo que cambies aquí se queda en este móvil.</string>
+    <string name="superseded_card_take">Recuperarla</string>
+    <string name="superseded_card_leave">Dejársela</string>
+    <string name="device_replaced_title">%1$s ha aparecido desde un móvil nuevo</string>
+    <string name="device_replaced_text">Su móvil anterior sigue registrado. Abre su ficha para retirarlo y que las acciones y los avisos dejen de ir al antiguo.</string>
+    <string name="event_device_replaced">%1$s ha aparecido desde un móvil nuevo</string>
+    <string name="old_phone_title">%1$s tiene un móvil anterior registrado</string>
+    <string name="old_phone_body">En estas pantallas solo se muestra el móvil del que se ha sabido más recientemente, y es al que van tus acciones. Retira el registro antiguo si ese móvil ya no existe. Si existe y sigue limitado, libéralo primero.</string>
+    <string name="old_phone_retire">Retirar</string>
+    <string name="old_phone_free">Liberarlo</string>
+    <string name="pairing_no_contact">Vinculado, pero este móvil aún no ha podido alcanzar a tu familia. Revisa su wifi o sus datos; seguirá intentándolo solo.</string>
+    <string name="pairing_is_enrollment">Ese es el código de configuración para un móvil reseteado de fábrica, no el de vincular. En el móvil del padre, abre el hijo y escanea el código de «Vincular este móvil».</string>
+    <string name="pairing_is_download">Ese código es el enlace de descarga, y la app ya está instalada. Escanea el código de vincular del móvil del padre.</string>
+    <string name="pairing_confirm_title">¿Vincular este móvil?</string>
+    <string name="pairing_confirm_body">Este móvil se gestionará como %1$s.</string>
+    <string name="pairing_confirm_body_family">Este móvil se gestionará como %1$s, en la familia %2$s.</string>
+    <string name="pairing_confirm_action">Vincularlo</string>
+    <string name="pairing_confirm_unnamed">este hijo</string>
+    <string name="panic_stopped_title">%1$s ya no pide que se libere su móvil</string>
+    <string name="panic_stopped_text">La cuenta atrás de ese móvil se ha parado. Si nadie la canceló, coge el móvil y compruébalo.</string>
+    <string name="rescue_used_title">%1$s ha usado un código de rescate</string>
+    <string name="rescue_used_text">Ese móvil ha tenido todas las reglas levantadas un rato. Los códigos de rescate funcionan sin red y sin PIN, así que este aviso es el único registro.</string>
+    <string name="relay_refusing_title">Tus móviles no pueden hablar entre ellos</string>
+    <string name="relay_refusing_title_family">%1$s: tus móviles no pueden hablar entre ellos</string>
+    <string name="relay_refusing_text">El relay está rechazando los mensajes de este móvil, así que los cambios de reglas no llegan a los hijos. Revisa el servidor de relay en los ajustes.</string>
+    <string name="relay_refusing_rate_limited">El relay está rechazando los mensajes de este móvil por enviar demasiados. Ese límite se comparte con todo lo que salga de tu conexión. Un servidor de relay propio lo quita: mira los ajustes.</string>
+    <string name="req_background_title">Deja que Walcott funcione en segundo plano</string>
+    <string name="req_background_body">Este móvil tiene Walcott con el uso de batería «Restringido», así que Android solo le deja comprobar novedades más o menos una vez al día. Las peticiones, los avisos y una liberación de emergencia no llegarán a tiempo. Abre los ajustes de batería de la app y elige «Sin restricciones» u «Optimizado».</string>
 </resources>

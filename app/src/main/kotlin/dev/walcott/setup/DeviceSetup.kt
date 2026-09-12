@@ -75,6 +75,22 @@ enum class DeviceRequirement(
         bodyRes = R.string.req_location_service_body,
     ),
 
+    /**
+     * Both: "Restricted" in the app's own battery settings — one tap, on the screen that just
+     * told somebody how much battery Walcott uses.
+     *
+     * Not the same switch as [BATTERY_OPTIMIZATION], and far stronger: no background starts, no
+     * jobs, and alarms held to about one a day. On a parent phone that is everything — the
+     * catch-up poll, the stale-child check, and the alert a child's emergency release depends on
+     * being heard — while the home screen goes on showing a green shield. Critical, because what
+     * it breaks is not a nicety.
+     */
+    BACKGROUND_RESTRICTION(
+        critical = true,
+        titleRes = R.string.req_background_title,
+        bodyRes = R.string.req_background_body,
+    ),
+
     /** Both: what defers the check-in and the catch-up poll by hours while the app is closed. */
     BATTERY_OPTIMIZATION(
         critical = false,
@@ -121,6 +137,8 @@ data class DeviceFacts(
     val notificationLogWanted: Boolean = false,
     /** The phone's owner has let Walcott read notifications. */
     val notificationAccessGranted: Boolean = true,
+    /** The app has been put on "Restricted" battery usage (see [DeviceRequirement.BACKGROUND_RESTRICTION]). */
+    val backgroundRestricted: Boolean = false,
 )
 
 /**
@@ -173,6 +191,9 @@ object DeviceSetup {
         // the exact failure this list exists to avoid, and worse than saying nothing, because
         // an instruction that visibly cannot be followed teaches that the others are noise too.
         if (!facts.deviceOwner) applicable += DeviceRequirement.BATTERY_OPTIMIZATION
+        // Everywhere: nothing on this list is worth anything to a process Android lets run once
+        // a day, and a phone that is managed may still offer the switch.
+        applicable += DeviceRequirement.BACKGROUND_RESTRICTION
         return applicable.sortedByDescending { it.critical }
     }
 
@@ -186,6 +207,7 @@ object DeviceSetup {
         DeviceRequirement.LOCATION_PERMISSION -> facts.locationPermissionGranted
         DeviceRequirement.LOCATION_SERVICE -> facts.locationServiceEnabled
         DeviceRequirement.BATTERY_OPTIMIZATION -> facts.ignoringBatteryOptimizations
+        DeviceRequirement.BACKGROUND_RESTRICTION -> !facts.backgroundRestricted
     }
 
     /** Everything currently not satisfied that applies to this device, most serious first. */

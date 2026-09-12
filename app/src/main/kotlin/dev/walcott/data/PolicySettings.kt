@@ -810,6 +810,12 @@ data class PolicySettings(
      * Kept under its original name, which said "update" only: it is the same question either way
      * ("may we spend the child's data on this?"), and a second setting asking it again would be a
      * worse answer than one widened one. The user-facing copy says both.
+     *
+     * Off here and ON for every family created from 0.112 (see `SyncManager.becomeParent`). The
+     * default of a stored field is what an old policy without it decodes to, so changing it here
+     * would flip families that never chose; a new family has nothing to flip. On for them because
+     * a release is a full APK of tens of megabytes, some days bring several, and on a child's data
+     * plan somebody else is paying.
      */
     val updateWifiOnly: Boolean = false,
     /**

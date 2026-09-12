@@ -144,7 +144,7 @@ that is what lets it hold rules the child can't simply switch off. During the in
 setup wizard, tap the welcome screen six times to open the QR reader, and scan the enrollment
 code. Then open Walcott, scan the pairing QR from your phone, and you're done.
 
-Rules you change on your phone reach theirs within seconds.
+Rules you change on your phone reach theirs within about half a minute: edits made together are sent together.
 
 **Worth knowing before you start:**
 
@@ -153,6 +153,9 @@ Rules you change on your phone reach theirs within seconds.
 - Walcott is **not compatible with Google Family Link** on the same device — pick one.
 - Set up a backup (Parent mode → settings) as soon as you have rules worth keeping. It is how
   you recover if your phone is lost or replaced.
+- **One parent phone manages a family.** Restoring the backup on a second phone does not add a
+  second parent: the children start following the phone that restored it, and the first one is
+  told so and offered the family back. Walcott asks before it does this.
 
 ## No accounts, no servers of ours
 
@@ -226,12 +229,21 @@ reaches slots already spent, and a sibling who hears it has nothing.
 
 - **Web filtering is DNS-based.** It catches ordinary domain lookups. Apps that ship their own
   encrypted DNS or hard-coded addresses — notably YouTube and some browsers — can get around
-  it. Blocking those properly needs full traffic inspection, which Walcott does not do.
+  it. Blocking those properly needs full traffic inspection, which Walcott does not do. The
+  best-known public resolvers (Google, Cloudflare, Quad9, OpenDNS, AdGuard and a few more) are
+  routed through the filter by their IPv4 address, so asking one of them directly — or pointing a
+  browser's secure DNS at one — is filtered or refused rather than a way round. A resolver the
+  list does not name, or any resolver reached over IPv6, is not. Bedtime's cut to the browser
+  rides on this same filter, so it has the same limits.
   The phone's own **Private DNS** setting would get around it too, from Settings and in two
   taps, so "Protect the web filter" locks that setting as well and puts a strict private
   resolver back to automatic while the filter is running.
 - Per-app attribution of a domain lookup is best-effort; when a lookup can't be attributed,
   "only from this app" rules block rather than allow.
+- **App clones and second profiles.** Guest users, work profiles and private spaces cannot be
+  created on a child's phone. Some phones also offer "dual" copies of an app (Samsung's Dual
+  Messenger, Xiaomi's Dual Apps) that Android runs as a separate user, which Walcott's rules do
+  not reach; whether a given phone lets a managed child create one has to be checked on it.
 - **The tunnel itself is IPv4**, though it forwards to whichever resolvers the network offers,
   IPv6 ones included. Queries reach it either way, because the phone sends them to the resolver
   this app advertises. What is not supported is a phone that has no IPv4 at all.

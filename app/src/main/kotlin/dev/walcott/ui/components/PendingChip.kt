@@ -43,7 +43,7 @@ import dev.walcott.ui.theme.Tokens
  */
 @Composable
 fun PendingChip(modifier: Modifier = Modifier) {
-    val amber = Color(0xFFB26A00)
+    val amber = dev.walcott.ui.theme.Tokens.warning
     val transition = rememberInfiniteTransition(label = "pending")
     val angle by transition.animateFloat(
         initialValue = 0f,

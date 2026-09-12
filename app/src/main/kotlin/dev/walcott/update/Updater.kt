@@ -152,6 +152,10 @@ class Updater(private val context: Context) {
     /** True when the policy restricts updates to Wi-Fi and the active connection is metered. */
     private suspend fun wifiOnlyBlocks(): Boolean {
         val app = context.applicationContext as? WalcottApplication ?: return false
+        // The switch says "child devices", and the parent is the family's update canary: children
+        // only ever follow up to the parent's own build, so a parent held back by Wi-Fi holds the
+        // whole family back with it.
+        if (app.identityStore.current().effectiveMode == dev.walcott.sync.DeviceMode.PARENT) return false
         val wifiOnly = runCatching { app.repository.settingsFlow.first().updateWifiOnly }.getOrDefault(false)
         if (!wifiOnly) return false
         val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return false

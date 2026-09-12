@@ -19,6 +19,21 @@ class Enforcer(context: Context) {
     private val ownPackage = context.packageName
 
     /**
+     * The state each package was last left in by this reconciler, true for suspended.
+     *
+     * What makes the periodic re-assert cheap. It used to ask the system about every managed app
+     * AND every preinstalled one with a launcher icon, one binder call each, every thirty seconds
+     * with the screen on — a hundred to a hundred and fifty round trips into system_server on a
+     * typical phone, twelve thousand an hour of use, to learn nothing had changed. Now only the
+     * packages whose wanted state moved are asked about, and a full sweep still runs on a slower
+     * clock to catch anything moved behind this app's back.
+     *
+     * Per instance on purpose: a new service is a new Enforcer and starts by asking about
+     * everything. Concurrent because the install guard's quarantine arrives from another thread.
+     */
+    private val lastLeft = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    /**
      * Whether this reconciler may touch anything: Device Owner, and no release running. The
      * second half is what keeps the loop's re-assert from re-suspending into the middle of the
      * handback that is taking every suspension off (see PanicRelease.inProgress).
@@ -37,13 +52,28 @@ class Enforcer(context: Context) {
      * ever unsuspend it. An app blocked with no rule to explain it and no way back is the one
      * failure this cannot have.
      */
-    fun apply(managed: Set<String>, blocked: Set<String>, giveBack: Set<String> = emptySet()) {
+    fun apply(
+        managed: Set<String>,
+        blocked: Set<String>,
+        giveBack: Set<String> = emptySet(),
+        fullSweep: Boolean = true,
+    ) {
         if (!isDeviceOwner()) return
-        val plan = plan(managed + giveBack, blocked - giveBack) { pkg ->
+        val targets = managed + giveBack
+        val wantBlocked = blocked - giveBack
+        val check = packagesToCheck(targets, wantBlocked, lastLeft, fullSweep)
+        val plan = plan(check, wantBlocked) { pkg ->
             runCatching { dpm.isPackageSuspended(admin, pkg) }.getOrDefault(false)
+        }
+        // Asked about and already right: remembered as right, so the next pass can skip them.
+        for (pkg in check) {
+            if (pkg !in plan.toSuspend && pkg !in plan.toUnsuspend) lastLeft[pkg] = pkg in wantBlocked
         }
         if (plan.toSuspend.isNotEmpty()) suspend(plan.toSuspend, true)
         if (plan.toUnsuspend.isNotEmpty()) suspend(plan.toUnsuspend, false)
+        // A package that left both sets is nobody's business any more; forgetting it means that if
+        // it ever comes back, it is asked about rather than assumed.
+        lastLeft.keys.retainAll(targets)
     }
 
     /**
@@ -62,6 +92,12 @@ class Enforcer(context: Context) {
         if (!failed.isNullOrEmpty()) {
             val verb = if (suspend) "suspend" else "unsuspend"
             DebugLog.w(TAG, "could not $verb: ${failed.joinToString()}")
+        }
+        // Whatever this call left behind, for apply() to rely on. A package the system refused is
+        // forgotten rather than recorded, so the next pass asks again instead of assuming success.
+        val refused = failed?.toSet().orEmpty()
+        for (pkg in packages) {
+            if (pkg in refused) lastLeft.remove(pkg) else lastLeft[pkg] = suspend
         }
         if (suspend) {
             recentSuspendFailures = nextSuspendFailures(
@@ -157,6 +193,20 @@ class Enforcer(context: Context) {
          * the current [isSuspended] state. Pure (no Android), so the "touch only what changes"
          * reconciliation is unit-tested.
          */
+        /**
+         * Which of [targets] this pass has to ask the system about: all of them on a [fullSweep],
+         * otherwise only those this reconciler did not leave in the state now wanted — changed,
+         * refused last time, or never seen. Pure, because a package wrongly skipped here is an
+         * app that stays open past its limit.
+         */
+        fun packagesToCheck(
+            targets: Set<String>,
+            wantBlocked: Set<String>,
+            lastLeft: Map<String, Boolean>,
+            fullSweep: Boolean,
+        ): Set<String> =
+            if (fullSweep) targets else targets.filterTo(mutableSetOf()) { lastLeft[it] != (it in wantBlocked) }
+
         fun plan(managed: Set<String>, blocked: Set<String>, isSuspended: (String) -> Boolean): SuspensionPlan {
             val toSuspend = mutableListOf<String>()
             val toUnsuspend = mutableListOf<String>()

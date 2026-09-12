@@ -174,6 +174,10 @@ class WalcottRepository(
     suspend fun addUsageSeconds(categoryId: String, seconds: Long) =
         db.usage().addSeconds(categoryId, today(), seconds)
 
+    /** The same, filed under [epochDay]: a batch flushed after midnight belongs to the day it was spent. */
+    suspend fun addUsageSeconds(categoryId: String, epochDay: Long, seconds: Long) =
+        db.usage().addSeconds(categoryId, epochDay, seconds)
+
     suspend fun grantExtraMinutes(categoryId: String, minutes: Long) =
         db.usage().addExtraSeconds(categoryId, today(), minutes * 60)
 

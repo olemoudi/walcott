@@ -39,19 +39,27 @@
 
     <!-- allowBackup off: the DataStore holds the family sync key and the parent-PIN hash;
          cloud backup or device-to-device transfer would hand both to whoever controls the
-         child's Google account. Pairing is device-bound anyway, so backups have no value. -->
+         child's Google account. Pairing is device-bound anyway, so backups have no value.
+         allowBackup alone stops only the cloud half from Android 12 on; the transfer to a new
+         phone is closed by dataExtractionRules (see that file). -->
     <application
         android:name=".WalcottApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Walcott">
 
+        <!-- Compose reads the configuration reactively, so handling these here rather than being
+             recreated for them is what keeps a parent three screens deep in a child's limits from
+             being thrown back to the home screen — and past the app lock again — by turning the
+             phone, changing the font size, or the day switching to dark mode. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode|fontScale|locale|layoutDirection|keyboardHidden"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Walcott">
             <intent-filter>
@@ -145,9 +153,12 @@
             </intent-filter>
         </service>
 
+        <!-- Not exported: both broadcasts are protected and the system delivers them to a
+             receiver that is not. Exported, any app on the phone could send an explicit intent
+             here and spin the whole start-up path as often as it liked. -->
         <receiver
             android:name=".enforcement.BootReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
@@ -180,7 +191,7 @@
              family that flies east has 4am armed in the timezone they left. -->
         <receiver
             android:name=".enforcement.AppUpdateWindowReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
                 <action android:name="android.intent.action.TIME_SET" />

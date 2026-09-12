@@ -198,8 +198,18 @@ class NtfyTransport(
 
     private fun openSocket() {
         if (closed.get()) return
-        val since = sinceProvider()
-        val url = if (since > 0) "$wsUrl?since=$since" else wsUrl
+        // A cursor is floored at a window rather than taken at face value. It is how a phone
+        // that was off catches up, and a phone off for a week asks for a week: every message the
+        // topic still holds, decrypted one at a time inside the sync loop, on a topic anyone who
+        // knows its name can post to. Anything older than the window has been superseded by a
+        // re-emit anyway — snapshots converge, and the parent re-publishes every fifteen minutes.
+        // No cursor at all (a first connection) still asks for nothing, as it always has.
+        val cursor = sinceProvider()
+        val url = if (cursor > 0) {
+            "$wsUrl?since=${cursor.coerceAtLeast(System.currentTimeMillis() / 1000 - MAX_BACKLOG_SEC)}"
+        } else {
+            wsUrl
+        }
         val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -315,6 +325,14 @@ class NtfyTransport(
         private const val RECEIPT_TIMEOUT_SEC = 15L
 
         /** First retry delay; doubles per attempt (1 s, then 2 s). */
+        /**
+         * How far back a reconnect asks the relay to replay.
+         *
+         * Twelve hours covers a phone that was off overnight, which is the case the cursor exists
+         * for, and bounds what a topic anyone can post to can make this phone read.
+         */
+        private const val MAX_BACKLOG_SEC = 12 * 60 * 60L
+
         private const val PUBLISH_RETRY_BASE_MS = 1_000L
 
         /** First wait before reopening a dropped socket; doubles per consecutive failure. */

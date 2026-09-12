@@ -50,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import android.provider.Settings
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.walcott.R
 import dev.walcott.enforcement.AppBlockerService
 import dev.walcott.ui.WalcottViewModel
@@ -90,6 +91,7 @@ fun ParentHomeScreen(
 ) {
     val spacing = Tokens.spacing
     var showRenameFamily by remember { mutableStateOf(false) }
+    val superseded by viewModel.supersededByAnotherParent.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(title, onBack) {
             // The family name is user data, not chrome — let the parent change it in place.
@@ -104,6 +106,14 @@ fun ParentHomeScreen(
                 .padding(bottom = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
+            // Above everything: while this is up, every rule on the screens below is one this
+            // phone is keeping to itself (see SyncManager.noteForeignParent).
+            if (!childDevice && superseded) {
+                SupersededCard(
+                    onTakeBack = { viewModel.takeBackControl() },
+                    onDismiss = { viewModel.dismissSupersededNotice() },
+                )
+            }
             // Device-owner status describes THIS device's enforcement — child devices only.
             if (childDevice) {
                 ProtectionBanner(deviceOwner)
@@ -255,7 +265,7 @@ private fun ProtectionBanner(deviceOwner: Boolean) {
     val context = LocalContext.current
     // Cheap re-read on each composition; returning from Accessibility settings recomposes this.
     val accessibilityOn = !deviceOwner && AppBlockerService.isEnabled(context)
-    val amber = Color(0xFFB26A00)
+    val amber = dev.walcott.ui.theme.Tokens.warning
     val (color, icon, textRes) = when {
         deviceOwner -> Triple(MaterialTheme.colorScheme.secondary, Icons.Filled.CheckCircle, R.string.protection_active)
         accessibilityOn -> Triple(amber, Icons.Filled.CheckCircle, R.string.protection_accessibility)
@@ -282,6 +292,45 @@ private fun ProtectionBanner(deviceOwner: Boolean) {
             Text(stringResource(textRes), style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
             if (!deviceOwner) {
                 Text(stringResource(R.string.protection_enable_action), style = MaterialTheme.typography.labelLarge, color = color)
+            }
+        }
+    }
+}
+
+/**
+ * Says that the children in this family are following another phone, and offers the two honest
+ * answers: take them back, or accept it.
+ *
+ * Above every rule card on purpose. Everything below it is an edit that will not leave this
+ * phone, and a parent reading a limit they set an hour ago has no other way to find that out.
+ */
+@Composable
+private fun SupersededCard(onTakeBack: () -> Unit, onDismiss: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    WalcottCard(color = color.copy(alpha = 0.12f), modifier = Modifier.padding(top = spacing.md)) {
+        Column(Modifier.padding(spacing.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(spacing.sm))
+                Text(
+                    stringResource(R.string.superseded_card_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = color,
+                )
+            }
+            Spacer(Modifier.height(spacing.xs))
+            Text(
+                stringResource(R.string.superseded_card_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = spacing.xs),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.superseded_card_leave)) }
+                TextButton(onClick = onTakeBack) { Text(stringResource(R.string.superseded_card_take)) }
             }
         }
     }

@@ -142,6 +142,22 @@ class ChildDevice(
         }
     }
 
+    /**
+     * "Change device mode" from the child's settings, through the real path: gives the phone
+     * back, unlinks, forgets the rules. Waits for the app to say it has finished, for the same
+     * reason [reset] does — a broadcast returns when it was dispatched, not when the work landed.
+     */
+    fun changeMode() {
+        val before = walcottLog().count { CHANGE_MODE_MARKER in it }
+        seed("--es", "mode", "change_mode")
+        val deadline = System.currentTimeMillis() + 30_000
+        while (System.currentTimeMillis() < deadline) {
+            if (walcottLog().count { CHANGE_MODE_MARKER in it } > before) return
+            Thread.sleep(250)
+        }
+        error("the device never finished changing mode")
+    }
+
     // --- The release, the way a person would start it on this phone (see PolicySeedReceiver) ---
 
     /** Sets the family PIN through the real path, so the phone carries a genuine hash. */
@@ -774,6 +790,7 @@ class ChildDevice(
 
         /** What the seed receiver logs once a `mode reset` has actually been written. */
         private const val RESET_MARKER = "WalcottSeed: identity reset"
+        private const val CHANGE_MODE_MARKER = "WalcottSeed: device mode changed"
         private const val EXTRA_CLEARED_MARKER = "WalcottSeed: extra time cleared"
 
         /** Flattened component of the notification listener declared in the app's manifest. */

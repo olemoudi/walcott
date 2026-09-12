@@ -445,6 +445,12 @@ class WalcottVpnService : VpnService() {
             // Bigger than any DNS message that can arrive over UDP, and the ceiling every reply
             // written back is measured against.
             .setMtu(MTU)
+        // The public resolvers by address, so asking one directly is not a way past the filter
+        // or the curfew (see PublicResolvers). One refused route must not cost the others.
+        for (route in PublicResolvers.ROUTES) {
+            runCatching { builder.addRoute(route.address, route.prefix) }
+                .onFailure { DebugLog.w(TAG, "could not route ${route.address}/${route.prefix}", it) }
+        }
         // A VPN is assumed METERED unless it says otherwise, and the phone believes it about the
         // whole connection: Play holds automatic updates, cloud and photo backups stop, Data
         // Saver restricts background data. This tunnel carries DNS and nothing else, so the

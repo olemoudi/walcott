@@ -25,6 +25,43 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `mergeChild refuses a version nobody could have reached`() {
+        // Child messages are unsigned, so anyone holding the family key can publish as any
+        // deviceId. One snapshot at Long.MAX_VALUE would make every genuine one stale for ever.
+        var state = SyncEngine.mergeChild(emptyMap(), child("a", 40))
+        state = SyncEngine.mergeChild(state, child("a", Long.MAX_VALUE))
+        assertEquals(40L, state.getValue("a").version)
+        // And the phone's next honest publish still lands.
+        state = SyncEngine.mergeChild(state, child("a", 41))
+        assertEquals(41L, state.getValue("a").version)
+    }
+
+    @Test
+    fun `mergeChild takes a big jump after a long silence`() {
+        // The PARENT was off for a month while the child went on publishing: a jump far past
+        // the no-time bound, and a true one. Refusing it would freeze a real child's row.
+        val month = 30L * 24 * 60 * 60 * 1000
+        var state = SyncEngine.mergeChild(emptyMap(), child("a", 40))
+        state = SyncEngine.mergeChild(state, child("a", 40 + 30L * 2_000), sinceLastHeardMs = month)
+        assertEquals(40 + 30L * 2_000, state.getValue("a").version)
+    }
+
+    @Test
+    fun `mergeChild refuses the same jump with no silence to explain it`() {
+        var state = SyncEngine.mergeChild(emptyMap(), child("a", 40))
+        state = SyncEngine.mergeChild(state, child("a", 40 + 30L * 2_000), sinceLastHeardMs = 0)
+        assertEquals(40L, state.getValue("a").version)
+    }
+
+    @Test
+    fun `mergeChild never overflows on a row a forgery already pinned`() {
+        // Rows written before the bound existed can already sit at Long.MAX_VALUE.
+        var state = mapOf("a" to child("a", Long.MAX_VALUE))
+        state = SyncEngine.mergeChild(state, child("a", 5), sinceLastHeardMs = Long.MAX_VALUE / 2)
+        assertEquals(Long.MAX_VALUE, state.getValue("a").version)
+    }
+
+    @Test
     fun `mergeChild tracks devices independently`() {
         var state = SyncEngine.mergeChild(emptyMap(), child("a", 1))
         state = SyncEngine.mergeChild(state, child("b", 1))

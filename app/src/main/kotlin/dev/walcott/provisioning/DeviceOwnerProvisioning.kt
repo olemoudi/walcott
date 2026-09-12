@@ -29,16 +29,42 @@ object DeviceOwnerProvisioning {
         }.toString()
     }
 
-    /** SHA-256 of this app's signing certificate, base64url without padding (provisioning format). */
-    private fun signingChecksum(context: Context): String {
-        val pm = context.packageManager
+    /**
+     * The certificate checksum Android's provisioning checks the APK at [Distribution.CHILD_APK_URL]
+     * against: base64url, no padding, of the SHA-256 of the ORIGINAL release certificate.
+     *
+     * Not this install's own signer, which is what it used to be read from, and that stopped
+     * working at 0.107. ManagedProvisioning reads the downloaded APK with `GET_SIGNATURES` and
+     * hashes `PackageInfo.signatures` (VerifyAdminPackageTask, ChecksumUtils), and for an APK that
+     * carries a v3 rotation lineage the platform deliberately puts the OLDEST certificate there,
+     * "so that programmatic checks keep working even if unaware of key rotation"
+     * (PackageInfoUtils). The app read `apkContentsSigners`, the CURRENT one — so after the key
+     * was rotated every enrollment QR a parent showed named a certificate the published APK does
+     * not present that way, and a factory-reset phone refused to set up, with nothing on either
+     * screen to say why. No test enrolled a phone from the QR; the harness makes Device Owner
+     * with adb.
+     *
+     * A constant rather than read from this install, and for a second reason: the QR sends the
+     * phone to the published APK, so the checksum has to be the PUBLISHED one. A parent running a
+     * build signed any other way used to produce a QR no phone could use.
+     *
+     * It stays right across future rotations: a lineage keeps its first certificate. It changes
+     * only if the family of keys is started over, which means a factory reset for every child
+     * anyway (see docs/signing.md). Pinned by ProvisioningChecksumTest.
+     */
+    const val PUBLISHED_SIGNATURE_CHECKSUM = "noW0bJyNwMt00p0DC46ToBCrU3QN5t6fHvwDxZNE2CM"
+
+    private fun signingChecksum(@Suppress("UNUSED_PARAMETER") context: Context): String =
+        PUBLISHED_SIGNATURE_CHECKSUM
+
+    /**
+     * What `GET_SIGNATURES` reports for THIS install, hashed the way provisioning hashes it. For the
+     * debug hook that proves on a device that the constant above is what the platform compares.
+     */
+    fun installedSignatureChecksum(context: Context): String {
         @Suppress("DEPRECATION")
-        val signatures = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-                .signingInfo?.apkContentsSigners
-        } else {
-            pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures
-        }
+        val signatures = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures
         val cert = signatures?.firstOrNull()?.toByteArray() ?: ByteArray(0)
         val digest = MessageDigest.getInstance("SHA-256").digest(cert)
         return Base64.encodeToString(digest, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)

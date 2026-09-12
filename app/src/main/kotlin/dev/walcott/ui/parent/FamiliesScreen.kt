@@ -1132,7 +1132,7 @@ private fun SetupChecklistCard(steps: List<SetupStep>) {
 @Composable
 private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
     val spacing = Tokens.spacing
-    val warn = Color(0xFFB26A00)
+    val warn = dev.walcott.ui.theme.Tokens.warning
     val error = MaterialTheme.colorScheme.error
     val chips = buildList {
         // Rule edits in flight: the child hasn't confirmed the latest policy version yet

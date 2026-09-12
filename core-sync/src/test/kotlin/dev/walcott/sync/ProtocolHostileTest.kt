@@ -181,6 +181,22 @@ class ProtocolHostileTest {
     }
 
     @Test
+    fun `a message that inflates to megabytes is refused`() {
+        // Four megabytes of zeroes gzip to a few kilobytes, so this passes the relay's own
+        // message cap with room to spare. Anyone holding the family key can post one, and the
+        // relay replays its backlog to every phone in the family on each reconnect — so the
+        // cost is per phone, per reconnect, and it lands inside the sync loop.
+        assertNull(decode(envelope("child", gzip(ByteArray(4 * 1024 * 1024)))))
+    }
+
+    @Test
+    fun `an ordinary compressed message still decodes`() {
+        // The bound has to be far above anything this app sends, or it becomes the bug.
+        val body = gzip("""{"deviceId":"d","displayName":"p","version":1,"epochDay":1}""".toByteArray())
+        assertInstanceOf(IncomingMessage.FromChild::class.java, decode(envelope("child", body)))
+    }
+
+    @Test
     fun `a clean decode reports no key rotation`() {
         val wire = SyncProtocol.encodeChild(ChildSnapshot("d", "phone", 1, 1), familyKey)
         val decoded = SyncProtocol.decodeVerbose(wire, familyKey, parent.public)!!

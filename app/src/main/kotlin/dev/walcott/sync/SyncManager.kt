@@ -26,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -34,8 +35,27 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.time.LocalDate
 import java.util.UUID
+
+/**
+ * How a restore ended (see [SyncManager.restoreBackup]).
+ *
+ * [ALREADY_MANAGED_ELSEWHERE] is not a failure of the file: it is this family being live on
+ * another phone right now, which restoring on top of would end for good.
+ */
+enum class RestoreResult { OK, BAD_FILE, ALREADY_MANAGED_ELSEWHERE }
+
+/**
+ * How pairing a child's phone ended.
+ *
+ * [PAIRED_NO_CONTACT] is a success that has to be reported honestly: the code was right and this
+ * phone joined the family, but nothing it published reached the relay, so the parent will not see
+ * it check in until whatever is in the way is gone.
+ */
+enum class PairResult { PAIRED, PAIRED_NO_CONTACT, BAD_CODE }
 
 /**
  * Orchestrates the family sync: pairing, publishing this device's snapshot, applying
@@ -234,6 +254,35 @@ class SyncManager(
             if (id.isPaired) publishSelf()
         }
         watchNetwork()
+        watchPublishHealth()
+    }
+
+    /**
+     * Says out loud when the relay stops accepting this phone's messages.
+     *
+     * [PublishHealth] has counted this since 0.62 and showed it on the relay card, which is a
+     * screen nobody opens until they already suspect something. The failure it describes is
+     * silent by construction — the inbound socket is a different connection, so both phones go
+     * on looking healthy to each other — and on the public relay the ordinary cause is a
+     * per-visitor daily limit that a household shares. That limit is reachable by a family with
+     * several children, and burnable on purpose by anyone in the house.
+     *
+     * One notice per outage, cleared when a publish succeeds, so a train tunnel says nothing.
+     */
+    private fun watchPublishHealth() {
+        scope.launch {
+            PublishHealth.status
+                .map { it.failing to it.rateLimited }
+                .distinctUntilChanged()
+                .collect { (failing, rateLimited) ->
+                    if (identityStore.current().effectiveMode != DeviceMode.PARENT) return@collect
+                    if (failing) {
+                        SyncNotifications.notifyRelayRefusing(context, familyLabel(), rateLimited)
+                    } else {
+                        SyncNotifications.cancelRelayRefusing(context)
+                    }
+                }
+        }
     }
 
     /**
@@ -659,8 +708,51 @@ class SyncManager(
         identityStore.save(identityStore.current().copy(backupReminders = enabled))
     }
 
-    /** Unlink from the family and forget the mode choice; local policy and usage stay. */
-    suspend fun resetDeviceMode() = unlink(FamilyIdentity())
+    /**
+     * Unlink from the family and forget the mode choice, so the phone goes back to asking which
+     * kind of device it is.
+     *
+     * The rules go with it, and that is not tidiness. A blank identity is UNSET, and UNSET
+     * ENFORCES (see [FamilyIdentity.enforcesLocally]) — deliberately, so a local-fallback install
+     * stays safe — so the transition out of child mode does not flip the flag that runs the
+     * hand-back, and nothing else was clearing the policy. A phone passed from one child to
+     * another, or handed to a cousin, went on applying the previous family's bedtime and limits
+     * with no parent, no channel and no rescue code, because the family key it would need for one
+     * had just been erased. The only door left was the old parent's PIN, and only because its
+     * hash happened to survive in the policy this now clears.
+     *
+     * Order is crash-safety, not taste. The apps and settings come back FIRST, while the managed
+     * set still says what to give back; the loop is stopped and awaited before that so a tick in
+     * flight cannot put back what the sweep has just taken off (the race [PanicRelease] closed on
+     * the other doors). Dying halfway then leaves a phone that still enforces and can be reset
+     * again, rather than one with suspended apps and no policy left to name them.
+     */
+    suspend fun resetDeviceMode() {
+        // An emergency release is already doing all of this, better, and racing it reports
+        // hundreds of refusals for work that was done (see WalcottApplication.standDown).
+        if (!identityStore.current().released && !dev.walcott.enforcement.PanicRelease.inProgress) {
+            dev.walcott.enforcement.EnforcementService.stopAndAwait(context)
+            runCatching {
+                withContext(Dispatchers.IO) { dev.walcott.enforcement.DeviceHandback.run(context) }
+            }.onFailure {
+                dev.walcott.debug.DebugLog.e(TAG, "giving this device back before unlinking failed", it)
+            }
+        }
+        unlink(FamilyIdentity())
+        settingsStore.update { PolicySettings() }
+        syncStore.update { SyncState() }
+        dev.walcott.debug.DebugLog.w(TAG, "unlinked and forgot this family's rules")
+        // And the loop started again, because nothing else will start it. Going from a child to
+        // UNSET does not change `enforcesLocally` — UNSET enforces too — so the mode observer that
+        // starts the service on a transition never sees one, and the service stopped above stayed
+        // stopped: the next family's rules, the curfew's tunnel and the low-battery word all waited
+        // for the watchdog, up to a quarter of an hour. With the rules just cleared it blocks
+        // nothing, which is what an unlinked phone should do until it is paired again.
+        if (identityStore.current().enforcesLocally) {
+            runCatching { dev.walcott.enforcement.EnforcementService.start(context) }
+                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "could not restart enforcement after unlinking", it) }
+        }
+    }
 
     /**
      * This parent stops managing this family for good (see [dev.walcott.FamilyHub.removeFamily]):
@@ -747,7 +839,9 @@ class SyncManager(
         identityStore.save(identity)
         // Anchors the "you still have no backup" reminder ladder (see BackupReminder).
         syncStore.update { it.copy(parentSetupAtMs = System.currentTimeMillis()) }
-        settingsStore.update { it.copy(familyName = familyName) }
+        // A new family starts with child updates on Wi-Fi only (see PolicySettings.updateWifiOnly):
+        // set here rather than as the field's default, which is what OLD policies decode to.
+        settingsStore.update { it.copy(familyName = familyName, updateWifiOnly = true) }
         repository.seedHardeningIfNeeded()
         // The other half of dropping the ordering dependency: if the PIN was set first, the key
         // is already here and the copies should exist from the moment the family does, not from
@@ -816,8 +910,8 @@ class SyncManager(
     }
 
     /** Pair this device as a child from a scanned per-child (or legacy) QR. Returns success. */
-    suspend fun pairAsChild(pairingText: String): Boolean {
-        val payload = PairingPayload.decode(pairingText) ?: return false
+    suspend fun pairAsChild(pairingText: String): PairResult {
+        val payload = PairingPayload.decode(pairingText) ?: return PairResult.BAD_CODE
         val current = identityStore.current()
         val identity = FamilyIdentity(
             role = Role.CHILD,
@@ -834,7 +928,7 @@ class SyncManager(
         identityStore.save(identity)
         // A fresh pairing is a new trust bootstrap (the QR in hand IS the family): drop the
         // replay baseline so a new family's lower version counter isn't mistaken for replay.
-        syncStore.update { it.copy(appliedParentVersion = 0) }
+        syncStore.update { it.copy(appliedParentVersion = 0, appliedParentTopic = payload.topic) }
         // Offer the guided setup again: a new family means new rules — possibly a web filter or
         // tracking the last one never asked for — and a different adult holding this phone.
         runCatching { dev.walcott.setup.DeviceSetupStore(context).resetJourney() }
@@ -843,8 +937,13 @@ class SyncManager(
             settingsStore.update { it.copy(familyName = payload.familyName) }
         }
         connect(identity)
-        publishSelf()
-        return true
+        // Waited on rather than fired and forgotten, because "paired" is the one word this
+        // screen must not say lightly: a phone on a Wi-Fi that cannot reach the relay — a
+        // school's, a guest network behind a portal — saved a perfectly good identity, told the
+        // child they were linked, and left the parent watching an enrollment that never
+        // finished, with nothing on either phone naming the network as the problem.
+        val receipt = runCatching { publishSelfOrThrow(forReceipt = true) }.getOrNull()
+        return if (receipt == null) PairResult.PAIRED_NO_CONTACT else PairResult.PAIRED
     }
 
     // --- Child actions ---
@@ -2147,6 +2246,105 @@ class SyncManager(
      * change so per-message jitter (network delay) doesn't churn DataStore; published
      * immediately when the tampered/clean verdict flips so the parent hears promptly.
      */
+    /**
+     * The family [SyncState.appliedParentVersion] belongs to, or no baseline at all when it is
+     * another family's (see [SyncState.appliedParentTopic]).
+     */
+    private fun appliedBaseline(state: SyncState, id: FamilyIdentity): Long =
+        if (state.appliedParentTopic.isNotBlank() && state.appliedParentTopic != id.topic) 0L
+        else state.appliedParentVersion
+
+    private fun currentBootCount(): Int = runCatching {
+        android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT)
+    }.getOrDefault(-1)
+
+    private fun autoTimeOn(): Boolean = runCatching {
+        android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.AUTO_TIME, 1) != 0
+    }.getOrDefault(true)
+
+    /**
+     * Child: the relay has just shown the wall clock right, so this is a moment to measure from.
+     * Written only when the anchor is worth refreshing — every own echo lands here, and most of
+     * them change nothing.
+     */
+    private suspend fun anchorClockVerified() {
+        val s = syncStore.current()
+        val nowWall = System.currentTimeMillis()
+        val boot = currentBootCount()
+        if (boot < 0) return
+        val stale = !s.clockAnchorVerified || s.clockAnchorBoot != boot || s.localClockDriftMs != 0L ||
+            nowWall - s.clockAnchorWallMs > CLOCK_ANCHOR_REFRESH_MS
+        if (!stale) return
+        val wasTampered = ClockGuard.isTampered(s.localClockDriftMs)
+        syncStore.update {
+            it.copy(
+                clockAnchorWallMs = nowWall,
+                clockAnchorElapsedMs = android.os.SystemClock.elapsedRealtime(),
+                clockAnchorBoot = boot,
+                clockAnchorVerified = true,
+                localClockDriftMs = 0,
+                clockDriftAnchorWallMs = nowWall,
+                childVersion = if (wasTampered) it.childVersion + 1 else it.childVersion,
+            )
+        }
+        if (wasTampered) {
+            dev.walcott.debug.DebugLog.i(TAG, "clock verified against the relay; the offline drift is cleared")
+            runCatching { publishSelf() }
+        }
+    }
+
+    /**
+     * Child, from the enforcement loop: has the wall clock been moved while nothing was
+     * arriving to measure it by? See [ClockGuard.localJumpMs] for the idea and
+     * [ClockGuard.jumpIsTampering] for why a jump is not always a hand on the clock.
+     *
+     * Two things it must never do. Clear a moved clock because the phone rebooted — a new boot
+     * has a new monotonic clock, so it starts a new anchor and leaves the verdict where it was
+     * until the relay settles it. And write on every tick: this runs every two seconds.
+     */
+    suspend fun checkLocalClock() {
+        val s = syncStore.current()
+        val nowWall = System.currentTimeMillis()
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        val boot = currentBootCount()
+        if (boot < 0) return
+        val anchor = s.clockAnchorWallMs.takeIf { it > 0 }?.let {
+            ClockGuard.Anchor(it, s.clockAnchorElapsedMs, s.clockAnchorBoot, s.clockAnchorVerified)
+        }
+        val jump = ClockGuard.localJumpMs(anchor, nowWall, nowElapsed, boot)
+        if (jump == null || anchor == null) {
+            syncStore.update {
+                it.copy(
+                    clockAnchorWallMs = nowWall, clockAnchorElapsedMs = nowElapsed,
+                    clockAnchorBoot = boot, clockAnchorVerified = false,
+                )
+            }
+            return
+        }
+        val tampering = ClockGuard.jumpIsTampering(jump, anchor.verified, autoTimeOn())
+        if (!tampering && ClockGuard.isTampered(jump)) {
+            // Network time put an unverified clock right. The corrected clock is the better one
+            // to measure from; whatever verdict stands is the relay's to settle.
+            syncStore.update {
+                it.copy(clockAnchorWallMs = nowWall, clockAnchorElapsedMs = nowElapsed, clockAnchorVerified = false)
+            }
+            return
+        }
+        val stored = s.localClockDriftMs
+        // A standing verdict is cleared by a small jump only against the anchor that saw the
+        // move: against a newer one, "nothing has moved since" says nothing about the move.
+        if (!tampering && ClockGuard.isTampered(stored) && s.clockDriftAnchorWallMs != anchor.wallMs) return
+        val flipped = ClockGuard.isTampered(jump) != ClockGuard.isTampered(stored)
+        if (!flipped && kotlin.math.abs(jump - stored) < CLOCK_SKEW_RECORD_DELTA_MS) return
+        syncStore.update {
+            it.copy(localClockDriftMs = jump, clockDriftAnchorWallMs = anchor.wallMs, childVersion = it.childVersion + 1)
+        }
+        if (flipped) {
+            dev.walcott.debug.DebugLog.w(TAG, "clock moved ${jump / 1000}s on the phone itself (tampered=${ClockGuard.isTampered(jump)})")
+            runCatching { publishSelf() }
+        }
+    }
+
     private suspend fun recordClockSkew(skewMs: Long) {
         val previous = syncStore.current().clockSkewMs
         val verdictFlipped = ClockGuard.isTampered(skewMs) != ClockGuard.isTampered(previous)
@@ -2187,6 +2385,22 @@ class SyncManager(
                 blockLedgers = s.blockLedgers - deviceId,
             )
         }
+    }
+
+    /**
+     * Forget a child's earlier phone: the row goes, and with it the alerts and bookkeeping that
+     * hang off its deviceId.
+     *
+     * Not a release — that is [releaseChildDevice], and it is the other half of the answer when
+     * the old phone still exists and is still enforcing. This is for the phone that is gone:
+     * broken, sold, stolen, or wiped. The child's usage history is filed under the childId
+     * rather than the deviceId (see [UsageLedger.keyOf]), so the replacement keeps it.
+     */
+    suspend fun retireChildDevice(deviceId: String) {
+        dev.walcott.debug.DebugLog.w(TAG, "retiring $deviceId: this child has a newer phone")
+        SyncNotifications.cancelForDevice(context, deviceId)
+        removeChildDevice(deviceId)
+        syncStore.update { it.copy(replacementNotified = it.replacementNotified - deviceId) }
     }
 
     /**
@@ -2519,15 +2733,22 @@ class SyncManager(
      * family the device already holds by opening it, and a device that has already announced
      * itself on that topic cannot take the announcement back (see [dev.walcott.FamilyHub]).
      */
-    suspend fun restoreBackup(fileJson: String, passphrase: CharArray, goLive: Boolean = true): Boolean {
+    suspend fun restoreBackup(
+        fileJson: String,
+        passphrase: CharArray,
+        goLive: Boolean = true,
+        takeover: Boolean = false,
+    ): RestoreResult {
         val payload = withContext(Dispatchers.Default) { FamilyBackup.decrypt(fileJson, passphrase) }
-            ?: return false
+            ?: return RestoreResult.BAD_FILE
         val policy = runCatching { json.decodeFromString(PolicySettings.serializer(), payload.policyJson) }
-            .getOrNull() ?: return false
+            .getOrNull() ?: return RestoreResult.BAD_FILE
         // A crafted file must not silently point this device's transport at an arbitrary
         // scheme/host. http stays allowed: self-hosted LAN ntfy servers are legitimate.
         val server = runCatching { java.net.URI(payload.ntfyServer) }.getOrNull()
-        if (server?.scheme !in setOf("http", "https") || server?.host.isNullOrBlank()) return false
+        if (server?.scheme !in setOf("http", "https") || server?.host.isNullOrBlank()) {
+            return RestoreResult.BAD_FILE
+        }
         // The key material must actually parse before this device stakes its identity on it.
         // Authenticated encryption rules out tampering, but not a buggy or future writer.
         val materialOk = runCatching {
@@ -2537,7 +2758,24 @@ class SyncManager(
             FamilyCrypto.privateKeyFromBytes(FamilyCrypto.fromB64(payload.signingPrivateKeyB64))
             if (payload.rotationCertB64.isNotBlank()) checkNotNull(KeyRotation.decode(payload.rotationCertB64))
         }.isSuccess
-        if (!materialOk) return false
+        if (!materialOk) return RestoreResult.BAD_FILE
+
+        // Is somebody already managing this family from another phone? Restoring on top of one
+        // that is live is the mistake this check exists for: the leap below would take the
+        // children off that phone for good (see noteForeignParent). Asked over plain HTTP
+        // BEFORE anything is written, so declining costs nothing.
+        //
+        // Fail-open on purpose: a probe that cannot reach the relay answers null, and a restore
+        // refused for want of a network would break the one case this feature exists for — the
+        // parent's phone is gone and this is the replacement.
+        val liveElsewhere = if (takeover) null else probeLiveParent(payload)
+        if (liveElsewhere != null) {
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "refusing to restore: another phone is publishing this family at version $liveElsewhere",
+            )
+            return RestoreResult.ALREADY_MANAGED_ELSEWHERE
+        }
         val identity = FamilyIdentity(
             role = Role.PARENT,
             mode = DeviceMode.PARENT,
@@ -2557,16 +2795,64 @@ class SyncManager(
         // version monotonicity (SyncEngine.adoptsPolicy) and the lost phone may have
         // published edits after this backup was taken — a same-key restore carries no
         // rotation to rebase their counter, so the leap must dwarf any realistic edit count.
+        // On a takeover, the counter must clear the phone that is live NOW rather than the one
+        // the file was written on, or the children would go on following the other phone.
+        val seenLive = if (takeover) probeLiveParent(payload) ?: 0L else 0L
         syncStore.update {
             SyncState(
-                parentVersion = maxOf(it.parentVersion, payload.parentVersion) + RESTORE_VERSION_LEAP,
+                parentVersion = maxOf(
+                    maxOf(it.parentVersion, payload.parentVersion),
+                    seenLive,
+                ) + SyncEngine.RESTORE_VERSION_LEAP,
                 parentSetupAtMs = System.currentTimeMillis(),
             )
         }
         identityStore.save(identity)
         dev.walcott.debug.DebugLog.w(TAG, "family restored from backup (created ${payload.createdAtMs})")
         if (goLive) goLiveAfterRestore()
-        return true
+        return RestoreResult.OK
+    }
+
+    /**
+     * The highest version another phone is publishing this family's rules at right now, or null
+     * for "nobody, or we could not find out".
+     *
+     * Reads the topic's recent backlog over plain HTTP rather than opening the socket, because
+     * this runs before this device has an identity to connect with. Only a snapshot that
+     * VERIFIES against the backup's signing key counts: the topic is public, and anything else
+     * on it is noise or somebody else's mischief, neither of which is a reason to refuse a
+     * parent their own family back.
+     */
+    private suspend fun probeLiveParent(payload: FamilyBackupPayload): Long? = withContext(Dispatchers.IO) {
+        val familyKey = runCatching {
+            FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(payload.familyKeyB64))
+        }.getOrNull() ?: return@withContext null
+        val parentPublic = runCatching {
+            FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(payload.signingPublicKeyB64))
+        }.getOrNull() ?: return@withContext null
+        val url = "${payload.ntfyServer.trimEnd('/')}/${payload.topic}/json?poll=1&since=${PROBE_WINDOW}"
+        val client = dev.walcott.net.Http.client.newBuilder()
+            .callTimeout(PROBE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        val lines = runCatching {
+            client.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList()
+                resp.peekBody(PROBE_MAX_BYTES).string().lines()
+            }
+        }.getOrNull() ?: return@withContext null
+        var highest: Long? = null
+        for (line in lines) {
+            if (line.isBlank()) continue
+            val event = runCatching { json.parseToJsonElement(line).jsonObject }.getOrNull() ?: continue
+            val body = event["message"]?.jsonPrimitive?.content ?: continue
+            val decoded = SyncProtocol.decode(body, familyKey, parentPublic) as? IncomingMessage.FromParent
+                ?: continue
+            // Only a phone that has already leapt counts. Below that it is this family's own
+            // history coming back — the lost phone's last snapshots are still in the backlog.
+            if (decoded.snapshot.version < payload.parentVersion + SyncEngine.RESTORE_VERSION_LEAP) continue
+            if (highest == null || decoded.snapshot.version > highest!!) highest = decoded.snapshot.version
+        }
+        highest
     }
 
     /**
@@ -3015,7 +3301,7 @@ class SyncManager(
         val key = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(keyB64))
         // Bound to this phone: the code was read out for it and for no sibling's (see RescueCode).
         val accepted = RescueCode.verify(
-            key, entered, nowWall - s.clockSkewMs, s.rescueLastSlot, deviceId = identity.value.deviceId,
+            key, entered, nowWall - s.effectiveClockSkewMs, s.rescueLastSlot, deviceId = identity.value.deviceId,
         )
         if (accepted == null) {
             val attempts = s.rescueFails + 1
@@ -3209,6 +3495,8 @@ class SyncManager(
                 // this both grew for the lifetime of the install, and the message hit the relay's
                 // cap — which is not a degraded family, it is a family whose rules stop moving.
                 pruneAnswers()
+                // Before the state is read: it is part of the snapshot below.
+                ensureParentInstanceId()
                 val state = syncStore.current()
                 // The PIN hash/salt travel with the policy so the parent's PIN also guards
                 // enrolled child devices (gate + leaving child mode).
@@ -3237,6 +3525,9 @@ class SyncManager(
                     domainAcks = state.domainAcks,
                     // The parent is the fleet's update canary: children only follow up to this.
                     parentVersionCode = BuildConfig.VERSION_CODE,
+                    // Which phone this came from, so this one can tell its own snapshots from
+                    // another phone's (see noteForeignParent).
+                    parentInstanceId = state.parentInstanceId,
                 )
                 val rotation = id.rotationCertB64.takeIf { it.isNotBlank() }?.let { KeyRotation.decode(it) }
                 // Measured rather than hoped: an oversized parent message is refused by the relay
@@ -3422,7 +3713,7 @@ class SyncManager(
                     updateError = s.updateError,
                     enforcementGaps = s.enforcementGaps,
                     restrictionGaps = s.restrictionGaps,
-                    clockSkewMs = s.clockSkewMs,
+                    clockSkewMs = s.effectiveClockSkewMs,
                     panic = s.panic,
                     // The maintenance window is reported as itself and not as an exemption: the
                     // parent's chip and their "you left installs open" reminders both mean a
@@ -3844,12 +4135,19 @@ class SyncManager(
                 ClockGuard.measuredSkew(ClockGuard.skewMs(System.currentTimeMillis(), timeSec))
             }
             skew?.let { recordClockSkew(it) }
+            // The echo of our own publish, and it says the clock is right: the one moment this
+            // phone KNOWS its wall clock, so it is where the offline watch is anchored from.
+            if (ownSnapshot != null && skew != null && ClockGuard.clears(skew)) anchorClockVerified()
         }
 
         when {
             id.role == Role.CHILD && message is IncomingMessage.FromParent ->
                 applyParentSnapshot(message.snapshot, rotationAdopted = rotatedKey != null)
             id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot)
+            // A parent hears parent snapshots: its own, echoed back, and its older ones replayed
+            // out of the backlog. Almost always nothing to do — and once in a while the thing
+            // this family most needs to be told (see noteForeignParent).
+            id.role == Role.PARENT && message is IncomingMessage.FromParent -> noteForeignParent(message.snapshot)
             id.role == Role.PARENT && message is IncomingMessage.FromChildIcons -> applyIconPayload(message.payload)
             id.role == Role.PARENT && message is IncomingMessage.FromChildDiag -> applyDiagPayload(message.payload)
             id.role == Role.PARENT && message is IncomingMessage.FromChildNotifications ->
@@ -3861,6 +4159,75 @@ class SyncManager(
         // the family channel happened to deliver rather than of what this phone managed to send.
         // The notices are now sent on an alarm and counted by the relay's receipts (see
         // PanicAlarm), so a refusal arriving here reaches it the ordinary way, as a command.
+    }
+
+    /**
+     * Mints this phone's parent identity for this family if it has none yet (see
+     * [SyncState.parentInstanceId]). Idempotent, and re-reads under the update so two publishes
+     * racing at start-up cannot mint two.
+     */
+    private suspend fun ensureParentInstanceId() {
+        if (syncStore.current().parentInstanceId.isNotBlank()) return
+        val minted = UUID.randomUUID().toString().take(8)
+        syncStore.update { if (it.parentInstanceId.isBlank()) it.copy(parentInstanceId = minted) else it }
+    }
+
+    /**
+     * Another phone published this family's rules from a restored backup.
+     *
+     * This is what happens when a household tries to give a second parent a phone: one of them
+     * sends the other the backup file — the app has a button for that — and the other restores
+     * it. The restore leaps the version counter a million ahead, every child adopts it, and from
+     * that moment the FIRST phone's rule edits are refused by every child for ever, because
+     * catching up would take a million edits. Nothing said so: its screens went on reporting
+     * "sending the latest rule changes" indefinitely.
+     *
+     * Publishing is deliberately NOT stopped. This phone's rules are already being ignored, so
+     * silence would buy nothing, and its commands — freeing a phone above all — are applied by
+     * id rather than by version and still work. What is needed is for somebody to be told, and
+     * to be given the one action that fixes it: [takeBackControl].
+     */
+    private suspend fun noteForeignParent(snapshot: ParentSnapshot) {
+        val state = syncStore.current()
+        if (!SyncEngine.parentSuperseded(state.parentVersion, state.parentInstanceId, snapshot)) return
+        // Said once per takeover, not once per re-emit: the other phone repeats its snapshot
+        // every fifteen minutes, and this is a notification a parent must not learn to swipe away.
+        if (state.supersededVersion >= snapshot.version) return
+        syncStore.update {
+            it.copy(supersededAtMs = System.currentTimeMillis(), supersededVersion = snapshot.version)
+        }
+        dev.walcott.debug.DebugLog.w(
+            TAG,
+            "another phone is publishing this family's rules at version ${snapshot.version}, " +
+                "ours is ${state.parentVersion}: this phone's edits no longer reach the children",
+        )
+        SyncNotifications.notifyFamilyTakenOver(context, familyLabel())
+    }
+
+    /**
+     * Take this family back from the phone that restored its backup: publish above that phone's
+     * counter so the children follow this one again.
+     *
+     * The other phone finds out the same way this one did — it hears a snapshot a leap above its
+     * own and raises its own card — so the two cannot silently disagree about who is in charge.
+     * Whoever taps last wins, which is the honest answer when two people share one credential.
+     */
+    suspend fun takeBackControl() {
+        val state = syncStore.current()
+        if (state.supersededAtMs == 0L) return
+        val version = SyncEngine.takeoverVersion(state.parentVersion, state.supersededVersion)
+        syncStore.update {
+            it.copy(parentVersion = version, supersededAtMs = 0, supersededVersion = 0)
+        }
+        dev.walcott.debug.DebugLog.w(TAG, "taking this family back at version $version")
+        SyncNotifications.cancelFamilyTakenOver(context)
+        publishSelf()
+    }
+
+    /** Stop saying it: the family is being managed from the other phone on purpose. */
+    suspend fun dismissSupersededNotice() {
+        syncStore.update { it.copy(supersededAtMs = 0) }
+        SyncNotifications.cancelFamilyTakenOver(context)
     }
 
     /** Parent: file the health report, newest first, for the child's health-reports screen. */
@@ -3988,7 +4355,7 @@ class SyncManager(
             dev.walcott.debug.DebugLog.w(TAG, "local policy was unreadable; re-adopting the parent's")
         }
         val newRulesAdopted = recoveringPolicy || SyncEngine.adoptsPolicy(
-            snapshot.version, syncStore.current().appliedParentVersion, rotationAdopted,
+            snapshot.version, appliedBaseline(syncStore.current(), id), rotationAdopted,
         )
         // Adopt the parent's rules, flattened to this child's slice. Prefer the parent's
         // PIN; keep the local one while none has synced yet (old parent, or first snapshot
@@ -4099,7 +4466,8 @@ class SyncManager(
             syncStore.update {
                 it.copy(
                     appliedParentVersion =
-                        SyncEngine.rebasedPolicyVersion(snapshot.version, it.appliedParentVersion, rotationAdopted),
+                        SyncEngine.rebasedPolicyVersion(snapshot.version, appliedBaseline(it, id), rotationAdopted),
+                    appliedParentTopic = id.topic,
                 )
             }
         }
@@ -4204,7 +4572,7 @@ class SyncManager(
         // The command's age is judged on the clock the relay vouches for, not the one the child
         // can set: a phone moved half an hour forward refused every lock-screen PIN as expired,
         // and one moved back took last week's ring as fresh (see ClockGuard).
-        val nowCorrected = System.currentTimeMillis() - before.clockSkewMs
+        val nowCorrected = System.currentTimeMillis() - before.effectiveClockSkewMs
         for (command in SyncEngine.newCommands(snapshot, deviceId, before.appliedCommandIds, before.appliedCommandMarks)) {
             // Re-check under the lock: a concurrent handler may have claimed it since.
             if (command.id in syncStore.current().appliedCommandIds) continue
@@ -4266,12 +4634,30 @@ class SyncManager(
         val who = SyncNotifications.who(snapshot.displayName, family)
         val prevRequestIds = before.children.flatMap { it.requests }.map { it.requestId }.toSet()
         val prevAskIds = before.children.flatMap { it.asks }.map { it.requestId }.toSet()
-        val merged = SyncEngine.mergeChild(before.children.associateBy { it.deviceId }, snapshot).values.toList()
+        // How long since this phone was last heard, so a parent that was off for weeks takes the
+        // next snapshot rather than reading its counter as a forgery (see mergeChild).
+        val sinceLastHeardMs = before.lastSeen[snapshot.deviceId]
+            ?.let { System.currentTimeMillis() - it } ?: 0L
+        val merged = SyncEngine.mergeChild(
+            before.children.associateBy { it.deviceId }, snapshot, sinceLastHeardMs,
+        ).values.toList()
         // A child that acknowledged a command has run it: drop it from the queue so it isn't
         // carried in every subsequent parent snapshot.
+        // Only for a command that was actually SENT to this device. Child messages are not
+        // signed, so anybody holding the family key can publish as any deviceId — and every
+        // child can read every command id out of the parent snapshot it decrypts. Without the
+        // deviceId check, one forged message retires another phone's command from the queue:
+        // the refusal of an emergency release above all, which the parent's screen then reports
+        // as delivered while the child never heard it.
         val ackedId = snapshot.lastCommand?.id
+            ?.takeIf { id -> before.commands.none { it.id == id } || before.commands.any { it.id == id && it.deviceId == snapshot.deviceId } }
         // The ack of a command still in the queue is its completion — feed-worthy exactly once.
-        val ackCompleted = snapshot.lastCommand?.takeIf { ack -> before.commands.any { it.id == ack.id } }
+        // From the device it was sent to, for the same reason as ackedId below: any holder of the
+        // family key can publish as any device, and a line on the wall saying another phone's
+        // command succeeded is a lie the parent would act on.
+        val ackCompleted = snapshot.lastCommand?.takeIf { ack ->
+            before.commands.any { it.id == ack.id && it.deviceId == snapshot.deviceId }
+        }
         // Whose day is being filed under, and whether this device can believe it. A child's clock
         // can be wrong — or moved deliberately, which is a thing this app blocks apps over — and
         // the reported day is the ANCHOR the ledgers' windows are measured from: believing 2099
@@ -4397,12 +4783,43 @@ class SyncManager(
         // publish again (see RemoteAction.RELEASE_DEVICE). Let it go here, or the parent keeps a
         // row for a phone that was freed on purpose — and starts alerting, days later, that it
         // has not been heard from. The feed entry recorded above is what remains of it.
-        val releaseAck = snapshot.lastCommand?.takeIf { it.action == RemoteAction.RELEASE_DEVICE && it.ok }
+        // And it has to answer a release THIS parent asked for, of THIS device. One forged
+        // message would otherwise drop a sibling's row — the console for a phone that is still
+        // fully enforced — along with the alerts that would have said it had gone quiet.
+        val releaseAck = snapshot.lastCommand
+            ?.takeIf { it.action == RemoteAction.RELEASE_DEVICE && it.ok }
+            ?.takeIf { ack ->
+                before.commands.any {
+                    it.id == ack.id && it.deviceId == snapshot.deviceId &&
+                        it.action == RemoteAction.RELEASE_DEVICE
+                }
+            }
         if (releaseAck != null) {
             dev.walcott.debug.DebugLog.w(TAG, "${snapshot.deviceId} confirmed its release; letting it go")
             SyncNotifications.cancelForDevice(context, snapshot.deviceId)
             removeChildDevice(snapshot.deviceId)
             return
+        }
+
+        // A second phone for a child this family already has one for. The supported way to
+        // enrol is a factory-reset phone, which is exactly when the deviceId cannot be kept —
+        // so a replaced phone arrives as a NEW row beside the old one, and every screen and
+        // every action would go on addressing the phone that is gone (see
+        // SyncEngine.currentDevices). Said once, and only for a child in the registry: an
+        // orphan device belongs to nobody and has nothing to replace.
+        val replacedDevices = before.children
+            .filter { it.childId.isNotBlank() && it.childId == snapshot.childId && it.deviceId != snapshot.deviceId }
+        if (replacedDevices.isNotEmpty() && snapshot.deviceId !in before.replacementNotified) {
+            SyncNotifications.notifyDeviceReplaced(context, who, snapshot.deviceId, snapshot.childId)
+            syncStore.update {
+                it.copy(replacementNotified = it.replacementNotified + snapshot.deviceId)
+                    .plusEvent(event(ParentEvent.TYPE_DEVICE_REPLACED, snapshot))
+            }
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "${snapshot.childId} now has ${replacedDevices.size + 1} phones on file; " +
+                    "newest is ${snapshot.deviceId}",
+            )
         }
 
         // Alert once when a child reports enforcement is inactive (not Device Owner and no
@@ -4454,6 +4871,9 @@ class SyncManager(
                 SyncNotifications.notifyUnauthorizedApp(
                     context, who, name, entry.pkg, snapshot.deviceId, snapshot.childId,
                     installer = entry.installer,
+                    // The same gate the extra-time answers use: a family that turned the app
+                    // lock on asked for a gate in front of decisions, and "let it stay" is one.
+                    quickAnswer = !identityStore.current().appLock,
                 )
                 syncStore.update {
                     it.plusEvent(event(ParentEvent.TYPE_WRONG_APP, snapshot, detail = name))
@@ -4485,6 +4905,10 @@ class SyncManager(
         // snapshot doesn't.
         val panic = snapshot.panic
         val panicKey = panic?.let { "${it.id}@${it.checkpoints}" }
+        // The same version guard the two branches above carry, and it was missing from the one
+        // that matters most: without it a REPLAYED older snapshot — no key needed beyond the
+        // family's — took down the alert for a countdown that was still running.
+        val panicCurrent = prevChild == null || snapshot.version >= prevChild.version
         if (panic != null && before.panicAlerted[snapshot.deviceId] != panicKey) {
             val released = panic.checkpoints >= PanicProtocol.REQUIRED_CHECKPOINTS
             SyncNotifications.notifyPanicRequest(
@@ -4499,7 +4923,7 @@ class SyncManager(
                         ),
                     )
             }
-        } else if (panic == null && snapshot.deviceId in before.panicAlerted) {
+        } else if (panic == null && panicCurrent && snapshot.deviceId in before.panicAlerted) {
             // Withdrawn by the child, refused, or killed by the connectivity rule. Either way
             // the parent deserves the closing line as much as the alarm.
             //
@@ -4510,6 +4934,20 @@ class SyncManager(
             runCatching {
                 androidx.core.app.NotificationManagerCompat.from(context)
                     .cancel(SyncNotifications.panicNotifId(snapshot.deviceId))
+            }
+            // Said out loud, not just written to the wall. The countdown's whole guarantee is
+            // that a living parent finds out, and an alarm that ends by disappearing is the one
+            // ending nobody notices — including the ending a forged "no longer asking" message
+            // would produce, an hour at a time, against a phone that is still counting down.
+            //
+            // Except after this parent's own refusal, which is the ending they already know about.
+            // Read from this phone's own queue and never from the snapshot: a forged message can
+            // claim to have acknowledged a refusal, but it cannot put one in this queue.
+            val refusedHere = before.commands.any {
+                it.deviceId == snapshot.deviceId && it.action == RemoteAction.DENY_PANIC
+            }
+            if (!refusedHere) {
+                SyncNotifications.notifyPanicStopped(context, who, snapshot.deviceId, snapshot.childId)
             }
             syncStore.update {
                 it.copy(panicAlerted = it.panicAlerted - snapshot.deviceId)
@@ -4778,6 +5216,14 @@ class SyncManager(
         // know are skipped rather than shown as a blank line.
         val knownEventIds = before.events.map { it.id }.toSet()
         val freshRuleEvents = snapshot.ruleEvents.filter { it.id.isNotBlank() && it.id !in knownEventIds }
+        // A rescue code opened this phone: every rule off for up to three hours, typed in
+        // without a PIN and without the family channel. It was a line on the wall and nothing
+        // else — and a line on a wall that a phone left offline for six hours would age out of
+        // before anyone read it. It is the one thing a child can do to their own phone that the
+        // rules cannot see afterwards, so it is said out loud, once per code.
+        for (rescue in freshRuleEvents.filter { it.kind == ChildEvent.KIND_RESCUE }) {
+            SyncNotifications.notifyRescueUsed(context, who, snapshot.deviceId, snapshot.childId)
+        }
         if (freshRuleEvents.isNotEmpty()) {
             syncStore.update { state ->
                 freshRuleEvents.fold(state) { acc, ruleEvent ->
@@ -4932,6 +5378,8 @@ class SyncManager(
         private const val ICON_REQUEST_ROTATE_MS = 5 * 60 * 1000L
         /** Ignore skew changes smaller than this (network-delay jitter) to spare DataStore. */
         private const val CLOCK_SKEW_RECORD_DELTA_MS = 60_000L
+        /** How old a verified clock anchor may get before an echo refreshes it. */
+        private const val CLOCK_ANCHOR_REFRESH_MS = 6 * 60 * 60 * 1000L
         /** Log lines offered to the diagnostics report before DiagFit trims to the size cap. */
         private const val DIAG_LOG_LINES = 80
 
@@ -4953,8 +5401,14 @@ class SyncManager(
         private const val DOMAIN_NUDGE_MS = 20_000L
         /** At most one message a minute for wall entries, however busy the rules get. */
         private const val RULE_EVENT_PUBLISH_MIN_MS = 60_000L
-        /** How far a restore jumps the version counter past the backup's (see restoreBackup). */
-        private const val RESTORE_VERSION_LEAP = 1_000_000L
+        /**
+         * How long a window of the topic's backlog the restore probe reads, and how long it
+         * waits. A parent re-emits every fifteen minutes, so an hour finds one that is alive
+         * without dragging in a day of a busy family's traffic.
+         */
+        private const val PROBE_WINDOW = "1h"
+        private const val PROBE_TIMEOUT_SEC = 20L
+        private const val PROBE_MAX_BYTES = 1L * 1024 * 1024
 
         /**
          * The first build whose parent side understands an emergency release. A child refuses

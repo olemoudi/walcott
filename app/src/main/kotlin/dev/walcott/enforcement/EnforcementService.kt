@@ -86,6 +86,9 @@ class EnforcementService : LifecycleService() {
      * start-up so the first ticks aren't decided on an empty map.
      */
     @Volatile private var usageToday: Map<String, java.time.Duration> = emptyMap()
+
+    /** Screen time credited by the loop and not yet written (see UsageBatch). */
+    private val usageBatch = UsageBatch()
     @Volatile private var extraToday: Map<String, java.time.Duration> = emptyMap()
 
     /** Set when a package is (un)installed, so the managed-set cache refreshes immediately. */
@@ -661,6 +664,17 @@ class EnforcementService : LifecycleService() {
         var lastCounterResyncAt = 0L
         // Last time what the filter and the rules blocked was written down (see BlockCounters).
         var lastBlockFlushAt = 0L
+        // Last time the credited screen time was written down (see UsageBatch).
+        var lastUsageFlushAt = SystemClock.elapsedRealtime()
+        // Written, then read straight back, so the next decision stands on the database again
+        // rather than on an overlay that has just been emptied.
+        suspend fun flushUsage() {
+            for (credit in usageBatch.drain()) {
+                runCatching { repo.addUsageSeconds(credit.pkg, credit.epochDay, credit.seconds) }
+                    .onFailure { DebugLog.w(TAG, "could not write ${credit.seconds}s for ${credit.pkg}", it) }
+            }
+            runCatching { usageToday = repo.usageNow() }
+        }
         // Managed-set cache: enumerating PackageManager (launchable apps + labels) on every
         // 2s tick was pure binder churn — the set only changes on (un)installs and
         // classification edits, both of which invalidate it explicitly below.
@@ -685,6 +699,7 @@ class EnforcementService : LifecycleService() {
         // because they are not supposed to be on this phone at all.
         var lastAppliedQuarantine: Set<String>? = null
         var lastApplyAt = 0L
+        var lastFullSweepAt = 0L
         // Idle-earn: idle seconds are batched locally and flushed to the store ~once a minute,
         // so a child idling all evening doesn't hammer DataStore. Screen-off counts as idle.
         var idleAccumSeconds = 0L
@@ -707,6 +722,7 @@ class EnforcementService : LifecycleService() {
             // is awaited, but a service the system has just restarted (START_STICKY) or a tick
             // that outran the wait must not re-assert into the middle of the handback.
             if (!app.syncManager.identity.value.enforcesLocally) {
+                if (!usageBatch.isEmpty) flushUsage()
                 DebugLog.w(TAG, "this device no longer enforces: leaving the enforcement loop")
                 stopSelf()
                 return
@@ -723,6 +739,13 @@ class EnforcementService : LifecycleService() {
             // wakeups; with it on we wake every few minutes so "putting the phone down" earns
             // (screen off = not using managed apps = idle).
             if (!screenOn.value) {
+                // Written down before parking: the loop may sleep for hours from here, and
+                // everything else that reads the counters — the parent, the child's home — reads
+                // the database, not this loop's memory.
+                if (!usageBatch.isEmpty) {
+                    flushUsage()
+                    lastUsageFlushAt = SystemClock.elapsedRealtime()
+                }
                 lastForeground = null
                 val parkStart = SystemClock.elapsedRealtime()
                 // Only wake periodically to accrue idle when earning is actually possible now
@@ -753,8 +776,9 @@ class EnforcementService : LifecycleService() {
             // Fresh clock for rule evaluation: a screen-off park above can span minutes.
             val now = LocalDateTime.now()
 
-            // Read from memory, kept current by observeCounters(). Room pushes the change the
-            // moment addUsageSeconds below writes it, so the next tick already sees it.
+            // Read from memory, kept current by observeCounters(), with the seconds credited but
+            // not yet written laid on top (see UsageBatch) — so the rules see every second the
+            // moment it is credited, exactly as they did when each one was written at once.
             //
             // Re-read straight from the database once a minute anyway. Everything else in this
             // loop fails closed; this is the one place where a subscription that quietly stopped
@@ -766,7 +790,7 @@ class EnforcementService : LifecycleService() {
                 extraToday = repo.effectiveExtraNow()
                 lastCounterResyncAt = nowClock
             }
-            val usage = usageToday
+            val usage = usageBatch.overlay(usageToday, java.time.LocalDate.now().toEpochDay())
             val extra = extraToday // manually granted + idle-earned
             if (inventoryDirty || nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS) {
                 managed = repo.managedPackagesNow()
@@ -794,7 +818,18 @@ class EnforcementService : LifecycleService() {
             // One counter per app, always: every limit is now an app's own, and an app with no
             // limit today may be given one tomorrow — a counter that only started then would
             // hand back a day the child already spent.
-            if (creditedUsage) repo.addUsageSeconds(foreground!!, deltaSeconds)
+            val todayEpoch = java.time.LocalDate.now().toEpochDay()
+            if (creditedUsage) usageBatch.credit(foreground!!, todayEpoch, deltaSeconds)
+            // Written down once a minute, when the app in front changes, and at midnight.
+            if (!usageBatch.isEmpty && (
+                    foreground != lastForeground ||
+                        nowClock - lastUsageFlushAt > USAGE_FLUSH_MILLIS ||
+                        usageBatch.holdsDayBefore(todayEpoch)
+                    )
+            ) {
+                flushUsage()
+                lastUsageFlushAt = nowClock
+            }
             // Idle-earn: screen on but not on a managed app, inside an earning window.
             if (idleCfg != null && earningNow && !creditedUsage && deltaSeconds in 1..MAX_IDLE_STEP_SECONDS) {
                 idleAccumSeconds += deltaSeconds
@@ -846,7 +881,9 @@ class EnforcementService : LifecycleService() {
             // Every rule here is a rule about *when*, so a clock the child moved is as good as
             // no rules at all. ClockGuard measures the drift against the sync server's stamps;
             // beyond its threshold the engine fails closed, exactly like a revoked usage access.
-            val clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(app.syncManager.state.value.clockSkewMs)
+            // Also watched on the phone itself, which is what still works in airplane mode.
+            runCatching { app.syncManager.checkLocalClock() }
+            val clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(app.syncManager.state.value.effectiveClockSkewMs)
             if (clockTrusted != lastClockTrusted) {
                 if (lastClockTrusted != null) DebugLog.w(TAG, "clock trusted=$clockTrusted")
                 lastClockTrusted = clockTrusted
@@ -1066,7 +1103,9 @@ class EnforcementService : LifecycleService() {
                     DebugLog.i(TAG, "no longer managed, giving back: ${leftManaged.joinToString()}")
                     enforcer.release(leftManaged.toList())
                 }
-                enforcer.apply(managed + quarantined, blocked + quarantined, giveBack = reclaimable)
+                val fullSweep = nowClock - lastFullSweepAt > FULL_SWEEP_MILLIS
+                enforcer.apply(managed + quarantined, blocked + quarantined, giveBack = reclaimable, fullSweep = fullSweep)
+                if (fullSweep) lastFullSweepAt = nowClock
                 lastAppliedBlocked = blocked
                 lastAppliedManaged = managed
                 lastAppliedQuarantine = quarantined
@@ -1316,6 +1355,15 @@ class EnforcementService : LifecycleService() {
         private const val VPN_HEAL_MILLIS = 60_000L
 
         private const val TICK_ACTIVE_MILLIS = 2000L
+        /** How long credited screen time may sit in memory before it is written (see UsageBatch). */
+        private const val USAGE_FLUSH_MILLIS = 60_000L
+        /**
+         * How often the suspension reconciliation asks the system about EVERY app rather than only
+         * the ones whose state should have changed (see Enforcer.apply). The periodic re-assert
+         * exists to catch state moved behind this app's back; five minutes is how long such a
+         * change can now stand, against thirty seconds before and a hundred binder calls each time.
+         */
+        private const val FULL_SWEEP_MILLIS = 5 * 60_000L
         private const val TICK_IDLE_MILLIS = 15_000L
         private const val MAX_CREDIT_SECONDS = 15L
         private const val UPDATE_CHECK_MILLIS = 6 * 60 * 60 * 1000L

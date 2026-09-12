@@ -47,8 +47,25 @@ object DeviceSetupProbe {
             notificationLogWanted = settings?.notificationLogEnabled == true,
             notificationAccessGranted =
                 dev.walcott.notifications.NotificationLog.accessGranted(context),
+            backgroundRestricted = backgroundRestricted(context),
         )
     }
+
+    /**
+     * Whether Android has this app on "Restricted" battery usage.
+     *
+     * The standby bucket is read only for RESTRICTED, never for RARE: RARE is where Android puts
+     * any app that is opened seldom — a parent's, in a quiet week — and a card nobody can act on
+     * teaches people to ignore the ones they can.
+     */
+    fun backgroundRestricted(context: Context): Boolean = runCatching {
+        val restrictedByUser = context.getSystemService(android.app.ActivityManager::class.java)
+            ?.isBackgroundRestricted == true
+        val restrictedBucket = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+            context.getSystemService(android.app.usage.UsageStatsManager::class.java)
+                ?.appStandbyBucket == android.app.usage.UsageStatsManager.STANDBY_BUCKET_RESTRICTED
+        restrictedByUser || restrictedBucket
+    }.getOrDefault(false)
 
     fun notificationsEnabled(context: Context): Boolean =
         runCatching { NotificationManagerCompat.from(context).areNotificationsEnabled() }.getOrDefault(true)
@@ -93,6 +110,8 @@ object DeviceSetupProbe {
             // location permission is a runtime prompt the caller handles. Both land on the app's
             // own page, which is where the permission can at least be reviewed.
             DeviceRequirement.WEB_FILTER, DeviceRequirement.LOCATION_PERMISSION -> appDetails(context)
+            // The app's own page is where its battery usage is changed, on every OEM.
+            DeviceRequirement.BACKGROUND_RESTRICTION -> appDetails(context)
         }
         return intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }

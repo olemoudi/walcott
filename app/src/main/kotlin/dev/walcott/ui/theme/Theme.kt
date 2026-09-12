@@ -60,6 +60,10 @@ object Tokens {
     val motion: Motion
         @Composable get() = LocalMotion.current
 
+    /** The warning amber, resolved for the current theme (see [WarningLight]). */
+    val warning: Color
+        @Composable get() = if (LocalDarkTheme.current) WarningDark else WarningLight
+
     /** The colour a family of settings is recognised by, resolved for the current theme. */
     @Composable
     fun accent(accent: SectionAccent): Color = accent.color(LocalDarkTheme.current)

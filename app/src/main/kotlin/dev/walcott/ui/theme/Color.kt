@@ -9,6 +9,15 @@ private val VioletLight = Color(0xFF9E90FF)
 private val Teal = Color(0xFF0F7B94)
 
 /**
+ * "Needs attention, and is not broken": the amber between the green that means fine and the
+ * error red. It used to be one dark orange written by hand in six places, chosen against white —
+ * on the dark scheme, which is the one this family reads their phone in, it sat at barely 3:1
+ * against the cards, on exactly the chips that say something is wrong. See [Tokens.warning].
+ */
+internal val WarningLight = Color(0xFFB26A00)
+internal val WarningDark = Color(0xFFF2B155)
+
+/**
  * The two ends of the map's location trail, and deliberately NOT taken from the colour scheme.
  *
  * Every other surface in this app is one this app chose. The trail is drawn on OpenStreetMap

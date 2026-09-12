@@ -206,14 +206,18 @@ class FamilyHub(
         id
     }
 
-    enum class AddResult { OK, BAD_FILE, ALREADY_HERE }
+    enum class AddResult { OK, BAD_FILE, ALREADY_HERE, ALREADY_MANAGED_ELSEWHERE }
 
     /**
      * Adopts a family from one of its backup files as an ADDITIONAL family, leaving the ones
      * already here untouched. Refuses a file for a family this device already holds: two scopes
      * on one topic would both publish as the parent and fight over the version counter.
      */
-    suspend fun addFamilyFromBackup(fileJson: String, passphrase: CharArray): AddResult = onHubScope {
+    suspend fun addFamilyFromBackup(
+        fileJson: String,
+        passphrase: CharArray,
+        takeover: Boolean = false,
+    ): AddResult = onHubScope {
         val id = newFamilyId()
         val fresh = scopeOf(id)
         // Restored SILENT. The only way to know whose family this file is, is to open it, and a
@@ -222,11 +226,15 @@ class FamilyHub(
         // really manages that family — still counting from its own much lower number — is refused
         // by every child from then on (SyncEngine.adoptsPolicy). The refusal below used to happen
         // one publish too late, so declining a duplicate was what broke the family.
-        val restored = runCatching { fresh.syncManager.restoreBackup(fileJson, passphrase, goLive = false) }
-            .getOrDefault(false)
-        if (!restored) {
+        val restored = runCatching {
+            fresh.syncManager.restoreBackup(fileJson, passphrase, goLive = false, takeover = takeover)
+        }.getOrDefault(dev.walcott.sync.RestoreResult.BAD_FILE)
+        if (restored != dev.walcott.sync.RestoreResult.OK) {
             discard(id)
-            return@onHubScope AddResult.BAD_FILE
+            return@onHubScope when (restored) {
+                dev.walcott.sync.RestoreResult.ALREADY_MANAGED_ELSEWHERE -> AddResult.ALREADY_MANAGED_ELSEWHERE
+                else -> AddResult.BAD_FILE
+            }
         }
         val topic = fresh.identityStore.current().topic
         val clash = allNow().any { it.id != id && it.identityStore.current().topic == topic }

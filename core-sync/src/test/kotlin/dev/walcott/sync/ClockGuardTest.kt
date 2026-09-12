@@ -124,4 +124,63 @@ class ClockGuardTest {
         assertTrue(ClockGuard.clears(ClockGuard.CLEAR_THRESHOLD_MS))
         assertTrue(ClockGuard.clears(-ClockGuard.CLEAR_THRESHOLD_MS))
     }
+
+    // --- the phone watching its own clock ---
+
+    private val minute = 60_000L
+    private fun anchor(verified: Boolean) = ClockGuard.Anchor(wallMs = 1_000_000L, elapsedMs = 5_000L, bootCount = 7, verified = verified)
+
+    @Test
+    fun `a clock moved forward offline shows as a jump`() {
+        // An hour of monotonic time passed, and the wall clock says ten hours did.
+        val jump = ClockGuard.localJumpMs(anchor(true), 1_000_000L + 600 * minute, 5_000L + 60 * minute, 7)
+        assertEquals(540 * minute, jump)
+    }
+
+    @Test
+    fun `a clock moved back shows as a negative jump`() {
+        val jump = ClockGuard.localJumpMs(anchor(true), 1_000_000L - 30 * minute, 5_000L + minute, 7)
+        assertEquals(-31 * minute, jump)
+    }
+
+    @Test
+    fun `time passing is not a jump`() {
+        assertEquals(0L, ClockGuard.localJumpMs(anchor(true), 1_000_000L + 90 * minute, 5_000L + 90 * minute, 7))
+    }
+
+    @Test
+    fun `another boot has nothing to compare against`() {
+        assertNull(ClockGuard.localJumpMs(anchor(true), 1_000_000L + 600 * minute, 1_000L, bootCount = 8))
+        assertNull(ClockGuard.localJumpMs(null, 1L, 1L, 7))
+        assertNull(ClockGuard.localJumpMs(anchor(true), 1L, 1L, bootCount = -1))
+    }
+
+    @Test
+    fun `a jump from a verified clock is tampering whatever the time setting`() {
+        assertTrue(ClockGuard.jumpIsTampering(20 * minute, anchorVerified = true, autoTimeOn = true))
+        assertTrue(ClockGuard.jumpIsTampering(-20 * minute, anchorVerified = true, autoTimeOn = false))
+    }
+
+    @Test
+    fun `network time correcting an unverified clock is not tampering`() {
+        // The false positive this rule exists to avoid: every limited app closed because the
+        // phone fixed its own clock.
+        assertFalse(ClockGuard.jumpIsTampering(40 * minute, anchorVerified = false, autoTimeOn = true))
+    }
+
+    @Test
+    fun `a hand on an unverified clock is tampering`() {
+        assertTrue(ClockGuard.jumpIsTampering(40 * minute, anchorVerified = false, autoTimeOn = false))
+    }
+
+    @Test
+    fun `small jumps are never tampering`() {
+        assertFalse(ClockGuard.jumpIsTampering(14 * minute, anchorVerified = true, autoTimeOn = false))
+    }
+
+    @Test
+    fun `the effective skew is the worse of the two, sign kept`() {
+        assertEquals(-40 * minute, ClockGuard.effectiveSkew(relaySkewMs = 2 * minute, localDriftMs = -40 * minute))
+        assertEquals(30 * minute, ClockGuard.effectiveSkew(relaySkewMs = 30 * minute, localDriftMs = 0))
+    }
 }

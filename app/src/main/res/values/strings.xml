@@ -573,7 +573,7 @@
 
     <!-- Change device mode (child gated area) -->
     <string name="change_device_mode">Change device mode</string>
-    <string name="change_device_mode_subtitle">Unlink this device and choose parent or child again</string>
+    <string name="change_device_mode_subtitle">Unlink this device, give back its apps and settings, and choose parent or child again</string>
     <string name="change_mode_confirm">Unlink this device? Local rules and usage stay, but it will stop following the family until it enrolls again.</string>
     <string name="change_mode_confirm_button">Unlink</string>
 
@@ -793,7 +793,7 @@
     <string name="req_usage_access_title">Turn on usage access</string>
     <string name="req_usage_access_body">Screen time isn\'t being counted, so daily limits never run down. Walcott blocks the limited apps until this comes back.</string>
     <string name="req_accessibility_title">Turn on Walcott\'s accessibility service</string>
-    <string name="req_accessibility_body">Nothing on this phone is being blocked right now. Without Device Owner, this is the only thing that applies the rules.</string>
+    <string name="req_accessibility_body">Nothing on this phone is being blocked right now. Without Device Owner, this is the only thing that applies the rules. If Android says the setting is restricted, open Walcott\'s App info, tap ⋮, choose “Allow restricted settings” and try again.</string>
     <string name="req_web_filter_title">Turn web filtering back on</string>
     <string name="req_web_filter_body">The blocked sites are loading normally. Another VPN app may have taken over — only one can run at a time.</string>
     <string name="req_location_permission_title">Allow location</string>
@@ -1761,7 +1761,7 @@
 
     <!-- The one permission only the phone's owner can grant, asked for where it is needed. -->
     <string name="req_notification_access_title">Let Walcott read notifications</string>
-    <string name="req_notification_access_body">Your family asked to keep a log of what arrives on this phone, so they can answer \"did it arrive?\" without you having to read your screen to them. Nobody but you can grant this.</string>
+    <string name="req_notification_access_body">Your family asked to keep a log of what arrives on this phone, so they can answer \"did it arrive?\" without you having to read your screen to them. Nobody but you can grant this. If Android says the setting is restricted, open Walcott\'s App info, tap ⋮, choose “Allow restricted settings” and try again.</string>
 
     <!-- Device protection, grouped: tampering, settings changed by accident, apps. -->
     <string name="restriction_group_tamper">Tampering</string>
@@ -1868,6 +1868,15 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_112_0">
+        <item>Setting up a new child\'s phone from the code on your screen works again. Since 0.107 a factory-reset phone refused the code without saying why: the code named the wrong one of Walcott\'s two signing certificates.</item>
+        <item>A second parent phone. Restoring the family backup on another phone does not add a parent, it moves the family, and until now the first phone simply stopped being able to change any rule. Restoring now asks first when the family is in use elsewhere, and a phone the family moved away from is told so and can take it back.</item>
+        <item>A child\'s phone that was replaced or reset shows up as their phone again. The screens used to keep reading the old one, and locate, pause or free went to it; the old phone now gets a card on their page to retire it.</item>
+        <item>Linking a child\'s phone names the child and the family before it joins, says so when you scanned the setup code or the download link instead, and tells you when the phone could not reach the family yet.</item>
+        <item>Harder to get round: approving extra time or letting an app stay needs your phone unlocked; a rescue code being used and an emergency release stopping are both announced; the emergency-release alert stays until it is answered; and you are told when the relay is refusing this phone\'s messages.</item>
+        <item>On the child\'s phone: changing its mode gives everything back instead of going on with the old rules; the web filter also covers apps that ask Google, Cloudflare and similar DNS servers directly; a clock moved in airplane mode is noticed; and \"Restricted\" battery use is flagged, on your phone too.</item>
+        <item>Updates are about 9 MB instead of 51 MB, and new families update children\'s phones on Wi-Fi only.</item>
     </string-array>
     <string-array name="whats_new_0_111_0">
         <item>Moving between wi-fi and mobile data, and weak wi-fi that keeps swapping. Every time a phone changed network, the filter could spend a moment sending every lookup to a public DNS server instead of the one the new network offers — because a network that is still joining has not said what its servers are yet, and an empty answer was believed. On a school or office wi-fi that blocks outside servers that meant nothing loaded at all, and anywhere it meant losing the names only the local network knows, like a printer.</item>
@@ -2129,4 +2138,39 @@
     <string name="map_last_gasp">%1$s — location was off, so it could not say where.</string>
     <string name="event_last_gasp_battery">%1$s\'s phone was about to run out of battery</string>
     <string name="event_last_gasp_shutdown">%1$s\'s phone was switched off</string>
+    <string name="takeover_title">This family is already on another phone</string>
+    <string name="takeover_body">Another phone is managing this family right now. If you restore here, the children start following THIS phone and stop taking rules from the other one — there is no way to undo that from here. If you only wanted a second phone to help out, close this and use the other one instead.</string>
+    <string name="takeover_confirm">Manage it from this phone</string>
+    <string name="superseded_title">Another phone took over this family</string>
+    <string name="superseded_text">The children now follow that phone. Rules you change here will not reach them until you take the family back.</string>
+    <string name="superseded_text_family">The children in %1$s now follow that phone. Rules you change here will not reach them until you take the family back.</string>
+    <string name="superseded_card_title">Another phone is managing this family</string>
+    <string name="superseded_card_body">Someone restored this family\'s backup on another phone, so the children take their rules from there now. Anything you change here stays on this phone.</string>
+    <string name="superseded_card_take">Take it back</string>
+    <string name="superseded_card_leave">Leave it with them</string>
+    <string name="device_replaced_title">%1$s checked in from a new phone</string>
+    <string name="device_replaced_text">Their earlier phone is still on file. Open their page to retire it, so actions and alerts stop going to the old one.</string>
+    <string name="event_device_replaced">%1$s checked in from a new phone</string>
+    <string name="old_phone_title">%1$s has an earlier phone on file</string>
+    <string name="old_phone_body">Only the phone heard from most recently is shown on these screens, and it is the one your actions go to. Retire the old row if that phone is gone. If it still exists and is still limited, free it first.</string>
+    <string name="old_phone_retire">Retire</string>
+    <string name="old_phone_free">Free it</string>
+    <string name="pairing_no_contact">Linked — but this phone could not reach your family yet. Check its Wi-Fi or data; it will keep trying on its own.</string>
+    <string name="pairing_is_enrollment">That is the setup code for a factory-reset phone, not the linking code. On the parent’s phone, open the child and scan the code under “Link this phone”.</string>
+    <string name="pairing_is_download">That code is the download link, and this app is already installed. Scan the linking code on the parent’s phone instead.</string>
+    <string name="pairing_confirm_title">Link this phone?</string>
+    <string name="pairing_confirm_body">This phone will be managed as %1$s.</string>
+    <string name="pairing_confirm_body_family">This phone will be managed as %1$s, in the %2$s family.</string>
+    <string name="pairing_confirm_action">Link it</string>
+    <string name="pairing_confirm_unnamed">this child</string>
+    <string name="panic_stopped_title">%1$s is no longer asking to be released</string>
+    <string name="panic_stopped_text">The countdown on that phone has stopped. If nobody cancelled it, open the phone and check.</string>
+    <string name="rescue_used_title">%1$s used a rescue code</string>
+    <string name="rescue_used_text">That phone had every rule lifted for a while. Rescue codes work offline and without a PIN, so this notice is the only record.</string>
+    <string name="relay_refusing_title">Your phones cannot reach each other</string>
+    <string name="relay_refusing_title_family">%1$s: your phones cannot reach each other</string>
+    <string name="relay_refusing_text">The relay is refusing this phone\'s messages, so rule changes are not reaching the children. Check the relay server in settings.</string>
+    <string name="relay_refusing_rate_limited">The relay is refusing this phone\'s messages for sending too many. Everyone on your home connection shares that limit. A relay server of your own removes it — see settings.</string>
+    <string name="req_background_title">Let Walcott run in the background</string>
+    <string name="req_background_body">This phone has Walcott on \"Restricted\" battery use, so Android lets it check in about once a day. Requests, alerts and an emergency release will not arrive in time. Open the app\'s battery settings and choose \"Unrestricted\" or \"Optimized\".</string>
 </resources>

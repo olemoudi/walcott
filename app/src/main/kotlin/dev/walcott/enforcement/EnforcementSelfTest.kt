@@ -42,7 +42,7 @@ object EnforcementSelfTest {
             repo.usageNow(),
             repo.effectiveExtraNow(),
             usageCountingAvailable = UsageAccess.grantedForEnforcement(context),
-            clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(app.syncManager.state.value.clockSkewMs),
+            clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(app.syncManager.state.value.effectiveClockSkewMs),
         )
         val drift = enforcer.unenforced(blocked)
         // Nothing to fix: report the clean bill of health (this is what clears a standing alert).

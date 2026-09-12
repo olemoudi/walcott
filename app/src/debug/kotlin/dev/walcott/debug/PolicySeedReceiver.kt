@@ -104,6 +104,22 @@ class PolicySeedReceiver : BroadcastReceiver() {
                         // dispatched, not when the write landed (see ChildDevice.reset).
                         DebugLog.i("WalcottSeed", "identity reset")
                     }
+                    // `--es mode change_mode`: what "Change device mode" in the child's settings does
+                    // after the PIN — give the phone back, unlink, forget the rules. Through the real
+                    // path, because the thing to prove is that nothing stays suspended afterwards,
+                    // and `reset` (above) only wipes the stores.
+                    // `--es mode provisioning_checksum`: logs the checksum the enrollment QR carries
+                    // beside what GET_SIGNATURES reports for this install, which is what Android's
+                    // provisioning compares. On a build with the rotation lineage they must match.
+                    "provisioning_checksum" -> {
+                        val qr = dev.walcott.provisioning.DeviceOwnerProvisioning.PUBLISHED_SIGNATURE_CHECKSUM
+                        val installed = dev.walcott.provisioning.DeviceOwnerProvisioning.installedSignatureChecksum(context)
+                        DebugLog.i("WalcottSeed", "provisioning checksum qr=$qr installed=$installed match=${qr == installed}")
+                    }
+                    "change_mode" -> {
+                        target.syncManager.resetDeviceMode()
+                        DebugLog.i("WalcottSeed", "device mode changed")
+                    }
                     // `--es mode clear_extra`: forgets every granted minute, so a scenario that
                     // expects a zero-minute budget to bite is not undone by an hour an earlier
                     // scenario handed the same fixture (extra time outlives a re-pairing).

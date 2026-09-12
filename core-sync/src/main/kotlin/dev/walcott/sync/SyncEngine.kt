@@ -7,18 +7,142 @@ package dev.walcott.sync
  */
 object SyncEngine {
 
-    /** Parent side: keep the newest snapshot per child device. */
+    /**
+     * How far a child's publish counter may move with no time having passed.
+     *
+     * It is a counter of publishes, incremented by one, so how far it can honestly move is a
+     * matter of how long the parent has not been hearing it: see [maxChildVersionJump]. The bound
+     * matters because child messages are not signed — anyone holding the family key (a sibling; a
+     * photograph of the pairing QR) can publish as any deviceId — and a single snapshot at
+     * [Long.MAX_VALUE] would make every genuine one from that phone stale for ever: the parent's
+     * view of that child frozen on the forgery, usage, location, requests and the emergency-release
+     * countdown included, with no way back short of removing the device.
+     *
+     * A speed bump, not a lock. A forger who picks a number just under the bound freezes the row
+     * just as well, for as long as the real phone takes to publish past it. What closes that is a
+     * key per device, which is a protocol change of its own.
+     */
+    const val MAX_CHILD_VERSION_JUMP = 10_000L
+
+    /**
+     * Faster than any child sustains: the quickest cadence anywhere is a domain delivery nudging
+     * every twenty seconds, for minutes. A ceiling well above reality is the point — a false
+     * refusal here freezes a real child's row exactly as the attack would.
+     */
+    private const val MAX_CHILD_PUBLISHES_PER_SECOND = 1L
+
+    /**
+     * How far a child's counter can honestly have moved when the parent last heard from that
+     * phone [sinceLastHeardMs] ago. A parent phone that was off for a month has missed a month of
+     * publishes, and must take the next one.
+     */
+    fun maxChildVersionJump(sinceLastHeardMs: Long): Long =
+        MAX_CHILD_VERSION_JUMP + (sinceLastHeardMs.coerceAtLeast(0) / 1000) * MAX_CHILD_PUBLISHES_PER_SECOND
+
+    /**
+     * Parent side: keep the newest snapshot per child device, unless the newness is impossible.
+     *
+     * A refused jump is dropped rather than clamped: the snapshot's CONTENTS are as untrustworthy
+     * as its version, and the phone's next honest publish is one counter step away.
+     */
     fun mergeChild(
         current: Map<String, ChildSnapshot>,
         incoming: ChildSnapshot,
+        sinceLastHeardMs: Long = 0L,
     ): Map<String, ChildSnapshot> {
         val existing = current[incoming.deviceId]
-        return if (existing == null || incoming.version >= existing.version) {
+            ?: return current + (incoming.deviceId to incoming)
+        // A difference rather than a sum: both are non-negative, so this cannot overflow, while
+        // existing + jump can for a row a pre-bound forgery already pinned near Long.MAX_VALUE.
+        if (incoming.version - existing.version > maxChildVersionJump(sinceLastHeardMs)) return current
+        return if (incoming.version >= existing.version) {
             current + (incoming.deviceId to incoming)
         } else {
             current
         }
     }
+
+    /**
+     * How far a restore jumps the version counter past the backup's, so a restored parent
+     * outranks whatever the lost phone published after the file was written (see
+     * `SyncManager.restoreBackup`). It is also the signature of a takeover: no other event
+     * moves the counter by anything like this much.
+     */
+    const val RESTORE_VERSION_LEAP = 1_000_000L
+
+    /**
+     * Parent side: has ANOTHER phone taken this family over?
+     *
+     * A parent hears its own snapshots come back off the relay, and — after a reconnect —
+     * hears its older ones replayed out of the backlog too, so "a parent snapshot arrived"
+     * says nothing on its own. Two things together do: it carries a different phone's
+     * [ParentSnapshot.parentInstanceId], and its version is a whole [RESTORE_VERSION_LEAP]
+     * above ours, which only a restore produces. Anything smaller is us, or an older build of
+     * us, and must never be read as a takeover — the answer to one is to stop trusting our own
+     * edits, and that is not a conclusion to reach on a coincidence.
+     *
+     * [ownInstanceId] is blank on a scope that has not published under a build that has this
+     * field; the version rule alone carries the decision there.
+     */
+    fun parentSuperseded(ownVersion: Long, ownInstanceId: String, incoming: ParentSnapshot): Boolean {
+        if (ownInstanceId.isNotBlank() && incoming.parentInstanceId == ownInstanceId) return false
+        return incoming.version >= ownVersion + RESTORE_VERSION_LEAP
+    }
+
+    /**
+     * The version this phone must publish at to take a family back from the phone in
+     * [seenVersion]: above it by another leap, so the children — which gate on version
+     * monotonicity — adopt this phone's rules again and keep doing so.
+     */
+    fun takeoverVersion(ownVersion: Long, seenVersion: Long): Long =
+        maxOf(ownVersion, seenVersion) + RESTORE_VERSION_LEAP
+
+    /**
+     * One device per child: the phone that spoke most recently.
+     *
+     * A child's phone that is factory-reset and enrolled again comes back with a NEW deviceId —
+     * `pairAsChild` keeps the old one only when the app's data survived, and the supported way to
+     * enrol is a wiped phone. The rows are keyed by deviceId, so the replacement is appended and
+     * the dead phone stays first in the list; every screen that reaches for a child's phone takes
+     * the first match by childId, so a parent would read the stolen phone's battery and send
+     * "locate now", a pause, a ring and "free this phone" to it, with nothing on any screen
+     * suggesting there was a second one.
+     *
+     * Devices with no childId are registered to nobody — orphans and pre-childId builds — and are
+     * all kept: there is no child to be the current phone OF.
+     *
+     * Usage history is not affected either way: it is filed under the childId when there is one
+     * (see [UsageLedger.keyOf]), so a replacement inherits it.
+     */
+    fun currentDevices(
+        children: List<ChildSnapshot>,
+        lastSeen: Map<String, Long>,
+    ): List<ChildSnapshot> {
+        val superseded = supersededDevices(children, lastSeen).map { it.deviceId }.toSet()
+        return children.filterNot { it.deviceId in superseded }
+    }
+
+    /**
+     * The devices [currentDevices] drops: a child's older phones, newest-first, so the parent can
+     * be shown what to retire. Empty for every family that has never replaced a phone.
+     */
+    fun supersededDevices(
+        children: List<ChildSnapshot>,
+        lastSeen: Map<String, Long>,
+    ): List<ChildSnapshot> =
+        children.filter { it.childId.isNotBlank() }
+            .groupBy { it.childId }
+            .filterValues { it.size > 1 }
+            .flatMap { (_, devices) ->
+                // Heard from most recently wins. A phone that has never been heard from at all
+                // sorts to the bottom, and the version breaks a tie between two that arrived in
+                // the same millisecond.
+                val ranked = devices.sortedWith(
+                    compareByDescending<ChildSnapshot> { lastSeen[it.deviceId] ?: 0L }
+                        .thenByDescending { it.version },
+                )
+                ranked.drop(1)
+            }
 
     /** Child side: keep the newest parent snapshot. */
     fun mergeParent(current: ParentSnapshot?, incoming: ParentSnapshot): ParentSnapshot =

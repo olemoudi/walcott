@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BatteryStd
@@ -159,6 +160,7 @@ fun ChildDetailScreen(
     val spacing = Tokens.spacing
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshots by viewModel.children.collectAsStateWithLifecycle()
+    val supersededDevices by viewModel.supersededDevices.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
@@ -415,6 +417,21 @@ fun ChildDetailScreen(
             // only to be blank would make "the end of the list" mean something else.
             contentPadding = PaddingValues(bottom = spacing.xl),
         ) {
+            // --- An earlier phone still on file ---
+            // Above enrollment on purpose: while this is here, the phone every card below
+            // describes was chosen by which of the two spoke last (see SyncEngine.currentDevices).
+            val retired = supersededDevices.filter { it.childId == childId }
+            if (retired.isNotEmpty()) {
+                item {
+                    OldPhoneCard(
+                        name = entry.name,
+                        devices = retired,
+                        onRetire = { viewModel.retireDevice(it) },
+                        onFree = { viewModel.releaseChildDevice(it) },
+                    )
+                }
+            }
+
             // --- Enrollment ---
             if (snapshot == null || showCode) {
                 item {
@@ -1498,7 +1515,7 @@ private fun DeviceStatusStrip(snapshot: ChildSnapshot, rulesSyncing: Boolean, ru
             StatusItem(
                 icon = Icons.Outlined.Sync,
                 text = stringResource(R.string.detail_rules_syncing),
-                color = Color(0xFFB26A00),
+                color = dev.walcott.ui.theme.Tokens.warning,
             )
         } else if (rulesConfirmedAtMs > 0) {
             StatusItem(
@@ -1651,7 +1668,7 @@ private fun HistoryCard(snapshot: ChildSnapshot, position: CardPosition = CardPo
 private fun EnforcementWarningCard(status: String) {
     val spacing = Tokens.spacing
     val accessibility = status == EnforcementStatus.ACCESSIBILITY
-    val color = if (accessibility) Color(0xFFB26A00) else MaterialTheme.colorScheme.error
+    val color = if (accessibility) dev.walcott.ui.theme.Tokens.warning else MaterialTheme.colorScheme.error
     val text = stringResource(
         if (accessibility) R.string.enforcement_accessibility_child else R.string.enforcement_none_child,
     )
@@ -2794,6 +2811,65 @@ private fun QrCard(bitmap: androidx.compose.ui.graphics.ImageBitmap?) {
                     Image(bitmap = bitmap, contentDescription = null, modifier = Modifier.size(200.dp))
                 } else {
                     CircularProgressIndicator()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A child's earlier phone, still on file beside the one they carry now.
+ *
+ * A factory reset — the supported way to enrol — cannot keep the old device id, so a replaced
+ * phone arrives as a second row rather than an update of the first. Both answers are offered
+ * because both are real: the phone is gone (retire the row) or it still exists and is still
+ * enforcing this family's rules on somebody (free it first).
+ */
+@Composable
+private fun OldPhoneCard(
+    name: String,
+    devices: List<dev.walcott.sync.ChildSnapshot>,
+    onRetire: (String) -> Unit,
+    onFree: (String) -> Unit,
+) {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.tertiary
+    WalcottCard(color = color.copy(alpha = 0.12f)) {
+        Column(Modifier.padding(spacing.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.PhoneAndroid,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(spacing.sm))
+                Text(
+                    stringResource(R.string.old_phone_title, name),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = color,
+                )
+            }
+            Spacer(Modifier.height(spacing.xs))
+            Text(
+                stringResource(R.string.old_phone_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            for (device in devices) {
+                Spacer(Modifier.height(spacing.sm))
+                Text(
+                    device.displayName.ifBlank { device.deviceId.take(8) },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onFree(device.deviceId) }) {
+                        Text(stringResource(R.string.old_phone_free))
+                    }
+                    TextButton(onClick = { onRetire(device.deviceId) }) {
+                        Text(stringResource(R.string.old_phone_retire))
+                    }
                 }
             }
         }

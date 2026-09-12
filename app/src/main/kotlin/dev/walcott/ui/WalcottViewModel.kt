@@ -17,6 +17,7 @@ import dev.walcott.rules.nightOf
 import dev.walcott.sync.ChildSnapshot
 import dev.walcott.sync.DeviceMode
 import dev.walcott.sync.FamilyIdentity
+import dev.walcott.sync.SyncEngine
 import dev.walcott.sync.SyncManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -177,8 +178,23 @@ class WalcottViewModel(
 
     val identity: StateFlow<FamilyIdentity> = sync.identity
     val bootMode: StateFlow<DeviceMode?> = sync.bootMode
+    /**
+     * The children's phones, one per child: the phone that spoke most recently.
+     *
+     * Deduplicated here rather than at each screen because a child whose phone was replaced has
+     * two rows, and every screen reaches for the first match by childId — which was the phone
+     * that is gone, along with every action sent to it (see [SyncEngine.currentDevices]). Older
+     * phones are not hidden, they move to [supersededDevices], which the member's page offers to
+     * retire.
+     */
     val children: StateFlow<List<ChildSnapshot>> =
-        sync.state.map { it.children }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        sync.state.map { SyncEngine.currentDevices(it.children, it.lastSeen) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** A child's earlier phones, still on file and no longer the one this family is managing. */
+    val supersededDevices: StateFlow<List<ChildSnapshot>> =
+        sync.state.map { SyncEngine.supersededDevices(it.children, it.lastSeen) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val lastSeen: StateFlow<Map<String, Long>> =
         sync.state.map { it.lastSeen }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
@@ -399,6 +415,14 @@ class WalcottViewModel(
     val policyTooLarge: StateFlow<Boolean> =
         sync.state.map { it.policyTooLarge }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /**
+     * Whether another phone restored this family's backup and the children now follow it, so
+     * nothing edited here reaches them (see [dev.walcott.sync.SyncManager.takeBackControl]).
+     */
+    val supersededByAnotherParent: StateFlow<Boolean> =
+        sync.state.map { it.supersededAtMs > 0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     suspend fun setRelayServer(server: String): dev.walcott.sync.SyncManager.RelayChangeResult =
         sync.setRelayServer(server)
 
@@ -414,9 +438,17 @@ class WalcottViewModel(
     /** The move in flight, and how many phones have followed it (null = none running). */
     val relayMigration: StateFlow<dev.walcott.sync.SyncManager.RelayMigration?> = sync.relayMigration
 
-    suspend fun pairAsChild(pairingText: String): Boolean = sync.pairAsChild(pairingText)
+    suspend fun pairAsChild(pairingText: String): dev.walcott.sync.PairResult = sync.pairAsChild(pairingText)
     fun setMode(mode: DeviceMode) = viewModelScope.launch { sync.setMode(mode) }
-    fun resetDeviceMode() = viewModelScope.launch { sync.resetDeviceMode() }
+    /**
+     * Leave child mode: give the phone its apps and settings back FIRST, then unlink and drop
+     * the rules (see [dev.walcott.sync.SyncManager.resetDeviceMode]).
+     *
+     * On the hub's durable scope rather than the ViewModel's: the screen navigates to mode
+     * select on the same tap, and a hand-back abandoned halfway leaves suspended apps nothing
+     * will come back for.
+     */
+    fun resetDeviceMode() = hub.launchDurable { sync.resetDeviceMode() }
     // Device-level, so they are written to every family (each stores its own copy — see
     // FamilyHub.updateEveryIdentity): locking "the app" cannot mean locking one household.
     fun setAppLock(enabled: Boolean) =
@@ -454,8 +486,15 @@ class WalcottViewModel(
     fun addFamilyFromBackup(
         fileJson: String,
         passphrase: CharArray,
+        takeover: Boolean = false,
         onDone: (dev.walcott.FamilyHub.AddResult) -> Unit,
-    ) = viewModelScope.launch { onDone(hub.addFamilyFromBackup(fileJson, passphrase)) }
+    ) = viewModelScope.launch { onDone(hub.addFamilyFromBackup(fileJson, passphrase, takeover)) }
+
+    /** Take a family back from another phone that restored its backup (see the home card). */
+    fun takeBackControl() = viewModelScope.launch { sync.takeBackControl() }
+
+    /** Leave the family with the other phone; stop saying so. */
+    fun dismissSupersededNotice() = viewModelScope.launch { sync.dismissSupersededNotice() }
 
     /** Stops managing a family (its children keep the last rules they received — see the dialog). */
     fun removeFamily(id: String) = viewModelScope.launch { hub.removeFamily(id) }
@@ -527,6 +566,9 @@ class WalcottViewModel(
 
     /** Frees one supervised phone without touching the family registry (see [removeChild]). */
     fun releaseChildDevice(deviceId: String) = hub.launchDurable { sync.releaseChildDevice(deviceId) }
+
+    /** Forget a child's earlier phone (see [dev.walcott.sync.SyncManager.retireChildDevice]). */
+    fun retireDevice(deviceId: String) = hub.launchDurable { sync.retireChildDevice(deviceId) }
 
     /**
      * Takes an orphaned device back into the family under [name], by giving it a registry entry
@@ -1080,7 +1122,7 @@ class WalcottViewModel(
      * rules fail closed then, so the child home has to say why everything went quiet.
      */
     val clockTampered: StateFlow<Boolean> =
-        sync.state.map { dev.walcott.sync.ClockGuard.isTampered(it.clockSkewMs) }
+        sync.state.map { dev.walcott.sync.ClockGuard.isTampered(it.effectiveClockSkewMs) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**
@@ -1154,8 +1196,12 @@ class WalcottViewModel(
      * derivation takes cancelled the restore halfway through, leaving a device holding a family's
      * RULES with no identity to publish them under.
      */
-    fun restoreBackup(fileJson: String, passphrase: CharArray, onDone: (Boolean) -> Unit) =
-        viewModelScope.launch { onDone(sync.restoreBackup(fileJson, passphrase)) }
+    fun restoreBackup(
+        fileJson: String,
+        passphrase: CharArray,
+        takeover: Boolean = false,
+        onDone: (dev.walcott.sync.RestoreResult) -> Unit,
+    ) = viewModelScope.launch { onDone(sync.restoreBackup(fileJson, passphrase, takeover = takeover)) }
 
     /**
      * True while the nightly on-device copies are off: no key, or the PIN-derived key builds

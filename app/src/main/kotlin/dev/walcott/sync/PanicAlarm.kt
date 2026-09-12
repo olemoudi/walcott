@@ -1,5 +1,6 @@
 package dev.walcott.sync
 
+import dev.walcott.runHeld
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -8,9 +9,6 @@ import android.content.Intent
 import android.os.PowerManager
 import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 /**
  * The clock an emergency release runs on: one wake-up an hour for twelve hours, and one last
@@ -96,9 +94,10 @@ object PanicAlarm {
 class PanicStepReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val lock = PanicAlarm.wakeLock(context)
-        // The broadcast returns at once and the wakelock — not goAsync — is what holds the CPU:
-        // a step can spend minutes on a retry ladder, and a receiver's budget is ten seconds.
-        CoroutineScope(Dispatchers.IO).launch {
+        // The wakelock holds the CPU through a retry ladder that can take minutes; the broadcast
+        // is held open only for the first seconds, so the process is not reaped before the first
+        // publish attempt, and never long enough to be an ANR (see runHeld).
+        runHeld {
             try {
                 val app = context.applicationContext as WalcottApplication
                 app.syncManager.runPanicStep()
