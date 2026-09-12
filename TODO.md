@@ -3,6 +3,85 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.109.0 — the web filter, read against a filter that has been doing this longer
+
+ole asked for a review of the web filter "based on the lessons learned in ../malachi" — a
+sibling project of his that is a dedicated DNS ad blocker: ~2500 lines of VPN service, a pure
+`IpPacket` with 545 lines of tests, and instrumented tests that turn Wi-Fi off and back on.
+Walcott's filter was 430 lines with no test of a single packet. Eighteen lessons came back; what
+follows is what was taken, and what was deliberately left.
+
+**Two pure modules where there was none.** `DnsMessage` and `IpPackets` now hold everything that
+can be decided from bytes, with 52 tests. Before this, the only way to find out that a reply was
+malformed was to watch an app fail to use it.
+
+**The three things that were quietly wrong:**
+
+- **Any datagram that arrived was relayed as the answer.** The upstream socket was unconnected
+  and the transaction id was never checked, so the first reply to reach the phone's ephemeral
+  port won — anybody on the same Wi-Fi could beat the real resolver to it and put an address of
+  their choosing in front of the child, for a domain the family had blocked. The socket is
+  connected now and the id is checked.
+- **The forged reply echoed the query's header.** NXDOMAIN and SERVFAIL were made by flipping
+  two bits in a copy of the whole query, so the counts still said "one question and one
+  additional record" — the EDNS OPT every resolver sends — in a message that then contained
+  neither. A strict stub resolver discards that, and the block appears not to have happened.
+  The reply is rebuilt: question kept, everything after it dropped, all four counts written.
+- **A resolver that answered "no" ended the lookup.** SERVFAIL and REFUSED were relayed as
+  answers, so a router handing out a resolver that refuses everything left the phone resolving
+  nothing with the filter on and everything with it off. Those are now "did not answer": the
+  next resolver is tried, the refusal kept only if nobody does better — and the resolver that
+  did answer is remembered, so a merely slow first one stops costing its timeout on every lookup.
+
+**The read loop was spinning a core.** `establish()` hands back a NON-BLOCKING descriptor, so
+`read()` returned 0 immediately whenever no packet was waiting and `if (length == 0) continue`
+went round again — flat out, on an idle phone with the screen off. It parks in `poll()` now and
+is woken by a pipe when it should stop. (Walcott had already met the other half of this, the
+`length < 0` spin, in an earlier release; this is the same bug's twin.)
+
+**The descriptor was closed out from under the writers.** A stop closed the pfd immediately while
+up to sixteen forwarders could be inside a write. A file descriptor number is free the moment it
+closes and the kernel reissues it to the next thing the process opens, so a straggler could write
+a DNS response into a DataStore file or the sync socket. Now: stop, wake the reader, take the
+descriptor away from the writers under the lock, join the reader, then close.
+
+**A revocation was permanent until something else happened.** `onRevoke` called `super`, whose
+implementation is `stopSelf()`, and nothing retried — so another VPN app connecting for ten
+seconds left the filter off until the watchdog next ran, up to a quarter of an hour of unfiltered
+browsing with nothing saying so. It backs off and comes back now (5 s doubling to 5 min).
+
+**The callback stopped describing the network and started describing us.** It followed the
+DEFAULT network, which becomes our own tunnel once it is up; its "DNS servers" are then the
+sentinel, which is excluded from the upstream list — so the filter would have quietly sent every
+lookup on the phone to the public fallback, and on a school Wi-Fi that blocks outbound 53, to
+nowhere. It now asks for a network that is explicitly NOT a VPN, declares that network as the
+one underneath, and re-reads the resolvers whenever every one of them has failed.
+
+**Smaller, each with its own symptom:** the tunnel says it is not metered (it carried DNS and
+made the phone believe it was on mobile data — which, among other things, made the blocklist
+refresh's "unmetered only" constraint permanently unsatisfiable); it declares an MTU and refuses,
+loudly, an answer that will not fit; a TCP connection to the resolver gets a reset instead of
+silence, so a resolver falling back to TCP fails in milliseconds rather than a minute; a ping to
+the resolver is answered, because a connectivity check that pings its own DNS server and hears
+nothing concludes the network is dead; "Block connections without VPN" is noticed and reported;
+IPv6 resolvers are used (refusing them left a v6-only carrier with no working DNS), link-local
+ones are not (without the zone id they are a guaranteed timeout); a fragment is refused rather
+than forwarded as if it were a whole query; a message that is not a standard query no longer has
+its bytes read as a hostname and shown to a parent as "this app looked up…"; and the app that
+asked is only looked up when some rule actually depends on it, which on a family with no per-app
+rules is never.
+
+**Taken from malachi and then rejected:** `allowBypass()`. It is right for an ad blocker, where
+letting an app opt out of the tunnel is a courtesy, and wrong here, where it is a way round the
+rules. The cost is that an app binding a socket to a specific network (Android Auto, some cast
+SDKs) is refused; that is the trade a parental control should make.
+
+**Left undone, on purpose and written down:** the tunnel is still IPv4 (a phone with no IPv4 at
+all is unsupported); there is still no TCP DNS fallback for a truncated answer, only the reset
+that makes it fail fast; blocking still answers NXDOMAIN rather than `0.0.0.0`, which is a
+product decision about what a blocked app should experience and not a bug; and the descriptor
+lifecycle now deserves the instrumented test malachi has and walcott does not.
+
 ## Shipped in v0.108.0 — the secrets a family types
 
 ole asked for a pass over "the dialogs and inputs for passwords and PINs, especially the ones for

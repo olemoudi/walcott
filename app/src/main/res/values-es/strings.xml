@@ -1860,6 +1860,14 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_109_0">
+        <item>El filtro web se ha revisado línea a línea contra otro filtro que lleva más tiempo haciendo solo esto, y ha salido bastante. Lo más importante: ahora se comprueba que la respuesta a una consulta sea la respuesta a la pregunta que se hizo, y que venga del servidor al que se preguntó. Antes ganaba la primera respuesta que llegara, que en una wifi compartida no es necesariamente la buena.</item>
+        <item>Un servidor que responde «no puedo» ya no se toma por una respuesta. Un router que reparte un DNS que lo rechaza todo dejaba el móvil del hijo sin resolver nada con el filtro puesto y resolviéndolo todo sin él; ahora se prueba el siguiente, y se recuerda cuál funciona para que uno lento no cueste en cada consulta.</item>
+        <item>El filtro mantenía un núcleo del procesador despierto incluso con la pantalla apagada y sin pasar nada. Ahora duerme de verdad: es lo que más gana la batería del hijo en esta versión.</item>
+        <item>Si otra app de VPN toma el túnel un momento, el filtro vuelve solo en segundos en vez de quedarse apagado hasta la siguiente comprobación de cada cuarto de hora.</item>
+        <item>El túnel ya no hace creer al móvil que está en datos móviles, lo que frenaba las actualizaciones de apps, las copias de fotos y la propia actualización de listas del filtro en una familia con solo wifi.</item>
+        <item>Las respuestas de bloqueo y de error se construyen bien en vez de editando la pregunta, así que ninguna app puede leer más allá de ellas; un móvil que pregunta por TCP recibe una negativa en milisegundos en vez de esperar un minuto; y el servidor responde a un ping, con lo que el móvil deja de concluir que su propia red está rota.</item>
+    </string-array>
     <string-array name="whats_new_0_108_0">
         <item>Todos los PIN de la app se teclean ahora en casillas, una por dígito, como los pide la pantalla de bloqueo de tu móvil. Se ve cuántos dígitos se esperan y cuántos llevas, hay un ojo para comprobar lo que has escrito, y un PIN rechazado se borra solo en vez de dejarte borrar seis dígitos a mano antes de volver a intentarlo.</item>
         <item>Elegir el PIN de la familia son ahora dos pasos: lo eliges y lo escribes otra vez de memoria. Una segunda casilla en la que puedes copiar la primera mirándola no confirma nada, y por eso lo piden así todas las pantallas de bloqueo. Si los dos no coinciden, te lo dice con buenos modos y se empieza de nuevo.</item>

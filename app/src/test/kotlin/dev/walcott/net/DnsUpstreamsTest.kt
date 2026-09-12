@@ -18,10 +18,26 @@ class DnsUpstreamsTest {
     @Test
     fun `a network offering nothing usable falls back`() {
         assertEquals(listOf(DnsUpstreams.FALLBACK), DnsUpstreams.choose(emptyList()))
-        // IPv6-only resolvers: we speak IPv4 in the tun, so they are not usable here.
+        // Only link-local ones, which cannot be reached without the zone id: nothing usable.
         assertEquals(
             listOf(DnsUpstreams.FALLBACK),
-            DnsUpstreams.choose(listOf("2001:4860:4860::8888", "fe80::1%wlan0")),
+            DnsUpstreams.choose(listOf("fe80::1%wlan0", "169.254.3.4")),
+        )
+    }
+
+    @Test
+    fun `an IPv6 resolver is a resolver`() {
+        // The tunnel is IPv4 and where an allowed query is FORWARDED has nothing to do with
+        // that. Refusing these left a carrier that offers only IPv6 resolvers with the public
+        // fallback alone — and, with no translator on the network, no working DNS at all.
+        assertEquals(
+            listOf("2001:4860:4860::8888", DnsUpstreams.FALLBACK),
+            DnsUpstreams.choose(listOf("2001:4860:4860::8888")),
+        )
+        // The zone id goes; the address stays.
+        assertEquals(
+            listOf("2606:4700:4700::1111", DnsUpstreams.FALLBACK),
+            DnsUpstreams.choose(listOf("2606:4700:4700::1111%rmnet0")),
         )
     }
 
@@ -62,5 +78,25 @@ class DnsUpstreamsTest {
         ).forEach {
             assertFalse(DnsUpstreams.isIpv4Literal(it), it)
         }
+    }
+
+    @Test
+    fun `a hostname is never an upstream, in either family`() {
+        // Everything accepted here reaches InetAddress.getByName, which for a name is a
+        // blocking lookup — made through the very filter that is trying to forward this query.
+        listOf("dns.google", "", "example.com", "1.1.1", "1.1.1.1.1", "256.1.1.1")
+            .forEach { assertFalse(DnsUpstreams.isIpLiteral(it), it) }
+        listOf("2001:4860:4860::8888", "::1", "::", "fe80::1", "::ffff:1.2.3.4")
+            .forEach { assertTrue(DnsUpstreams.isIpLiteral(it), it) }
+    }
+
+    @Test
+    fun `an address that only means something on its own wire is left out`() {
+        assertTrue(DnsUpstreams.isLinkLocal("fe80::1"))
+        assertTrue(DnsUpstreams.isLinkLocal("FE80::abcd"))
+        assertTrue(DnsUpstreams.isLinkLocal("169.254.10.1"))
+        assertFalse(DnsUpstreams.isLinkLocal("2001:4860:4860::8888"))
+        assertFalse(DnsUpstreams.isLinkLocal("192.168.1.1"))
+        assertFalse(DnsUpstreams.isLinkLocal("fee1::1"), "not every fe- prefix is link-local")
     }
 }

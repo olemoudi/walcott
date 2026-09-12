@@ -232,7 +232,15 @@ reaches slots already spent, and a sibling who hears it has nothing.
   resolver back to automatic while the filter is running.
 - Per-app attribution of a domain lookup is best-effort; when a lookup can't be attributed,
   "only from this app" rules block rather than allow.
-- IPv4 DNS only, for now.
+- **The tunnel itself is IPv4**, though it forwards to whichever resolvers the network offers,
+  IPv6 ones included. Queries reach it either way, because the phone sends them to the resolver
+  this app advertises. What is not supported is a phone that has no IPv4 at all.
+- **A phone that only speaks DNS over TCP is not filtered.** Walcott answers a TCP connection to
+  its resolver with a refusal rather than silence, so an app fails at once instead of waiting out
+  a minute-long timeout, but it does not follow the query.
+- Android's own **"Block connections without VPN"** must stay off. Walcott's tunnel carries DNS
+  and nothing else, so that setting would leave the phone with no network at all; the app says so
+  when it notices it is on.
 - **Android decides what a blocked app says.** When a limited app is tapped, the phone shows its
   own "Blocked by work policy" dialog. Walcott cannot change that wording or put a button on it:
   Android attributes an admin's suspension to the platform itself, and the message a suspending

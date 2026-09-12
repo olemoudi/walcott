@@ -1869,6 +1869,14 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_109_0">
+        <item>The web filter was read line by line against a filter that has been doing only this for longer, and a lot came back. The one that matters most: a reply to a lookup is now checked to be the answer to the question that was asked, and to have come from the resolver it was asked of. Before this, the first reply to arrive won — which on a shared wi-fi is not necessarily the real one.</item>
+        <item>A resolver that answers "I cannot" is no longer taken as an answer. A router that hands out a resolver refusing everything used to leave a child\'s phone resolving nothing with the filter on and everything with it off; the next resolver is tried now, and the one that works is remembered so a slow one stops costing every lookup.</item>
+        <item>The filter was keeping a processor core awake even with the screen off and nothing happening. It sleeps properly now — the single biggest thing this release does for a child\'s battery.</item>
+        <item>If another VPN app takes the tunnel for a moment, the filter comes back by itself within seconds instead of staying off until the next quarter-hourly check.</item>
+        <item>The tunnel no longer makes the phone believe it is on mobile data, which was holding up app updates, photo backups and the filter\'s own list refresh on a wi-fi-only family.</item>
+        <item>Blocked and refused answers are now built properly rather than by editing the question, so an app cannot read past them; a phone that asks over TCP is refused in milliseconds instead of waiting a minute; and the resolver answers a ping, so the phone stops concluding its own network is broken.</item>
+    </string-array>
     <string-array name="whats_new_0_108_0">
         <item>Every PIN in the app is typed into boxes now — one per digit, the way your phone\'s own lock screen asks. You can see how many digits are expected and how many you have got, there is an eye to check what you typed, and a PIN that is refused clears itself instead of leaving you to delete six digits before trying again.</item>
         <item>Choosing the family PIN is now two steps: pick it, then type it again from memory. A second box you can read the first one into confirms nothing, which is why every lock screen asks this way. If the two do not match, it says so kindly and starts over.</item>

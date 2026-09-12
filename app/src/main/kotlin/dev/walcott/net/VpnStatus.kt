@@ -31,14 +31,27 @@ object VpnStatus {
     private val _tunnelUp = MutableStateFlow(false)
     val tunnelUp: StateFlow<Boolean> = _tunnelUp.asStateFlow()
 
+    private val _lockdown = MutableStateFlow(false)
+
+    /**
+     * Whether the phone's "Block connections without VPN" is on.
+     *
+     * It is the one system setting that turns this filter into a broken phone: the tun routes a
+     * single /32, so with lockdown on everything else is refused outright — a raw connection to
+     * an IP address, no DNS involved. Nothing here sets it (see [VpnController], which passes
+     * lockdown = false on purpose); this is for noticing that somebody else did.
+     */
+    val lockdown: StateFlow<Boolean> = _lockdown.asStateFlow()
+
     /** Monotonic (so a moved clock can't shorten it) instant the tunnel was last seen down. */
     @Volatile private var downSince: Long = SystemClock.elapsedRealtime()
 
-    internal fun set(up: Boolean) {
+    internal fun set(up: Boolean, lockdown: Boolean = _lockdown.value) {
         if (up != _tunnelUp.value) {
             if (!up) downSince = SystemClock.elapsedRealtime()
             _tunnelUp.value = up
         }
+        _lockdown.value = lockdown
     }
 
     /**
