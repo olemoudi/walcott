@@ -83,6 +83,18 @@ object DnsMessage {
     }
 
     /**
+     * The QTYPE of the first question, or null when the question cannot be read.
+     *
+     * It sits in the two bytes before the end of the question, after the root label and before
+     * QCLASS. Worth reading because one name resolution is several queries — see [LookupBursts].
+     */
+    fun questionType(data: ByteArray, start: Int = 0): Int? {
+        val end = questionEnd(data, start) ?: return null
+        if (end < start + HEADER_BYTES + 4) return null
+        return ((data[end - 4].toInt() and 0xFF) shl 8) or (data[end - 3].toInt() and 0xFF)
+    }
+
+    /**
      * The hostname in the first question, lower-cased and without its trailing dot, or null when
      * it cannot be read.
      *
@@ -117,17 +129,51 @@ object DnsMessage {
      * everything after it is dropped, and all four counts are written.
      */
     fun answer(query: ByteArray, start: Int, rcode: Int): ByteArray {
-        val end = questionEnd(query, start) ?: (query.size)
-        val out = query.copyOfRange(start, end)
+        // A question that cannot be walked is not carried: claiming QDCOUNT = 1 over bytes that
+        // are not a question is the same lie this function exists to stop telling, one level down.
+        val end = questionEnd(query, start)
+        val out = query.copyOfRange(start, end ?: (start + HEADER_BYTES).coerceAtMost(query.size))
         if (out.size < HEADER_BYTES) return out
         // QR=1, keep OPCODE and RD, drop AA/TC.
         out[2] = ((out[2].toInt() and 0x79) or 0x80).toByte()
         // RA=1, Z=0, and the code itself.
         out[3] = (0x80 or (rcode and 0x0F)).toByte()
-        out[4] = 0; out[5] = 1 // QDCOUNT = 1
+        out[4] = 0; out[5] = if (end != null) 1 else 0 // QDCOUNT
         out[6] = 0; out[7] = 0 // ANCOUNT
         out[8] = 0; out[9] = 0 // NSCOUNT
         out[10] = 0; out[11] = 0 // ARCOUNT — the query's OPT does not survive into a reply
+        return out
+    }
+
+    /** Whether [data] says it is a truncated answer, i.e. the resolver has more over TCP. */
+    fun isTruncated(data: ByteArray, start: Int = 0): Boolean =
+        start + HEADER_BYTES <= data.size && data[start + 2].toInt() and 0x02 != 0
+
+    /**
+     * [response] as an honest truncation: TC set, every section dropped, the question kept.
+     *
+     * This exists because of what `DatagramSocket.receive` does to an answer bigger than the
+     * buffer it was given. It discards the tail silently — no error, no flag — and
+     * `DatagramPacket.getLength()` then reports the BUFFER's length rather than the datagram's.
+     * So the bytes look plausible: the transaction id still matches, so the id check passes, and
+     * the header still claims answers and an OPT record for records that are no longer in the
+     * message, which ends mid-record. A stub resolver parses that, throws it away as malformed
+     * and — because TC is clear — has no reason to ask again over TCP. It simply waits.
+     *
+     * Setting TC turns that into something the asker can act on, and zeroing the counts makes the
+     * message true. The question survives only when it can be walked (see [questionEnd]); a
+     * message that cannot even carry its own question is reduced to a bare header claiming none.
+     */
+    fun truncated(response: ByteArray, length: Int = response.size): ByteArray {
+        val end = questionEnd(response.copyOf(length.coerceAtMost(response.size)))
+        val keep = end ?: HEADER_BYTES
+        if (length < HEADER_BYTES) return response.copyOf(length.coerceAtLeast(0))
+        val out = response.copyOf(keep)
+        out[2] = (out[2].toInt() or 0x02).toByte() // TC
+        out[4] = 0; out[5] = if (end != null) 1 else 0 // QDCOUNT
+        out[6] = 0; out[7] = 0 // ANCOUNT
+        out[8] = 0; out[9] = 0 // NSCOUNT
+        out[10] = 0; out[11] = 0 // ARCOUNT
         return out
     }
 

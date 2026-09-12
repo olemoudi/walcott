@@ -235,9 +235,15 @@ reaches slots already spent, and a sibling who hears it has nothing.
 - **The tunnel itself is IPv4**, though it forwards to whichever resolvers the network offers,
   IPv6 ones included. Queries reach it either way, because the phone sends them to the resolver
   this app advertises. What is not supported is a phone that has no IPv4 at all.
-- **A phone that only speaks DNS over TCP is not filtered.** Walcott answers a TCP connection to
-  its resolver with a refusal rather than silence, so an app fails at once instead of waiting out
-  a minute-long timeout, but it does not follow the query.
+- **An app that speaks DNS over TCP of its own accord is not filtered.** The tunnel carries no
+  TCP, and answers a connection to its resolver with an immediate refusal rather than silence, so
+  such an app fails at once instead of waiting out a minute-long timeout. What Walcott does follow
+  over TCP is an answer too big for one datagram: it asks the resolver again itself and passes the
+  whole answer back, which is what makes signed zones and long records resolve at all.
+- **The addresses a phone uses to check whether its network works are never blocked by a list.**
+  A list that blocked one made the phone declare a working Wi-Fi dead and leave it for mobile data,
+  silently and at the family's expense. Eight probe hosts are spared; a domain a parent blocks by
+  hand still wins, and so does a per-app rule and the curfew.
 - Android's own **"Block connections without VPN"** must stay off. Walcott's tunnel carries DNS
   and nothing else, so that setting would leave the phone with no network at all; the app says so
   when it notices it is on.

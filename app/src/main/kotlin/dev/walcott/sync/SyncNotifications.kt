@@ -395,7 +395,16 @@ object SyncNotifications {
         )
     }
 
-    /** A child installed app(s) the family hasn't classified yet (blocked until classified). */
+    /**
+     * A child installed app(s) the family has not given a limit of its own.
+     *
+     * NOT "blocked until you classify it", which is what this used to say. There are no categories
+     * to classify into any more, and an app with no assignment is ALLOWED: it obeys bedtime, the
+     * screen-free windows and the day's total like everything else, and it is limited only if the
+     * family set a default per-app budget. The install guard is the thing that blocks a new app,
+     * and it has its own, louder notification (see [notifyUnauthorizedApp]) — this one fires
+     * precisely when the guard did not act.
+     */
     fun notifyNewApp(context: Context, childName: String, label: String, extraCount: Int, deviceId: String) = post(
         context, STATUS_CHANNEL, R.string.status_channel_name,
         title = context.getString(R.string.new_app_title, childName),

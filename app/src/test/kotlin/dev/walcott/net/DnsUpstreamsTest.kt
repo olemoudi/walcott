@@ -12,15 +12,21 @@ class DnsUpstreamsTest {
         assertEquals(
             listOf("192.168.1.1", "8.8.8.8", DnsUpstreams.FALLBACK),
             DnsUpstreams.choose(listOf("192.168.1.1", "8.8.8.8")),
+            "the cap keeps the network's own and the first last resort",
         )
     }
 
     @Test
-    fun `a network offering nothing usable falls back`() {
-        assertEquals(listOf(DnsUpstreams.FALLBACK), DnsUpstreams.choose(emptyList()))
+    fun `a network offering nothing usable falls back, in both address families`() {
+        // Both families, because one IPv4 literal was the whole last resort: an IPv6-only mobile
+        // network with no translator then had nothing this filter could open a socket to, and
+        // every lookup on the phone timed out while the filter reported itself healthy.
+        assertEquals(DnsUpstreams.FALLBACKS, DnsUpstreams.choose(emptyList()))
+        assertTrue(DnsUpstreams.FALLBACKS.any { DnsUpstreams.isIpv6Literal(it) }, "no IPv6 last resort")
+        assertTrue(DnsUpstreams.FALLBACKS.any { DnsUpstreams.isIpv4Literal(it) }, "no IPv4 last resort")
         // Only link-local ones, which cannot be reached without the zone id: nothing usable.
         assertEquals(
-            listOf(DnsUpstreams.FALLBACK),
+            DnsUpstreams.FALLBACKS,
             DnsUpstreams.choose(listOf("fe80::1%wlan0", "169.254.3.4")),
         )
     }
@@ -31,10 +37,11 @@ class DnsUpstreamsTest {
         // that. Refusing these left a carrier that offers only IPv6 resolvers with the public
         // fallback alone — and, with no translator on the network, no working DNS at all.
         assertEquals(
-            listOf("2001:4860:4860::8888", DnsUpstreams.FALLBACK),
+            listOf("2001:4860:4860::8888") + DnsUpstreams.FALLBACKS,
             DnsUpstreams.choose(listOf("2001:4860:4860::8888")),
         )
-        // The zone id goes; the address stays.
+        // The zone id goes; the address stays. And it is already a last resort, so it does not
+        // appear twice.
         assertEquals(
             listOf("2606:4700:4700::1111", DnsUpstreams.FALLBACK),
             DnsUpstreams.choose(listOf("2606:4700:4700::1111%rmnet0")),
@@ -45,7 +52,7 @@ class DnsUpstreamsTest {
     fun `our own tun addresses are never used as an upstream`() {
         // Forwarding to the sentinel would send the query back into our own tunnel.
         assertEquals(
-            listOf("192.168.1.1", DnsUpstreams.FALLBACK),
+            listOf("192.168.1.1") + DnsUpstreams.FALLBACKS,
             DnsUpstreams.choose(
                 listOf("10.111.222.2", "192.168.1.1", "10.111.222.1"),
                 exclude = setOf("10.111.222.1", "10.111.222.2"),
@@ -56,7 +63,7 @@ class DnsUpstreamsTest {
     @Test
     fun `duplicates collapse and the list is capped`() {
         assertEquals(
-            listOf("1.1.1.1"),
+            listOf("1.1.1.1", "2606:4700:4700::1111"),
             DnsUpstreams.choose(listOf("1.1.1.1", "1.1.1.1")),
         )
         assertEquals(

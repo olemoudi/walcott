@@ -622,8 +622,8 @@
     <string name="child_battery">Batería %1$d%%</string>
     <string name="child_battery_charging">Batería %1$d%% · cargando</string>
     <string name="new_app_title">App nueva en el dispositivo de %1$s</string>
-    <string name="new_app_text">Se instaló "%1$s" — seguirá bloqueada hasta que la clasifiques</string>
-    <string name="new_app_text_more">Se instalaron "%1$s" y %2$d más — seguirán bloqueadas hasta que las clasifiques</string>
+    <string name="new_app_text">Se instaló "%1$s" — todavía sin límite propio</string>
+    <string name="new_app_text_more">Se instalaron "%1$s" y %2$d más — todavía sin límite propio</string>
     <string name="child_version">Versión de la app %1$s (%2$d)</string>
     <string name="child_version_outdated">Versión de la app %1$s (%2$d) — desactualizada</string>
     <string name="chip_protected">Protegido</string>
@@ -717,7 +717,7 @@
     <string name="summary_not_set">Sin configurar</string>
     <string name="summary_on">Activado</string>
     <string name="summary_off">Desactivado</string>
-    <string name="summary_next_hint">Siguiente paso: enrola el móvil de un hijo. Sus apps aparecerán aquí para clasificarlas — las apps nuevas quedan bloqueadas hasta que lo hagas.</string>
+    <string name="summary_next_hint">Siguiente paso: enrola el móvil de un hijo. Sus apps aparecerán aquí, donde puedes ponerle un límite a cualquiera.</string>
     <string name="setup_step_child">Enrola un dispositivo hijo</string>
     <string name="setup_step_limits">Pon límites de tiempo diarios</string>
     <string name="setup_step_bedtime">Configura una hora de dormir</string>
@@ -1859,6 +1859,15 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_110_0">
+        <item>La cifra de búsquedas bloqueadas que se os enseñaba era dos o tres veces la real. Un móvil pregunta por cada dirección web dos veces a la vez —una por cada tipo de dirección de internet— y un navegador pregunta una tercera, así que un solo toque en un enlace se contaba como dos o tres bloqueos. Ahora cuenta como uno. Algo que reintenta una dirección bloqueada sigue apareciendo como que insiste, que es lo que interesa ver.</item>
+        <item>Una app nueva en el móvil de un hijo se anunciaba con «seguirá bloqueada hasta que la clasifiques», y eso había dejado de ser verdad: ya no hay nada que clasificar, y una app a la que nadie ha puesto límite funciona con normalidad dentro de la hora de dormir, las ventanas y el total del día. El aviso dice ahora simplemente que todavía no tiene límite propio.</item>
+        <item>Una dirección web cuya respuesta no cabe en un solo envío fallaba con el filtro puesto y funcionaba sin él: registros largos, y cualquier dominio con DNS firmado. Ahora el filtro vuelve a preguntar como lo haría el móvil y entrega la respuesta completa.</item>
+        <item>Ninguna lista de bloqueo puede quitar las direcciones que usa el móvil para comprobar si su wifi funciona. Si lo hacía, el móvil daba por muerta una wifi buena y se pasaba a los datos, a cuenta de la familia y sin que nada dijera por qué. Las ocho direcciones implicadas sirven una página vacía y nada más. Un dominio que un padre bloquea a mano sigue ganando.</item>
+        <item>En un móvil con wifi y datos a la vez, Android 10 y 11 podían mandar las preguntas del filtro a la red que hubiera cambiado más recientemente en vez de a la que se estaba usando. Y un móvil que pierde la red ya no deja el túnel describiendo una red que ya no está.</item>
+        <item>La vigilancia de red del filtro sale del hilo principal del móvil, donde hacía media docena de llamadas al sistema varias veces por minuto en un móvil que se lleva encima. Lo que falle ahí se sobrevive y se anota, en vez de parar la app.</item>
+        <item>Un servidor DNS de último recurso para los dos tipos de dirección de internet, así que una red móvil que solo ofrece el nuevo ya no es un móvil que no resuelve nada. Y cualquier otra cosa enviada a la dirección del propio filtro se rechaza al instante en vez de dejarla esperando.</item>
     </string-array>
     <string-array name="whats_new_0_109_0">
         <item>El filtro web se ha revisado línea a línea contra otro filtro que lleva más tiempo haciendo solo esto, y ha salido bastante. Lo más importante: ahora se comprueba que la respuesta a una consulta sea la respuesta a la pregunta que se hizo, y que venga del servidor al que se preguntó. Antes ganaba la primera respuesta que llegara, que en una wifi compartida no es necesariamente la buena.</item>

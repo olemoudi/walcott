@@ -3,6 +3,100 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.110.0 — the second pass over the filter, and a number nobody had checked
+
+ole asked for the review of `../malachi` to continue, pointing at its changelog for August in
+particular. That turned out to be the right month: its whole network path was rewritten there, over
+about thirty commits, each naming the phone it broke on. Three agents read them. Most of what came
+back walcott already had, or is structurally immune to — it advertises a sentinel address rather
+than taking over the router's, it has no user-chosen resolver to be wrong behind a captive portal,
+and as Device Owner it puts a strict Private DNS back to automatic rather than working around it.
+What follows is what it did not have.
+
+**The count a parent reads was two to three times the truth.** Android's resolver issues A and AAAA
+**in parallel** for every `getaddrinfo`, and a browser adds HTTPS beside them, so one tap on one
+link arrives at the tunnel as two or three questions for the same name — and every one was counted,
+both in the persisted "blocked today" totals and in the domain viewer, whose `Sighting.count` KDoc
+already promised "how many lookups, not how many packets" and had never delivered it. `LookupBursts`
+now groups them: same name, same app, within two seconds, one lookup **until a record type
+repeats**. The repeat is the discriminator — no resolver asks for A twice in one breath — so a
+client genuinely retrying still counts, which a plain "ignore duplicates" would have thrown away,
+and a domain something keeps hammering is exactly what a parent wants to see. Sixteen slots, three
+primitive arrays, no allocation: this is reached once per DNS query. The decision is made once, in
+the packet loop, and handed to both counters, because two answers to the same question would
+disagree by a factor of two.
+
+**"It stays blocked until you classify it"** was what a parent was told when a new app appeared on a
+child's phone, and it had stopped being true some releases ago. There are no categories to classify
+into; an app with no assignment reaches `RuleEngine.evaluate` and comes out ALLOWED, subject to
+bedtime, the screen-free windows, the pause and the day's total like everything else, and limited
+only if the family set a default per-app budget. The one thing that does block a new app is the
+install guard, which has its own louder notification with the two buttons that answer it — and this
+notice explicitly excludes the packages that guard has quarantined, so it fired precisely when the
+app was working. It now says the app has no limit of its own yet. Four comments asserting the same
+falsehood went with it: they are why the strings stayed wrong, because the code said in prose what
+nobody checked against the engine.
+
+**An answer too big for one datagram never resolved.** `DatagramSocket.receive` discards whatever
+does not fit the buffer — no error, no flag — and `DatagramPacket.getLength()` then reports the
+BUFFER's length rather than the datagram's, so a cut answer is indistinguishable from one that just
+fits. 0.109 refused those, honestly but uselessly: the name failed with the filter on and worked
+with it off, which for a DNSSEC-signed zone or a long TXT record is most of them. Now the cut
+becomes an honest truncation (`DnsMessage.truncated`: TC set, all four counts zeroed, the question
+kept only when it can be walked) and the filter **asks the same resolver again over TCP itself**,
+length-prefixed as RFC 1035 §4.2.2 wants, and relays the whole answer if it fits the tunnel. Two
+details that are the difference between that working and silently doing nothing: the two-byte length
+prefix is read with `readFully`, because TCP is entitled to deliver one byte of it and treating that
+as failure is invisible under load; and every timeout is floored at a millisecond, because in Java
+`soTimeout = 0` does not mean "no time left", it means block for ever.
+
+**A blocklist could take the phone's own connectivity check away.** Android decides a Wi-Fi has
+internet by fetching a `generate_204`; a list that refuses that hostname makes the phone mark a
+working Wi-Fi as dead and — on every vendor with "adaptive connectivity" — leave it for mobile data,
+on the family's allowance, with nothing anywhere saying why and this app reporting the filter as
+healthy. `NEVER_BLOCK` already spared `gstatic.com` and so Android's main probe, but not
+`connectivitycheck.android.com`, `clients3`/`clients4.google.com`, `www.google.com`, or Xiaomi's,
+Huawei's and vivo's — which are the ones that actually get blocked, appearing on aggressive lists as
+telemetry. They are spared as whole hosts, never as a registrable domain (sparing `google.com` would
+spare `dns.google.com`, which is what the bypass list exists to block), and the guard sits below
+what the family typed and above what a list decided: a parent who blocks a probe by hand still
+blocks it, and so does a per-app rule and the curfew.
+
+**Every UDP datagram reaching the tunnel was read as a DNS query, whatever port it was addressed
+to.** So a QUIC or HTTP/3 handshake aimed at the sentinel had its bytes walked as a question and
+then forwarded to a real resolver on port 53. Now the port is read, and anything that is not 53 is
+refused with an ICMP port-unreachable rather than dropped — the twin of the TCP reset 0.109 added,
+and for the same reason: a connectionless protocol cannot tell silence from a slow network, so the
+asker waited out its whole timeout before trying anything else.
+
+**Smaller, each with its own symptom:** on Android 10 and 11 the network callback reports every
+matching network, so the filter adopted whichever spoke last — a phone holding Wi-Fi and mobile data
+could ask the mobile resolvers while browsing over Wi-Fi; the candidates are ranked now
+(`UnderlyingNetworks`, validated first, then wire, Wi-Fi, mobile), and validation decides which to
+prefer rather than whether to have an answer at all. `setUnderlyingNetworks` could name a network
+the phone had left, because it was only ever reached from a successful adoption; `null` means "follow
+the system default" and is now declared whenever nothing real can be named, with "declared nothing
+yet" tracked apart from "declared null". Both callbacks moved off the main looper onto their own
+`HandlerThread` — half a dozen binder round trips several times a minute on the UI thread of the
+process a child's screens are drawn from. Every callback body is wrapped: a `NetworkCallback` has no
+exception barrier of its own, and a throwable out of one takes the enforcement process down while
+the app goes on saying it is on. One lock around the adoption, because the fields are volatile
+individually and inconsistent as a set. The re-read after a total failure is throttled with a
+compare-and-set, since sixteen forwarders fail in the same millisecond. A reset for an already
+acknowledged segment now carries the sequence the sender expected, or a peer that checks ignores it
+and goes back to waiting. A forged answer no longer claims a question it could not walk. And the
+last-resort resolver comes in both families, because one IPv4 literal left an IPv6-only mobile
+network with nothing reachable at all.
+
+**Read and deliberately not taken.** Malachi pins its upstream sockets to the network whose
+resolvers they are asking (`Network.bindSocket`) — it tried that, it returned `EPERM` and broke DNS
+outright, it was reverted, and it was re-landed a day later once the real cause turned out to be a
+dead network reference rather than the call. Walcott does not pin, so it has neither the bug nor the
+benefit; the benefit is real only in the seconds around a hand-off. Its ICMP echo relay through an
+unprivileged ping socket is for addresses its bypass guard routes, and walcott routes only its own
+sentinel, which it already answers itself. Its IPv6 sentinel and tunnel remain the one substantial
+thing walcott lacks, and the README says so.
+
 ## Shipped in v0.109.0 — the web filter, read against a filter that has been doing this longer
 
 ole asked for a review of the web filter "based on the lessons learned in ../malachi" — a

@@ -59,6 +59,10 @@ class IpPacketsTest {
         val plain = ipv4(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()))
         assertEquals(28, IpPackets.dnsStart(plain))
         assertEquals(40000, IpPackets.sourcePort(plain))
+        assertEquals(53, IpPackets.destinationPort(plain))
+        // Nothing used to read this, so every datagram reaching the tun was taken for a query.
+        assertEquals(443, IpPackets.destinationPort(ipv4(IpPackets.PROTO_UDP, udp(40000, 443, dnsBody()))))
+        assertNull(IpPackets.destinationPort(ipv4(IpPackets.PROTO_TCP, ByteArray(24))))
 
         // An IP header may carry options; the DNS message does not start at a fixed offset.
         val withOptions = ipv4(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()), optionWords = 2)
@@ -202,4 +206,64 @@ class IpPacketsTest {
         assertNull(IpPackets.udpResponse(request, ByteArray(70_000)))
         assertNotNull(IpPackets.udpResponse(request, ByteArray(1200)))
     }
+
+    @Test
+    fun `an acknowledged segment is refused with its own acknowledgement number`() {
+        // A peer that reads a reset whose sequence is outside its window ignores it and goes back
+        // to waiting — the very hang the reset exists to end. So a segment that already carries an
+        // acknowledgement is refused with a bare RST whose sequence is the number the sender said
+        // it expected, and nothing of ours is acknowledged.
+        val segment = ByteArray(20)
+        segment[0] = 0x9C.toByte(); segment[1] = 0x40
+        segment[2] = 0x00; segment[3] = 53.toByte()
+        segment[4] = 0; segment[5] = 0; segment[6] = 0; segment[7] = 77 // seq 77
+        segment[8] = 0; segment[9] = 0; segment[10] = 0x03; segment[11] = 0xE9.toByte() // ack 1001
+        segment[12] = 0x50
+        segment[13] = 0x10 // ACK
+        val reset = IpPackets.tcpReset(ipv4(IpPackets.PROTO_TCP, segment))!!
+
+        assertEquals(0x04, reset[33].toInt() and 0xFF, "a bare RST, with no acknowledgement of ours")
+        assertEquals(1001, readInt(reset, 24), "the sequence is what the sender said it expected")
+        assertEquals(0, readInt(reset, 28), "there was nothing of ours to acknowledge")
+        assertEquals(0, IpPackets.checksum(reset, 0, 20), "IPv4 header checksum")
+    }
+
+    // ---- a datagram this tunnel routes but does not serve ----------------------------------
+
+    @Test
+    fun `a datagram to a port this tunnel does not serve is refused, not swallowed`() {
+        // The twin of the reset. A connectionless protocol cannot tell silence from a slow
+        // network, so DNS over QUIC or HTTP/3 to a routed address waited out its whole handshake
+        // timeout before trying anything else.
+        val quic = ipv4(IpPackets.PROTO_UDP, udp(40000, 443, dnsBody(5)))
+        val refusal = IpPackets.portUnreachable(quic)!!
+
+        assertEquals(IpPackets.PROTO_ICMP, refusal[9].toInt() and 0xFF)
+        assertEquals(3, refusal[20].toInt() and 0xFF, "type 3, destination unreachable")
+        assertEquals(3, refusal[21].toInt() and 0xFF, "code 3, port unreachable")
+        // Reversed, or the kernel cannot match the error to the socket that sent the datagram.
+        assertTrue(refusal.copyOfRange(12, 16).contentEquals(dst))
+        assertTrue(refusal.copyOfRange(16, 20).contentEquals(src))
+        // The offending header and the first eight bytes after it, which are its ports.
+        assertTrue(refusal.copyOfRange(28, 56).contentEquals(quic.copyOfRange(0, 28)))
+        assertEquals(56, refusal.size)
+        assertEquals(0, IpPackets.checksum(refusal, 0, 20), "IPv4 header checksum")
+        assertEquals(0, IpPackets.checksum(refusal, 20, refusal.size - 20), "ICMP checksum")
+    }
+
+    @Test
+    fun `only a whole datagram is refused with port unreachable`() {
+        // Never forge an error from a packet we did not fully parse.
+        assertNull(IpPackets.portUnreachable(ipv4(IpPackets.PROTO_TCP, ByteArray(24))))
+        assertNull(IpPackets.portUnreachable(ipv4(IpPackets.PROTO_ICMP, ByteArray(24))))
+        assertNull(
+            IpPackets.portUnreachable(ipv4(IpPackets.PROTO_UDP, udp(40000, 443, dnsBody()), fragmentOffset = 185)),
+        )
+        val short = ipv4(IpPackets.PROTO_UDP, ByteArray(4))
+        assertNull(IpPackets.portUnreachable(short), "a UDP header that is not all there")
+    }
+
+    private fun readInt(buf: ByteArray, at: Int): Int =
+        ((buf[at].toInt() and 0xFF) shl 24) or ((buf[at + 1].toInt() and 0xFF) shl 16) or
+            ((buf[at + 2].toInt() and 0xFF) shl 8) or (buf[at + 3].toInt() and 0xFF)
 }

@@ -127,4 +127,27 @@ class DomainMonitorTest {
         DomainMonitor.record("", "com.game", t0 + 2)
         assertTrue(DomainMonitor.state.value.sightings.isEmpty())
     }
+
+    @Test
+    fun `a question that joins a resolution already counted does not count again`() {
+        // The viewer said "seen 2 times" about a name a child had touched once, because Android
+        // asks A and AAAA in parallel for every resolution. The tunnel decides which question
+        // begins one (see LookupBursts) and this only has to honour it.
+        DomainMonitor.start(t0, durationMs = 60_000)
+        DomainMonitor.record("ads.example.com", "com.game", t0, counts = true)
+        DomainMonitor.record("ads.example.com", "com.game", t0 + 5, counts = false)
+        val sighting = DomainMonitor.state.value.sightings.single()
+        assertEquals(1, sighting.count, "a companion question was counted as its own lookup")
+        // It still moves the row: it is a real moment of the app asking.
+        assertEquals(t0 + 5, sighting.lastSeenMs)
+    }
+
+    @Test
+    fun `a first sighting counts even when it joins a burst`() {
+        // A session can be started between the two halves of one resolution, and "seen 0 times"
+        // is not a thing to show anybody.
+        DomainMonitor.start(t0, durationMs = 60_000)
+        DomainMonitor.record("ads.example.com", "com.game", t0, counts = false)
+        assertEquals(1, DomainMonitor.state.value.sightings.single().count)
+    }
 }

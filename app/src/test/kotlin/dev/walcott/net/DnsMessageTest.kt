@@ -150,4 +150,57 @@ class DnsMessageTest {
         assertNull(DnsMessage.rcode(ByteArray(2)))
         assertNull(DnsMessage.transactionId(ByteArray(1)))
     }
+
+    // ---- an answer the socket cut ---------------------------------------------------------
+
+    /**
+     * `DatagramSocket.receive` discards whatever will not fit the buffer it was given — no error,
+     * no flag — and `DatagramPacket.getLength()` then reports the BUFFER's length. So the bytes
+     * look plausible: the id matches, and the header still claims answers and an OPT record for
+     * records the message no longer contains and ends in the middle of.
+     */
+    @Test
+    fun `a message the socket cut becomes an honest truncation with its question intact`() {
+        val q = query(arCount = 1, trailing = byteArrayOf(0, 0, 41, 0x10, 0, 0, 0, 0, 0, 0, 0))
+        // What a resolver's reply to it looks like once the socket has cut the tail off.
+        val cut = q.copyOf().also { it[2] = 0x81.toByte(); it[3] = 0x80.toByte(); it[7] = 4 }
+        val out = DnsMessage.truncated(cut)
+
+        assertEquals(DnsMessage.questionEnd(q), out.size, "the cut tail survived into the reply")
+        assertTrue(DnsMessage.isTruncated(out), "TC was not set, so the asker has no reason to ask again")
+        assertEquals(0x1234, DnsMessage.transactionId(out))
+        assertTrue(out[2].toInt() and 0x80 != 0, "QR stays: this is still the resolver's response")
+        assertEquals(1, ((out[4].toInt() and 0xFF) shl 8) or (out[5].toInt() and 0xFF), "QDCOUNT")
+        assertEquals(0, ((out[6].toInt() and 0xFF) shl 8) or (out[7].toInt() and 0xFF), "ANCOUNT")
+        assertEquals(0, ((out[10].toInt() and 0xFF) shl 8) or (out[11].toInt() and 0xFF), "ARCOUNT")
+        assertEquals("ads.example.com", DnsMessage.questionName(out.copyOf().also { it[2] = 0x00 }))
+    }
+
+    @Test
+    fun `a cut message whose question cannot be read still claims no question`() {
+        // The invariant: never emit a message that claims a question it does not carry.
+        val stub = query().copyOf(DnsMessage.HEADER_BYTES + 3)
+        val out = DnsMessage.truncated(stub)
+        assertEquals(DnsMessage.HEADER_BYTES, out.size)
+        assertTrue(DnsMessage.isTruncated(out))
+        assertEquals(0, ((out[4].toInt() and 0xFF) shl 8) or (out[5].toInt() and 0xFF), "QDCOUNT")
+    }
+
+    @Test
+    fun `a forged answer to a query with no readable question claims none either`() {
+        // Same lie, one level down: `answer` used to copy the whole query and write QDCOUNT = 1
+        // over bytes that were not a question.
+        val bad = query().copyOf(DnsMessage.HEADER_BYTES + 3)
+        val out = DnsMessage.answer(bad, 0, DnsMessage.RCODE_SERVER_FAILURE)
+        assertEquals(DnsMessage.HEADER_BYTES, out.size)
+        assertEquals(0, ((out[4].toInt() and 0xFF) shl 8) or (out[5].toInt() and 0xFF), "QDCOUNT")
+        assertEquals(DnsMessage.RCODE_SERVER_FAILURE, DnsMessage.rcode(out))
+    }
+
+    @Test
+    fun `truncation is read from the header and nothing shorter than one is truncated`() {
+        assertFalse(DnsMessage.isTruncated(ByteArray(4)))
+        assertFalse(DnsMessage.isTruncated(DnsMessage.answer(query(), 0, 0)))
+        assertTrue(DnsMessage.isTruncated(query(flags = 0x8380)))
+    }
 }

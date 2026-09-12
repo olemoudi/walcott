@@ -41,8 +41,7 @@ class AppBlockerService : AccessibilityService() {
     @Volatile private var managed: Set<String> = emptySet()
     /**
      * Whether this device enforces at all. A parent phone — and a device freed by an emergency
-     * release ([PanicRelease]) — must never be kicked out of apps, and after a release the
-     * wiped policy would classify every app as unknown, i.e. block everything.
+     * release ([PanicRelease]) — must never be kicked out of apps.
      */
     @Volatile private var enforcing: Boolean = true
     /** False once the clock is provably wrong (see [dev.walcott.sync.ClockGuard]). */
@@ -69,9 +68,9 @@ class AppBlockerService : AccessibilityService() {
     @Volatile private var usageAccessOk = true
     @Volatile private var usageAccessReadAt = 0L
 
-    // A newly installed app is unclassified (so it must be blocked), but the config doesn't
-    // change on install — without this the managed set would go stale and the blocker would
-    // wave the new app through until the next policy edit.
+    // The config does not change when an app is installed, so without this the managed set goes
+    // stale and a new app is outside every rule — including the windows and the day's total — until
+    // the next policy edit. (It is not blocked for being new: that is the install guard's job.)
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             app.repository.inventory.invalidate()

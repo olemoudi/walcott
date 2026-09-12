@@ -82,6 +82,16 @@ object DomainFilter {
 
         if (familyDomains.matches(h)) return true
 
+        // Below what this family decided and above what a list decided, which is the only place
+        // it can go. The phone's own connectivity probes must survive a downloaded list: a list
+        // that refuses one makes the phone declare a good Wi-Fi dead and leave it for mobile data,
+        // silently and at the family's expense (see [BlocklistSource.CONNECTIVITY_CHECKS]).
+        //
+        // A parent who types one of these themselves still blocks it, and so does a per-app rule
+        // and the curfew, all of which are decided above. What this refuses is a list nobody in
+        // the family has read doing it on their behalf.
+        if (BlocklistSource.isConnectivityCheck(h)) return false
+
         // Exemptions apply to the lists and to nothing above this line.
         if (packageName != null && packageName in listExemptApps) return false
         return lists.matches(h)

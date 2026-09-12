@@ -64,6 +64,21 @@ class WalcottVpnService : VpnService() {
     private val writeLock = Any()
 
     /**
+     * Guards adopting a network: the resolver list, the remembered winner, and what is declared
+     * to the platform as the thing underneath this tunnel.
+     *
+     * Those fields are volatile, which makes each write atomic and says nothing about the SET
+     * being consistent — and that is what matters here. Two threads reach this: the network
+     * callback, and any forwarder whose resolvers have all failed. Interleaved, they can leave one
+     * network's resolvers next to another network's declaration, which is a phone where every
+     * lookup times out and nothing anywhere says why.
+     *
+     * Ordering: nothing held under this lock ever waits, and nothing under it takes any other
+     * lock. [writeLock] is taken inside it at most, never the reverse.
+     */
+    private val adoptLock = Any()
+
+    /**
      * How many queries may be in flight at once. Each one can block a thread of the IO pool
      * for up to three resolver timeouts, and that pool is shared with the sync transport, the
      * blocklist store and the enforcement loop's writes: a Wi-Fi whose resolvers black-hole
@@ -110,7 +125,7 @@ class WalcottVpnService : VpnService() {
      * live rather than read per query: reading LinkProperties is a binder call, and this sits in
      * the path of every DNS lookup the device makes.
      */
-    @Volatile private var upstreams: List<String> = listOf(DnsUpstreams.FALLBACK)
+    @Volatile private var upstreams: List<String> = DnsUpstreams.FALLBACKS
 
     /**
      * The resolver that answered last, tried first next time.
@@ -125,6 +140,50 @@ class WalcottVpnService : VpnService() {
     private val uidPackages = java.util.concurrent.ConcurrentHashMap<Int, String>()
 
     /**
+     * Groups the several questions one name resolution asks back into one lookup.
+     *
+     * Everything a parent is shown about this filter is a count, and every count was of DNS
+     * QUERIES: Android asks A and AAAA in parallel for every resolution and a browser adds HTTPS,
+     * so "blocked today" was two to three times the truth and the domain viewer said "seen 2 times"
+     * about a name touched once (see [LookupBursts]).
+     */
+    private val bursts = LookupBursts()
+
+    /**
+     * What was last declared to the platform as the network underneath us, and whether anything
+     * has been declared at all.
+     *
+     * Two fields rather than one because null is a real answer here — "follow the system default"
+     * — and has to be distinguishable from "we have not spoken yet", which is the state a freshly
+     * built tunnel is in.
+     */
+    private var declaredUnderlying: android.net.Network? = null
+    private var underlyingDeclared = false
+
+    /**
+     * When the resolvers were last re-read because every one of them had failed.
+     *
+     * Atomic, and a compare-and-set rather than a check-then-write: when a network dies, all
+     * [MAX_IN_FLIGHT] forwarders fail within the same millisecond and each would go and re-read
+     * the network — a burst of binder calls and concurrent adoptions at the worst possible moment.
+     */
+    private val lastRecheckMs = java.util.concurrent.atomic.AtomicLong(0)
+
+    /** Where the network callbacks run. Never the main looper: see [callbackHandler]. */
+    private var callbackThread: android.os.HandlerThread? = null
+
+    /**
+     * The handler both network callbacks are registered on.
+     *
+     * Its own thread on purpose. Each event costs half a dozen binder round trips — enumerating
+     * the networks, reading capabilities and link properties, declaring what is underneath us —
+     * and on a phone that is moving they arrive several times a minute. On the main looper that is
+     * exactly the kind of work this project forbids there, in the process the child's own screens
+     * are drawn from.
+     */
+    private var callbackHandler: android.os.Handler? = null
+
+    /**
      * The network underneath this VPN — never the VPN itself.
      *
      * Once the tunnel is up, `registerDefaultNetworkCallback` starts describing the tunnel: its
@@ -134,18 +193,60 @@ class WalcottVpnService : VpnService() {
      * would still report the filter as healthy.
      */
     private val underlyingCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onLinkPropertiesChanged(network: android.net.Network, link: android.net.LinkProperties) {
-            // Below Android 12 every matching network reports itself and the last one to speak
-            // would win, so the event is a signal to go and decide again rather than an answer.
-            val real = bestUnderlying(network) ?: return
-            val properties = if (real == network) link else runCatching { cm.getLinkProperties(real) }.getOrNull()
-            properties?.let { adoptUpstreams(it) }
-            declareUnderlying(real)
-        }
+        override fun onLinkPropertiesChanged(network: android.net.Network, link: android.net.LinkProperties) =
+            guarded("adopting a network") {
+                // Below Android 12 every matching network reports itself and the last one to speak
+                // would win, so the event is a prompt to go and decide again rather than an answer.
+                val real = bestUnderlying(network)
+                if (real == null) {
+                    // Nothing real to name. Say so rather than leaving a dead network declared.
+                    followSystemDefault()
+                    return@guarded
+                }
+                val properties =
+                    if (real == network) link else runCatching { cm.getLinkProperties(real) }.getOrNull()
+                synchronized(adoptLock) {
+                    properties?.let { adoptUpstreams(it) }
+                    declareUnderlying(real)
+                }
+            }
 
-        override fun onLost(network: android.net.Network) {
-            // Keep whatever we had: a query arriving between networks is better served by the
-            // last known resolver than by nothing, and the next onLinkPropertiesChanged fixes it.
+        override fun onLost(network: android.net.Network) = guarded("losing a network") {
+            // The resolvers are KEPT: a query arriving between networks is better served by the
+            // last known one than by nothing, and the next onLinkPropertiesChanged fixes it.
+            //
+            // What is not kept is the declaration. Everything the platform knows about this
+            // tunnel — what carries it, whether that is metered, whether it is validated — comes
+            // from what we declare, and a declaration naming a network the phone has left is a
+            // tunnel describing a network that no longer exists.
+            if (bestUnderlying(null) == null) followSystemDefault()
+        }
+    }
+
+    /**
+     * Runs [block], and survives anything it throws.
+     *
+     * A `NetworkCallback` body runs on a framework thread with no exception barrier of its own: a
+     * throwable out of one reaches the default uncaught handler and takes the whole process down.
+     * On a child's phone that process is the enforcement service, so the cost of an unlucky log
+     * line or a missing resource is a phone that has stopped being supervised, with the app still
+     * saying it is on. `Throwable` rather than `Exception` deliberately — an OEM framework path
+     * throwing `NoClassDefFoundError` is exactly the case worth surviving.
+     */
+    private inline fun guarded(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            DebugLog.e(TAG, "$what failed", t)
+        }
+    }
+
+    /** Declares that this tunnel follows whatever the system is using, because we cannot name it. */
+    private fun followSystemDefault() {
+        synchronized(adoptLock) {
+            if (underlyingDeclared && declaredUnderlying == null) return
+            DebugLog.w(TAG, "no real network to name under the tunnel; following the system default")
+            declareUnderlying(null)
         }
     }
 
@@ -156,14 +257,41 @@ class WalcottVpnService : VpnService() {
     }.getOrDefault(false)
 
     /**
-     * The network this phone really reaches the internet through, or [reported] when the active
-     * one is a VPN — which, once our own tunnel is up, it always is.
+     * The network this phone really reaches the internet through.
+     *
+     * `cm.activeNetwork` is the answer until our own tunnel is up, at which point it IS the
+     * tunnel and something else has to decide. On Android 12 and up [reported] is the platform's
+     * own best match and is taken as read. Below that the callback reports every network that
+     * matches, so [reported] is only a prompt: the candidates are ranked instead (see
+     * [UnderlyingNetworks]), because the alternative is that a phone holding Wi-Fi and mobile data
+     * at once asks the resolvers of whichever last changed.
      */
     private fun bestUnderlying(reported: android.net.Network?): android.net.Network? {
         val active = runCatching { cm.activeNetwork }.getOrNull()
         if (active != null && isRealNetwork(active)) return active
-        return reported?.takeIf { isRealNetwork(it) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return reported?.takeIf { isRealNetwork(it) }
+        }
+        return rankedUnderlying() ?: reported?.takeIf { isRealNetwork(it) }
     }
+
+    /** The best of the phone's real networks, ranked rather than taken from whoever spoke last. */
+    private fun rankedUnderlying(): android.net.Network? = runCatching {
+        @Suppress("DEPRECATION")
+        val candidates = cm.allNetworks.mapNotNull { network ->
+            val caps = cm.getNetworkCapabilities(network) ?: return@mapNotNull null
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) return@mapNotNull null
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return@mapNotNull null
+            UnderlyingNetworks.Candidate(
+                network = network,
+                validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+                wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+                ethernet = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
+                cellular = caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+            )
+        }
+        UnderlyingNetworks.best(candidates)
+    }.getOrNull()
 
     override fun onCreate() {
         super.onCreate()
@@ -212,7 +340,10 @@ class WalcottVpnService : VpnService() {
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val thread = android.os.HandlerThread("walcott-net").apply { start() }
+        callbackThread = thread
+        val handler = android.os.Handler(thread.looper)
+        callbackHandler = handler
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 // Android 12 and up names its best match and nothing else, which is the question.
@@ -228,7 +359,11 @@ class WalcottVpnService : VpnService() {
         }
     }
 
-    /** Recomputes [upstreams] from a network's resolvers, logging only real changes. */
+    /**
+     * Recomputes [upstreams] from a network's resolvers, logging only real changes.
+     *
+     * Callers hold [adoptLock]; this is one half of the adoption, not a thing to do on its own.
+     */
     private fun adoptUpstreams(link: android.net.LinkProperties) {
         val offered = runCatching { link.dnsServers.mapNotNull { it.hostAddress } }.getOrDefault(emptyList())
         // Belt and braces on top of the NOT_VPN request: a link whose only resolvers are our own
@@ -252,8 +387,14 @@ class WalcottVpnService : VpnService() {
      * the connection underneath is metered, which is half of the reason a tunnel makes a phone
      * believe it is on mobile data (see [Builder.setMetered]).
      */
-    private fun declareUnderlying(network: android.net.Network) {
-        runCatching { setUnderlyingNetworks(arrayOf(network)) }
+    private fun declareUnderlying(network: android.net.Network?) {
+        // Already current — but "we declared nothing yet" is not the same as "we declared null",
+        // and a freshly built tunnel has to speak even to say it cannot name anything.
+        if (underlyingDeclared && network == declaredUnderlying) return
+        declaredUnderlying = network
+        underlyingDeclared = true
+        runCatching { setUnderlyingNetworks(network?.let { arrayOf(it) }) }
+            .onFailure { DebugLog.w(TAG, "could not declare what carries the tunnel", it) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -307,6 +448,11 @@ class WalcottVpnService : VpnService() {
         wakeRead = pipe?.getOrNull(0)
         wakeWrite = pipe?.getOrNull(1)
         synchronized(writeLock) { tunFd = established.fileDescriptor }
+        // A new tunnel has declared nothing yet, whatever the old one had said.
+        synchronized(adoptLock) {
+            declaredUnderlying = null
+            underlyingDeclared = false
+        }
         attempts = 0
         uidPackages.clear()
         DebugLog.i(TAG, "DNS tunnel established")
@@ -419,6 +565,16 @@ class WalcottVpnService : VpnService() {
             }
             else -> return
         }
+        // Everything routed here is routed so that DNS can be read, and until now every datagram
+        // that arrived was read as a query whatever port it was addressed to — so a QUIC or
+        // HTTP/3 handshake aimed at the sentinel had its bytes walked as a question and then sent
+        // on to a real resolver on port 53. It is refused instead, and refused rather than
+        // dropped: a connectionless protocol cannot tell silence from a slow network, so the
+        // asker waited out its whole handshake timeout before trying anything else.
+        if (IpPackets.destinationPort(packet) != DNS_PORT) {
+            IpPackets.portUnreachable(packet)?.let { writePacket(it) }
+            return
+        }
         if (IpPackets.dnsStart(packet) == null) return
         if (!inFlight.tryAcquire()) {
             refuseNow(packet)
@@ -470,10 +626,16 @@ class WalcottVpnService : VpnService() {
             }
             return
         }
+        // Whether this question begins a resolution or joins one already counted. Decided ONCE,
+        // here, and handed to both things that count — the live viewer and the persisted totals —
+        // because two answers to the same question would disagree by a factor of two.
+        val firstOfLookup = bursts.beginsLookup(
+            host, pkg, DnsMessage.questionType(packet, dnsStart), SystemClock.elapsedRealtime(),
+        )
         // Both halves are already in hand, so a monitoring session is only a window onto a
         // decision this loop was making anyway. Recorded before the verdict on purpose: "this
         // app keeps trying X" is worth seeing even when X is already blocked. No-op otherwise.
-        DomainMonitor.record(host, pkg)
+        DomainMonitor.record(host, pkg, counts = firstOfLookup)
 
         if (DomainFilter.isBlocked(
                 host, pkg, familyDomains, lists, appRules, listExemptApps,
@@ -481,7 +643,8 @@ class WalcottVpnService : VpnService() {
             )
         ) {
             // Counted in memory and flushed elsewhere: this is the packet loop (see BlockCounters).
-            dev.walcott.data.BlockCounters.recordNetworkBlock(host, pkg)
+            // Once per resolution, not once per question.
+            if (firstOfLookup) dev.walcott.data.BlockCounters.recordNetworkBlock(host, pkg)
             respond(packet, dnsStart, DnsMessage.RCODE_NAME_ERROR)
         } else {
             forward(packet, dnsStart, dnsEnd)
@@ -515,7 +678,7 @@ class WalcottVpnService : VpnService() {
                 continue
             }
             lastGoodUpstream = upstream
-            relay(packet, answer)
+            relay(packet, completed(upstream, query, answer))
             return
         }
         refusal?.let {
@@ -523,10 +686,83 @@ class WalcottVpnService : VpnService() {
             return
         }
         DebugLog.w(TAG, "no upstream answered (${upstreams.joinToString()}); returning SERVFAIL")
-        // The resolvers may have changed under us while every one of them was failing.
-        runCatching { cm.getLinkProperties(cm.activeNetwork) }.getOrNull()?.let { adoptUpstreams(it) }
+        recheckResolvers()
         respond(packet, dnsStart, DnsMessage.RCODE_SERVER_FAILURE)
     }
+
+    /**
+     * Re-reads the network's resolvers, at most once every [RECHECK_INTERVAL_MS].
+     *
+     * The resolvers may have changed under us while every one of them was failing — but when a
+     * network dies, every forwarder in flight fails within the same millisecond and each of them
+     * used to come here. That is a burst of binder calls and concurrent adoptions at the worst
+     * possible moment. A compare-and-set, not a check-then-write, so exactly one of them proceeds.
+     */
+    private fun recheckResolvers() {
+        val now = SystemClock.elapsedRealtime()
+        val last = lastRecheckMs.get()
+        if (now - last < RECHECK_INTERVAL_MS || !lastRecheckMs.compareAndSet(last, now)) return
+        val link = runCatching { cm.getLinkProperties(bestUnderlying(null) ?: cm.activeNetwork) }.getOrNull()
+        if (link != null) synchronized(adoptLock) { adoptUpstreams(link) }
+    }
+
+    /**
+     * The whole answer where [answer] says there is more of it, or [answer] unchanged.
+     *
+     * A resolver sets TC when its reply did not fit a datagram, and so does [exchange] when the
+     * socket cut one. Either way the asking app's only move is to ask again over TCP — and this
+     * tunnel refuses TCP, so that is a dead end, and the name simply never resolves with the
+     * filter on. Asking over TCP here instead is the difference between a DNSSEC-signed zone or a
+     * long TXT record working and not working.
+     *
+     * If the full answer will not fit the tunnel, the truncation is relayed after all: the app
+     * then fails fast on its own TCP retry instead of waiting out a timeout for silence.
+     */
+    private fun completed(upstream: String, query: ByteArray, answer: ByteArray): ByteArray {
+        if (!DnsMessage.isTruncated(answer)) return answer
+        val full = exchangeOverTcp(upstream, query) ?: return answer
+        if (full.size + IP_UDP_OVERHEAD > MTU) {
+            DebugLog.w(TAG, "the whole answer from $upstream does not fit the tunnel; relaying the truncation")
+            return answer
+        }
+        return full
+    }
+
+    /**
+     * The same question to the same resolver over TCP, length-prefixed as RFC 1035 §4.2.2 asks.
+     *
+     * The two-byte prefix is read with `readFully` and not one `read`: TCP gives no guarantee that
+     * both bytes arrive in the same segment, and `InputStream.read(ByteArray)` is entitled to
+     * return one. Treating that as a failure is how this path silently does nothing under load.
+     *
+     * Every timeout is set from what is left of one budget, floored at a millisecond, because in
+     * Java `soTimeout = 0` does not mean "no time left" — it means block for ever, which on a
+     * bounded pool of forwarders is a lookup that never returns.
+     */
+    private fun exchangeOverTcp(upstream: String, query: ByteArray): ByteArray? = runCatching {
+        java.net.Socket().use { socket ->
+            protect(socket)
+            val deadline = SystemClock.elapsedRealtime() + TCP_FALLBACK_BUDGET_MS
+            fun left(): Int = (deadline - SystemClock.elapsedRealtime()).toInt().coerceAtLeast(1)
+            socket.soTimeout = left()
+            socket.connect(InetSocketAddress(InetAddress.getByName(upstream), DNS_PORT), left())
+            socket.getOutputStream().apply {
+                write(byteArrayOf((query.size shr 8).toByte(), query.size.toByte()))
+                write(query)
+                flush()
+            }
+            val input = java.io.DataInputStream(socket.getInputStream())
+            val header = ByteArray(2)
+            socket.soTimeout = left()
+            input.readFully(header)
+            val size = ((header[0].toInt() and 0xFF) shl 8) or (header[1].toInt() and 0xFF)
+            if (size !in 1..UPSTREAM_BUFFER) return@use null
+            val body = ByteArray(size)
+            socket.soTimeout = left()
+            input.readFully(body)
+            body.takeIf { DnsMessage.answersQuery(query, 0, it) }
+        }
+    }.getOrNull()
 
     /** The resolvers to try, the one that answered last time first. */
     private fun orderedUpstreams(): List<String> {
@@ -548,12 +784,18 @@ class WalcottVpnService : VpnService() {
             while (SystemClock.elapsedRealtime() < deadline) {
                 val reply = DatagramPacket(buf, buf.size)
                 socket.receive(reply)
-                // A datagram that fills the buffer exactly may have been cut off by it, and a
-                // truncated answer relayed without its TC bit is a lie the asking app cannot
-                // detect. Refuse rather than pass on a message we cannot vouch for.
+                // `receive` discards whatever did not fit — no error, no flag — and then reports
+                // the BUFFER's length rather than the datagram's, so a cut answer is
+                // indistinguishable from one that just fits. Relaying it would pass on a message
+                // whose header claims records it no longer contains and which ends mid-record: the
+                // asker throws it away as malformed and, TC being clear, has no reason to ask
+                // again. So it becomes an honest truncation, which [completed] then finishes over
+                // TCP.
                 if (reply.length >= buf.size) {
-                    DebugLog.w(TAG, "an answer from $upstream was too big for the tunnel; refusing it")
-                    return@use null
+                    DebugLog.w(TAG, "an answer from $upstream filled the buffer; asking again over TCP")
+                    val cut = DnsMessage.truncated(buf, reply.length)
+                    if (DnsMessage.answersQuery(query, 0, cut)) return@use cut
+                    continue
                 }
                 val answer = buf.copyOf(reply.length)
                 // A late answer to an earlier query must not be relayed as the answer to this
@@ -647,6 +889,7 @@ class WalcottVpnService : VpnService() {
         runCatching { tunnel?.close() }
         tunnel = null
         uidPackages.clear()
+        bursts.clear()
         VpnStatus.set(false, lockdown = lockdownNow())
     }
 
@@ -666,6 +909,10 @@ class WalcottVpnService : VpnService() {
     override fun onDestroy() {
         stopTunnel()
         runCatching { cm.unregisterNetworkCallback(underlyingCallback) }
+        // After unregistering, so nothing is still being delivered to a looper that has gone.
+        runCatching { callbackThread?.quitSafely() }
+        callbackThread = null
+        callbackHandler = null
         scope.cancel()
         super.onDestroy()
     }
@@ -694,6 +941,18 @@ class WalcottVpnService : VpnService() {
 
         /** Queries handled concurrently; see [inFlight]. */
         private const val MAX_IN_FLIGHT = 16
+
+        /** The only port this tunnel serves. */
+        private const val DNS_PORT = 53
+
+        /** IPv4 + UDP headers, the overhead every relayed answer is measured against. */
+        private const val IP_UDP_OVERHEAD = 28
+
+        /** The whole TCP retry of a truncated answer, connect included (see [exchangeOverTcp]). */
+        private const val TCP_FALLBACK_BUDGET_MS = 3_000L
+
+        /** How often the resolvers may be re-read after a total failure (see [recheckResolvers]). */
+        private const val RECHECK_INTERVAL_MS = 5_000L
 
         /** How long the reader parks before looking at [running] again. */
         private const val POLL_TIMEOUT_MS = 60_000

@@ -23,11 +23,22 @@ object DnsUpstreams {
     /** Used only when the network offers nothing usable of its own. */
     const val FALLBACK = "1.1.1.1"
 
+    /**
+     * The same last resort in both address families.
+     *
+     * One IPv4 literal was the whole of it, and on a mobile network that is IPv6-only with no
+     * NAT64 there is then nothing reachable at all: a phone whose network offered no resolver we
+     * could use had exactly one candidate, and no socket could be opened to it. Every lookup timed
+     * out, and the filter went on reporting itself as healthy. The cost of the second entry is one
+     * more address in a list that is only reached when the network has offered nothing.
+     */
+    val FALLBACKS: List<String> = listOf(FALLBACK, "2606:4700:4700::1111")
+
     /** At most this many are tried per query, so a bad list can't stretch one lookup for ever. */
     const val MAX_UPSTREAMS = 3
 
     /**
-     * The resolvers to try, in order: the network's own, then [FALLBACK].
+     * The resolvers to try, in order: the network's own, then [FALLBACKS].
      *
      * IPv6 resolvers count. They used to be filtered out on the grounds that the tunnel is IPv4
      * — but the tunnel's address family has nothing to do with where an allowed query is
@@ -48,7 +59,7 @@ object DnsUpstreams {
             .map { it.substringBefore('%') }
             .filter { isIpLiteral(it) && !isLinkLocal(it) && it !in exclude }
             .distinct()
-        return (usable + FALLBACK).distinct().take(MAX_UPSTREAMS)
+        return (usable + FALLBACKS).distinct().take(MAX_UPSTREAMS)
     }
 
     /**

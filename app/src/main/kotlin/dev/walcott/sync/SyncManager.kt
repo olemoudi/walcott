@@ -4698,8 +4698,11 @@ class SyncManager(
             syncStore.update { it.copy(networkLocationNotified = it.networkLocationNotified - snapshot.deviceId) }
         }
 
-        // Notify about newly installed (still unclassified => blocked) apps. The first pass only
-        // seeds the seen-set from existing data so updating the app doesn't flood the parent.
+        // Notify about newly installed apps that have no limit of their own. They are not blocked
+        // by being new — an app with no assignment is allowed, subject to the windows and the day's
+        // total like every other; the install guard is what blocks one, and it says so itself. The
+        // first pass only seeds the seen-set from existing data so updating the app doesn't flood
+        // the parent.
         val assignedPackages = settingsStore.current().assignments.keys
         if (!before.seenAppsSeeded) {
             val known = merged.flatMap { it.apps }.map { it.packageName }.toSet() + assignedPackages
@@ -4719,7 +4722,7 @@ class SyncManager(
             if (newApps.isNotEmpty()) {
                 // Always advance the seen-set (so turning the alert on later doesn't flood);
                 // only post the notification when the parent opted to be told. The feed entry
-                // is unconditional — a new, still-blocked app is always worth a durable trace.
+                // is unconditional — an app the family has not decided about is worth a trace.
                 if (worthTelling.isNotEmpty() && settingsStore.current().newAppAlerts) {
                     SyncNotifications.notifyNewApp(
                         context, who, worthTelling.first().label, worthTelling.size - 1, snapshot.deviceId,

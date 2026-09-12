@@ -625,8 +625,8 @@
     <string name="child_battery">Battery %1$d%%</string>
     <string name="child_battery_charging">Battery %1$d%% · charging</string>
     <string name="new_app_title">New app on %1$s\'s device</string>
-    <string name="new_app_text">"%1$s" was installed — it stays blocked until you classify it</string>
-    <string name="new_app_text_more">"%1$s" and %2$d more were installed — they stay blocked until you classify them</string>
+    <string name="new_app_text">"%1$s" was installed — no limit of its own yet</string>
+    <string name="new_app_text_more">"%1$s" and %2$d more were installed — no limit of their own yet</string>
     <string name="child_version">App version %1$s (%2$d)</string>
     <string name="child_version_outdated">App version %1$s (%2$d) — outdated</string>
     <string name="chip_protected">Protected</string>
@@ -720,7 +720,7 @@
     <string name="summary_not_set">Not set</string>
     <string name="summary_on">On</string>
     <string name="summary_off">Off</string>
-    <string name="summary_next_hint">Next step: enroll a child device. Its apps will appear here for you to classify — new apps stay blocked until you do.</string>
+    <string name="summary_next_hint">Next step: enroll a child device. Its apps will appear here, where you can give any of them a limit.</string>
     <string name="setup_step_child">Enroll a child device</string>
     <string name="setup_step_limits">Set daily time limits</string>
     <string name="setup_step_bedtime">Set a bedtime</string>
@@ -1868,6 +1868,15 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_110_0">
+        <item>The number of blocked lookups a family is shown was two to three times the truth. A phone asks for every web address twice at once — once for each kind of internet address — and a browser asks a third time, so one tap on one link was counted as two or three blocks. They are counted as one now. Something that keeps retrying a blocked address still shows up as trying repeatedly, which is the part worth seeing.</item>
+        <item>A new app installed on a child\'s phone was announced with "it stays blocked until you classify it", which had stopped being true: there is nothing to classify any more, and an app nobody has given a limit works normally within the family\'s bedtime, windows and daily total. The notice now says it simply has no limit of its own yet.</item>
+        <item>A web address whose answer is too big for one reply used to fail with the filter on and work with it off — long records, and any domain with signed DNS. The filter now asks again the way a phone would and passes the whole answer on.</item>
+        <item>No blocklist can take away the addresses a phone uses to check whether its wi-fi works. One that did made the phone declare a working wi-fi dead and move to mobile data, on the family\'s allowance and with nothing anywhere saying why. The eight addresses involved serve an empty page and nothing else. A domain a parent blocks by hand still wins.</item>
+        <item>On a phone holding wi-fi and mobile data at once, Android 10 and 11 could send the filter\'s questions to whichever network had most recently changed rather than the one in use. And a phone that loses its network no longer leaves the tunnel describing a network that is gone.</item>
+        <item>The filter\'s network watching moved off the phone\'s main thread, where it was doing half a dozen system calls several times a minute on a phone being carried around. Anything it throws is now survived and written down instead of stopping the app.</item>
+        <item>A last-resort DNS server for both kinds of internet address, so a mobile network that offers only the newer kind is no longer a phone that resolves nothing. And anything else sent to the filter\'s own address is refused at once rather than left waiting.</item>
     </string-array>
     <string-array name="whats_new_0_109_0">
         <item>The web filter was read line by line against a filter that has been doing only this for longer, and a lot came back. The one that matters most: a reply to a lookup is now checked to be the answer to the question that was asked, and to have come from the resolver it was asked of. Before this, the first reply to arrive won — which on a shared wi-fi is not necessarily the real one.</item>

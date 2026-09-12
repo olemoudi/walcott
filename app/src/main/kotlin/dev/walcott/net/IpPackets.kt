@@ -21,6 +21,11 @@ object IpPackets {
     /** The shortest frame that could carry a DNS header: 20 IP + 8 UDP + 12 DNS. */
     private const val MIN_DNS_FRAME = 40
 
+    /** ICMP: type 3 code 3, and the eight bytes of header before the quote. */
+    private const val ICMP_UNREACHABLE = 3
+    private const val ICMP_PORT_UNREACHABLE = 3
+    private const val ICMP_HEADER_BYTES = 8
+
     /** What a parsed frame is, as far as this filter cares. */
     data class Frame(
         val protocol: Int,
@@ -90,6 +95,21 @@ object IpPackets {
         if (frame.protocol != PROTO_UDP) return null
         return ((packet[frame.transportStart].toInt() and 0xFF) shl 8) or
             (packet[frame.transportStart + 1].toInt() and 0xFF)
+    }
+
+    /**
+     * The destination port of a UDP frame.
+     *
+     * Worth its own function because nothing used to ask. Every UDP datagram that reached the tun
+     * was read as a DNS query whatever port it was addressed to, so a QUIC or HTTP/3 handshake
+     * aimed at the sentinel had its bytes walked as a question and then sent on to a real resolver
+     * on port 53.
+     */
+    fun destinationPort(packet: ByteArray, length: Int = packet.size): Int? {
+        val frame = parse(packet, length) ?: return null
+        if (frame.protocol != PROTO_UDP) return null
+        return ((packet[frame.transportStart + 2].toInt() and 0xFF) shl 8) or
+            (packet[frame.transportStart + 3].toInt() and 0xFF)
     }
 
     /**
@@ -174,10 +194,21 @@ object IpPackets {
         val seq = readInt(request, tcp + 4)
         val dataOffset = ((request[tcp + 12].toInt() and 0xF0) shr 4) * 4
         val payloadLength = (frame.payloadEnd - (tcp + dataOffset)).coerceAtLeast(0)
-        // RFC 793 §3.4: a SYN counts as one, and the acknowledgement is what the sender would
-        // send next.
+        // RFC 793 §3.4, and the numbers are the whole point: a peer that reads a reset whose
+        // sequence is outside its window IGNORES it and goes back to waiting, which is exactly
+        // the minute-long hang this is here to end.
+        //
+        // Two shapes. An unacknowledged segment (a bare SYN, which is all this tunnel ever really
+        // sees) is refused with RST+ACK: our sequence is nothing, and we acknowledge what the
+        // sender would send next — a SYN and a FIN each counting as one byte of sequence space.
+        // A segment that already carries an acknowledgement is refused with a bare RST whose
+        // sequence is the number the sender said it was expecting; there is nothing of ours left
+        // to acknowledge, and setting ACK with a zero sequence is what gets a reset discarded.
+        val acknowledged = flags and 0x10 != 0
         val synFin = (if (flags and 0x02 != 0) 1 else 0) + (if (flags and 0x01 != 0) 1 else 0)
-        val ack = seq + payloadLength + synFin
+        val sequence = if (acknowledged) readInt(request, tcp + 8) else 0
+        val ack = if (acknowledged) 0 else seq + payloadLength + synFin
+        val resetFlags = if (acknowledged) 0x04 else 0x14
 
         val total = 20 + 20
         val out = ByteArray(total)
@@ -190,13 +221,54 @@ object IpPackets {
         writeChecksum(out, 0, 20, 10)
         out[20] = (dstPort shr 8).toByte(); out[21] = dstPort.toByte()
         out[22] = (srcPort shr 8).toByte(); out[23] = srcPort.toByte()
-        // An acknowledged reset carries the sequence the sender expects next; the segment we are
-        // refusing had none of ours to acknowledge, so the sequence is zero and ACK is set.
-        writeInt(out, 24, 0)
+        writeInt(out, 24, sequence)
         writeInt(out, 28, ack)
         out[32] = 0x50 // data offset 5, no options
-        out[33] = 0x14 // RST + ACK
+        out[33] = resetFlags.toByte()
         tcpChecksum(out)
+        return out
+    }
+
+    /**
+     * An ICMP port-unreachable for a UDP datagram this tunnel routes but does not serve, or null.
+     *
+     * The twin of [tcpReset], and the same lesson: everything routed here is routed so that DNS
+     * can be read, and a datagram to any other port used to vanish. Silence is the worst answer a
+     * tunnel can give. A connectionless protocol has no way to tell it from a slow network, so the
+     * asker waits out its whole timeout before trying anything else — which for DNS over QUIC or
+     * HTTP/3 is seconds of an app that looks hung, per attempt.
+     *
+     * The addresses are reversed so the error appears to come from the host the app addressed.
+     * That is not cosmetic: the kernel matches an ICMP error to a socket by the quoted headers and
+     * the outer source address together, and only a match becomes `ECONNREFUSED` on a connected
+     * UDP socket. Get it wrong and the datagram is discarded, which is where we started.
+     *
+     * RFC 792: type 3, code 3, four unused bytes, then the offending IP header and the first eight
+     * bytes after it — the ports, the length and the checksum, which is what the kernel needs to
+     * find the socket. There is no pseudo-header in an ICMPv4 checksum.
+     */
+    fun portUnreachable(request: ByteArray, length: Int = request.size): ByteArray? {
+        val frame = parse(request, length) ?: return null
+        if (frame.protocol != PROTO_UDP) return null
+        // The quote is the header as it arrived, options and all, plus eight bytes of datagram.
+        val quoted = minOf(frame.payloadEnd, frame.transportStart + 8)
+        if (quoted <= frame.transportStart) return null
+        val message = ByteArray(ICMP_HEADER_BYTES + quoted)
+        message[0] = ICMP_UNREACHABLE.toByte()
+        message[1] = ICMP_PORT_UNREACHABLE.toByte()
+        System.arraycopy(request, 0, message, ICMP_HEADER_BYTES, quoted)
+        val total = 20 + message.size
+        if (total > 0xFFFF) return null
+        val out = ByteArray(total)
+        out[0] = 0x45
+        out[2] = (total shr 8).toByte(); out[3] = total.toByte()
+        out[8] = 64
+        out[9] = PROTO_ICMP.toByte()
+        System.arraycopy(request, 16, out, 12, 4) // from the host the app addressed
+        System.arraycopy(request, 12, out, 16, 4) // to whoever sent it
+        writeChecksum(out, 0, 20, 10)
+        System.arraycopy(message, 0, out, 20, message.size)
+        writeChecksum(out, 20, message.size, 22)
         return out
     }
 

@@ -75,8 +75,19 @@ object DomainMonitor {
     /**
      * Notes that [packageName] looked up [host]. Called from the tunnel's packet loop, so it
      * does nothing at all — no allocation, no lock — while no session is running.
+     *
+     * [counts] is false for a query that joins a resolution already counted — the AAAA beside an A,
+     * the HTTPS a browser adds — see [LookupBursts]. Such a query still moves the sighting to the
+     * top, because it is a real moment of the app asking, but it does not add to [Sighting.count],
+     * which promises lookups and used to deliver packets: every name a child touched once read
+     * "seen 2 times".
      */
-    fun record(host: String, packageName: String?, nowMs: Long = System.currentTimeMillis()) {
+    fun record(
+        host: String,
+        packageName: String?,
+        nowMs: Long = System.currentTimeMillis(),
+        counts: Boolean = true,
+    ) {
         val domain = host.lowercase().trimEnd('.')
         if (domain.isEmpty()) return
         val current = _state.value
@@ -91,8 +102,11 @@ object DomainMonitor {
             if (!state.isActive(nowMs)) return
             val existing = state.sightings.firstOrNull { it.packageName == packageName && it.domain == domain }
             val updated = if (existing != null) {
-                state.sightings - existing + existing.copy(count = existing.count + 1, lastSeenMs = nowMs)
+                val bump = if (counts) 1 else 0
+                state.sightings - existing + existing.copy(count = existing.count + bump, lastSeenMs = nowMs)
             } else {
+                // A first sighting is one lookup whatever the burst says: a session can be started
+                // between the two halves of one, and "seen 0 times" is not a thing to show anyone.
                 state.sightings + Sighting(packageName, domain, count = 1, lastSeenMs = nowMs)
             }
             _state.value = state.copy(

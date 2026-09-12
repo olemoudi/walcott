@@ -25,8 +25,8 @@ android {
         applicationId = "dev.walcott"
         minSdk = 29
         targetSdk = 35
-        versionCode = 158
-        versionName = "0.109.0-beta"
+        versionCode = 159
+        versionName = "0.110.0-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

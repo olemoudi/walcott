@@ -78,12 +78,62 @@ object BlocklistSource {
         return domain
     }
 
+    /**
+     * The names a phone uses to decide whether the network it is on works at all.
+     *
+     * **This is not a general exception list and must not become one.** It exists for one
+     * specific, silent and expensive failure. Android decides whether a Wi-Fi has internet by
+     * fetching a `generate_204` over it; if a downloaded list refuses the name that probe uses,
+     * the probe fails, the phone marks a perfectly good Wi-Fi as having no internet, and on every
+     * vendor with an "adaptive connectivity" or "switch to mobile data automatically" feature it
+     * leaves the Wi-Fi for the mobile network. On a child's phone that is the family's data
+     * allowance being spent, the blocklist refresh's own "unmetered only" constraint going
+     * unsatisfiable, and a parent seeing a child who looks offline. Nothing anywhere says why,
+     * and this app reports the filter as working perfectly — because from its point of view it is.
+     *
+     * [NEVER_BLOCK] already spares `gstatic.com`, and therefore Android's main probe. The rest of
+     * these are not covered by it and must not be: sparing `google.com` would spare
+     * `dns.google.com` with it, which is exactly what the bypass list exists to block. So they are
+     * listed as whole hosts, never as a registrable domain.
+     *
+     * The vendor entries are here because they are the ones that actually get blocked — Xiaomi's,
+     * Huawei's and vivo's probe hosts appear on aggressive lists as telemetry, which is defensible
+     * about the domain and disastrous about the phone. Every entry serves an empty 204 and carries
+     * no content, so sparing it costs no advertising and shows a child nothing.
+     */
+    val CONNECTIVITY_CHECKS: Set<String> = setOf(
+        // Android's own, current and historical.
+        "connectivitycheck.gstatic.com",
+        "connectivitycheck.android.com",
+        "clients3.google.com",
+        "clients4.google.com",
+        // The HTTPS half of the same probe on a modern Android.
+        "www.google.com",
+        // Vendors that ship their own probe.
+        "connect.rom.miui.com",
+        "connectivitycheck.platform.hicloud.com",
+        "wifi.vivo.com.cn",
+    )
+
     /** True when [domain] is, or sits under, something in [NEVER_BLOCK]. */
-    fun isSpared(domain: String): Boolean {
-        if (domain in NEVER_BLOCK) return true
+    fun isSpared(domain: String): Boolean = endsWithin(domain, NEVER_BLOCK)
+
+    /**
+     * True when [domain] is one of the phone's own connectivity probes (see [CONNECTIVITY_CHECKS]).
+     *
+     * Asked at decision time rather than when a list is ingested, deliberately: a child's phone
+     * carries lists that were compiled by an earlier version of this app, and a guard that only
+     * ran at ingest would not protect them until the next refresh — which, on the phone this bug
+     * has just pushed onto mobile data, is a refresh that will not happen.
+     */
+    fun isConnectivityCheck(domain: String): Boolean = endsWithin(domain, CONNECTIVITY_CHECKS)
+
+    /** True when [domain] is, or sits under a label boundary below, a member of [suffixes]. */
+    private fun endsWithin(domain: String, suffixes: Set<String>): Boolean {
+        if (domain in suffixes) return true
         var index = domain.indexOf('.')
         while (index in 0 until domain.length - 1) {
-            if (domain.substring(index + 1) in NEVER_BLOCK) return true
+            if (domain.substring(index + 1) in suffixes) return true
             index = domain.indexOf('.', index + 1)
         }
         return false
