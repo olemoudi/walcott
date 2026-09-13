@@ -3,13 +3,13 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
-## Unreleased (for the next release)
+## Shipped in v0.115.0 — freeing a phone, by default and in plain sight
 
 - **"Remove" frees their phone by default.** The remove dialog's "also release their phone" box
   started unticked, so the easy path removed a member and left their phone enforcing the family's
   rules with nobody able to change them. It is ticked now wherever the phone can be released
   (`RemoteAction.canRelease`), never on a build that cannot, and the tap re-checks it. Asked for by
-  ole on 2026-09-13, deliberately left for the next release. Needs a What's New line then.
+  ole on 2026-09-13, deliberately left for the next release — this one.
 - **A release you can see waiting, and one that runs out is said.** Asked by ole the same day ("al
   liberar un hijo… desaparece, no se queda como pending"). The mechanism was already right — the
   phone's row stays until its acknowledgement — but nothing on screen said so: the pending line

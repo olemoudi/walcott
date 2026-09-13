@@ -1886,6 +1886,11 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+    <string-array name="whats_new_0_115_0">
+        <item>Removing someone now frees their phone too, unless you untick the box. It used to start unticked, which left the phone applying the family\'s rules with nobody able to change them.</item>
+        <item>A phone you asked to free says it is being freed, with a way to cancel, until it confirms. If it hasn\'t confirmed within a week you are told it is still managed, and can free it again or use the parent PIN on the phone itself.</item>
+        <item>Pending actions show “Free the phone” instead of an internal code.</item>
+    </string-array>
     <string-array name="whats_new_0_114_0">
         <item>An adult you help no longer picks up the family\'s rules. Adding a grandparent to a family with a bedtime, screen-free times or daily limits used to give them all of it; adults already added are taken off them once, keeping any rule you set for them yourself.</item>
         <item>Their quick actions open too: let their phone install anything for a setup afternoon, catch it up, or find it.</item>

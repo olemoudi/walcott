@@ -1877,6 +1877,11 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+    <string-array name="whats_new_0_115_0">
+        <item>Quitar a alguien libera ahora también su móvil, salvo que desmarques la casilla. Antes salía desmarcada, y el móvil seguía aplicando las reglas de la familia sin nadie que pudiera cambiarlas.</item>
+        <item>Un móvil que has pedido liberar aparece como «Liberándose», con opción de cancelar, hasta que lo confirma. Si no lo ha confirmado en una semana, se te avisa de que sigue gestionado y puedes volver a liberarlo o usar el PIN del padre en el propio móvil.</item>
+        <item>En «Acciones pendientes», liberar un móvil sale como «Liberar el teléfono» y no con un código interno.</item>
+    </string-array>
     <string-array name="whats_new_0_114_0">
         <item>Un adulto al que ayudas ya no hereda las reglas de la familia. Añadir a un abuelo a una familia con hora de dormir, tiempo sin pantalla o límites diarios le aplicaba todo eso; a los adultos ya añadidos se les quitan una vez, conservando las reglas que tú les hayas puesto.</item>
         <item>Sus acciones rápidas también se abren: deja que su móvil instale lo que haga falta para configurarlo, ponlo al día o encuéntralo.</item>
