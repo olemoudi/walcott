@@ -642,6 +642,8 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
         notice.kind == dev.walcott.sync.SyncManager.NOTICE_EXPIRED ->
             stringResource(R.string.notice_expired, categoryName)
         !notice.approved -> stringResource(R.string.notice_denied)
+        // Only a phone whose owner was changed from an adult being helped lands here with one.
+        notice.kind == ChildRequest.KIND_HELP -> stringResource(R.string.assist_help_seen_title)
         notice.kind == "time" -> stringResource(R.string.notice_approved_time, notice.minutes, categoryName)
         // An install ask is answered with the app itself: it arrives with its own prompt.
         notice.kind == ChildRequest.KIND_INSTALL -> stringResource(R.string.notice_approved_app, notice.text)
@@ -656,6 +658,7 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
         !notice.approved && notice.text.isNotBlank() -> notice.text
         !notice.approved -> stringResource(R.string.notice_denied_desc)
         notice.kind == ChildRequest.KIND_APP -> stringResource(R.string.notice_approved_app_ask_desc)
+        notice.kind == ChildRequest.KIND_HELP -> stringResource(R.string.assist_help_seen_body)
         else -> null
     }
     val positive = notice.approved

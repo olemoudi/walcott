@@ -37,6 +37,14 @@ object SyncNotifications {
     private const val OLD_ALERT_CHANNEL = "walcott_alerts"
 
     /**
+     * Somebody pressed the help button (see [notifyHelpAsk]). Its own channel, and not the requests
+     * one it used to share: that channel is named for extra-time requests, and a parent who
+     * silences a teenager asking for ten more minutes must not silence a grandparent asking for
+     * help with it. Asks to bypass Do Not Disturb, like [URGENT_CHANNEL].
+     */
+    private const val HELP_CHANNEL = "walcott_help"
+
+    /**
      * Fixed: there is one family per scope, so a second takeover replaces the first alert
      * rather than stacking beside it.
      */
@@ -555,11 +563,14 @@ object SyncNotifications {
      * No quick-answer actions, unlike every other ask: there is nothing to approve from the shade,
      * and a notification offering "Approve" over "Mum needs a hand" would be answering the wrong
      * question. Tapping opens the request, which is where the phone's cards are one step away.
+     *
+     * [reminder] re-posts the same notification, alerting again, while nobody has dealt with it
+     * (see [HelpAsks]).
      */
-    fun notifyHelpAsk(context: Context, childName: String, requestId: String) = post(
-        context, CHANNEL, R.string.sync_request_channel_name,
+    fun notifyHelpAsk(context: Context, childName: String, requestId: String, reminder: Boolean = false) = post(
+        context, HELP_CHANNEL, R.string.help_channel_name,
         title = context.getString(R.string.sync_help_ask_title, childName),
-        text = context.getString(R.string.sync_help_ask_text),
+        text = context.getString(if (reminder) R.string.sync_help_ask_reminder else R.string.sync_help_ask_text),
         notifId = ("ask$requestId").hashCode(),
         dest = requestDest(requestId),
     )
@@ -848,7 +859,7 @@ object SyncNotifications {
                     // ongoing (below) so that it accumulates in the shade instead of being
                     // missed. Channel settings are fixed at creation, so this can only be set
                     // here and never per notification.
-                    if (channel == URGENT_CHANNEL) {
+                    if (channel == URGENT_CHANNEL || channel == HELP_CHANNEL) {
                         runCatching { setBypassDnd(true) }
                     }
                 },

@@ -1,6 +1,7 @@
 package dev.walcott.data
 
 import dev.walcott.enforcement.DeviceRestrictions
+import dev.walcott.rules.DayType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -67,6 +68,106 @@ class MemberKindTest {
             DeviceRestrictions.KEY_WIFI in DeviceRestrictions.RECOMMENDED_FOR_ADULT,
             "blocking Wi-Fi config by default can strand the phone this mode exists to keep usable",
         )
+    }
+
+    /** A family that has written one of every rule, the way a family with children has. */
+    private val familyWithRules = PolicySettings(
+        bedtime = mapOf(DayType.SCHOOL.name to WindowDto(21 * 60, 7 * 60)),
+        allAppsBlockedWindows = mapOf(DayType.SCHOOL.name to listOf(WindowDto(17 * 60, 18 * 60))),
+        defaultAppBudget = mapOf(DayType.SCHOOL.name to 60),
+        dailyScreenBudget = mapOf(DayType.SCHOOL.name to 120),
+        appPolicies = mapOf("com.game" to AppPolicyDto(budgets = mapOf(DayType.SCHOOL.name to 30))),
+        blockedDomains = setOf("casino.example"),
+        domainAppRules = listOf(DomainAppRuleDto("ads.example", "com.game", allowOnlyFromApp = false)),
+        deviceRestrictions = setOf(DeviceRestrictions.KEY_DEBUGGING),
+    )
+
+    private fun assertNoRules(member: PolicySettings) {
+        assertTrue(member.bedtime.isEmpty(), "bedtime: ${member.bedtime}")
+        assertTrue(member.allAppsBlockedWindows.isEmpty(), "screen-free: ${member.allAppsBlockedWindows}")
+        assertTrue(member.defaultAppBudget.isEmpty(), "default limit: ${member.defaultAppBudget}")
+        assertTrue(member.dailyScreenBudget.isEmpty(), "screen total: ${member.dailyScreenBudget}")
+        assertTrue(member.appPolicies.isEmpty(), "app limits: ${member.appPolicies}")
+        assertTrue(member.blockedDomains.isEmpty(), "blocked domains: ${member.blockedDomains}")
+        assertTrue(member.domainAppRules.isEmpty(), "domain rules: ${member.domainAppRules}")
+    }
+
+    @Test
+    fun `an adult added to a family with rules starts with none of them`() {
+        // The promise the screen that creates them makes: "no bedtime and no limits". It used to be
+        // kept only in families that had no rules to inherit.
+        val adult = familyWithRules
+            .withMember("a1", "Abuela", MemberKind.ADULT, addedAtMs = 1, trackingMinutes = 15)
+            .resolveForChild("a1")
+        assertNoRules(adult)
+        assertEquals(0, adult.trackingIntervalMinutes, "an adult's location is not switched on for them")
+        assertTrue(adult.keepRingerAudible)
+        assertTrue(DeviceRestrictions.RECOMMENDED_FOR_ADULT.all { it in adult.deviceRestrictions })
+        // Anti-tamper is not a rule about the person, and an adult's phone keeps the family's.
+        assertTrue(DeviceRestrictions.KEY_DEBUGGING in adult.deviceRestrictions)
+    }
+
+    @Test
+    fun `a child added to the same family inherits every rule`() {
+        val settings = familyWithRules.withMember("c1", "Ana", MemberKind.CHILD, addedAtMs = 1, trackingMinutes = 15)
+        val child = settings.resolveForChild("c1")
+        assertEquals(familyWithRules.bedtime, child.bedtime)
+        assertEquals(familyWithRules.appPolicies, child.appPolicies)
+        assertEquals(familyWithRules.blockedDomains, child.blockedDomains)
+        assertEquals(15, child.trackingIntervalMinutes)
+        assertTrue(settings.children.single().overrides.copy(trackingIntervalMinutes = null).isEmpty)
+    }
+
+    @Test
+    fun `adults enrolled before are taken off the family's rules, keeping what was set for them`() {
+        // What 0.63 to 0.113 created: three overrides, and every rule left to inherit. One rule was
+        // then set for this adult on purpose, and that one has to survive.
+        val ownBedtime = mapOf(DayType.SCHOOL.name to WindowDto(23 * 60, 6 * 60))
+        val before = familyWithRules.copy(
+            children = listOf(
+                ChildEntry(
+                    "a1", "Abuela",
+                    ChildOverrides(trackingIntervalMinutes = 0, keepRingerAudible = true, bedtime = ownBedtime),
+                    kind = MemberKind.ADULT,
+                ),
+                ChildEntry("c1", "Ana"),
+            ),
+        )
+        val after = before.separateAdultRules()
+
+        val adult = after.resolveForChild("a1")
+        assertEquals(ownBedtime, adult.bedtime)
+        assertNoRules(adult.copy(bedtime = emptyMap()))
+        // The child's rules are the family's, exactly as before (the registry itself is compared
+        // out: it is the thing that changed, for the adult).
+        assertEquals(
+            before.resolveForChild("c1").copy(children = emptyList()),
+            after.resolveForChild("c1").copy(children = emptyList(), adultRulesSeparated = false),
+        )
+        assertTrue(after.adultRulesSeparated)
+    }
+
+    @Test
+    fun `the separation happens once, so an adult put back on the family's rules stays there`() {
+        val separated = familyWithRules
+            .copy(children = listOf(ChildEntry("a1", "Abuela", kind = MemberKind.ADULT)))
+            .separateAdultRules()
+        // The parent's "use the family's rules for everything" button, pressed on purpose.
+        val backOnFamily = separated.copy(
+            children = separated.children.map { it.copy(overrides = ChildOverrides()) },
+        )
+        assertEquals(familyWithRules.bedtime, backOnFamily.separateAdultRules().resolveForChild("a1").bedtime)
+    }
+
+    @Test
+    fun `only a registered adult reads as a member being helped`() {
+        val settings = PolicySettings(
+            children = listOf(ChildEntry("a1", "Abuela", kind = MemberKind.ADULT), ChildEntry("c1", "Ana")),
+        )
+        assertTrue(settings.isAssistedMember("a1"))
+        assertFalse(settings.isAssistedMember("c1"))
+        assertFalse(settings.isAssistedMember("unknown"))
+        assertFalse(settings.isAssistedMember(null))
     }
 
     @Test

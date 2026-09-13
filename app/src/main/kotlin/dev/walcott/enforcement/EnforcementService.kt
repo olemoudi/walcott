@@ -217,6 +217,7 @@ class EnforcementService : LifecycleService() {
         observeBlocklists()
         observeAssistance()
         observeDeviceRestrictions()
+        observeSupportMessages()
         scheduleUpdateChecks()
         scheduleLocationSampling()
         observeLiveTracking()
@@ -564,6 +565,24 @@ class EnforcementService : LifecycleService() {
                 }
                 .distinctUntilChanged()
                 .collectLatest { AppUpdateWindowAlarm.sync(this@EnforcementService) }
+        }
+    }
+
+    /**
+     * Keeps what Android says on this phone's behalf matched to whose phone it is (see
+     * [DeviceRestrictions.applySupportMessages]): the kind is corrected on the parent's phone and
+     * arrives here with the next policy.
+     */
+    private fun observeSupportMessages() {
+        val app = application as WalcottApplication
+        lifecycleScope.launch {
+            app.repository.settingsFlow
+                .map { it.isAssistedMember(app.identityStore.current().childId) }
+                .distinctUntilChanged()
+                .collect { assisted ->
+                    runCatching { DeviceRestrictions.applySupportMessages(this@EnforcementService, assisted) }
+                        .onFailure { DebugLog.w(TAG, "could not set the support messages", it) }
+                }
         }
     }
 

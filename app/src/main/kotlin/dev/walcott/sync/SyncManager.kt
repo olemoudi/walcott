@@ -233,6 +233,10 @@ class SyncManager(
     val myPendingAsks: StateFlow<List<ChildRequest>> =
         syncStore.state.map { it.pendingAsks }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    /** Which of those asks the relay has confirmed it took (see [SyncState.askReceipts]). */
+    val myAskReceipts: StateFlow<Set<String>> =
+        syncStore.state.map { it.askReceipts }.stateIn(scope, SharingStarted.Eagerly, emptySet())
+
     /** The domain selection this device last sent, and how far it got (see [sendDomains]). */
     val domainDelivery: StateFlow<DomainBatch?> =
         syncStore.state.map { it.domainBatch }.stateIn(scope, SharingStarted.Eagerly, null)
@@ -1654,7 +1658,25 @@ class SyncManager(
             android.content.Intent(context, UninstallResultReceiver::class.java),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
         ).intentSender
-        context.packageManager.packageInstaller.uninstall(pkg, sender)
+        // Locked uninstalls are a rule for the person holding the phone — the adult being helped
+        // who cannot delete the app they call their family on (see DeviceRestrictions.KEY_UNINSTALL)
+        // — and the platform applies it to this app's own removals too ("User is restricted:
+        // no_uninstall_apps"), so the family's "remove it" did nothing on exactly those phones.
+        // Lifted for this one request and put straight back: the platform checks it when it takes
+        // the request, not when the removal finishes.
+        val admin = dev.walcott.WalcottAdminReceiver.componentName(context)
+        val locked = runCatching {
+            dpm.getUserRestrictions(admin).getBoolean(android.os.UserManager.DISALLOW_UNINSTALL_APPS)
+        }.getOrDefault(false)
+        if (locked) runCatching { dpm.clearUserRestriction(admin, android.os.UserManager.DISALLOW_UNINSTALL_APPS) }
+        try {
+            context.packageManager.packageInstaller.uninstall(pkg, sender)
+        } finally {
+            // Not while a release is taking every restriction off: that would put one back for good.
+            if (locked && !dev.walcott.enforcement.PanicRelease.inProgress) {
+                runCatching { dpm.addUserRestriction(admin, android.os.UserManager.DISALLOW_UNINSTALL_APPS) }
+            }
+        }
     }
 
     // --- Install guard: what turned up that nobody approved (see InstallGuard) ---
@@ -1918,6 +1940,7 @@ class SyncManager(
             state.copy(
                 pendingRequests = state.pendingRequests - deadRequests.toSet(),
                 pendingAsks = state.pendingAsks - deadAsks.toSet(),
+                askReceipts = state.askReceipts - deadAsks.map { it.requestId }.toSet(),
                 // Never over an answer the child hasn't read yet: an approval from a minute ago
                 // matters more than a request that ran out, and this is the only copy of it.
                 lastNotice = state.lastNotice ?: expiredNotice,
@@ -3298,6 +3321,37 @@ class SyncManager(
         publishSelf()
     }
 
+    /**
+     * Parent: says again that somebody pressed the help button, while nobody has dealt with it
+     * (see [HelpAsks]). Driven by [ParentCheckAlarm], so it happens with the app closed.
+     *
+     * Read from the stored state rather than [pendingAsks]: this runs from a broadcast straight
+     * after a poll, and an eagerly shared flow may not have caught up with what the poll wrote.
+     */
+    suspend fun remindUnansweredHelp() {
+        if (identityStore.current().effectiveMode != DeviceMode.PARENT) return
+        val s = syncStore.current()
+        if (s.helpReminders.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val resolved = s.resolutions.map { it.requestId }.toSet()
+        val waiting = s.children.flatMap { child ->
+            child.asks
+                .filter { it.kind == ChildRequest.KIND_HELP && it.requestId !in resolved }
+                .filterNot { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
+                .map { child.displayName to it }
+        }
+        var reminders = s.helpReminders.filterKeys { id -> waiting.any { it.second.requestId == id } }
+        for ((name, ask) in waiting) {
+            val reminded = reminders[ask.requestId] ?: continue
+            if (!HelpAsks.reminderDue(reminded, now)) continue
+            SyncNotifications.notifyHelpAsk(
+                context, SyncNotifications.who(name, familyLabel()), ask.requestId, reminder = true,
+            )
+            reminders = reminders + (ask.requestId to reminded.next(now))
+        }
+        if (reminders != s.helpReminders) syncStore.update { it.copy(helpReminders = reminders) }
+    }
+
     /** PIN check with escalating brute-force lockout (device-local state). */
     /**
      * The two deadlines of a rescue code typed into this phone (wall, monotonic); both 0 when
@@ -3531,6 +3585,10 @@ class SyncManager(
 
     private suspend fun publishSelfOrThrow(forReceipt: Boolean = false): Long? {
         var receipt: Long? = null
+        // Whether this publish waits for the relay's receipt: asked for by the caller, or made so
+        // by a help ask still unconfirmed (below). Either way a publish that got no receipt did not
+        // happen, and must not count as one.
+        var receiptWanted = forReceipt
         val id = identityStore.current()
         val transport = transport ?: return null
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
@@ -3813,17 +3871,27 @@ class SyncManager(
                     dev.walcott.debug.DebugLog.w(TAG, "snapshot over size budget; degraded: ${fitted.degraded}")
                 }
                 awaitedEcho = nonce to System.currentTimeMillis()
-                if (forReceipt) {
+                // A help ask the relay has not confirmed makes EVERY publish a receipted one,
+                // whoever asked for it — the button itself, the heartbeat, a re-emit after a
+                // reconnect. That is what moves the phone's own screen from "waiting to send" to
+                // "sent" the moment a message really leaves, without a retry path of its own to
+                // get wrong (see SyncState.askReceipts).
+                val confirming = HelpAsks.unconfirmed(s.pendingAsks, s.askReceipts)
+                receiptWanted = forReceipt || confirming.isNotEmpty()
+                if (receiptWanted) {
                     // Blocking, so off this caller's thread — and the one place in this class
                     // that finds out whether a message really left the phone (see PanicProtocol).
                     receipt = withContext(Dispatchers.IO) { transport.publishForReceipt(fitted.encoded) }
+                    if (receipt != null && confirming.isNotEmpty()) {
+                        syncStore.update { st -> st.copy(askReceipts = st.askReceipts + confirming) }
+                    }
                 } else {
                     transport.publish(fitted.encoded)
                 }
                 // Count the round only when slices actually went out, and only after the publish
                 // succeeded: charging a retry to a message that was never sent would burn the
                 // give-up budget on this device's own connectivity rather than on the parent.
-                if (snapshot.domainChunks.isNotEmpty() && (!forReceipt || receipt != null)) {
+                if (snapshot.domainChunks.isNotEmpty() && (!receiptWanted || receipt != null)) {
                     syncStore.update { st ->
                         st.copy(domainBatch = st.domainBatch?.let { DomainDelivery.published(it) })
                     }
@@ -3831,7 +3899,9 @@ class SyncManager(
             }
             Role.UNPAIRED -> Unit
         }
-        if (id.role != Role.UNPAIRED && (!forReceipt || receipt != null)) {
+        // Otherwise the heartbeat, seeing a fresh publish, would wait out its interval before
+        // trying a help ask again that never left the phone.
+        if (id.role != Role.UNPAIRED && (!receiptWanted || receipt != null)) {
             lastPublishAtMs = System.currentTimeMillis()
         }
         return receipt
@@ -4568,6 +4638,7 @@ class SyncManager(
             it.copy(
                 pendingRequests = it.pendingRequests.filterNot { r -> r.requestId in resolvedIds },
                 pendingAsks = it.pendingAsks.filterNot { a -> a.requestId in resolvedIds },
+                askReceipts = it.askReceipts - resolvedIds,
                 appliedResolutionIds = SyncState.rememberApplied(it.appliedResolutionIds, resolvedIds),
                 appliedBonusIds = SyncState.rememberApplied(it.appliedBonusIds, bonusIds),
                 lastNotice = noticeFromResolution ?: noticeFromBonus ?: it.lastNotice,
@@ -5320,6 +5391,10 @@ class SyncManager(
                 // The one ask with no answer to give from the shade — it is a person, not a
                 // permission (see notifyHelpAsk).
                 SyncNotifications.notifyHelpAsk(context, who, ask.requestId)
+                // Timed from THIS phone's notification, never from the asking phone's clock.
+                syncStore.update {
+                    it.copy(helpReminders = it.helpReminders + (ask.requestId to HelpAsks.Reminded(lastAtMs = System.currentTimeMillis())))
+                }
             } else {
                 SyncNotifications.notifyAsk(context, who, ask.text, ask.requestId, quickAnswer)
             }

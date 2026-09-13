@@ -178,6 +178,31 @@ class InstallGuardScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `the parent removes an app even when the phone locks uninstalling`() {
+        // Locking uninstalls is part of what an adult being helped starts with
+        // (DeviceRestrictions.RECOMMENDED_FOR_ADULT): a rule for the person holding the phone, so
+        // they cannot delete the app they call their family on. It must not also be a rule for
+        // the family. The platform refuses a Device Owner's uninstall while it is in force, and
+        // the refusal only reached the debug log — so on exactly the phones that start with it,
+        // "remove this app" and the guard's own removal of an unapproved one did nothing at all.
+        parent.pushPolicy(PolicyJson.build(version = 2, restrictions = installBlock + "uninstall"))
+        awaitDevice("uninstalling locked") { device.hasRestriction("no_uninstall_apps") }
+        device.openInstallWindow(unapproved)
+        awaitDevice("the window lifted the install block") { !device.installBlocked() }
+        assertTrue(device.install(fixture("unapproved-app.apk")).contains("Success"))
+        device.reconcileInstalls()
+        awaitDevice("the app settled as approved") { device.isInstalled(unapproved) }
+
+        val commandId = parent.sendCommand(deviceId, RemoteAction.UNINSTALL_APP, arg = unapproved)
+        val ack = parent.awaitAck(commandId)
+        assertEquals(RemoteAction.DETAIL_REMOVING, ack.detail)
+        awaitDevice("the app removed on the parent's command") { !device.isInstalled(unapproved) }
+        // And the lock is back: lifting it for the family's removal must not leave the phone's
+        // owner able to delete things from then on.
+        awaitDevice("uninstalling locked again") { device.hasRestriction("no_uninstall_apps") }
+    }
+
+    @Test
     fun `removing an app that is not there says so instead of pretending`() {
         val commandId = parent.sendCommand(deviceId, RemoteAction.UNINSTALL_APP, arg = "com.not.installed.anywhere")
         val ack = parent.awaitAck(commandId)

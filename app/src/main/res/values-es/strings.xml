@@ -1642,6 +1642,8 @@
     <string name="ring_home_stop">Parar el sonido</string>
     <string name="admin_support_short">Walcott aplica en este móvil las reglas de tu familia. Ábrelo para ver qué está limitado y pedir más tiempo.</string>
     <string name="admin_support_long">Este móvil lo configura tu familia con Walcott. Abre Walcott para ver qué está limitado ahora mismo, cuánto queda hoy y pedir más tiempo.</string>
+    <string name="admin_support_short_assisted">Tu familia ha configurado este móvil con Walcott para poder ayudarte con él. Abre Walcott para pedirles ayuda.</string>
+    <string name="admin_support_long_assisted">Tu familia cuida este móvil con Walcott, así que los ajustes que es fácil cambiar sin querer se quedan como están. Abre Walcott y pulsa \"Pedir ayuda\", y tu familia recibirá un aviso.</string>
     <string name="apps_reach_out_tag">Sirve para localizarte</string>
     <string name="app_reach_out_title">Con esta app contactan con alguien</string>
     <string name="app_reach_out_hint">Los límites que nadie escribió sobre esta app —el límite por defecto de la familia y el tiempo de pantalla total al día— no la tocan, así que un número puesto en otra pantalla no puede dejarte sin sus mensajes. Un límite puesto aquí sí se aplica.</string>
@@ -1703,7 +1705,7 @@
     <string name="ringer_desc">Deshace el silencio y la vibración, y mantiene el volumen de llamada.</string>
     <string name="ringer_state_audible">Ahora mismo se oiría una llamada.</string>
     <string name="ringer_state_silent">Ahora mismo este móvil está en silencio.</string>
-    <string name="ringer_dnd_blocked">Tiene el modo No molestar y Walcott no puede quitarlo desde aquí — hay que quitarlo en ese móvil.</string>
+    <string name="ringer_dnd_blocked">Tiene el modo No molestar y ese móvil no ha dado permiso a Walcott para quitarlo. Walcott lo pide en el propio móvil; cuando lo tenga, esto se arregla solo.</string>
     <plurals name="ringer_restores">
         <item quantity="one">Restablecido una vez desde que se configuró.</item>
         <item quantity="other">Restablecido %1$d veces desde que se configuró.</item>
@@ -1743,15 +1745,23 @@
     <string name="assist_help_button">Pedir ayuda</string>
     <string name="assist_help_sent">Enviado. Ya pueden verlo.</string>
     <string name="assist_help_waiting">Has pedido ayuda. Tu familia ya está avisada.</string>
+    <string name="assist_help_queued_title">Enviando…</string>
+    <string name="assist_help_queued_body">Saldrá en cuanto este móvil pueda contactar con tu familia. No hace falta que vuelvas a pulsar.</string>
+    <string name="assist_help_seen_title">Tu familia lo ha visto</string>
+    <string name="assist_help_seen_body">Alguien ya se ha ocupado de tu aviso. Si todavía necesitas ayuda, vuelve a pulsar el botón.</string>
     <string name="assist_help_text">Ha pedido ayuda desde su móvil</string>
     <string name="assist_ask_help_summary">%1$s ha pedido ayuda.</string>
     <string name="assist_ask_help_hint">Ha pulsado el botón de ayuda en su móvil. Llámale, o usa las tarjetas de su ficha.</string>
     <string name="assist_ask_help_done">Ya le he ayudado</string>
     <string name="sync_help_ask_title">%1$s necesita ayuda</string>
     <string name="sync_help_ask_text">Ha pulsado el botón de ayuda en su móvil.</string>
+    <string name="sync_help_ask_reminder">Sigue esperando: nadie lo ha marcado todavía como atendido.</string>
+    <string name="help_channel_name">Peticiones de ayuda</string>
 
     <string name="req_notification_access_title">Permite a Walcott leer las notificaciones</string>
     <string name="req_notification_access_body">Tu familia ha pedido guardar un registro de lo que llega a este móvil, para poder responder «¿ha llegado?» sin que tengas que leerles la pantalla. Solo tú puedes darlo. Si Android dice que el ajuste está restringido, abre la información de la app de Walcott, toca ⋮, elige «Permitir ajustes restringidos» y vuelve a intentarlo.</string>
+    <string name="req_dnd_access_title">Permite a Walcott quitar el modo No molestar</string>
+    <string name="req_dnd_access_body">Tu familia ha pedido que este móvil siga sonando para poder localizarte siempre. El modo No molestar silencia las llamadas igualmente, y solo tú puedes permitir que Walcott lo quite. Si Android dice que el ajuste está restringido, abre la información de la app de Walcott, toca ⋮, elige «Permitir ajustes restringidos» y vuelve a intentarlo.</string>
 
     <string name="restriction_group_tamper">Manipulación</string>
     <string name="restriction_group_settings">Ajustes que se cambian sin querer</string>
@@ -1771,7 +1781,7 @@
     <string name="restriction_network_reset_title">Bloquear el restablecimiento de red</string>
     <string name="restriction_network_reset_desc">Un botón de Ajustes que borra de golpe todos los ajustes de Wi‑Fi y de datos</string>
     <string name="restriction_accounts_title">Bloquear añadir o quitar cuentas</string>
-    <string name="restriction_accounts_desc">Quitar la cuenta de Google se lleva por delante la tienda de apps y las copias de seguridad</string>
+    <string name="restriction_accounts_desc">Quitar la cuenta de Google se lleva por delante la tienda de apps y las copias de seguridad. Mientras esté activo tampoco se puede añadir ninguna cuenta: desactívalo mientras inicias sesión.</string>
     <string name="restriction_default_apps_title">Bloquear el cambio de apps por defecto</string>
     <string name="restriction_default_apps_desc">Qué app abre un enlace, una llamada o una foto</string>
     <string name="restriction_uninstall_title">Bloquear la desinstalación de apps</string>
@@ -1858,6 +1868,14 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_114_0">
+        <item>Un adulto al que ayudas ya no hereda las reglas de la familia. Añadir a un abuelo a una familia con hora de dormir, tiempo sin pantalla o límites diarios le aplicaba todo eso; a los adultos ya añadidos se les quitan una vez, conservando las reglas que tú les hayas puesto.</item>
+        <item>Sus acciones rápidas también se abren: deja que su móvil instale lo que haga falta para configurarlo, ponlo al día o encuéntralo.</item>
+        <item>«Pedir ayuda» es más difícil de perder. Tiene su propio canal de notificaciones, que atraviesa el modo No molestar, te lo recuerda unas cuantas veces mientras nadie lo atiende, y su móvil dice ahora si el aviso ha salido de verdad y cuándo lo has visto.</item>
+        <item>Quitar una app del móvil de un adulto funciona: bloquear las desinstalaciones en el móvil también bloqueaba las tuyas.</item>
+        <item>Bloquear el brillo primero sube una pantalla casi a oscuras a algo legible, y mantener el timbre audible ahora pide a ese móvil permiso para quitar el modo No molestar.</item>
+        <item>Los avisos de Android de «gestionado por tu administrador» en el móvil de un adulto le hablan a esa persona, no a un niño que pide más tiempo.</item>
     </string-array>
     <string-array name="whats_new_0_113_0">
         <item>¿Configurando el móvil de un hijo con muchas apps que instalar? Sus acciones rápidas ya pueden dejarle instalar lo que sea durante 30 minutos o 2 horas. Lo que se instale desde Google Play se queda, el bloqueo vuelve solo, y un botón arriba de la hoja lo cierra antes.</item>

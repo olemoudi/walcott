@@ -293,58 +293,62 @@ fun QuickActionsSheet(
                     )
                 }
 
-                // --- More time, right now ---
-                QuickRow(Icons.Outlined.MoreTime, stringResource(R.string.quick_give_time)) {
-                    BONUS_MINUTES.forEach { minutes ->
-                        val label = stringResource(R.string.quick_plus_minutes, minutes)
-                        val said = stringResource(R.string.quick_gave_time, minutes, entry.name)
-                        ActionChip(label) {
-                            viewModel.giveBonus(snapshot.deviceId, ExtraTime.ALL_APPS, minutes)
-                            done(said)
-                        }
-                    }
-                }
-
-                // --- Pause ---
-                QuickRow(
-                    Icons.Outlined.PauseCircle,
-                    stringResource(R.string.quick_pause),
-                    detail = pausedUntilMs?.let {
-                        stringResource(
-                            R.string.quick_paused_until,
-                            java.time.Instant.ofEpochMilli(it)
-                                .atZone(java.time.ZoneId.systemDefault()).toLocalTime().hhmm(),
-                        )
-                    },
-                ) {
-                    if (pausedUntilMs != null) {
-                        val resumed = stringResource(R.string.quick_resumed, entry.name)
-                        ActionChip(stringResource(R.string.quick_resume), enabled = understandsExceptions) {
-                            viewModel.resumeChild(childId)
-                            done(resumed)
-                        }
-                    } else {
-                        PAUSE_MINUTES.forEach { minutes ->
-                            val label = stringResource(R.string.quick_minutes, minutes)
-                            val said = stringResource(R.string.quick_paused, entry.name, minutes)
-                            ActionChip(label, enabled = understandsExceptions) {
-                                viewModel.pauseChild(childId, minutes)
-                                done(said, undo) { viewModel.resumeChild(childId) }
+                // Minutes and pauses are answers to limits, and an adult being helped has none unless
+                // somebody set them on purpose — in which case their page is where that lives.
+                if (!entry.isAdult) {
+                    // --- More time, right now ---
+                    QuickRow(Icons.Outlined.MoreTime, stringResource(R.string.quick_give_time)) {
+                        BONUS_MINUTES.forEach { minutes ->
+                            val label = stringResource(R.string.quick_plus_minutes, minutes)
+                            val said = stringResource(R.string.quick_gave_time, minutes, entry.name)
+                            ActionChip(label) {
+                                viewModel.giveBonus(snapshot.deviceId, ExtraTime.ALL_APPS, minutes)
+                                done(said)
                             }
                         }
-                        // "Until dinner is over", "until we get home" — the answers that are an
-                        // hour rather than a duration, and that a parent would otherwise have to
-                        // do the subtraction for.
-                        ActionChip(stringResource(R.string.quick_pause_until), enabled = understandsExceptions) {
-                            askPauseUntil = true
-                        }
-                        // The open-ended one, which is still not open-ended: it ends at
-                        // OPEN_PAUSE_ENDS_AT_HOUR whatever happens, because a pause nobody
-                        // remembers to lift is a rule nobody wrote.
-                        val openSaid = stringResource(R.string.quick_paused_open, entry.name)
-                        ActionChip(stringResource(R.string.quick_pause_open), enabled = understandsExceptions) {
-                            viewModel.pauseChildUntil(childId, nextMorning(now, OPEN_PAUSE_ENDS_AT_HOUR))
-                            done(openSaid, undo) { viewModel.resumeChild(childId) }
+                    }
+
+                    // --- Pause ---
+                    QuickRow(
+                        Icons.Outlined.PauseCircle,
+                        stringResource(R.string.quick_pause),
+                        detail = pausedUntilMs?.let {
+                            stringResource(
+                                R.string.quick_paused_until,
+                                java.time.Instant.ofEpochMilli(it)
+                                    .atZone(java.time.ZoneId.systemDefault()).toLocalTime().hhmm(),
+                            )
+                        },
+                    ) {
+                        if (pausedUntilMs != null) {
+                            val resumed = stringResource(R.string.quick_resumed, entry.name)
+                            ActionChip(stringResource(R.string.quick_resume), enabled = understandsExceptions) {
+                                viewModel.resumeChild(childId)
+                                done(resumed)
+                            }
+                        } else {
+                            PAUSE_MINUTES.forEach { minutes ->
+                                val label = stringResource(R.string.quick_minutes, minutes)
+                                val said = stringResource(R.string.quick_paused, entry.name, minutes)
+                                ActionChip(label, enabled = understandsExceptions) {
+                                    viewModel.pauseChild(childId, minutes)
+                                    done(said, undo) { viewModel.resumeChild(childId) }
+                                }
+                            }
+                            // "Until dinner is over", "until we get home" — the answers that are an
+                            // hour rather than a duration, and that a parent would otherwise have to
+                            // do the subtraction for.
+                            ActionChip(stringResource(R.string.quick_pause_until), enabled = understandsExceptions) {
+                                askPauseUntil = true
+                            }
+                            // The open-ended one, which is still not open-ended: it ends at
+                            // OPEN_PAUSE_ENDS_AT_HOUR whatever happens, because a pause nobody
+                            // remembers to lift is a rule nobody wrote.
+                            val openSaid = stringResource(R.string.quick_paused_open, entry.name)
+                            ActionChip(stringResource(R.string.quick_pause_open), enabled = understandsExceptions) {
+                                viewModel.pauseChildUntil(childId, nextMorning(now, OPEN_PAUSE_ENDS_AT_HOUR))
+                                done(openSaid, undo) { viewModel.resumeChild(childId) }
+                            }
                         }
                     }
                 }
@@ -546,7 +550,7 @@ fun QuickActionsSheet(
                     )
                 }
 
-                if (!understandsExceptions) {
+                if (!understandsExceptions && (!entry.isAdult || config.scheduledBedtimeAt(now) != null || bedtimeChanged)) {
                     Text(
                         stringResource(R.string.quick_needs_update),
                         style = MaterialTheme.typography.bodySmall,

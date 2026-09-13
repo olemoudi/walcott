@@ -224,6 +224,11 @@ class WalcottRepository(
         }
     }
 
+    /** One-time: adults already enrolled stop inheriting the family's rules (see PolicySettings.separateAdultRules). */
+    suspend fun separateAdultRulesIfNeeded() {
+        if (!settingsStore.current().adultRulesSeparated) updateSettings { it.separateAdultRules() }
+    }
+
     // --- Parent PIN ---
 
     suspend fun hasPin(): Boolean = settingsStore.current().pinHash != null

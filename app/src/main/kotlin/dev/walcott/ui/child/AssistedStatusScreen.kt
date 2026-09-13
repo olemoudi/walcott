@@ -5,12 +5,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -22,6 +25,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -66,11 +70,26 @@ fun AssistedStatusScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val channelOfflineSince by viewModel.channelOfflineSince.collectAsStateWithLifecycle()
     val myAsks by viewModel.myPendingAsks.collectAsStateWithLifecycle()
+    val askReceipts by viewModel.myAskReceipts.collectAsStateWithLifecycle()
+    val notice by viewModel.notice.collectAsStateWithLifecycle()
     val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
 
     // One unanswered ask at a time. The button that sent it says so instead of offering to send a
     // second one, which is what somebody who is not sure it worked will otherwise do — five times.
-    val helpPending = myAsks.any { it.kind == ChildRequest.KIND_HELP }
+    // And it says which of two things is true: written down on this phone and waiting for a
+    // connection, or taken by the relay and on its way. It used to say "sent" for both, under a
+    // line saying the phone could not reach anybody.
+    val helpAsk = myAsks.firstOrNull { it.kind == ChildRequest.KIND_HELP }
+    val helpState = when {
+        helpAsk == null -> HelpState.READY
+        helpAsk.requestId in askReceipts -> HelpState.SENT
+        else -> HelpState.WAITING
+    }
+    // The family's answer, which on this screen has one form only: somebody has dealt with it.
+    val helpSeen = notice?.takeIf {
+        it.kind == ChildRequest.KIND_HELP && it.approved &&
+            !dev.walcott.sync.SyncEngine.noticeExpired(it.atMs, System.currentTimeMillis())
+    }
     val offline = channelOfflineSince != null
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -100,13 +119,16 @@ fun AssistedStatusScreen(
             item {
                 ConnectionLine(offline)
             }
+            if (helpSeen != null) {
+                item { HelpSeenCard(onDismiss = { viewModel.dismissNotice() }) }
+            }
             item {
                 // Resolved outside the lambda: the text is what the family's feed and their
                 // "waiting on" list will read, so it is localised on THIS phone, in the language
                 // its owner set — not looked up when the button happens to be pressed.
                 val helpText = stringResource(R.string.assist_help_text)
                 HelpCard(
-                    pending = helpPending,
+                    state = helpState,
                     onAsk = { viewModel.askFor(ChildRequest.KIND_HELP, helpText) },
                 )
             }
@@ -186,7 +208,7 @@ private fun ConnectionLine(offline: Boolean) {
  * to answer it is on the screen in front of them.
  */
 @Composable
-private fun HelpCard(pending: Boolean, onAsk: () -> Unit) {
+private fun HelpCard(state: HelpState, onAsk: () -> Unit) {
     val spacing = Tokens.spacing
     WalcottCard(color = MaterialTheme.colorScheme.primaryContainer) {
         Column(
@@ -201,18 +223,30 @@ private fun HelpCard(pending: Boolean, onAsk: () -> Unit) {
                 modifier = Modifier.size(40.dp),
             )
             Text(
-                stringResource(if (pending) R.string.assist_help_sent else R.string.assist_help_title),
+                stringResource(
+                    when (state) {
+                        HelpState.READY -> R.string.assist_help_title
+                        HelpState.WAITING -> R.string.assist_help_queued_title
+                        HelpState.SENT -> R.string.assist_help_sent
+                    },
+                ),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 textAlign = TextAlign.Center,
             )
             Text(
-                stringResource(if (pending) R.string.assist_help_waiting else R.string.assist_help_body),
+                stringResource(
+                    when (state) {
+                        HelpState.READY -> R.string.assist_help_body
+                        HelpState.WAITING -> R.string.assist_help_queued_body
+                        HelpState.SENT -> R.string.assist_help_waiting
+                    },
+                ),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 textAlign = TextAlign.Center,
             )
-            if (!pending) {
+            if (state == HelpState.READY) {
                 Button(
                     onClick = onAsk,
                     modifier = Modifier.fillMaxWidth().height(64.dp).padding(top = spacing.xs),
@@ -226,6 +260,48 @@ private fun HelpCard(pending: Boolean, onAsk: () -> Unit) {
                         style = MaterialTheme.typography.titleLarge,
                     )
                 }
+            }
+        }
+    }
+}
+
+/** Where the one ask on this screen stands, as far as this phone can know. */
+private enum class HelpState { READY, WAITING, SENT }
+
+/**
+ * The family's answer to a call for help: somebody has dealt with it.
+ *
+ * Without it the card simply went back to offering the button, and a person who had asked and heard
+ * nothing could not tell "they know" from "it never went" — the same doubt that makes somebody press
+ * again.
+ */
+@Composable
+private fun HelpSeenCard(onDismiss: () -> Unit) {
+    val spacing = Tokens.spacing
+    val onColor = MaterialTheme.colorScheme.onSecondaryContainer
+    WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.CheckCircle,
+                    contentDescription = null,
+                    tint = onColor,
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(Modifier.width(spacing.sm))
+                Text(
+                    stringResource(R.string.assist_help_seen_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = onColor,
+                )
+            }
+            Text(
+                stringResource(R.string.assist_help_seen_body),
+                style = MaterialTheme.typography.bodyLarge,
+                color = onColor,
+            )
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                Text(stringResource(R.string.action_ok))
             }
         }
     }

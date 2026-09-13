@@ -45,6 +45,30 @@ class DeviceSetupTest {
     }
 
     @Test
+    fun `do not disturb access is asked for only where the ringer is kept audible`() {
+        // The guard's permission, not the phone's: a phone whose family never asked for an audible
+        // ringer has no use for Walcott being able to switch DND off.
+        assertFalse(
+            DeviceRequirement.DND_ACCESS in DeviceSetup.applicable(healthy().copy(dndAccessGranted = false)),
+        )
+        assertTrue(
+            DeviceRequirement.DND_ACCESS in
+                DeviceSetup.unmet(healthy().copy(ringerGuardWanted = true, dndAccessGranted = false)),
+        )
+        assertFalse(
+            DeviceRequirement.DND_ACCESS in
+                DeviceSetup.unmet(healthy().copy(ringerGuardWanted = true, dndAccessGranted = true)),
+        )
+    }
+
+    @Test
+    fun `do not disturb access is never asked of a parent phone`() {
+        val parent = healthy(enforcingChild = false, deviceOwner = false)
+            .copy(ringerGuardWanted = true, dndAccessGranted = false)
+        assertFalse(DeviceRequirement.DND_ACCESS in DeviceSetup.unmet(parent))
+    }
+
+    @Test
     fun `notification access is a child-side requirement, not a parent one`() {
         // The log lives on the phone that receives the notifications. A parent phone keeping one
         // would be recording the wrong person.

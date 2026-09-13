@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.NotificationsOff
@@ -375,6 +376,7 @@ internal fun iconFor(requirement: DeviceRequirement): ImageVector = when (requir
     DeviceRequirement.ACCESSIBILITY -> Icons.Outlined.TouchApp
     DeviceRequirement.WEB_FILTER -> Icons.Outlined.Language
     DeviceRequirement.LOCATION_PERMISSION, DeviceRequirement.LOCATION_SERVICE -> Icons.Outlined.LocationOff
+    DeviceRequirement.DND_ACCESS -> Icons.Outlined.DoNotDisturbOn
     DeviceRequirement.BATTERY_OPTIMIZATION -> Icons.Outlined.BatteryAlert
     DeviceRequirement.BACKGROUND_RESTRICTION -> Icons.Outlined.BatteryAlert
 }

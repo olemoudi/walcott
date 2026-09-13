@@ -76,6 +76,21 @@ enum class DeviceRequirement(
     ),
 
     /**
+     * Child: Do Not Disturb access, when the family asked this phone to keep its ringer audible.
+     *
+     * The ringer guard undoes silent and vibrate by itself; Do Not Disturb is the one way a phone
+     * stays unreachable that it cannot undo without this, because switching DND off belongs to apps
+     * the phone's owner has let in and a Device Owner cannot let itself in. Until it was asked for
+     * here, the guard's "lift DND" step could never run on any phone. Not critical: the guard works
+     * without it until the day somebody turns DND on.
+     */
+    DND_ACCESS(
+        critical = false,
+        titleRes = R.string.req_dnd_access_title,
+        bodyRes = R.string.req_dnd_access_body,
+    ),
+
+    /**
      * Both: "Restricted" in the app's own battery settings — one tap, on the screen that just
      * told somebody how much battery Walcott uses.
      *
@@ -139,6 +154,10 @@ data class DeviceFacts(
     val notificationAccessGranted: Boolean = true,
     /** The app has been put on "Restricted" battery usage (see [DeviceRequirement.BACKGROUND_RESTRICTION]). */
     val backgroundRestricted: Boolean = false,
+    /** The rules ask this device to keep its ringer audible (see AudioGuard). */
+    val ringerGuardWanted: Boolean = false,
+    /** The phone's owner has let Walcott change Do Not Disturb. */
+    val dndAccessGranted: Boolean = true,
 )
 
 /**
@@ -177,6 +196,8 @@ object DeviceSetup {
             // Only where a log was actually asked for. A family that never turned it on must
             // never be shown a card offering to let this app read their messages.
             if (facts.notificationLogWanted) applicable += DeviceRequirement.NOTIFICATION_ACCESS
+            // Likewise only where the ringer guard is on: it is the guard's permission, not the phone's.
+            if (facts.ringerGuardWanted) applicable += DeviceRequirement.DND_ACCESS
             if (facts.locationWanted) {
                 // A Device Owner force-grants the permission (see LocationPolicy), so asking the
                 // child for it there would be a card nobody can act on and nobody needs to.
@@ -206,6 +227,7 @@ object DeviceSetup {
         DeviceRequirement.NOTIFICATION_ACCESS -> facts.notificationAccessGranted
         DeviceRequirement.LOCATION_PERMISSION -> facts.locationPermissionGranted
         DeviceRequirement.LOCATION_SERVICE -> facts.locationServiceEnabled
+        DeviceRequirement.DND_ACCESS -> facts.dndAccessGranted
         DeviceRequirement.BATTERY_OPTIMIZATION -> facts.ignoringBatteryOptimizations
         DeviceRequirement.BACKGROUND_RESTRICTION -> !facts.backgroundRestricted
     }

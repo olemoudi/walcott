@@ -76,7 +76,15 @@ class WalcottApplication : Application() {
 
         // One-time seeding on the parent (children receive it via sync).
         appScope.launch {
-            if (identityStore.current().role == Role.PARENT) repository.seedHardeningIfNeeded()
+            if (identityStore.current().role == Role.PARENT) {
+                repository.seedHardeningIfNeeded()
+                // Every family this phone runs, not only its own: an adult who inherits a bedtime
+                // is the same mistake whichever family they were added to.
+                hub.allNow().forEach { family ->
+                    runCatching { family.repository.separateAdultRulesIfNeeded() }
+                        .onFailure { DebugLog.w("WalcottApp", "could not take adults off the family's rules", it) }
+                }
+            }
         }
 
         // Keep the app up to date: a periodic check plus one now (covers app launch).

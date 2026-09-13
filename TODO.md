@@ -3,6 +3,76 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.114.0 — the phone that is helped, reviewed end to end
+
+A review of the assisted-adult mode on 2026-09-13, asked for by ole ("revisa la parte destinada a
+supervisar adultos"), then "arregla todo". Seven faults read in the code and two more proven on the
+emulator. New features the review suggested (call buttons, remote brightness, per-member lists, a
+wellbeing alarm) were NOT part of it and are listed at the end.
+
+**An adult inherited the family's rules.** `addChild` gave an adult three overrides (location, the
+accident-proofing, the ringer) and left every rule null, and null means inherit: a grandparent added
+to a family with a bedtime got the bedtime, while the sheet that created them said "no bedtime and no
+limits" and their own screen had nowhere to say why an app stopped opening. Now
+`PolicySettings.withMember` gives an adult `ChildOverrides.withoutFamilyRules()` — bedtime,
+screen-free windows, both budgets, per-app limits, typed domains and domain rules all empty — and
+`separateAdultRules` does the same once for adults already enrolled, field by field so a rule set for
+that adult on purpose survives (flag `adultRulesSeparated`, run at parent start-up for every family).
+Public blocklists are family-only on the wire and still reach an adult; a per-member switch is a
+feature, not this fix.
+
+**0.113's install window was unreachable for adults**, the members who start with installs blocked:
+the quick actions sheet was hidden for them. It opens for everybody now; for an adult the minutes and
+pause rows are left out (bedtime was already conditional on there being one).
+
+**"Sent. They can see it now." was said before anything was sent.** The help card read the ask from
+the phone's own pending list, so offline it said "sent" under "this phone can't reach your family".
+`SyncState.askReceipts` holds the asks the relay confirmed; while a help ask is unconfirmed EVERY
+child publish is a receipted one (`HelpAsks.unconfirmed`), so the heartbeat or a reconnect turns
+"Sending…" into "Sent" without a retry path of its own. When a parent taps "I've helped", the phone
+shows "Your family has seen it" (the resolution notice, which the assisted home never rendered).
+
+**The parent's alert was easy to lose.** It went out once, on the channel named "Extra-time
+requests" — silencing a teenager's requests silenced a grandparent's call for help — without a DND
+bypass. Now its own `walcott_help` channel asking to bypass DND, and `HelpAsks` reminders: up to three,
+15 min apart, timed from this phone's notification (never the asking phone's clock), driven from
+`ParentCheckAlarm` after the poll so an answer given on another parent's phone stops them.
+
+**Locked uninstalls stopped the family's removals (proven on the AVD).** `DISALLOW_UNINSTALL_APPS` is
+in the adult defaults, and the platform applies it to the Device Owner's own `PackageInstaller`
+uninstall — logcat: `PackageManager: User is restricted: no_uninstall_apps`; the app only logged
+`status=-1`. So "remove this app" and the guard's removal of an unapproved one did nothing on exactly
+those phones. `silentUninstall` lifts it for the one request and puts it back (not during a release);
+the platform checks it when it takes the request. New scenario
+`InstallGuardScenarioTest.the parent removes an app even when the phone locks uninstalling`, red on
+0.113, green now.
+
+**Locking brightness froze a dark screen (proven on the AVD).** The restriction has no side effect:
+brightness 1 stayed 1. Like location and auto-time, the setting is put in a safe state first:
+`DeviceRestrictions.MIN_LOCKED_BRIGHTNESS` (25/255, about half-way along Android's perceptual slider)
+for a manual screen only — adaptive is the phone choosing. Scenario
+`AssistedScenarioTest.a screen that is almost dark is made readable before its brightness is locked`.
+
+**The ringer guard's Do Not Disturb half could never run.** `AudioGuard.liftDoNotDisturb` needs DND
+access, the manifest did not declare `ACCESS_NOTIFICATION_POLICY` (so Walcott was not even listed in
+that setting) and nothing asked for it. Now declared, asked for by the guided setup as
+`DeviceRequirement.DND_ACCESS` where the ringer guard is on (not critical), and the guard also reacts
+to `ACTION_INTERRUPTION_FILTER_CHANGED` rather than waiting for the watchdog. Not verified on a phone
+with DND access granted: the AVD suite does not grant it.
+
+**What the phone said about itself was worded for a child.** Android's "managed by your administrator"
+text said "open it to ask for more time" on an adult's phone. `DeviceRestrictions.applySupportMessages`
+picks the wording by `PolicySettings.isAssistedMember`, from the enforcement service (on a kind change)
+and the watchdog (for a change of language).
+
+**Accounts.** `DISALLOW_MODIFY_ACCOUNTS` blocks adding an account as well as removing one; that is the
+restriction working, not a fault, so its description now says to switch it off while signing in.
+
+Suggested by the review and not done: call buttons on the adult's home; phone-health lines for
+support (airplane, mobile data, storage); setting brightness and timeout remotely
+(`setSystemSetting`); per-member blocklists (scam list on for adults); an opt-in "not used for N
+hours" alarm; location attached to a help ask; call screening; a no-reset enrollment for adults.
+
 ## Shipped in v0.113.0 — installs for a setup afternoon, asking for an app the way that works, and a note that touched the search field
 
 Three things ole asked for on 2026-09-13, after enrolling a real phone with 0.112.

@@ -73,6 +73,11 @@ object ParentCheckAlarm {
         }
         runCatching { ParentPoll.pollAll(context) }
             .onFailure { DebugLog.e(TAG, "parent catch-up poll failed", it) }
+        // After the poll, so an answer given on another parent's phone is already known here.
+        runCatching {
+            val app = context.applicationContext as? WalcottApplication
+            app?.hub?.allNow()?.forEach { family -> family.syncManager.remindUnansweredHelp() }
+        }.onFailure { DebugLog.w(TAG, "help reminders failed", it) }
         // Re-pace the chain now that the poll has refreshed what the children look like. This
         // replaces the fast default the receiver armed before doing any of it — that one is the
         // safety net for a poll that throws, this one is the considered answer.

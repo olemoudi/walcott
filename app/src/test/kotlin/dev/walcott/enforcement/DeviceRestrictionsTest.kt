@@ -2,6 +2,7 @@ package dev.walcott.enforcement
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class DeviceRestrictionsTest {
@@ -67,5 +68,21 @@ class DeviceRestrictionsTest {
             listOf(android.os.UserManager.DISALLOW_SAFE_BOOT),
             DeviceRestrictions.FEATURES.first { it.key == DeviceRestrictions.KEY_SAFE_BOOT }.restrictions,
         )
+    }
+
+    @Test
+    fun `a dark manual screen is raised before its brightness is locked, and nothing else is touched`() {
+        // Locking freezes the value, so the floor is the difference between "a screen that stays
+        // readable" and "a screen that stays black". An adaptive screen is the phone choosing, and
+        // a brighter one is somebody's preference: neither is corrected.
+        assertEquals(
+            DeviceRestrictions.MIN_LOCKED_BRIGHTNESS,
+            DeviceRestrictions.lockedBrightnessFloor(manual = true, current = 1),
+        )
+        assertNull(
+            DeviceRestrictions.lockedBrightnessFloor(manual = true, current = DeviceRestrictions.MIN_LOCKED_BRIGHTNESS),
+        )
+        assertNull(DeviceRestrictions.lockedBrightnessFloor(manual = true, current = 200))
+        assertNull(DeviceRestrictions.lockedBrightnessFloor(manual = false, current = 0))
     }
 }

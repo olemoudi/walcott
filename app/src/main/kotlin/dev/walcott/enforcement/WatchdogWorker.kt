@@ -36,6 +36,10 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 settings.restrictionKeysToApply()?.let { keys ->
                     val refused = DeviceRestrictions.apply(applicationContext, keys, app.syncManager.installExemption.value)
                     runCatching { app.syncManager.recordRestrictionGaps(refused) }
+                    DeviceRestrictions.applySupportMessages(
+                        applicationContext,
+                        settings.isAssistedMember(IdentityStore(applicationContext).current().childId),
+                    )
                 }
                 // The DNS filter can be torn down without us: another VPN app takes the tun,
                 // or the system revokes it. Nothing else notices — the enforcement service only

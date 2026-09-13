@@ -406,7 +406,7 @@ fun ChildDetailScreen(
             onShowCode = if (snapshot != null) ({ showCode = !showCode }) else null,
             // The same sheet the home offers, because the parent who opened this page to "do
             // something about it now" is the one who came here from a phone call, not a rule.
-            onQuickActions = if (entry.isAdult) null else ({ showQuickActions = true }),
+            onQuickActions = { showQuickActions = true },
         )
         LazyColumn(
             state = listState,

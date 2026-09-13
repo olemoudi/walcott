@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.UserManager
+import android.provider.Settings
 import dev.walcott.R
 import dev.walcott.WalcottAdminReceiver
 
@@ -59,6 +60,14 @@ object DeviceRestrictions {
     const val KEY_ACCOUNTS = "accounts"
     const val KEY_UNINSTALL = "uninstall"
     const val KEY_NETWORK_RESET = "network_reset"
+
+    /**
+     * The brightness a manual screen is raised to before its brightness is locked, on the 0-255
+     * scale `Settings.System.SCREEN_BRIGHTNESS` uses: about half-way along the slider, since
+     * Android draws that slider on a perceptual curve. Locking freezes whatever the value is, and
+     * a screen locked at the bottom is the "broken phone" the lock exists to prevent.
+     */
+    const val MIN_LOCKED_BRIGHTNESS = 25
 
     /** The PIN-gated window choices: a quick errand, a session, and "I don't know" (8 h). */
     const val INSTALL_EXEMPTION_SHORT_MS = 10 * 60 * 1000L
@@ -211,20 +220,6 @@ object DeviceRestrictions {
             }
         }
 
-        // What the phone says on its own behalf wherever Android tells somebody an action is
-        // "managed by your administrator" — changing the date, installing something, resetting
-        // the phone. Until now those screens named an administrator and nothing else, which is
-        // the least useful true sentence a phone can produce: the person reading it is the one
-        // holding the phone, and what they need is which app to open and what it can do for
-        // them. Cleared again on handback (see DeviceHandback).
-        runCatching {
-            val short = context.getString(R.string.admin_support_short)
-            val long = context.getString(R.string.admin_support_long)
-            // Compared as text, so a change of the phone's language still rewrites them.
-            if (dpm.getShortSupportMessage(admin)?.toString() != short) dpm.setShortSupportMessage(admin, short)
-            if (dpm.getLongSupportMessage(admin)?.toString() != long) dpm.setLongSupportMessage(admin, long)
-        }
-
         // Null when the system will not say: then every restriction is written, as before.
         val inForce = runCatching { dpm.getUserRestrictions(admin) }.getOrNull()
         for (feature in FEATURES) {
@@ -256,6 +251,7 @@ object DeviceRestrictions {
                 runCatching { dpm.setAutoTimeZoneEnabled(admin, true) }
             }
         }
+        if (KEY_BRIGHTNESS in enabledKeys) raiseDarkScreen(context, dpm, admin)
         runCatching {
             dpm.setKeyguardDisabledFeatures(
                 admin,
@@ -264,6 +260,58 @@ object DeviceRestrictions {
             )
         }
         return refused
+    }
+
+    /**
+     * What the phone says on its own behalf wherever Android tells somebody an action is "managed by
+     * your administrator" — changing the date, installing something, resetting the phone. Device
+     * Owner only; cleared again on handback (see DeviceHandback).
+     *
+     * Those screens used to name an administrator and nothing else, which is the least useful true
+     * sentence a phone can produce: the person reading it is the one holding the phone, and what
+     * they need is which app to open and what it can do for them. And WHICH person: on the phone of
+     * an adult being helped ([assisted]) there is no time to ask for and nothing limited to see, so
+     * the child's sentence would be the wrong one twice over.
+     */
+    fun applySupportMessages(context: Context, assisted: Boolean) {
+        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        if (PanicRelease.inProgress) return
+        val admin = WalcottAdminReceiver.componentName(context)
+        runCatching {
+            val short = context.getString(
+                if (assisted) R.string.admin_support_short_assisted else R.string.admin_support_short,
+            )
+            val long = context.getString(
+                if (assisted) R.string.admin_support_long_assisted else R.string.admin_support_long,
+            )
+            // Compared as text, so a change of the phone's language still rewrites them.
+            if (dpm.getShortSupportMessage(admin)?.toString() != short) dpm.setShortSupportMessage(admin, short)
+            if (dpm.getLongSupportMessage(admin)?.toString() != long) dpm.setLongSupportMessage(admin, long)
+        }
+    }
+
+    /**
+     * The brightness to raise a screen to before it is locked, or null to leave it alone: only a
+     * manual screen below [MIN_LOCKED_BRIGHTNESS]. An adaptive one is the phone choosing, not a
+     * value stuck where somebody's thumb left it, and a brighter one is somebody's preference.
+     */
+    fun lockedBrightnessFloor(manual: Boolean, current: Int): Int? =
+        if (manual && current < MIN_LOCKED_BRIGHTNESS) MIN_LOCKED_BRIGHTNESS else null
+
+    /** Raises a dark manual screen to [MIN_LOCKED_BRIGHTNESS] (see [lockedBrightnessFloor]). */
+    private fun raiseDarkScreen(context: Context, dpm: DevicePolicyManager, admin: ComponentName) {
+        runCatching {
+            val resolver = context.contentResolver
+            val manual = Settings.System.getInt(
+                resolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
+            ) == Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            val current = Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS, 255)
+            lockedBrightnessFloor(manual, current)?.let { floor ->
+                dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS, floor.toString())
+                dev.walcott.debug.DebugLog.i(TAG, "screen raised from $current to $floor before its brightness was locked")
+            }
+        }.onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not raise a dark screen", it) }
     }
 
     /**

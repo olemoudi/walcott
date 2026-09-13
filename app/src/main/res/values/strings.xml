@@ -1645,6 +1645,8 @@
     <string name="ring_home_stop">Stop the sound</string>
     <string name="admin_support_short">Walcott is keeping your family\'s rules on this phone. Open it to see what is limited and to ask for more time.</string>
     <string name="admin_support_long">This phone is set up by your family with Walcott. Open Walcott to see what is limited right now, how long is left today, and to ask for more time.</string>
+    <string name="admin_support_short_assisted">Your family set up this phone with Walcott so they can help you with it. Open Walcott to ask them for help.</string>
+    <string name="admin_support_long_assisted">Your family looks after this phone with Walcott, so the settings that are easy to change by accident stay as they are. Open Walcott and press \"Ask for help\", and your family will be told.</string>
     <string name="apps_reach_out_tag">Reaches you</string>
     <string name="app_reach_out_title">This is how they reach a person</string>
     <string name="app_reach_out_hint">Limits nobody wrote about this app — the family default and the total screen time a day — leave it alone, so a number typed on another screen can never stop them texting you. A limit set here does apply.</string>
@@ -1709,7 +1711,7 @@
     <string name="ringer_desc">Undoes silent and vibrate, and keeps the ring volume up.</string>
     <string name="ringer_state_audible">A call would be heard right now.</string>
     <string name="ringer_state_silent">This phone is on silent right now.</string>
-    <string name="ringer_dnd_blocked">Do Not Disturb is on, and Walcott can\'t switch it off from here — it has to be turned off on that phone.</string>
+    <string name="ringer_dnd_blocked">Do Not Disturb is on, and that phone hasn\'t let Walcott switch it off. Walcott asks for that on the phone itself; once allowed, this puts itself right.</string>
     <plurals name="ringer_restores">
         <item quantity="one">Put back once since it was set up.</item>
         <item quantity="other">Put back %1$d times since it was set up.</item>
@@ -1750,16 +1752,24 @@
     <string name="assist_help_button">Ask for help</string>
     <string name="assist_help_sent">Sent. They can see it now.</string>
     <string name="assist_help_waiting">You asked for help. Your family has been told.</string>
+    <string name="assist_help_queued_title">Sending…</string>
+    <string name="assist_help_queued_body">It goes the moment this phone can reach your family. You don\'t need to press again.</string>
+    <string name="assist_help_seen_title">Your family has seen it</string>
+    <string name="assist_help_seen_body">Somebody has dealt with your call for help. If you still need a hand, press the button again.</string>
     <string name="assist_help_text">Asked for help from their phone</string>
     <string name="assist_ask_help_summary">%1$s asked for help.</string>
     <string name="assist_ask_help_hint">They pressed the help button on their phone. Call them, or use the cards on their page.</string>
     <string name="assist_ask_help_done">I\'ve helped</string>
     <string name="sync_help_ask_title">%1$s needs a hand</string>
     <string name="sync_help_ask_text">They pressed the help button on their phone.</string>
+    <string name="sync_help_ask_reminder">Still waiting: nobody has marked this as dealt with yet.</string>
+    <string name="help_channel_name">Calls for help</string>
 
     <!-- The one permission only the phone's owner can grant, asked for where it is needed. -->
     <string name="req_notification_access_title">Let Walcott read notifications</string>
     <string name="req_notification_access_body">Your family asked to keep a log of what arrives on this phone, so they can answer \"did it arrive?\" without you having to read your screen to them. Nobody but you can grant this. If Android says the setting is restricted, open Walcott\'s App info, tap ⋮, choose “Allow restricted settings” and try again.</string>
+    <string name="req_dnd_access_title">Let Walcott switch off Do Not Disturb</string>
+    <string name="req_dnd_access_body">Your family asked for this phone to keep ringing, so they can always reach you. Do Not Disturb silences calls anyway, and only you can let Walcott switch it off. If Android says the setting is restricted, open Walcott\'s App info, tap ⋮, choose “Allow restricted settings” and try again.</string>
 
     <!-- Device protection, grouped: tampering, settings changed by accident, apps. -->
     <string name="restriction_group_tamper">Tampering</string>
@@ -1780,7 +1790,7 @@
     <string name="restriction_network_reset_title">Block resetting the network</string>
     <string name="restriction_network_reset_desc">One button in Settings that clears every Wi‑Fi and mobile setting at once</string>
     <string name="restriction_accounts_title">Block adding or removing accounts</string>
-    <string name="restriction_accounts_desc">Removing the Google account takes the app store and the backups with it</string>
+    <string name="restriction_accounts_desc">Removing the Google account takes the app store and the backups with it. While this is on no account can be added either, so turn it off while signing in.</string>
     <string name="restriction_default_apps_title">Block changing the default apps</string>
     <string name="restriction_default_apps_desc">Which app opens a link, a call or a photo</string>
     <string name="restriction_uninstall_title">Block uninstalling apps</string>
@@ -1867,6 +1877,14 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_114_0">
+        <item>An adult you help no longer picks up the family\'s rules. Adding a grandparent to a family with a bedtime, screen-free times or daily limits used to give them all of it; adults already added are taken off them once, keeping any rule you set for them yourself.</item>
+        <item>Their quick actions open too: let their phone install anything for a setup afternoon, catch it up, or find it.</item>
+        <item>“Ask for help” is harder to miss. It has its own notification channel that gets through Do Not Disturb, reminds you a few times while nobody has dealt with it, and their phone now says whether the call has really gone out, and when you have seen it.</item>
+        <item>Removing an app from an adult\'s phone works: locking uninstalls on the phone was also stopping yours.</item>
+        <item>Locking brightness first brings a nearly dark screen up to something readable, and keeping the ringer audible now asks that phone for permission to switch Do Not Disturb off.</item>
+        <item>Android\'s “managed by your administrator” messages on an adult\'s phone now speak to them, not to a child asking for more time.</item>
     </string-array>
     <string-array name="whats_new_0_113_0">
         <item>Setting up a child\'s phone with lots of apps to install? Their quick actions can now let the phone install anything for 30 minutes or 2 hours. Whatever is installed from Google Play stays, the block comes back on its own, and a button at the top of the sheet closes it early.</item>

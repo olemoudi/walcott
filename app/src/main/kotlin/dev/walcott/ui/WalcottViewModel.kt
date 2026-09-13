@@ -245,6 +245,7 @@ class WalcottViewModel(
     /** This device's own unanswered requests/asks, for the child home's "waiting" section. */
     val myPendingRequests: StateFlow<List<dev.walcott.sync.ExtraTimeRequest>> = sync.myPendingRequests
     val myPendingAsks: StateFlow<List<dev.walcott.sync.ChildRequest>> = sync.myPendingAsks
+    val myAskReceipts: StateFlow<Set<String>> = sync.myAskReceipts
     /** The parents' latest answer (approval/denial/bonus), until dismissed. */
     val notice: StateFlow<dev.walcott.sync.NoticeEntry?> = sync.notice
 
@@ -504,37 +505,14 @@ class WalcottViewModel(
     /**
      * Registers a member and returns its id so the UI can navigate to the detail right away.
      *
-     * [kind] decides what they START with, never what they can have (see [dev.walcott.data.MemberKind]):
-     *
-     *  - A **child** gets location tracking, because that is what a parent expects from enrolling
-     *    one, and no protections beyond the family's.
-     *  - An **adult** gets the accident-proofing instead ([DeviceRestrictions.RECOMMENDED_FOR_ADULT])
-     *    and a ringer that stays audible — the two things somebody supporting a phone from a
-     *    distance always ends up wanting — and NO location tracking, because an adult's whereabouts
-     *    is not something to switch on for them by default. One tap turns it on if they agree.
+     * [kind] decides what they START with, never what they can have (see
+     * [dev.walcott.data.PolicySettings.withMember]).
      */
     fun addChild(name: String, kind: String = dev.walcott.data.MemberKind.CHILD): String {
         val childId = java.util.UUID.randomUUID().toString()
-        val adult = kind == dev.walcott.data.MemberKind.ADULT
         viewModelScope.launch {
             repository.updateSettings {
-                it.copy(
-                    children = it.children + dev.walcott.data.ChildEntry(
-                        childId,
-                        name,
-                        overrides = dev.walcott.data.ChildOverrides(
-                            trackingIntervalMinutes = if (adult) 0 else DEFAULT_TRACKING_MINUTES,
-                            deviceRestrictions = if (adult) {
-                                it.deviceRestrictions + dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_FOR_ADULT
-                            } else {
-                                null
-                            },
-                            keepRingerAudible = if (adult) true else null,
-                        ),
-                        addedAtMs = System.currentTimeMillis(),
-                        kind = dev.walcott.data.MemberKind.of(kind),
-                    ),
-                )
+                it.withMember(childId, name, kind, System.currentTimeMillis(), DEFAULT_TRACKING_MINUTES)
             }
         }
         return childId

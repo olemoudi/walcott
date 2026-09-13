@@ -148,14 +148,21 @@ object AudioGuard {
         BroadcastReceiver() {
 
         override fun onReceive(context: Context, intent: Intent?) {
-            if (intent?.action != AudioManager.RINGER_MODE_CHANGED_ACTION) return
+            if (intent?.action !in FILTER_ACTIONS) return
             liftDoNotDisturb(context)
             if (enforce(context, minPercent())) onRestored()
         }
 
         companion object {
+            // Do Not Disturb switching on is its own broadcast, and not always a ringer-mode
+            // change: without it a phone put on DND waited for the next watchdog pass.
+            private val FILTER_ACTIONS = setOf(
+                AudioManager.RINGER_MODE_CHANGED_ACTION,
+                NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED,
+            )
+
             val FILTER: android.content.IntentFilter =
-                android.content.IntentFilter(AudioManager.RINGER_MODE_CHANGED_ACTION)
+                android.content.IntentFilter().apply { FILTER_ACTIONS.forEach { addAction(it) } }
         }
     }
 }

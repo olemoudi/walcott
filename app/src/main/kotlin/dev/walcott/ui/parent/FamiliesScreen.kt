@@ -501,10 +501,11 @@ fun FamiliesScreen(
                         position = cardPosition(index, settings.children.size),
                         onClick = { onOpenChild(entry.childId) },
                         onOpenMap = { onOpenMap(entry.childId) },
-                        // Limits, minutes and bedtime are what these do: an adult being helped
-                        // has none of them, and a member with no phone yet has nothing to act on
-                        // — their card leads to the page with the pairing code instead.
-                        onQuickActions = if (entry.isAdult || snapshot == null) {
+                        // A member with no phone yet has nothing to act on — their card leads to
+                        // the page with the pairing code instead. An adult being helped gets the
+                        // sheet without the rows about limits: opening installs for a setup
+                        // afternoon, catching up and finding the phone are theirs as much as anyone's.
+                        onQuickActions = if (snapshot == null) {
                             null
                         } else {
                             ({ quickActionsFor = entry.childId })

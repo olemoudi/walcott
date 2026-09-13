@@ -230,6 +230,12 @@ data class SyncState(
     val pendingRequests: List<ExtraTimeRequest> = emptyList(),
     val pendingAsks: List<ChildRequest> = emptyList(),
     /**
+     * CHILD: the asks the relay has confirmed it took. Only a help ask is waited on (see
+     * [HelpAsks.unconfirmed]): "sent" on the one button an adult being helped has must mean sent,
+     * not "written down on this phone" — which is all it meant while the phone was offline.
+     */
+    val askReceipts: Set<String> = emptySet(),
+    /**
      * Ids of answers already applied, so a re-emitted parent snapshot cannot grant the same
      * minutes twice. Bounded (see [SyncState.rememberApplied]): the parent retires an answer long
      * before it could fall out of a list this long, and an unbounded set on a phone enrolled for
@@ -517,6 +523,8 @@ data class SyncState(
     val children: List<ChildSnapshot> = emptyList(),
     /** deviceId -> wall-clock ms of the last message received from that child. */
     val lastSeen: Map<String, Long> = emptyMap(),
+    /** PARENT: requestId -> how often an unanswered help ask has been announced here (see [HelpAsks]). */
+    val helpReminders: Map<String, HelpAsks.Reminded> = emptyMap(),
     /** deviceId -> the lastSeen value we already alerted about (one alert per outage). */
     val staleNotifiedLastSeen: Map<String, Long> = emptyMap(),
     /**

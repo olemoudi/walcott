@@ -48,6 +48,8 @@ object DeviceSetupProbe {
             notificationAccessGranted =
                 dev.walcott.notifications.NotificationLog.accessGranted(context),
             backgroundRestricted = backgroundRestricted(context),
+            ringerGuardWanted = settings?.keepRingerAudible == true,
+            dndAccessGranted = dndAccessGranted(context),
         )
     }
 
@@ -66,6 +68,11 @@ object DeviceSetupProbe {
                 ?.appStandbyBucket == android.app.usage.UsageStatsManager.STANDBY_BUCKET_RESTRICTED
         restrictedByUser || restrictedBucket
     }.getOrDefault(false)
+
+    /** Whether the phone's owner has let Walcott change Do Not Disturb (see AudioGuard.liftDoNotDisturb). */
+    fun dndAccessGranted(context: Context): Boolean = runCatching {
+        context.getSystemService(android.app.NotificationManager::class.java).isNotificationPolicyAccessGranted
+    }.getOrDefault(true)
 
     fun notificationsEnabled(context: Context): Boolean =
         runCatching { NotificationManagerCompat.from(context).areNotificationsEnabled() }.getOrDefault(true)
@@ -103,6 +110,9 @@ object DeviceSetupProbe {
             DeviceRequirement.NOTIFICATION_ACCESS -> dev.walcott.notifications.NotificationLog.settingsIntent()
             DeviceRequirement.ACCESSIBILITY -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             DeviceRequirement.LOCATION_SERVICE -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+            // The list of apps with Do Not Disturb access; like the listener list, there is no
+            // per-app page to link to.
+            DeviceRequirement.DND_ACCESS -> Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
             DeviceRequirement.BATTERY_OPTIMIZATION ->
                 // The list, not the permission-gated direct prompt: no extra permission needed.
                 Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)

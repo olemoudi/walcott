@@ -547,6 +547,24 @@ data class ChildOverrides(
             bedtime, allAppsBlockedWindows, defaultAppBudget, dailyScreenBudget,
             appPolicies, blockedDomains, deviceRestrictions,
         ).size
+
+    /**
+     * These overrides with every rule this member has not been given replaced by "none" rather than
+     * "the family's" — what an adult being helped starts with (see [MemberKind]).
+     *
+     * Field by field, so a rule somebody did set for this member stays: only a null, which means
+     * "inherit", is turned into an empty rule. Location, updates and the support switches are not
+     * rules and are left as they are.
+     */
+    fun withoutFamilyRules(): ChildOverrides = copy(
+        bedtime = bedtime ?: emptyMap(),
+        allAppsBlockedWindows = allAppsBlockedWindows ?: emptyMap(),
+        defaultAppBudget = defaultAppBudget ?: emptyMap(),
+        dailyScreenBudget = dailyScreenBudget ?: emptyMap(),
+        appPolicies = appPolicies ?: emptyMap(),
+        blockedDomains = blockedDomains ?: emptySet(),
+        domainAppRules = domainAppRules ?: emptyList(),
+    )
 }
 
 /** A child the parent registered; the per-child enrollment QR enrolls a device as this child. */
@@ -789,6 +807,12 @@ data class PolicySettings(
     /** True once the defaults 0.107 added were seeded (see [seedRestrictionsV2]). */
     val hardeningSeededV2: Boolean = false,
     /**
+     * True once the adults already in the registry were taken off the family's rules (see
+     * [separateAdultRules]). Once only: a parent who then puts an adult back on the family's rules
+     * on purpose is not overruled at the next start.
+     */
+    val adultRulesSeparated: Boolean = false,
+    /**
      * Family default for keeping a device's ringer audible (see [ChildOverrides.keepRingerAudible]).
      * Off: a family of teenagers has not asked for their phones to un-silence themselves.
      */
@@ -857,6 +881,63 @@ data class PolicySettings(
     fun seedRestrictionsV2(defaults: Set<String>): PolicySettings =
         if (hardeningSeededV2) this
         else copy(deviceRestrictions = deviceRestrictions + defaults, hardeningSeededV2 = true)
+
+    /**
+     * The registry with somebody new in it, who starts with what their [kind] gives them.
+     *
+     * The kind decides what a member STARTS with, never what they can have (see [MemberKind]):
+     *
+     *  - A **child** gets location tracking every [trackingMinutes], because that is what a parent
+     *    expects from enrolling one, and otherwise the family's rules and protections.
+     *  - An **adult** gets none of the family's rules ([ChildOverrides.withoutFamilyRules]): a
+     *    grandparent enrolled into a family with a bedtime must not get the bedtime. They get the
+     *    accident-proofing instead, on top of the family's anti-tamper locks
+     *    ([dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_FOR_ADULT]), a ringer that stays
+     *    audible, and NO location tracking — an adult's whereabouts is not something to switch on
+     *    for them by default.
+     */
+    fun withMember(
+        childId: String,
+        name: String,
+        kind: String,
+        addedAtMs: Long,
+        trackingMinutes: Int,
+    ): PolicySettings {
+        val resolvedKind = MemberKind.of(kind)
+        val overrides = if (resolvedKind == MemberKind.ADULT) {
+            ChildOverrides(
+                trackingIntervalMinutes = 0,
+                deviceRestrictions = deviceRestrictions +
+                    dev.walcott.enforcement.DeviceRestrictions.RECOMMENDED_FOR_ADULT,
+                keepRingerAudible = true,
+            ).withoutFamilyRules()
+        } else {
+            ChildOverrides(trackingIntervalMinutes = trackingMinutes)
+        }
+        return copy(children = children + ChildEntry(childId, name, overrides, addedAtMs, resolvedKind))
+    }
+
+    /**
+     * Adults already in the registry, taken off the family's rules, once.
+     *
+     * Until 0.114 an adult was created with three overrides and nothing else, so every other rule
+     * was null — which means "inherit" — and an adult enrolled into a family with a bedtime, a
+     * screen-free afternoon or a daily limit got all of them, from a screen that had just promised
+     * "no bedtime and no limits". Nothing on their own phone said why an app had stopped opening.
+     * A rule somebody did give an adult stays (see [ChildOverrides.withoutFamilyRules]).
+     */
+    fun separateAdultRules(): PolicySettings =
+        if (adultRulesSeparated) this
+        else copy(
+            children = children.map { entry ->
+                if (entry.isAdult) entry.copy(overrides = entry.overrides.withoutFamilyRules()) else entry
+            },
+            adultRulesSeparated = true,
+        )
+
+    /** Whether [childId] is an adult being helped (see [MemberKind]); false for anybody unknown. */
+    fun isAssistedMember(childId: String?): Boolean =
+        children.firstOrNull { it.childId == childId }?.isAdult == true
     /**
      * Family policy with [childId]'s overrides applied (null override field = inherit).
      * Blank/unknown ids return the family policy unchanged, so legacy children degrade cleanly.

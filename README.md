@@ -118,13 +118,16 @@ never limits what you can switch on; it decides what that phone *starts* with an
 you next. An adult's phone starts with no limits, no bedtime and no location, and instead locks the
 settings people change by accident: airplane mode, the language, brightness, screen timeout, mobile
 data, resetting the network, accounts, default apps, and installing or removing apps. Their own
-screen is a single page with one big **Ask for help** button, which reaches you as an alert.
+screen is a single page with one big **Ask for help** button. It reaches you on its own notification
+channel, which gets through Do Not Disturb and reminds you a few times until you mark it dealt with,
+and their screen says whether the call has actually gone out and when you have seen it.
 
 Three support tools are offered for *every* phone in the family, child or adult — a teenager's phone
 on silent for two days is the same problem as a grandparent's:
 
 - **Keep the ringer audible.** Silent and vibrate are undone and the ring volume kept up, and you
-  are told how many times that has been necessary. From your end, a phone on silent is
+  are told how many times that has been necessary. Do Not Disturb is switched off too once that
+  phone has given Walcott permission, which its setup asks for. From your end, a phone on silent is
   indistinguishable from one that is off — and its owner has no idea.
 - **The lock screen.** Change or remove their unlock PIN from your phone, or lock theirs now. Their
   page tells you whether that is ready *before* you need it: the phone has to be unlocked once with

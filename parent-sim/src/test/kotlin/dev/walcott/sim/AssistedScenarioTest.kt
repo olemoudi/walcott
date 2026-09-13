@@ -25,6 +25,9 @@ import org.junit.jupiter.api.Test
  */
 class AssistedScenarioTest : DeviceScenario() {
 
+    /** The floor the app raises a locked, manual screen to (DeviceRestrictions.MIN_LOCKED_BRIGHTNESS). */
+    private val READABLE_BRIGHTNESS = 25
+
     /** The PIN this suite sets and then always removes again. */
     private val PIN = "4291"
 
@@ -188,6 +191,29 @@ class AssistedScenarioTest : DeviceScenario() {
                 "must not look the same to the family",
         )
     }
+
+    // --- The settings a phone starts with locked ---
+
+    @Test
+    fun `a screen that is almost dark is made readable before its brightness is locked`() {
+        // Locking brightness freezes whatever it is at that moment. A phone that happens to be at
+        // the bottom of the slider when the family locks it stays there, and the whole reason the
+        // lock is offered — "a screen at zero looks exactly like a broken phone" — becomes the
+        // thing it guarantees. Adaptive brightness is left alone: the phone is choosing, not stuck.
+        device.run("shell", "settings", "put", "system", "screen_brightness_mode", "0")
+        device.run("shell", "settings", "put", "system", "screen_brightness", "1")
+        try {
+            val pushed = parent.pushPolicy(PolicyJson.build(version = 2, restrictions = setOf("brightness")))
+            childEventuallyReports { it.deviceId == deviceId && it.appliedPolicyVersion >= pushed.version }
+            awaitDevice("the brightness raised to a readable floor") { brightness() >= READABLE_BRIGHTNESS }
+        } finally {
+            runCatching { parent.pushPolicy(PolicyJson.build(version = 3)) }
+            runCatching { device.run("shell", "settings", "put", "system", "screen_brightness", "128") }
+        }
+    }
+
+    private fun brightness(): Int =
+        device.run("shell", "settings", "get", "system", "screen_brightness").trim().toIntOrNull() ?: -1
 
     // --- The notification log ---
 
