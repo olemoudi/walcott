@@ -781,6 +781,14 @@ class WalcottViewModel(
     fun setLiveTracking(targetDeviceId: String, minutes: Int) =
         viewModelScope.launch { sync.requestLiveTracking(targetDeviceId, minutes) }
 
+    /** Let a child's phone install anything for [minutes] (see SyncManager.allowInstallsOn). */
+    fun allowInstallsOn(targetDeviceId: String, minutes: Int) =
+        viewModelScope.launch { sync.allowInstallsOn(targetDeviceId, minutes) }
+
+    /** Close an install window on a child's phone now (see SyncManager.closeInstallsOn). */
+    fun closeInstallsOn(targetDeviceId: String) =
+        viewModelScope.launch { sync.closeInstallsOn(targetDeviceId) }
+
     /** Make a child device re-adopt the current rules and check for a new build now. */
     fun forceCatchUp(targetDeviceId: String) =
         viewModelScope.launch { sync.forceCatchUp(targetDeviceId) }

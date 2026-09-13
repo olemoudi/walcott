@@ -65,7 +65,14 @@ fun LocationSettingsScreen(
                         selected = settings.trackingIntervalMinutes,
                         onSelect = { viewModel.setFamilyTrackingInterval(it) },
                     )
-                    OverriddenNote(settings, FamilyRule.TRACKING_INTERVAL, onOpenMemberRules = onOpenMemberRules)
+                    // Spaced from the chips above and the warning below: this card's column has no
+                    // arrangement of its own, so the tinted note sat flush against both.
+                    OverriddenNote(
+                        settings,
+                        FamilyRule.TRACKING_INTERVAL,
+                        Modifier.padding(top = spacing.xs, bottom = spacing.sm),
+                        onOpenMemberRules = onOpenMemberRules,
+                    )
                     Text(
                         stringResource(R.string.tracking_battery_warning),
                         style = MaterialTheme.typography.bodySmall,

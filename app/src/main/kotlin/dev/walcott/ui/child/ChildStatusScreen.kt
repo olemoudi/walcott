@@ -1,5 +1,10 @@
 package dev.walcott.ui.child
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.filled.MoreVert
 import android.Manifest
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -481,14 +486,21 @@ fun ChildStatusScreen(
             },
         )
     }
-    if (showAskApp || showAskOther) {
-        val kind = if (showAskApp) ChildRequest.KIND_APP else ChildRequest.KIND_OTHER
+    // Asking for an app is taught, not typed. A written name reached the parent as a sentence
+    // they could approve and do nothing with — approving it installed nothing — while an app shared
+    // from its Google Play page arrives as that exact app, which the parent installs from their
+    // phone. So the card opens the way to do the second, and nothing asks for the first any more.
+    if (showAskApp) {
+        AskAppGuideSheet(
+            inventory = viewModel.repository.inventory,
+            onDismiss = { showAskApp = false },
+        )
+    }
+    if (showAskOther) {
         AskDialog(
-            kind = kind,
-            onDismiss = { showAskApp = false; showAskOther = false },
+            onDismiss = { showAskOther = false },
             onSend = { text ->
-                viewModel.askFor(kind, text)
-                showAskApp = false
+                viewModel.askFor(ChildRequest.KIND_OTHER, text)
                 showAskOther = false
                 Toast.makeText(context, R.string.request_sent, Toast.LENGTH_SHORT).show()
             },
@@ -1115,29 +1127,16 @@ private fun SectionLabel(text: String) {
  * nobody reads. Each entry point now arrives knowing what it is for.
  */
 @Composable
-private fun AskDialog(kind: String, onDismiss: () -> Unit, onSend: (String) -> Unit) {
-    val app = kind == ChildRequest.KIND_APP
-    var text by remember(kind) { mutableStateOf("") }
+private fun AskDialog(onDismiss: () -> Unit, onSend: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (app) R.string.ask_dialog_title_app else R.string.ask_dialog_title_other,
-                ),
-            )
-        },
+        title = { Text(stringResource(R.string.ask_dialog_title_other)) },
         text = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                label = {
-                    Text(
-                        stringResource(
-                            if (app) R.string.ask_text_label_app else R.string.ask_text_label_other,
-                        ),
-                    )
-                },
+                label = { Text(stringResource(R.string.ask_text_label_other)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1708,3 +1707,104 @@ private fun ConfirmPairingDialog(
         },
     )
 }
+
+/**
+ * How a child asks for an app: find it in Google Play, share it with Walcott.
+ *
+ * Three steps with the pictures the child will actually see — Play's icon, the menu and Share
+ * buttons on an app's page, and Walcott's own icon as the share sheet shows it — because the flow
+ * is not discoverable and is learned once. The search box is optional and only saves a step: Play
+ * opens on the results, one tap from the app's page where Share lives.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AskAppGuideSheet(inventory: dev.walcott.data.AppInventory, onDismiss: () -> Unit) {
+    val spacing = Tokens.spacing
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    val playClosed = stringResource(R.string.ask_app_guide_play_closed)
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = spacing.lg)
+                .padding(bottom = spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            Text(stringResource(R.string.ask_app_card_title), style = MaterialTheme.typography.headlineSmall)
+            Text(
+                stringResource(R.string.ask_app_guide_intro),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            GuideStep(1, stringResource(R.string.ask_app_guide_step_find)) {
+                dev.walcott.ui.components.AppIcon(
+                    packageName = dev.walcott.install.PlayIntents.PLAY_STORE,
+                    inventory = inventory,
+                    size = 36.dp,
+                    label = stringResource(R.string.play_store_name),
+                )
+            }
+            GuideStep(2, stringResource(R.string.ask_app_guide_step_share)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(spacing.xs))
+                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+            }
+            GuideStep(3, stringResource(R.string.ask_app_guide_step_walcott)) {
+                dev.walcott.ui.components.AppIcon(
+                    packageName = context.packageName,
+                    inventory = inventory,
+                    size = 36.dp,
+                    label = stringResource(R.string.app_name),
+                )
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text(stringResource(R.string.ask_app_guide_search_label)) },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            androidx.compose.material3.Button(
+                onClick = {
+                    val opened = runCatching {
+                        context.startActivity(dev.walcott.install.PlayIntents.search(context, query))
+                    }.isSuccess
+                    if (opened) onDismiss() else Toast.makeText(context, playClosed, Toast.LENGTH_LONG).show()
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) {
+                Text(stringResource(R.string.ask_app_guide_open_play))
+            }
+        }
+    }
+}
+
+/** One numbered step of a guide, with the picture of what to look for on the right. */
+@Composable
+private fun GuideStep(number: Int, text: String, picture: @Composable () -> Unit) {
+    val spacing = Tokens.spacing
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(28.dp),
+        ) {
+            androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                Text(
+                    number.toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
+        Spacer(Modifier.width(spacing.md))
+        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(spacing.md))
+        picture()
+    }
+}
+

@@ -54,6 +54,8 @@ class RemoteCommandRunner(
     private val ringStop: suspend () -> Unit = {},
     /** Puts this phone into, or takes it out of, lost mode (see [RemoteAction.LOST_MODE]). */
     private val setLostMode: suspend (on: Boolean, message: String) -> Unit = { _, _ -> },
+    /** Opens the blanket install window for this long (see [RemoteAction.ALLOW_INSTALLS]). */
+    private val allowInstalls: suspend (durationMs: Long) -> Unit = { },
 ) {
 
     /**
@@ -98,6 +100,7 @@ class RemoteCommandRunner(
                 RemoteAction.RING_NOW -> ringNow(command)
                 RemoteAction.RING_STOP -> ringStop(command)
                 RemoteAction.LOST_MODE -> lostMode(command)
+                RemoteAction.ALLOW_INSTALLS -> allowInstallsFor(command, nowMs)
                 // Forward compatibility: a newer parent may know actions this build doesn't.
                 else -> false to "unsupported"
             }
@@ -114,6 +117,21 @@ class RemoteCommandRunner(
             completedAtMs = System.currentTimeMillis(),
             arg = command.arg,
         )
+    }
+
+    /**
+     * The parent's "let this phone install anything for a while", for setting a phone up.
+     *
+     * The same window as the PIN typed on this phone, so what is installed in it is the family's
+     * and the guard judges none of it. It ends when the parent meant it to: a command that spent
+     * twenty minutes reaching a phone asked for thirty opens ten, not another thirty.
+     */
+    private suspend fun allowInstallsFor(command: RemoteCommand, nowMs: Long): Pair<Boolean, String> {
+        if (RemoteAction.allowInstallsMinutes(command.arg) == null) return false to RemoteAction.DETAIL_INVALID
+        val remaining = RemoteAction.allowInstallsRemainingMs(command.arg, command.issuedAtMs, nowMs)
+            ?: return false to RemoteAction.DETAIL_EXPIRED
+        allowInstalls(remaining)
+        return true to RemoteAction.DETAIL_INSTALLS_OPEN
     }
 
     /**

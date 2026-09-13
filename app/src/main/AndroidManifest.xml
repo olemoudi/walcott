@@ -12,8 +12,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- "Allow all the time": needed so the Device Owner can force-grant background location and
-         tracking keeps working when Walcott isn't in the foreground. -->
+    <!-- Declared so the Device Owner can DENY it, which is what LocationPolicy does: an admin-forced
+         background grant posts a permanent "your admin can access location" notice, and tracking
+         does not need it — it samples inside the location-typed foreground service, which counts
+         as "while in use". So "Allow all the time" shows greyed out on a child's phone, on purpose.
+         This comment used to say the opposite, which is how that screen came to look like a bug. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- The periodic location fix and close-tracking sessions hold the CPU awake while a fix is

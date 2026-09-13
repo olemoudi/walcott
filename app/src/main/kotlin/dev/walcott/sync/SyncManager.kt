@@ -2165,6 +2165,52 @@ class SyncManager(
     }
 
     /**
+     * Parent: let [targetDeviceId] install anything for [minutes] — the quick action for setting a
+     * phone up (see [RemoteAction.ALLOW_INSTALLS]). A second tap replaces a window still on its
+     * way rather than queueing two.
+     */
+    suspend fun allowInstallsOn(targetDeviceId: String, minutes: Int) {
+        val now = System.currentTimeMillis()
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                commands = SyncEngine.withCommand(
+                    s.commands.filterNot { it.deviceId == targetDeviceId && it.action == RemoteAction.ALLOW_INSTALLS },
+                    RemoteCommand(
+                        UUID.randomUUID().toString(), targetDeviceId, RemoteAction.ALLOW_INSTALLS, now,
+                        minutes.toString(),
+                    ),
+                    now,
+                ),
+            )
+        }
+        publishSelf()
+    }
+
+    /**
+     * Parent: close whatever install window is open on [targetDeviceId], now.
+     *
+     * Through [RemoteAction.REAPPLY_POLICY], which every child build already obeys by closing any
+     * window and putting the block back — so this works on a phone too old to have been OPENED
+     * this way. And a window still queued is withdrawn first, or it would reopen what this closes
+     * on its way in.
+     */
+    suspend fun closeInstallsOn(targetDeviceId: String) {
+        val now = System.currentTimeMillis()
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                commands = SyncEngine.withCommand(
+                    s.commands.filterNot { it.deviceId == targetDeviceId && it.action == RemoteAction.ALLOW_INSTALLS },
+                    RemoteCommand(UUID.randomUUID().toString(), targetDeviceId, RemoteAction.REAPPLY_POLICY, now),
+                    now,
+                ),
+            )
+        }
+        publishSelf()
+    }
+
+    /**
      * Parent refuses a child's emergency release: queues the refusal and records it on the feed
      * right away, so the wall shows the decision even before the child acknowledges it.
      */
@@ -4566,6 +4612,7 @@ class SyncManager(
                     }
                 },
                 setLostMode = { on, message -> if (on) enableLostMode(message) else disableLostMode() },
+                allowInstalls = { durationMs -> allowInstallsFor(durationMs) },
             )
         }
         val before = syncStore.current()

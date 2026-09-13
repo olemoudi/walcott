@@ -1059,9 +1059,7 @@
     <string name="child_rules_used">%1$s usados</string>
     <string name="child_rules_used_of">%1$s de %2$s usados</string>
     <string name="ask_other_row">Pedir otra cosa</string>
-    <string name="ask_dialog_title_app">Pedir una app</string>
     <string name="ask_dialog_title_other">Pedir otra cosa</string>
-    <string name="ask_text_label_app">¿Qué app?</string>
     <string name="ask_text_label_other">¿Qué necesitas?</string>
     <string name="ask_summary_app">Quiere instalar: %1$s</string>
     <string name="ask_summary_other">Pide: %1$s</string>
@@ -1786,6 +1784,7 @@
     <string name="quick_give_time">Dar tiempo</string>
     <string name="quick_plus_minutes">+%1$d min</string>
     <string name="quick_minutes">%1$d min</string>
+    <string name="quick_hours">%1$d h</string>
     <string name="quick_gave_time">%2$s tiene %1$d minutos más</string>
     <string name="quick_pause">Pausar el móvil</string>
     <string name="quick_paused_until">hasta las %1$s</string>
@@ -1859,6 +1858,11 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_113_0">
+        <item>¿Configurando el móvil de un hijo con muchas apps que instalar? Sus acciones rápidas ya pueden dejarle instalar lo que sea durante 30 minutos o 2 horas. Lo que se instale desde Google Play se queda, el bloqueo vuelve solo, y un botón arriba de la hoja lo cierra antes.</item>
+        <item>Pedir una app en el móvil de un hijo ahora enseña a compartirla desde Google Play en vez de pedir su nombre, así que lo que te llega es la app exacta, lista para instalar desde tu móvil.</item>
+        <item>La nota sobre la regla personalizada de un miembro ya no se pega al buscador de Apps y límites.</item>
     </string-array>
     <string-array name="whats_new_0_112_0">
         <item>Configurar el móvil de un hijo nuevo con el código de tu pantalla vuelve a funcionar. Desde la 0.107, un móvil recién reseteado rechazaba el código sin decir por qué: el código nombraba el certificado de firma equivocado de los dos que tiene Walcott.</item>
@@ -2164,4 +2168,25 @@
     <string name="relay_refusing_rate_limited">El relay está rechazando los mensajes de este móvil por enviar demasiados. Ese límite se comparte con todo lo que salga de tu conexión. Un servidor de relay propio lo quita: mira los ajustes.</string>
     <string name="req_background_title">Deja que Walcott funcione en segundo plano</string>
     <string name="req_background_body">Este móvil tiene Walcott con el uso de batería «Restringido», así que Android solo le deja comprobar novedades más o menos una vez al día. Las peticiones, los avisos y una liberación de emergencia no llegarán a tiempo. Abre los ajustes de batería de la app y elige «Sin restricciones» u «Optimizado».</string>
+    <string name="installs_open_title">Instalaciones abiertas</string>
+    <string name="installs_opening_title">Abriendo instalaciones…</string>
+    <string name="installs_open_until">Hasta las %1$s</string>
+    <string name="installs_waiting_phone">Esperando a que el móvil las abra</string>
+    <string name="installs_closing">Cerrando…</string>
+    <string name="installs_close_now">Cerrar ahora</string>
+    <string name="quick_installs_title">Dejar instalar lo que sea</string>
+    <string name="quick_installs_until">abiertas hasta las %1$s</string>
+    <string name="quick_installs_hint">Para configurar un móvil: lo que se instale desde Play se queda, y el bloqueo vuelve solo.</string>
+    <string name="quick_installs_opened">El móvil de %1$s puede instalar apps durante %2$s</string>
+    <string name="quick_installs_closed">Instalaciones bloqueadas otra vez en el móvil de %1$s</string>
+    <string name="quick_installs_needs_update">Este teléfono tiene que actualizarse antes de poder abrirlo así.</string>
+    <string name="remote_allow_installs">Permitir instalaciones</string>
+    <string name="ask_app_guide_intro">Tus padres solo pueden instalar la app exacta, así que pídela desde su página de Google Play:</string>
+    <string name="ask_app_guide_step_find">Busca la app en Google Play.</string>
+    <string name="ask_app_guide_step_share">En la página de la app, toca ⋮ arriba a la derecha y luego Compartir.</string>
+    <string name="ask_app_guide_step_walcott">Elige Walcott y confírmalo. A tus padres les llega justo esa app.</string>
+    <string name="ask_app_guide_search_label">Buscar en Google Play (opcional)</string>
+    <string name="ask_app_guide_open_play">Abrir Google Play</string>
+    <string name="ask_app_guide_play_closed">Ahora mismo no se puede abrir Google Play en este móvil.</string>
+    <string name="play_store_name">Google Play</string>
 </resources>

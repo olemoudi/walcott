@@ -3,6 +3,67 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.113.0 — installs for a setup afternoon, asking for an app the way that works, and a note that touched the search field
+
+Three things ole asked for on 2026-09-13, after enrolling a real phone with 0.112.
+
+**"Let it install anything", from the parent's quick actions.** Setting a phone up means a dozen apps,
+and approving each one is not what anybody wants to be doing that afternoon. The member's quick
+actions sheet offers 30 min and 2 h; the phone opens the same blanket window a PIN typed on it opens
+(`SyncManager.allowInstallsFor`), so whatever is installed from Play stays and the install guard
+judges none of it. While a window is open — or on its way — a card at the top of the sheet says until
+when and has **Close now**.
+
+- New command `RemoteAction.ALLOW_INSTALLS`, the minutes in `arg`. The window ends when the parent
+  meant it to (`allowInstallsRemainingMs`: a command that took twenty minutes to arrive opens ten), a
+  command older than 30 minutes is refused (`ALLOW_INSTALLS_TTL_MS`), and a parent clock ahead of the
+  phone never lengthens it. Gated on `ALLOW_INSTALLS_MIN_CHILD_VERSION = 162`: an older phone shows
+  the row disabled, saying it has to update.
+- **Close now** is `REAPPLY_POLICY`, which every build already obeys by closing any window and putting
+  the block back — so it also closes a window a child opened with the PIN, or a pushed install's. A
+  still-queued open is withdrawn first (`SyncManager.closeInstallsOn`), or it would reopen what was
+  just closed on its way in.
+- The card reads the window from the phone's own snapshot, which already leaves the nightly update
+  hour out, plus what is still queued, so it appears on the tap. Offered only where installing is
+  held back at all: blocked, or watched in the guarded mode.
+- `RemoteInstallWindowScenarioTest`: the block lifts, a fixture installed in the window is still
+  installed and not suspended after closing, the block comes back, and a forty-minute-old half hour
+  opens nothing.
+
+**The override note sat on the search field** in Apps and limits, in both of its forms (the family's
+"Martín Jr has a custom rule…" and the one-member banner): the column they live in has no spacing of
+its own. The gap is on the note itself, so a family with no overrides gets no blank strip. The same
+fault was in the location settings card, between the interval chips and the battery warning. The
+lists (limits, web filter, protection) space their items and were fine. Checked on the emulator in
+dark mode.
+
+**"Location only while using the app" on a new child is by design**, and nothing asks to fix it:
+`LocationPolicy` denies background location on purpose, because an admin-forced grant posts a
+permanent notice, and tracking samples inside the location-typed foreground service. The manifest
+comment said the opposite, which is what made it look like a bug; it no longer does.
+
+**"Ask for an app" teaches the Google Play share instead of asking for a name.** A written name
+reached the parent as a sentence they could approve and do nothing with — approving it installed
+nothing — while an app shared from its Play page arrives as that exact app, which the parent installs
+from their phone (`ShareInstallActivity`, `requestAppInstall`). So the child's card now opens a guide
+(`AskAppGuideSheet`): three numbered steps with the pictures the child will see (Play's icon, the ⋮
+and Share buttons, Walcott's icon as the share sheet shows it), an optional search box, and "Open
+Google Play", which lands on the results for the search or on Play's front page
+(`PlayIntents.search`), and falls back to the Play website — which shares the same way from a browser
+— when Play is not there. The text dialog is now only "Ask for something else". The parent side still
+reads written app asks (`ChildRequest.KIND_APP`), because a child on an older build can still send one.
+
+**Verification:** `./gradlew test` green. On `walcott-mapview`, in dark mode: Apps and limits with the
+family note spaced from the search field; the parent's quick actions with the install row (disabled
+for a seeded child that reports no version, with its "has to update" line); the child's guide, and its
+button opening the Play website in Chrome on an image without Play. Device scenarios for installs,
+guard, update window and policy: 25/25, including both `RemoteInstallWindowScenarioTest` cases. Not
+re-captured after changing the chip labels to "30 min" / "2 h": the emulator was left as a child by
+the suite. For the release: `./gradlew test` and Lint green, the release APK shrunk to 9.0 MB, the
+enrollment checksum `match=true` on 0.113, and `:parent-sim:e2eTest` 136/136 in 43 minutes. Destructive
+suite: one pass, not two, because 0.113 touches no release path and ole asked for suites scoped to
+what a change applies to: 8/8.
+
 ## Prepared for v0.112.0 — the second review (not released)
 
 ole asked what important problems the app still has, and then for the plan to be carried out.

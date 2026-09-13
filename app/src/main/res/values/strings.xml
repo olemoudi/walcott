@@ -1062,9 +1062,7 @@
     <string name="child_rules_used">%1$s used</string>
     <string name="child_rules_used_of">%1$s of %2$s used</string>
     <string name="ask_other_row">Ask for something else</string>
-    <string name="ask_dialog_title_app">Ask for an app</string>
     <string name="ask_dialog_title_other">Ask for something else</string>
-    <string name="ask_text_label_app">Which app?</string>
     <string name="ask_text_label_other">What do you need?</string>
     <string name="ask_summary_app">Wants to install: %1$s</string>
     <string name="ask_summary_other">Asks for: %1$s</string>
@@ -1795,6 +1793,7 @@
     <string name="quick_give_time">Give time</string>
     <string name="quick_plus_minutes">+%1$d min</string>
     <string name="quick_minutes">%1$d min</string>
+    <string name="quick_hours">%1$d h</string>
     <string name="quick_gave_time">%2$s got %1$d more minutes</string>
     <string name="quick_pause">Pause the phone</string>
     <string name="quick_paused_until">until %1$s</string>
@@ -1868,6 +1867,11 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_113_0">
+        <item>Setting up a child\'s phone with lots of apps to install? Their quick actions can now let the phone install anything for 30 minutes or 2 hours. Whatever is installed from Google Play stays, the block comes back on its own, and a button at the top of the sheet closes it early.</item>
+        <item>Asking for an app on a child\'s phone now shows how to share it from Google Play instead of asking for its name, so what reaches you is the exact app, ready to install from your phone.</item>
+        <item>The note about a member\'s custom rule no longer sits on top of the search box in Apps and limits.</item>
     </string-array>
     <string-array name="whats_new_0_112_0">
         <item>Setting up a new child\'s phone from the code on your screen works again. Since 0.107 a factory-reset phone refused the code without saying why: the code named the wrong one of Walcott\'s two signing certificates.</item>
@@ -2173,4 +2177,25 @@
     <string name="relay_refusing_rate_limited">The relay is refusing this phone\'s messages for sending too many. Everyone on your home connection shares that limit. A relay server of your own removes it — see settings.</string>
     <string name="req_background_title">Let Walcott run in the background</string>
     <string name="req_background_body">This phone has Walcott on \"Restricted\" battery use, so Android lets it check in about once a day. Requests, alerts and an emergency release will not arrive in time. Open the app\'s battery settings and choose \"Unrestricted\" or \"Optimized\".</string>
+    <string name="installs_open_title">Installs are open</string>
+    <string name="installs_opening_title">Opening installs…</string>
+    <string name="installs_open_until">Until %1$s</string>
+    <string name="installs_waiting_phone">Waiting for the phone to open them</string>
+    <string name="installs_closing">Closing…</string>
+    <string name="installs_close_now">Close now</string>
+    <string name="quick_installs_title">Let it install anything</string>
+    <string name="quick_installs_until">open until %1$s</string>
+    <string name="quick_installs_hint">For setting a phone up: whatever is installed from Play stays, and the block comes back on its own.</string>
+    <string name="quick_installs_opened">%1$s\'s phone can install apps for %2$s</string>
+    <string name="quick_installs_closed">Installs blocked again on %1$s\'s phone</string>
+    <string name="quick_installs_needs_update">This phone has to update before it can be opened this way.</string>
+    <string name="remote_allow_installs">Allow installs</string>
+    <string name="ask_app_guide_intro">Your parents can only install the exact app, so ask for it from its Google Play page:</string>
+    <string name="ask_app_guide_step_find">Find the app in Google Play.</string>
+    <string name="ask_app_guide_step_share">On the app\'s page, tap ⋮ at the top right, then Share.</string>
+    <string name="ask_app_guide_step_walcott">Choose Walcott and confirm. Your parents get exactly that app.</string>
+    <string name="ask_app_guide_search_label">Search Google Play (optional)</string>
+    <string name="ask_app_guide_open_play">Open Google Play</string>
+    <string name="ask_app_guide_play_closed">Google Play can\'t be opened on this phone right now.</string>
+    <string name="play_store_name">Google Play</string>
 </resources>

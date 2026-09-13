@@ -284,5 +284,6 @@ private fun remoteActionLabel(action: String): String = when (action) {
     RemoteAction.INSTALL_APP -> stringResource(R.string.install_share_title)
     RemoteAction.DIAGNOSE -> stringResource(R.string.diag_section)
     RemoteAction.RELEASE_DEVICE -> stringResource(R.string.release_remote_action)
+    RemoteAction.ALLOW_INSTALLS -> stringResource(R.string.remote_allow_installs)
     else -> action
 }

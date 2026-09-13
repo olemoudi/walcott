@@ -78,6 +78,10 @@ tonight. Both undo themselves when their time is up, so nothing has to be rememb
 standing rule is quietly left changed. Calls and contacts keep working throughout a pause, and
 the phone says it is paused and until when.
 
+Setting a phone up, with a dozen apps to install? The same sheet can **let it install anything** for
+half an hour or two hours. Whatever is installed from Play in that time stays, the block comes back
+on its own, and a button at the top of the sheet closes it early.
+
 **Earned time.** Optionally, time spent off the phone during set hours converts into extra
 screen time for every app — putting it down is worth something, and their own screen says how
 much it was worth today.

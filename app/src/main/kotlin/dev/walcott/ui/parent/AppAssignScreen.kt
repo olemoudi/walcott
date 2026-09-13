@@ -129,7 +129,9 @@ fun AppAssignScreen(
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(stringResource(R.string.nav_apps_title), onBack)
         if (childId != null) {
-            Column(Modifier.padding(horizontal = spacing.screen)) {
+            // Room under it before the search field: the banner is a card and the field is a box,
+            // and two outlines touching read as one broken shape.
+            Column(Modifier.padding(horizontal = spacing.screen).padding(bottom = spacing.md)) {
                 OverrideScopeBanner(
                     childName.orEmpty(),
                     onOpenMemberRules = childId?.let { id -> onOpenMemberRules?.let { open -> { open(id) } } },
@@ -140,7 +142,15 @@ fun AppAssignScreen(
             // per-app map, so a member who has customized it ignores the family's limit on
             // every app at once rather than on the ones they happen to have.
             Column(Modifier.padding(horizontal = spacing.screen)) {
-                OverriddenNote(settings, dev.walcott.data.FamilyRule.APP_LIMITS, onOpenMemberRules = onOpenMemberRules)
+                // The gap goes on the note itself, not on the column around it: the note is only
+                // drawn when somebody overrides the rule, and a spacer on the column would leave a
+                // blank strip above the search field on every family where nobody does.
+                OverriddenNote(
+                    settings,
+                    dev.walcott.data.FamilyRule.APP_LIMITS,
+                    Modifier.padding(bottom = spacing.md),
+                    onOpenMemberRules = onOpenMemberRules,
+                )
             }
         }
         if (rows.isEmpty()) {

@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.outlined.InstallMobile
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -80,6 +83,9 @@ private const val OPEN_PAUSE_ENDS_AT_HOUR = 6
 
 /** How much time the sheet hands out in one tap. */
 private val BONUS_MINUTES = listOf(15, 30, 60)
+
+/** How long a parent can let a phone install anything for: a quick setup, and a long one. */
+private val INSTALL_WINDOW_MINUTES = listOf(30, 120)
 
 /**
  * The four things a parent does to a phone in the middle of an ordinary day, one tap from the
@@ -163,6 +169,27 @@ fun QuickActionsSheet(
     // bedtime the parent moved earlier and a phone that did not (see RemoteAction).
     val understandsEarlierBedtime = understandsExceptions &&
         (snapshot == null || RemoteAction.canBedtimeEarlier(snapshot.appVersionCode))
+
+    // Installs. What the phone reports is the truth — it already leaves out the nightly update
+    // hour, which is not the parent's to close — and what is still on its way there makes the
+    // card appear on the tap rather than a round trip later.
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val queuedForPhone = snapshot?.let { s -> syncState.commands.filter { it.deviceId == s.deviceId } }.orEmpty()
+    val installsOpenUntilMs = snapshot?.installExemptionUntilMs?.takeIf { it > System.currentTimeMillis() }
+    val installsOpening = queuedForPhone.any { it.action == RemoteAction.ALLOW_INSTALLS }
+    val installsClosing = installsOpenUntilMs != null &&
+        queuedForPhone.any { it.action == RemoteAction.REAPPLY_POLICY }
+    val understandsInstallWindow = snapshot == null || RemoteAction.canAllowInstalls(snapshot.appVersionCode)
+    // Offered only where installing is held back at all — blocked, or watched by the install guard.
+    // On a family that does neither there is nothing to open, and a button that does nothing
+    // teaches that the ones beside it might not do anything either.
+    val installsHeld = remember(settings, childId) {
+        val resolved = settings.resolveForChild(childId)
+        dev.walcott.enforcement.DeviceRestrictions.KEY_INSTALLS in resolved.deviceRestrictions ||
+            dev.walcott.enforcement.AppUpdates.modeOf(resolved.installMode) ==
+            dev.walcott.enforcement.AppUpdates.MODE_GUARDED
+    }
+    val installsClosedSaid = stringResource(R.string.quick_installs_closed, entry.name)
     val lostAskedAll by viewModel.lostModeAsked.collectAsStateWithLifecycle()
     // The template rather than the finished sentence, because the duration is only known at the
     // tap — resolved up here like `undo` and `locating` for the same reason they are.
@@ -251,6 +278,21 @@ fun QuickActionsSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                // --- Installs open: the way to close them comes first ---
+                // On top because it is the one state on this sheet that should not be left running
+                // by accident, and a parent who opened installs for a setup and was then called
+                // away is exactly who opens this sheet again later, for something else.
+                if (installsOpenUntilMs != null || installsOpening) {
+                    InstallsOpenCard(
+                        untilMs = installsOpenUntilMs,
+                        closing = installsClosing,
+                        onClose = {
+                            viewModel.closeInstallsOn(snapshot.deviceId)
+                            done(installsClosedSaid)
+                        },
+                    )
+                }
+
                 // --- More time, right now ---
                 QuickRow(Icons.Outlined.MoreTime, stringResource(R.string.quick_give_time)) {
                     BONUS_MINUTES.forEach { minutes ->
@@ -359,6 +401,41 @@ fun QuickActionsSheet(
                             }
                         }
                     }
+                }
+
+                // --- Installs, for setting a phone up ---
+                // Below the everyday answers on purpose: this is a setup afternoon, not a Tuesday.
+                if (installsHeld) {
+                    QuickRow(
+                        Icons.Outlined.InstallMobile,
+                        stringResource(R.string.quick_installs_title),
+                        detail = installsOpenUntilMs?.let {
+                            stringResource(R.string.quick_installs_until, localTimeOf(it).hhmm())
+                        },
+                    ) {
+                        INSTALL_WINDOW_MINUTES.forEach { minutes ->
+                            // The same chip words as the rows above ("30 min"), not the compact
+                            // duration ("30m"), which read as a different kind of button beside them.
+                            val label = if (minutes % 60 == 0) {
+                                stringResource(R.string.quick_hours, minutes / 60)
+                            } else {
+                                stringResource(R.string.quick_minutes, minutes)
+                            }
+                            val said = stringResource(R.string.quick_installs_opened, entry.name, label)
+                            ActionChip(label, enabled = understandsInstallWindow) {
+                                viewModel.allowInstallsOn(snapshot.deviceId, minutes)
+                                done(said, undo) { viewModel.closeInstallsOn(snapshot.deviceId) }
+                            }
+                        }
+                    }
+                    Text(
+                        stringResource(
+                            if (understandsInstallWindow) R.string.quick_installs_hint
+                            else R.string.quick_installs_needs_update,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
 
                 // --- Catch up: re-adopt the rules, and take a new build if there is one. ---
@@ -559,3 +636,48 @@ internal fun nextOccurrenceOf(now: LocalDateTime, at: java.time.LocalTime): Loca
 /** The next [hour] in the morning — the ceiling an open-ended pause runs to. */
 internal fun nextMorning(now: LocalDateTime, hour: Int): LocalDateTime =
     nextOccurrenceOf(now, java.time.LocalTime.of(hour, 0))
+
+/**
+ * Installs are open on this phone, or on their way to being: what is open, until when, and the
+ * button that shuts it without waiting for the time to run out.
+ */
+@Composable
+private fun InstallsOpenCard(untilMs: Long?, closing: Boolean, onClose: () -> Unit) {
+    val spacing = Tokens.spacing
+    val color = Tokens.warning
+    dev.walcott.ui.components.WalcottCard(color = color.copy(alpha = 0.14f)) {
+        Row(Modifier.padding(spacing.md), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.InstallMobile,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(spacing.sm))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(if (untilMs != null) R.string.installs_open_title else R.string.installs_opening_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    when {
+                        closing -> stringResource(R.string.installs_closing)
+                        untilMs != null -> stringResource(R.string.installs_open_until, localTimeOf(untilMs).hhmm())
+                        else -> stringResource(R.string.installs_waiting_phone)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            androidx.compose.material3.FilledTonalButton(onClick = onClose, enabled = !closing) {
+                Text(stringResource(R.string.installs_close_now))
+            }
+        }
+    }
+}
+
+/** An instant on this phone's clock, as the time of day it shows. */
+private fun localTimeOf(epochMs: Long): java.time.LocalTime =
+    java.time.Instant.ofEpochMilli(epochMs).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+

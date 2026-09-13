@@ -720,6 +720,7 @@ object RemoteAction {
         RELEASE_DEVICE -> nowMs - issuedAtMs > RELEASE_TTL_MS
         LIVE_TRACKING -> nowMs - issuedAtMs > LIVE_TRACKING_TTL_MS
         RING_NOW, RING_STOP -> nowMs - issuedAtMs > RING_TTL_MS
+        ALLOW_INSTALLS -> nowMs - issuedAtMs > ALLOW_INSTALLS_TTL_MS
         else -> nowMs - issuedAtMs > SyncEngine.COMMAND_TTL_MS
     }
 
@@ -838,6 +839,51 @@ object RemoteAction {
      * updated while a child still runs a build that acks this way.
      */
     const val DETAIL_WRONG_APP_REMOVED = "wrong_app_removed"
+
+    /**
+     * Lift the install block for a while, from the parent's phone: the same blanket window a
+     * parent opens by typing their PIN on the child's (`SyncManager.allowInstallsFor`), so
+     * whatever is installed in it stays and nothing is quarantined. [RemoteCommand.arg] is the
+     * number of minutes. For setting a phone up, when a child has a dozen apps to install and
+     * the parent is not going to approve each one.
+     *
+     * Closed early by [REAPPLY_POLICY], which every build already understands.
+     */
+    const val ALLOW_INSTALLS = "allow_installs"
+
+    /**
+     * How old an [ALLOW_INSTALLS] may be and still be obeyed. A window is asked for by someone
+     * standing next to the phone; one arriving an hour later, on a phone that was off, is not
+     * that request any more.
+     */
+    const val ALLOW_INSTALLS_TTL_MS = 30 * 60 * 1000L
+
+    /** The longest window a command may ask for. */
+    const val ALLOW_INSTALLS_MAX_MINUTES = 240
+
+    /** The first build that understands [ALLOW_INSTALLS]; an older one answers "unsupported". */
+    const val ALLOW_INSTALLS_MIN_CHILD_VERSION = 162
+
+    fun canAllowInstalls(childAppVersionCode: Int): Boolean =
+        childAppVersionCode >= ALLOW_INSTALLS_MIN_CHILD_VERSION
+
+    /** The minutes an [ALLOW_INSTALLS] asks for, or null when the argument is not a sane number. */
+    fun allowInstallsMinutes(arg: String): Int? =
+        arg.trim().toIntOrNull()?.takeIf { it in 1..ALLOW_INSTALLS_MAX_MINUTES }
+
+    /**
+     * How long the window should stay open when an [ALLOW_INSTALLS] issued at [issuedAtMs] is run
+     * at [nowMs]: it ends when the parent meant it to, not that long after it happened to arrive.
+     * Never longer than was asked for, even when the parent's clock is ahead. Null when there is
+     * nothing left of it, or nothing sane was asked.
+     */
+    fun allowInstallsRemainingMs(arg: String, issuedAtMs: Long, nowMs: Long): Long? {
+        val asked = (allowInstallsMinutes(arg) ?: return null) * 60_000L
+        return (issuedAtMs + asked - nowMs).coerceAtMost(asked).takeIf { it > 0 }
+    }
+
+    const val DETAIL_INSTALLS_OPEN = "installs_open"
+    const val DETAIL_INVALID = "invalid"
 }
 
 /**
