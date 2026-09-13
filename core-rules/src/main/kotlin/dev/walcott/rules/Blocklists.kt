@@ -19,11 +19,12 @@ package dev.walcott.rules
  * hand-written list will ever keep up with. A source that never downloads costs the family the
  * tail and never the front doors.
  *
- * **The sources are the real ones, at their real size.** oisd's NSFW list is 494 000 domains,
- * hagezi's gambling list is over 400 000, and switching every list on lands around 1.3 million.
- * That is affordable because of how they are stored, not because they were trimmed to fit: the
- * downloaded half of the filter is a sorted array of 64-bit hashes, 8 bytes a domain, so the lot
- * costs the child's always-on process ~10 MB (see [DomainMatcher]).
+ * **The sources are the real ones, at their real size.** oisd's NSFW list is 464 000 domains,
+ * hagezi's gambling list is over 400 000, and switching every list on lands around 1.7 million
+ * (measured 2026-09-13: the threat feed behind [SCAM] had grown to 700 000). That is affordable
+ * because of how they are stored, not because they were trimmed to fit: the downloaded half of
+ * the filter is a sorted array of 64-bit hashes, 8 bytes a domain, so the lot costs the child's
+ * always-on process ~14 MB (see [DomainMatcher]).
  *
  * **Two lists are deliberately seed-only.** For social networks and video the public lists we
  * looked at are noise: `blocklistproject/facebook` is 22 000 entries of which 79 are domains
@@ -203,7 +204,11 @@ object Blocklists {
         Entry(
             id = PIRACY,
             sources = listOf("$HAGEZI/anti.piracy-onlydomains.txt"),
-            approxSourceDomains = 42_000,
+            approxSourceDomains = 49_000,
+            // It carries the general file hosts piracy lives on — MEGA and MediaFire among them,
+            // measured 2026-09-13 — so an app that shares files through them stops working, and
+            // the row has to say so like the other two that can break an app.
+            mayBreakApps = true,
             seed = listOf(
                 "1337x.to", "dontorrent.org", "eztv.re", "limetorrents.lol", "nyaa.si",
                 "rarbg.to", "thepiratebay.org", "torrentgalaxy.to", "yts.mx",
@@ -217,14 +222,14 @@ object Blocklists {
             // they have downloaded once the child reports the list as pending, not as enforced.
             //
             // hagezi's threat-intelligence feed (the "medium" cut: phishing, malware and scam
-            // hosts, ~390 000, without the paranoid tail that breaks things) plus their fake-shop
-            // list (~16 000), which is the one a teenager actually meets — counterfeit sneakers,
-            // not botnets.
+            // hosts, ~700 000 by 2026-09, without the paranoid tail that breaks things) plus their
+            // fake-shop list (~17 000), which is the one a teenager actually meets — counterfeit
+            // sneakers, not botnets.
             sources = listOf(
                 "$HAGEZI/tif.medium-onlydomains.txt",
                 "$HAGEZI/fake-onlydomains.txt",
             ),
-            approxSourceDomains = 406_000,
+            approxSourceDomains = 720_000,
             seed = emptyList(),
         ),
         Entry(
@@ -250,6 +255,10 @@ object Blocklists {
                 "mullvad.net", "nordvpn.com", "privateinternetaccess.com", "protonvpn.com",
                 "proxysite.com", "psiphon.ca", "surfshark.com", "torproject.org",
                 "tunnelbear.com", "windscribe.com",
+                // Firefox's canary: a resolver that answers NXDOMAIN for it turns the browser's
+                // automatic encrypted DNS off, so its lookups stay where the filter can see them.
+                // Bundled because only the adult and tracker sources happened to carry it.
+                "use-application-dns.net",
             ),
         ),
         Entry(

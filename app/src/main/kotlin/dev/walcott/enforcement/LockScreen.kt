@@ -59,10 +59,35 @@ object LockScreen {
     fun newToken(): ByteArray = ByteArray(TOKEN_BYTES).also { SecureRandom().nextBytes(it) }
 
     /**
-     * Registers [token] with the system. Idempotent and cheap enough to re-run on every boot: the
-     * platform forgets tokens on a factory reset and can lose one across a credential change, and
-     * a token this device believes in but the system does not is exactly the failure that only
-     * shows up on the day it is needed.
+     * Whether registering has to happen now: when this device holds no token of its own, or when
+     * the system has no active one ([activeNow]).
+     *
+     * **Never "always", which is what it used to be, and that broke the one case the token is
+     * for.** Registering is not idempotent: the platform removes the token it holds and adds the
+     * new one as PENDING, and on a phone with a PIN a pending token only becomes active the next
+     * time that PIN is typed — not a fingerprint, not a face. Re-registering on every service start
+     * and every rule change therefore kept deactivating a working token, and the remote PIN change
+     * re-registered immediately before checking, so on any phone that already had a PIN it
+     * answered "not armed" every time (reproduced on API 35: the token's protector disappears on
+     * registration and comes back only after the PIN is entered). A phone with no lock at all
+     * activates at once, which is why the emulator never showed it.
+     */
+    fun needsRegistration(hasOwnToken: Boolean, activeNow: Boolean): Boolean = !hasOwnToken || !activeNow
+
+    /** Whether the system holds an active reset token for this admin (false when it will not say). */
+    fun isActive(context: Context): Boolean {
+        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return false
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return false
+        return runCatching { dpm.isResetPasswordTokenActive(WalcottAdminReceiver.componentName(context)) }
+            .getOrDefault(false)
+    }
+
+    /**
+     * Registers [token] with the system, replacing whatever token it held. Only when
+     * [needsRegistration] says so: the platform forgets tokens on a factory reset and can lose one,
+     * and a token this device believes in but the system does not is exactly the failure that only
+     * shows up on the day it is needed — but a registration that was not needed deactivates a token
+     * that was working.
      *
      * Returns false when the platform refused it (not Device Owner, or no secure lock hardware).
      */

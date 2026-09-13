@@ -99,10 +99,16 @@ that member's page rather than left wondering.
 and one app can be marked "never limit this", so a bus timetable or a chat with you is always
 reachable. **The phone and contacts apps are never limited by anything**, not even at bedtime:
 a child has to be able to call, and above all to call you — and a number they can't look up is
-a call they can't make.
+a call they can't make. Nor is what the phone runs on, even when it came from Google Play: the
+keyboard, the home screen and the alarm clock. A limit on the keyboard is a limit on every app
+at once, and an alarm clock closed for the night cannot ring in the morning. The app list marks
+them "Always available".
 
 **Web filtering.** Block specific domains without root, using a local VPN that only inspects
-DNS. You can see what a child's app is actually contacting and block it from there.
+DNS. You can see what a child's app is actually contacting and block it from there. Curated lists
+(adult content, betting, piracy, scams…) do the long tail, and when one catches a site you want —
+a sports paper on the betting list, say — *Always allowed* lets that one site through without
+switching the list off.
 
 **Where they are.** Optional location, with a recent trail on your map.
 
@@ -240,9 +246,9 @@ reaches slots already spent, and a sibling who hears it has nothing.
   encrypted DNS or hard-coded addresses — notably YouTube and some browsers — can get around
   it. Blocking those properly needs full traffic inspection, which Walcott does not do. The
   best-known public resolvers (Google, Cloudflare, Quad9, OpenDNS, AdGuard and a few more) are
-  routed through the filter by their IPv4 address, so asking one of them directly — or pointing a
-  browser's secure DNS at one — is filtered or refused rather than a way round. A resolver the
-  list does not name, or any resolver reached over IPv6, is not. Bedtime's cut to the browser
+  routed through the filter by their IPv4 and IPv6 addresses, so asking one of them directly — or
+  pointing a browser's secure DNS at one — is filtered or refused rather than a way round. A
+  resolver the list does not name is not. Bedtime's cut to the browser
   rides on this same filter, so it has the same limits.
   The phone's own **Private DNS** setting would get around it too, from Settings and in two
   taps, so "Protect the web filter" locks that setting as well and puts a strict private
@@ -253,14 +259,19 @@ reaches slots already spent, and a sibling who hears it has nothing.
   created on a child's phone. Some phones also offer "dual" copies of an app (Samsung's Dual
   Messenger, Xiaomi's Dual Apps) that Android runs as a separate user, which Walcott's rules do
   not reach; whether a given phone lets a managed child create one has to be checked on it.
-- **The tunnel itself is IPv4**, though it forwards to whichever resolvers the network offers,
-  IPv6 ones included. Queries reach it either way, because the phone sends them to the resolver
-  this app advertises. What is not supported is a phone that has no IPv4 at all.
-- **An app that speaks DNS over TCP of its own accord is not filtered.** The tunnel carries no
-  TCP, and answers a connection to its resolver with an immediate refusal rather than silence, so
-  such an app fails at once instead of waiting out a minute-long timeout. What Walcott does follow
-  over TCP is an answer too big for one datagram: it asks the resolver again itself and passes the
-  whole answer back, which is what makes signed zones and long records resolve at all.
+- **The tunnel carries DNS and nothing else, in both address families.** The phone's resolver it
+  advertises is an IPv4 address, which the tunnel serves on an IPv6-only network as well; it
+  forwards to whichever resolvers the network offers, IPv6 ones included; and apart from the
+  public resolvers above, IPv6 goes where it always went. (Until 0.116 the tunnel had no IPv6
+  address, and Android blocks every IPv6 connection on a VPN like that: with the filter on, the
+  whole phone lost IPv6.)
+- **DNS over TCP is filtered like DNS over UDP.** A connection to port 53 of the phone's resolver or
+  of one of the public resolvers above is answered inside the tunnel, through the same rules — which
+  is also what the "are we online?" checks some apps make by connecting to 8.8.8.8:53 need, and
+  what used to tell a child an online phone was offline. Any other TCP to those addresses (DNS over
+  TLS or HTTPS) is refused at once rather than left to time out. An answer too big for one datagram
+  Walcott fetches over TCP itself and passes back whole, which is what makes signed zones and long
+  records resolve.
 - **The addresses a phone uses to check whether its network works are never blocked by a list.**
   A list that blocked one made the phone declare a working Wi-Fi dead and leave it for mobile data,
   silently and at the family's expense. Eight probe hosts are spared; a domain a parent blocks by

@@ -3,6 +3,66 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.116.0 — the phone that must keep working, reviewed
+
+A review on 2026-09-13, asked for by ole ("caminos críticos que puedan dejar el móvil del hijo o del
+adulto funcionando mal… el filtro DNS con navegación normal… cómo de agresivas son las listas"),
+then "hazlo todo y corta release". Four findings were reproduced on the emulator before any fix
+(see the memory note `reference-critical-paths-review-2026-09-13`); the rest were read in the code.
+
+- **The remote lock PIN never worked on a phone that already had a PIN.** `lockToken()` registered
+  the reset token on every read, and registering REPLACES the token: on a phone with a credential
+  the replacement stays inactive until that PIN is typed (not a fingerprint). `setLockPin`
+  re-registered immediately before `isResetPasswordTokenActive`, so it answered NOT_ARMED every
+  time. Reproduced on API 35 (`dumpsys lock_settings`: the token protector's `spblob` vanishes on
+  registration and returns only after the PIN is entered). Now `LockScreen.needsRegistration`
+  registers only without an own token or without an active one. `AssistedScenarioTest` changes
+  the PIN a second time, which the emulator (no lock, token active at once) used to hide.
+- **A keyboard, home screen or alarm clock installed from Play was limited like any app.** With
+  the accessibility blocker (children without Device Owner) the keyboard's own window was read as
+  the keyboard app opening: at bedtime, in a screen-free window, when the total ran out or failing
+  closed, every text field sent the phone home — reproduced on API 35, control run without bedtime
+  clean. On Device Owner, suspension alone does NOT break an IME (also reproduced). A suspended
+  alarm app cannot ring. `AppInventory.infrastructurePackages` (home, enabled IMEs, `SET_ALARM`
+  handlers + the next alarm's owner; 5-min TTL) joins the essentials, and the child reports
+  `InstalledAppInfo.alwaysAvailable` so the parent's app list and detail say no limit applies.
+- **Lists: a way out that is not switching the list off.** `PolicySettings.allowedDomains`
+  (family-wide, "Always allowed" under the lists) is checked in `DomainFilter` below the family's
+  own blocks, per-app rules and the curfew, above the lists. Measured collateral that motivated it:
+  the default betting list carries mundodeportivo.com and 365scores.com, the default adult list
+  fb.watch. `NEVER_BLOCK` is now also asked at decision time (a list entry that is a PARENT of a
+  spared host, or a list compiled by an older build, used to get through) and gained the push
+  (`mtalk`/`alt*-mtalk`), account, time, oisd and Huawei route-service hosts. Piracy is flagged
+  `mayBreakApps` (MEGA, MediaFire); the bypass list bundles Firefox's `use-application-dns.net`
+  canary; the size figures in `Blocklists` match what was measured (1.7 M with everything on).
+- **An adult's screen timeout was locked at whatever it was.** Raised to a minute before locking,
+  like the brightness floor (`DeviceRestrictions.lockedScreenTimeoutFloor`).
+- **Uncaught throws that were process crashes.** A handler on the application scope; the ringer
+  count writes, the install-block receiver and the identity reads in the heartbeat, parent
+  catch-up and boot receivers guarded; WorkManager initialised on demand with an
+  initialization-exception handler (default initializer removed in the manifest), because its
+  start-up check throws on a full or corrupted phone and the crash loop left suspended apps
+  suspended.
+- **The tunnel** (written by a sub-agent in a worktree, commit dd5e7b2 on its branch, reviewed and
+  applied here). IPv6 was blocked for every app while the tunnel was up — no IPv6 address, so the
+  platform installs `::/0 unreachable` (reproduced: `ip -6 route get` → No route to host). The tun
+  now has a ULA /128 (`fd00:7761:6c63:6f74::1`) and routes the public resolvers' IPv6 addresses
+  (`PublicResolvers`; NextDNS's /96 is inferred from its per-config address shape, Control D's /48s
+  are documented, OpenDNS FamilyShield `::123` comes from a retired page); `IpPackets` reads and
+  answers IPv6 (UDP with the mandatory checksum, ICMPv6 unreachable and echo, TCP), extension
+  headers and fragments declined. TCP to port 53 is served by `DnsTcpResponder` (pure, tested) —
+  connectivity checks that connect to 8.8.8.8:53 were refused (reproduced with `nc`); other TCP
+  still RST. Attribution asks with the real four-tuple. Past 16 in flight a query waits up to
+  1.5 s instead of an instant SERVFAIL. Only the network's own resolvers are remembered first
+  (`DnsUpstreams.ordered`). The lists are recompiled only when `ListsIdentity` changes, and an
+  OOM keeps the previous matcher (and `BlocklistStore.readInto` no longer swallows one). Failed
+  lookups log once per outage/minute (`OutageLog`). `NetworkCurfew` caches by the rescue flag.
+  Start/stop serialised under one lock with a per-tunnel `Session`; the retry backoff, which
+  stopped after its first failed retry, continues.
+- `WebFilterScenarioTest` gains the scenario that was missing: with the filter up, an ordinary name
+  resolves, an allowed one passes a list, IPv6 routes normally and TCP 53 to a public resolver
+  connects.
+
 ## Shipped in v0.115.0 — freeing a phone, by default and in plain sight
 
 - **"Remove" frees their phone by default.** The remove dialog's "also release their phone" box

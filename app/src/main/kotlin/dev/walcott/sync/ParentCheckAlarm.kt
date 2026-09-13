@@ -66,7 +66,10 @@ object ParentCheckAlarm {
 
     /** Runs one catch-up; kept short, because a broadcast's goAsync budget is not generous. */
     internal suspend fun runCheck(context: Context) {
-        if (IdentityStore(context).current().effectiveMode != DeviceMode.PARENT) {
+        val identity = runCatching { IdentityStore(context).current() }
+            .onFailure { DebugLog.e(TAG, "could not read this device's identity; skipping this catch-up", it) }
+            .getOrNull() ?: return
+        if (identity.effectiveMode != DeviceMode.PARENT) {
             // Not (or no longer) a parent: stop the chain rather than waking up for ever.
             cancel(context)
             return

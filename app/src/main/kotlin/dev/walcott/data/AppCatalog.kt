@@ -24,6 +24,8 @@ object AppCatalog {
         val system: Boolean = false,
         /** Whether any phone reporting it calls it an app for reaching a person. */
         val reachOut: Boolean = false,
+        /** Whether any phone reporting it runs on it and never limits it (a keyboard, home, an alarm). */
+        val alwaysAvailable: Boolean = false,
     )
 
     /**
@@ -41,6 +43,7 @@ object AppCatalog {
                     label = hits.first().first.label,
                     system = hits.any { it.first.system },
                     reachOut = hits.any { it.first.reachOut },
+                    alwaysAvailable = hits.any { it.first.alwaysAvailable },
                     owners = hits.map { (_, snapshot) ->
                         Owner(
                             id = snapshot.childId.ifBlank { snapshot.deviceId },

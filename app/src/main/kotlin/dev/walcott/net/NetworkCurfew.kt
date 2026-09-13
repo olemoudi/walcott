@@ -64,6 +64,16 @@ object NetworkCurfew {
     @Volatile private var standingAt = 0L
     @Volatile private var standingFreshAt = 0L
 
+    /**
+     * The rescue flag the standing half was last worked out with.
+     *
+     * Part of what is cached, not only of what is asked. The answer used to be held for its second
+     * whatever flag the NEXT caller brought, so for up to a second after a rescue code was typed
+     * the filter went on refusing the browsers as bedtime, and a watchdog pass that asked without
+     * the flag at all saw a window the rescue had opened and raised the tunnel for it.
+     */
+    @Volatile private var standingRescued = false
+
     /** Whether the rules are currently unreadable, so the failure is logged once and not per query. */
     @Volatile private var readFailing = false
 
@@ -93,10 +103,15 @@ object NetworkCurfew {
      *
      * Re-derives the standing half at most once a [STANDING_TTL_MS]: this sits in the path of
      * every DNS query the phone makes, and a window is a thing that turns over on the hour.
+     *
+     * [rescued] is whether a rescue code holds the phone open (`SyncManager.rescueOpenNow`). Every
+     * caller that acts on the answer — the packet loop, the watchdog — passes it exactly as the
+     * enforcement loop computes it, and a change in it is a change in the answer, TTL or not. The
+     * default is only for a caller that does not act on it.
      */
     suspend fun cutOffNow(repository: WalcottRepository, rescued: Boolean = false): Set<String> {
         val since = android.os.SystemClock.elapsedRealtime()
-        if (since - standingAt > STANDING_TTL_MS) {
+        if (since - standingAt > STANDING_TTL_MS || rescued != standingRescued) {
             standingAt = since
             val fresh = runCatching {
                 Curfew.standing(
@@ -134,6 +149,9 @@ object NetworkCurfew {
                     standing = fresh
                     standingFreshAt = since
                 }
+                // A rescue opens everything whatever the rules say, so rules that cannot be read
+                // are no reason to hold a curfew through one.
+                rescued -> standing = Curfew.Standing(windowOpen = false, packages = emptySet())
                 since - standingFreshAt > STALE_GRACE_MS -> {
                     // Held long enough that it no longer proves anything about the hour.
                     if (standing.windowOpen) {
@@ -142,6 +160,7 @@ object NetworkCurfew {
                     standing = Curfew.Standing(windowOpen = false, packages = emptySet())
                 }
             }
+            standingRescued = rescued
         }
         return standing.with(_packages.value)
     }

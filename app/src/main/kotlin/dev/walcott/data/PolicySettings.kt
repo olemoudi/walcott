@@ -712,6 +712,18 @@ data class PolicySettings(
      */
     val blocklistExemptApps: Set<String> = emptySet(),
     /**
+     * Names the family reaches whatever the lists behind [enabledBlocklists] say about them.
+     *
+     * The other escape hatch, for the other half of the same failure: [blocklistExemptApps] is
+     * for the app that breaks when nobody can tell which domain did it, and this is for the day
+     * the domain IS known — a sports daily on the betting list, a video-link host on the adult
+     * one — and switching the whole list off to reach it would be the wrong answer. Suffix-matched
+     * like every domain here, family-wide like the lists, and answering to the lists alone: the
+     * domains the family typed as blocked, per-app rules and the curfew still apply (see
+     * `DomainFilter.isBlocked`).
+     */
+    val allowedDomains: Set<String> = emptySet(),
+    /**
      * How often a child re-downloads the public lists behind [enabledBlocklists], in hours.
      *
      * A family decision like the lists themselves, and one with a real trade-off: the sources are

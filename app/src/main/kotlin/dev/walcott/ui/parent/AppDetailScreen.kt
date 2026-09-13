@@ -77,6 +77,7 @@ fun AppDetailScreen(
     val label = row?.app?.label ?: packageName
     val isSystemApp = row?.app?.isSystem == true
     val reachOut = row?.reachOut == true
+    val alwaysAvailable = row?.alwaysAvailable == true
     val children by viewModel.children.collectAsStateWithLifecycle()
     // The members who have this app on a build that cannot manage a preinstalled one. Named
     // rather than counted: with two phones in a family, "one of them" is not an answer.
@@ -143,6 +144,26 @@ fun AppDetailScreen(
             // it means: this is how the child contacts somebody, so the rules nobody wrote about
             // it by name — the family default, the day's total — leave it alone. A limit set
             // HERE does not, and the parent is owed that sentence before they set one.
+            // First of all: nothing on this screen applies to this app, and a parent about to set a
+            // limit on the keyboard is owed that before the controls rather than after.
+            if (alwaysAvailable) {
+                item {
+                    WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Column(Modifier.padding(spacing.lg)) {
+                            Text(
+                                stringResource(R.string.app_always_available_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(
+                                stringResource(R.string.app_always_available_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
             if (reachOut) {
                 item {
                     WalcottCard(color = MaterialTheme.colorScheme.secondaryContainer) {

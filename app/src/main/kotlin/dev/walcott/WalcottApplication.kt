@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Process-wide dependency container (manual DI — no frameworks). */
-class WalcottApplication : Application() {
+class WalcottApplication : Application(), androidx.work.Configuration.Provider {
 
     /** The families this device holds, all of them live (see [FamilyHub]). */
     lateinit var hub: FamilyHub
@@ -47,7 +47,31 @@ class WalcottApplication : Application() {
     lateinit var themeStore: ThemeStore
         private set
 
-    private val appScope = CoroutineScope(SupervisorJob())
+    // With a handler: a coroutine on this scope that throws used to be an uncaught exception, which
+    // is a process crash — on the child, the enforcement loop and every suspension going with it.
+    private val appScope = CoroutineScope(
+        SupervisorJob() + kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+            DebugLog.e(TAG, "a background task on the app scope failed", error)
+        },
+    )
+
+    /**
+     * WorkManager, initialised on demand with a handler for its own start-up failure.
+     *
+     * Its start-up check opens its database on every process start and, after retrying, throws
+     * when it cannot — a full or corrupted phone — unless a handler is set. Without one that throw
+     * killed the process each time it started; two crashes inside a minute and Android stops
+     * delivering this app its alarms and boot broadcast, which on a child's phone leaves whatever
+     * was suspended suspended. The watchdog and the updater are WorkManager jobs, so losing them is
+     * a real cost — but it is a cost, and the crash loop was the phone. (The default initializer
+     * is removed in the manifest; with it in place this configuration would never be asked for.)
+     */
+    override val workManagerConfiguration: androidx.work.Configuration
+        get() = androidx.work.Configuration.Builder()
+            .setInitializationExceptionHandler { error ->
+                DebugLog.e(TAG, "WorkManager could not start; its jobs will not run this time", error)
+            }
+            .build()
 
     override fun onCreate() {
         super.onCreate()

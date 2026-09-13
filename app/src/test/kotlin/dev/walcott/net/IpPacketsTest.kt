@@ -1,6 +1,8 @@
 package dev.walcott.net
 
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -95,12 +97,12 @@ class IpPacketsTest {
     }
 
     @Test
-    fun `anything that is not IPv4 UDP is not a DNS query`() {
+    fun `anything that is not UDP is not a DNS query`() {
         assertNull(IpPackets.dnsStart(ipv4(IpPackets.PROTO_TCP, ByteArray(24))))
         assertNull(IpPackets.dnsStart(ipv4(IpPackets.PROTO_ICMP, ByteArray(24))))
-        val v6 = ByteArray(60).also { it[0] = 0x60 }
-        assertNull(IpPackets.dnsStart(v6))
-        assertNull(IpPackets.parse(v6))
+        assertNull(IpPackets.dnsStart(ipv6(IpPackets.PROTO_TCP, ByteArray(24))))
+        // Neither IPv4 nor IPv6 at all.
+        assertNull(IpPackets.parse(ByteArray(60).also { it[0] = 0x50 }))
     }
 
     @Test
@@ -262,6 +264,224 @@ class IpPacketsTest {
         val short = ipv4(IpPackets.PROTO_UDP, ByteArray(4))
         assertNull(IpPackets.portUnreachable(short), "a UDP header that is not all there")
     }
+
+    // ---- IPv4, unchanged by IPv6 ----------------------------------------------------------
+
+    @Test
+    fun `the IPv4 answers are byte for byte what they were before IPv6 arrived`() {
+        // Captured from the IPv4-only implementation, so a refactor for the other family cannot
+        // quietly change a single bit of what every phone already relies on.
+        val udpHeader = "4500002c1234000040110000" + "0a6fde01" + "08080808"
+        val query = hex(udpHeader + "9c400035001800aa" + "abcd01000001000000000000" + "01610000")
+        val quic = hex(udpHeader + "9c4001bb001800aa" + "abcd01000001000000000000" + "01610000")
+        val echo = hex("4500002000000000400100000a6fde010a6fde02" + "080000001234000101020304")
+        val syn = hex("450000280000000040060000" + "0a6fde01" + "01010101" + "9c400035" + "0000002a" + "00000000" + "5002ffff" + "00000000")
+        val acked = hex("4500002b0000000040060000" + "0a6fde01" + "01010101" + "9c400035" + "0000004d" + "000003e9" + "5018ffff" + "00000000" + "414243")
+
+        assertEquals(
+            "450000280000000040118245080808080a6fde0100359c4000140000abcd81830001000000000000",
+            hex(IpPackets.udpResponse(query, hex("abcd81830001000000000000"))!!),
+        )
+        assertEquals(
+            "450000380000000040018245080808080a6fde010303ce4c000000004500002c12340000401100000a6fde01080808089c4001bb001800aa",
+            hex(IpPackets.portUnreachable(quic)!!),
+        )
+        assertEquals("45000020000000004001a9fb0a6fde020a6fde010000e9c41234000101020304", hex(IpPackets.echoReply(echo)!!))
+        assertEquals(
+            "45000028000000004006905e010101010a6fde0100359c40000000000000002b5014000028be0000",
+            hex(IpPackets.tcpReset(syn)!!),
+        )
+        assertEquals(
+            "45000028000000004006905e010101010a6fde0100359c40000003e9000000005004000025100000",
+            hex(IpPackets.tcpReset(acked)!!),
+        )
+    }
+
+    // ---- IPv6 -------------------------------------------------------------------------------
+
+    private val src6 = ByteArray(16).also { it[0] = 0xfd.toByte(); it[15] = 1 }
+    private val dst6 = byteArrayOf(0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0x88.toByte(), 0x88.toByte())
+
+    private fun ipv6(nextHeader: Int, payload: ByteArray, payloadLengthOverride: Int? = null): ByteArray {
+        val out = ByteArray(40 + payload.size)
+        out[0] = 0x60
+        val length = payloadLengthOverride ?: payload.size
+        out[4] = (length shr 8).toByte(); out[5] = length.toByte()
+        out[6] = nextHeader.toByte()
+        out[7] = 64
+        System.arraycopy(src6, 0, out, 8, 16)
+        System.arraycopy(dst6, 0, out, 24, 16)
+        System.arraycopy(payload, 0, out, 40, payload.size)
+        return out
+    }
+
+    @Test
+    fun `an IPv6 DNS query is located like an IPv4 one`() {
+        val query = ipv6(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()))
+        assertEquals(48, IpPackets.dnsStart(query))
+        assertEquals(48 + 20, IpPackets.dnsEnd(query))
+        assertEquals(40000, IpPackets.sourcePort(query))
+        assertEquals(53, IpPackets.destinationPort(query))
+        assertArrayEquals(src6, IpPackets.sourceAddress(query))
+        assertArrayEquals(dst6, IpPackets.destinationAddress(query))
+        assertArrayEquals(src, IpPackets.sourceAddress(ipv4(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()))))
+
+        // A header claiming more than arrived: the frame is the authority.
+        val lying = ipv6(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()), payloadLengthOverride = 9000)
+        assertEquals(lying.size, IpPackets.dnsEnd(lying))
+    }
+
+    @Test
+    fun `an IPv6 answer carries the checksum IPv6 makes mandatory`() {
+        val query = ipv6(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()))
+        val answer = IpPackets.udpResponse(query, dnsBody(41))!!
+
+        assertEquals(0x60, answer[0].toInt() and 0xF0)
+        assertEquals(8 + 41, readShort(answer, 4), "payload length")
+        assertEquals(IpPackets.PROTO_UDP, answer[6].toInt())
+        assertArrayEquals(dst6, answer.copyOfRange(8, 24), "from the resolver the app addressed")
+        assertArrayEquals(src6, answer.copyOfRange(24, 40))
+        assertEquals(53, readShort(answer, 40))
+        assertEquals(40000, readShort(answer, 42))
+        assertEquals(8 + 41, readShort(answer, 44))
+        // Zero would be "no checksum", which IPv6 does not allow: the kernel drops the datagram.
+        assertNotEquals(0, readShort(answer, 46))
+        assertTrue(transportChecksumVerifies(answer))
+    }
+
+    @Test
+    fun `an IPv6 checksum that works out to zero is sent as all ones`() {
+        val query = ipv6(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()))
+        // The checksum is linear: two payload bytes equal to the checksum without them cancel it.
+        val probe = readShort(IpPackets.udpResponse(query, ByteArray(2))!!, 46)
+        val answer = IpPackets.udpResponse(query, byteArrayOf((probe shr 8).toByte(), probe.toByte()))!!
+        assertEquals(0xFFFF, readShort(answer, 46))
+        assertTrue(transportChecksumVerifies(answer))
+    }
+
+    @Test
+    fun `IPv6 extension headers and fragments are declined, not walked`() {
+        assertNull(IpPackets.parse(ipv6(0, ByteArray(40))), "hop-by-hop: the kernel's own listener reports")
+        assertNull(IpPackets.parse(ipv6(44, udp(40000, 53, dnsBody()))), "a fragment")
+        assertNull(IpPackets.dnsStart(ipv6(44, udp(40000, 53, dnsBody()))))
+        assertNull(IpPackets.parse(ipv6(IpPackets.PROTO_UDP, ByteArray(4))), "a UDP header that is not all there")
+        val full = ipv6(IpPackets.PROTO_UDP, udp(40000, 53, dnsBody()))
+        for (cut in 0 until full.size) {
+            // Nothing may throw: this is fed straight off a tun.
+            IpPackets.parse(full, cut)
+            IpPackets.dnsStart(full, cut)
+            IpPackets.tcpSegment(full, cut)
+        }
+    }
+
+    @Test
+    fun `an IPv6 datagram to a port this tunnel does not serve is refused with ICMPv6`() {
+        val quic = ipv6(IpPackets.PROTO_UDP, udp(40000, 443, dnsBody(5)))
+        val refusal = IpPackets.portUnreachable(quic)!!
+
+        assertEquals(IpPackets.PROTO_ICMPV6, refusal[6].toInt())
+        assertEquals(1, refusal[40].toInt(), "type 1, destination unreachable")
+        assertEquals(4, refusal[41].toInt(), "code 4, port unreachable")
+        assertArrayEquals(dst6, refusal.copyOfRange(8, 24))
+        assertArrayEquals(src6, refusal.copyOfRange(24, 40))
+        assertEquals(refusal.size - 40, readShort(refusal, 4))
+        assertArrayEquals(quic, refusal.copyOfRange(48, refusal.size), "a small packet is quoted whole")
+        assertTrue(transportChecksumVerifies(refusal))
+
+        // A large one is quoted only as far as the minimum IPv6 MTU allows (RFC 4443 §2.4).
+        val big = ipv6(IpPackets.PROTO_UDP, udp(40000, 443, ByteArray(3000)))
+        val cut = IpPackets.portUnreachable(big)!!
+        assertEquals(1280, cut.size)
+        assertArrayEquals(big.copyOfRange(0, 1232), cut.copyOfRange(48, 1280))
+        assertTrue(transportChecksumVerifies(cut))
+    }
+
+    @Test
+    fun `a ping to an IPv6 resolver is answered, and nothing else ICMPv6 is`() {
+        val echo = ByteArray(17)
+        echo[0] = 128.toByte() // echo request
+        echo[4] = 0x12; echo[5] = 0x34
+        echo[7] = 0x01
+        val reply = IpPackets.echoReply(ipv6(IpPackets.PROTO_ICMPV6, echo))!!
+
+        assertEquals(129, reply[40].toInt() and 0xFF, "an echo reply is type 129")
+        assertEquals(0x12.toByte(), reply[44])
+        assertEquals(0x34.toByte(), reply[45])
+        assertEquals(0x01.toByte(), reply[47])
+        assertArrayEquals(dst6, reply.copyOfRange(8, 24))
+        assertTrue(transportChecksumVerifies(reply))
+        val solicitation = ByteArray(16).also { it[0] = 135.toByte() }
+        assertNull(IpPackets.echoReply(ipv6(IpPackets.PROTO_ICMPV6, solicitation)), "neighbour discovery")
+    }
+
+    @Test
+    fun `an IPv6 TCP connection to a port this tunnel does not serve is reset`() {
+        val syn = ByteArray(20)
+        syn[0] = 0x9C.toByte(); syn[1] = 0x40
+        syn[2] = 0x01; syn[3] = 0xBB.toByte() // 443
+        syn[7] = 0x2A // seq 42
+        syn[12] = 0x50
+        syn[13] = 0x02
+        val reset = IpPackets.tcpReset(ipv6(IpPackets.PROTO_TCP, syn))!!
+
+        assertEquals(60, reset.size)
+        assertEquals(IpPackets.PROTO_TCP, reset[6].toInt())
+        assertEquals(20, readShort(reset, 4))
+        assertEquals(0x14, reset[53].toInt() and 0xFF, "RST + ACK")
+        assertEquals(43, readInt(reset, 48))
+        assertArrayEquals(dst6, reset.copyOfRange(8, 24))
+        assertTrue(transportChecksumVerifies(reset))
+    }
+
+    @Test
+    fun `a TCP segment reads back as it was built, in both families`() {
+        for ((from, to) in listOf(dst to src, dst6 to src6)) {
+            val data = "hello".toByteArray()
+            val packet = IpPackets.tcpPacket(
+                source = from, sourcePort = 53, destination = to, destinationPort = 40000,
+                sequence = -2, acknowledgement = 0x7FFFFFFF, flags = IpPackets.TCP_SYN or IpPackets.TCP_ACK,
+                window = 16384, mss = 1400, data = data, dataOffset = 0, dataLength = data.size,
+            )
+            val segment = IpPackets.tcpSegment(packet)!!
+            assertEquals(if (from.size == 4) 4 else 6, segment.version)
+            assertArrayEquals(from, segment.source)
+            assertArrayEquals(to, segment.destination)
+            assertEquals(53, segment.sourcePort)
+            assertEquals(40000, segment.destinationPort)
+            assertEquals(-2, segment.sequence, "sequence numbers wrap and are kept as they are")
+            assertEquals(0x7FFFFFFF, segment.acknowledgement)
+            assertEquals(IpPackets.TCP_SYN or IpPackets.TCP_ACK, segment.flags)
+            assertEquals(16384, segment.window)
+            assertEquals(1400, segment.mss)
+            assertArrayEquals(data, packet.copyOfRange(segment.dataStart, segment.dataEnd))
+            assertTrue(transportChecksumVerifies(packet))
+            if (from.size == 4) assertEquals(0, IpPackets.checksum(packet, 0, 20), "IPv4 header checksum")
+        }
+    }
+
+    /** The transport checksum, over a pseudo-header laid out exactly as RFC 793 and RFC 8200 draw it. */
+    private fun transportChecksumVerifies(packet: ByteArray): Boolean {
+        val v6 = packet[0].toInt() and 0xF0 == 0x60
+        val start = if (v6) 40 else (packet[0].toInt() and 0x0F) * 4
+        val protocol = (if (v6) packet[6] else packet[9]).toInt() and 0xFF
+        val length = packet.size - start
+        val pseudo = if (v6) {
+            packet.copyOfRange(8, 40) + byteArrayOf(
+                (length ushr 24).toByte(), (length ushr 16).toByte(), (length ushr 8).toByte(), length.toByte(),
+                0, 0, 0, protocol.toByte(),
+            )
+        } else {
+            packet.copyOfRange(12, 20) + byteArrayOf(0, protocol.toByte(), (length shr 8).toByte(), length.toByte())
+        }
+        val whole = pseudo + packet.copyOfRange(start, packet.size)
+        return IpPackets.checksum(whole, 0, whole.size) == 0
+    }
+
+    private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }
+
+    private fun hex(text: String): ByteArray = ByteArray(text.length / 2) { text.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+
+    private fun readShort(buf: ByteArray, at: Int): Int = ((buf[at].toInt() and 0xFF) shl 8) or (buf[at + 1].toInt() and 0xFF)
 
     private fun readInt(buf: ByteArray, at: Int): Int =
         ((buf[at].toInt() and 0xFF) shl 24) or ((buf[at + 1].toInt() and 0xFF) shl 16) or

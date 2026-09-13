@@ -47,6 +47,12 @@ object DomainFilter {
      *
      * [cutOff] is the one input here that is not about a domain at all (see [Curfew]): the phone
      * is shut, and these apps resolve nothing until it opens again.
+     *
+     * [allowedDomains] is the family answering a list back: names they want to reach whatever a
+     * downloaded list says about them. It is the way out of a list without switching the list
+     * off — the betting list carries a national sports daily, the adult one a video-link
+     * shortener — and it answers ONLY to the lists: what the family typed as blocked, a per-app
+     * rule and the curfew are all decided above it, because those are rules somebody here chose.
      */
     fun isBlocked(
         host: String,
@@ -56,6 +62,7 @@ object DomainFilter {
         appRules: List<DomainAppRule>,
         listExemptApps: Set<String> = emptySet(),
         cutOff: Set<String> = emptySet(),
+        allowedDomains: DomainMatcher = DomainMatcher.EMPTY,
     ): Boolean {
         // First, and above the exemptions in particular. Everything below this line is a
         // judgement about a destination; this is a judgement about the hour. An app waived from
@@ -82,6 +89,11 @@ object DomainFilter {
 
         if (familyDomains.matches(h)) return true
 
+        // What the family allowed back from the lists. Below their own blocks, so a name both
+        // typed as blocked and allowed stays blocked: the explicit "no" is the safer reading of a
+        // contradiction, and the screen that shows both is where it gets noticed.
+        if (allowedDomains.matches(h)) return false
+
         // Below what this family decided and above what a list decided, which is the only place
         // it can go. The phone's own connectivity probes must survive a downloaded list: a list
         // that refuses one makes the phone declare a good Wi-Fi dead and leave it for mobile data,
@@ -91,6 +103,14 @@ object DomainFilter {
         // and the curfew, all of which are decided above. What this refuses is a list nobody in
         // the family has read doing it on their behalf.
         if (BlocklistSource.isConnectivityCheck(h)) return false
+
+        // The same guard for what the phone and the family cannot lose (see
+        // [BlocklistSource.NEVER_BLOCK]), and here for the reason the probes are: it used to run
+        // only when a list was ingested, where it removed entries AT or BELOW a spared name and
+        // nothing else. A list carrying a parent of one — `clients.google.com`, say — still took
+        // `android.clients.google.com` with it, and a list compiled by an older build was never
+        // re-checked at all. Asked of the name being looked up, it covers both.
+        if (BlocklistSource.isSpared(h)) return false
 
         // Exemptions apply to the lists and to nothing above this line.
         if (packageName != null && packageName in listExemptApps) return false

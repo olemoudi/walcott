@@ -304,7 +304,7 @@ private fun AppAssignRow(
                 }
                 // Tags: where the app came from, whether its limit is real, and who has it.
                 val owners = if (showOwners) row.owners.map { it.name } else emptyList()
-                if (row.app.isSystem || row.reachOut || limitIdle || owners.isNotEmpty()) {
+                if (row.app.isSystem || row.reachOut || row.alwaysAvailable || limitIdle || owners.isNotEmpty()) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.padding(top = 2.dp),
@@ -317,6 +317,15 @@ private fun AppAssignRow(
                         if (row.reachOut) {
                             AppTag(
                                 stringResource(R.string.apps_reach_out_tag),
+                                container = MaterialTheme.colorScheme.secondaryContainer,
+                                content = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                        // Stronger than the one above it: no limit reaches this app at all,
+                        // including one set on it by name.
+                        if (row.alwaysAvailable) {
+                            AppTag(
+                                stringResource(R.string.apps_always_available_tag),
                                 container = MaterialTheme.colorScheme.secondaryContainer,
                                 content = MaterialTheme.colorScheme.onSecondaryContainer,
                             )

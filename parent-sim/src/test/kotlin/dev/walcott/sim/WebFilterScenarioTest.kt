@@ -79,6 +79,54 @@ class WebFilterScenarioTest : DeviceScenario() {
         assertEquals(0, filtering.filterListDomains, "no lists are on, so no list domains were downloaded")
     }
 
+    @Test
+    fun `with the filter up, ordinary names resolve, allowed ones pass a list, IPv6 leaves and TCP DNS answers`() {
+        // What no parent ever looks at and every page load depends on: the tunnel is up for a family
+        // that asked for SOME names to be blocked, and everything else has to work as if it were not
+        // there. Nothing here used to check that — only that the tunnel came up — and two things did
+        // not work: IPv6 was cut for every app (a VPN that adds no IPv6 address has the whole family
+        // blocked by the platform), and a TCP connection to a public resolver's port 53, which is how
+        // several app frameworks decide whether they are online at all, was refused.
+        parent.pushPolicy(
+            PolicyJson.build(
+                version = 2,
+                extra = mapOf(
+                    // Bundled-only, so nothing has to download: pinterest.com and reddit.com are on it.
+                    "enabledBlocklists" to JsonArray(listOf(JsonPrimitive("social"))),
+                    "allowedDomains" to JsonArray(listOf(JsonPrimitive("reddit.com"))),
+                ),
+            ),
+        )
+        childEventuallyReports { it.webFilterExpected && it.webFilterOn }
+
+        awaitDevice("a name on the list is refused") { !resolves("www.pinterest.com") }
+        awaitDevice("a name the family allowed back from the list resolves") { resolves("www.reddit.com") }
+        assertTrue(resolves("www.wikipedia.org"), "a name nobody blocked did not resolve through the tunnel")
+
+        // IPv6 to anywhere but a routed resolver goes out the ordinary way…
+        val ordinary = device.run("shell", "ip", "-6", "route", "get", ORDINARY_IPV6)
+        org.junit.jupiter.api.Assertions.assertFalse(
+            "No route to host" in ordinary || "unreachable" in ordinary,
+            "IPv6 is cut off for every app while the filter runs: $ordinary",
+        )
+        // …and to a public resolver it lands in the tunnel, like its IPv4 twin, so asking one over
+        // IPv6 is not a way round the filter either.
+        val resolver = device.run("shell", "ip", "-6", "route", "get", "2001:4860:4860::8888")
+        assertTrue("tun0" in resolver, "a public IPv6 resolver is not routed into the filter: $resolver")
+
+        val tcp = device.run("shell", "nc -z -w 3 8.8.8.8 53 && echo TCP_DNS_OK || echo TCP_DNS_REFUSED")
+        assertTrue("TCP_DNS_OK" in tcp, "a TCP connection to a public resolver's port 53 was refused: $tcp")
+    }
+
+    /** Whether [host] resolves on the device, asked the way an app asks: through the system resolver. */
+    private fun resolves(host: String): Boolean =
+        !device.run("shell", "ping", "-c", "1", "-W", "2", host).contains("unknown host")
+
+    private companion object {
+        /** Any IPv6 address that is not a public resolver (a Google web front end). */
+        const val ORDINARY_IPV6 = "2a00:1450:4003:80e::200e"
+    }
+
     /** A policy that asks for a DNS filter, which is what makes the tunnel wanted at all. */
     private fun filterPolicy(version: Long): String = PolicyJson.build(
         version = version,

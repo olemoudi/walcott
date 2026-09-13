@@ -284,6 +284,15 @@ data class InstalledAppInfo(
      * device that would never have blocked it.
      */
     val reachOut: Boolean = false,
+    /**
+     * Whether this is an app the phone itself runs on — its home screen, a keyboard, an alarm
+     * clock — which that phone never limits by anything (see `AppInventory.infrastructurePackages`).
+     *
+     * Reported for the same reason as [reachOut], only stronger: a limit the parent sets on one of
+     * these is not applied at all, and the parent is owed that on the screen where they set it.
+     * Older children never send it, so it reads false for them, which is what they enforce.
+     */
+    val alwaysAvailable: Boolean = false,
 )
 
 /**

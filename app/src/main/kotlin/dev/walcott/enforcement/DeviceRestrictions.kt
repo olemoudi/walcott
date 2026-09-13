@@ -252,6 +252,7 @@ object DeviceRestrictions {
             }
         }
         if (KEY_BRIGHTNESS in enabledKeys) raiseDarkScreen(context, dpm, admin)
+        if (KEY_SCREEN_TIMEOUT in enabledKeys) raiseShortTimeout(context, dpm, admin)
         runCatching {
             dpm.setKeyguardDisabledFeatures(
                 admin,
@@ -312,6 +313,34 @@ object DeviceRestrictions {
                 dev.walcott.debug.DebugLog.i(TAG, "screen raised from $current to $floor before its brightness was locked")
             }
         }.onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not raise a dark screen", it) }
+    }
+
+    /** The shortest screen timeout a phone is locked at (see [lockedScreenTimeoutFloor]). */
+    const val MIN_LOCKED_SCREEN_TIMEOUT_MS = 60_000
+
+    /**
+     * The screen timeout to set before the setting is locked, or null to leave it alone.
+     *
+     * The brightness floor's reasoning, applied to the other half of the same switch: locking the
+     * timeout freezes whatever value the phone had, and a phone enrolled at fifteen seconds goes
+     * dark in the middle of a sentence, mid-way through dialling, for good — its owner can no
+     * longer change it and does not know why it happens. A minute is short enough to be nobody's
+     * idea of a battery problem; anything longer was somebody's choice and stays.
+     */
+    fun lockedScreenTimeoutFloor(currentMs: Int): Int? =
+        if (currentMs in 1 until MIN_LOCKED_SCREEN_TIMEOUT_MS) MIN_LOCKED_SCREEN_TIMEOUT_MS else null
+
+    /** Raises a very short screen timeout to [MIN_LOCKED_SCREEN_TIMEOUT_MS] (see [lockedScreenTimeoutFloor]). */
+    private fun raiseShortTimeout(context: Context, dpm: DevicePolicyManager, admin: ComponentName) {
+        runCatching {
+            val current = Settings.System.getInt(
+                context.contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, MIN_LOCKED_SCREEN_TIMEOUT_MS,
+            )
+            lockedScreenTimeoutFloor(current)?.let { floor ->
+                dpm.setSystemSetting(admin, Settings.System.SCREEN_OFF_TIMEOUT, floor.toString())
+                dev.walcott.debug.DebugLog.i(TAG, "screen timeout raised from ${current}ms to ${floor}ms before it was locked")
+            }
+        }.onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not raise a short screen timeout", it) }
     }
 
     /**

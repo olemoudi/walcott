@@ -49,7 +49,13 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 // that is the point: this worker runs precisely when the loop is the thing that
                 // is missing (a reboot, an OEM kill). Taking the loop's answer would have this
                 // pass conclude that nothing is cut off and switch the filter off mid-bedtime.
-                val curfew = dev.walcott.net.NetworkCurfew.cutOffNow(app.repository)
+                //
+                // And with the rescue asked the same way the loop and the filter ask it: a pass
+                // that left it out saw a window a rescue code had opened, and raised the tunnel
+                // for a curfew nobody is under.
+                val curfew = dev.walcott.net.NetworkCurfew.cutOffNow(
+                    app.repository, rescued = app.syncManager.rescueOpenNow(),
+                )
                 dev.walcott.net.VpnController.apply(
                     applicationContext,
                     // A live monitoring session counts as a reason to be up, or the watchdog

@@ -78,15 +78,35 @@ object DnsUpstreams {
      * sentinel back to us would otherwise make the filter forward queries to itself — an
      * infinite loop inside the tunnel rather than a slow lookup.
      */
-    fun choose(fromNetwork: List<String>, exclude: Set<String> = emptySet()): List<String> {
-        val usable = fromNetwork
+    fun choose(fromNetwork: List<String>, exclude: Set<String> = emptySet()): List<String> =
+        (usable(fromNetwork, exclude) + FALLBACKS).distinct().take(MAX_UPSTREAMS)
+
+    /** The network's own resolvers that [choose] can use, before any last resort is appended. */
+    fun usable(fromNetwork: List<String>, exclude: Set<String> = emptySet()): List<String> =
+        fromNetwork
             // A zone id ("fe80::1%wlan0") is meaningful only to the interface that offered it,
             // and it is the zone that makes a link-local address routable — so one arriving here
             // is dropped below rather than carried without it.
             .map { it.substringBefore('%') }
             .filter { isIpLiteral(it) && !isLinkLocal(it) && it !in exclude }
             .distinct()
-        return (usable + FALLBACKS).distinct().take(MAX_UPSTREAMS)
+
+    /**
+     * [upstreams] in the order to try them: [lastGood] first, but only when it is one of the
+     * network's [own] resolvers.
+     *
+     * The resolver that answered last is remembered so that a network whose first resolver is
+     * merely slow does not cost its whole timeout on every lookup. A public last resort must never
+     * be that resolver, though. One slow answer from a home router used to make 1.1.1.1 the first
+     * choice for as long as the network lasted, and from then on the names only the router knows
+     * — fritz.box, the school intranet, a hotel portal's own host — stopped resolving, and a
+     * router doing the family's filtering was quietly bypassed. The caller does not remember a
+     * last resort in the first place; this refuses to promote one regardless.
+     */
+    fun ordered(upstreams: List<String>, own: Set<String>, lastGood: String?): List<String> {
+        if (lastGood == null || lastGood !in own || lastGood !in upstreams) return upstreams
+        if (upstreams.first() == lastGood) return upstreams
+        return listOf(lastGood) + upstreams.filterNot { it == lastGood }
     }
 
     /**

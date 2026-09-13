@@ -107,6 +107,54 @@ class DnsUpstreamsTest {
         assertFalse(DnsUpstreams.isLinkLocal("fee1::1"), "not every fe- prefix is link-local")
     }
 
+    // ---- which resolver goes first -------------------------------------------------------
+
+    @Test
+    fun `the network's own resolver that answered last goes first`() {
+        val list = listOf("192.168.1.1", "192.168.1.2", DnsUpstreams.FALLBACK)
+        val own = setOf("192.168.1.1", "192.168.1.2")
+        assertEquals(
+            listOf("192.168.1.2", "192.168.1.1", DnsUpstreams.FALLBACK),
+            DnsUpstreams.ordered(list, own, lastGood = "192.168.1.2"),
+        )
+        assertEquals(list, DnsUpstreams.ordered(list, own, lastGood = null))
+        assertEquals(list, DnsUpstreams.ordered(list, own, lastGood = "192.168.1.1"))
+        assertEquals(list, DnsUpstreams.ordered(list, own + "10.9.9.9", lastGood = "10.9.9.9"), "no longer in the list")
+    }
+
+    @Test
+    fun `a public last resort is never put before the network's own`() {
+        // One slow answer from a home router made 1.1.1.1 the first choice for the rest of the
+        // network's life, and fritz.box, the school intranet and the router's own filtering went
+        // with it.
+        val offered = listOf("192.168.178.1")
+        val list = DnsUpstreams.choose(offered)
+        val own = DnsUpstreams.usable(offered).toSet()
+        assertEquals(list, DnsUpstreams.ordered(list, own, lastGood = DnsUpstreams.FALLBACK))
+        assertEquals(list, DnsUpstreams.ordered(list, own, lastGood = DnsUpstreams.FALLBACKS.last()))
+
+        // Unless the network handed it out itself: then it IS the network's own.
+        val offersPublic = listOf("192.168.1.1", "1.1.1.1")
+        assertEquals(
+            listOf("1.1.1.1", "192.168.1.1", DnsUpstreams.FALLBACKS.last()),
+            DnsUpstreams.ordered(
+                DnsUpstreams.choose(offersPublic), DnsUpstreams.usable(offersPublic).toSet(), lastGood = "1.1.1.1",
+            ),
+        )
+    }
+
+    @Test
+    fun `usable is what the network offered, cleaned, and without any last resort`() {
+        assertEquals(
+            listOf("192.168.1.1", "2001:db8::1"),
+            DnsUpstreams.usable(
+                listOf("192.168.1.1", "fe80::1%wlan0", "2001:db8::1%wlan0", "dns.example", "10.111.222.2", "192.168.1.1"),
+                exclude = setOf("10.111.222.2"),
+            ),
+        )
+        assertEquals(emptyList<String>(), DnsUpstreams.usable(emptyList()))
+    }
+
     // ---- what is worth adopting at all ---------------------------------------------------
 
     @Test

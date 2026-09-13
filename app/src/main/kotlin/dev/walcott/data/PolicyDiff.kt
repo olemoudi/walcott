@@ -59,6 +59,7 @@ object PolicyDiff {
         if (deployed.blockedDomains != current.blockedDomains ||
             deployed.domainAppRules != current.domainAppRules ||
             deployed.enabledBlocklists != current.enabledBlocklists ||
+            deployed.allowedDomains != current.allowedDomains ||
             deployed.blocklistRefreshHours != current.blocklistRefreshHours
         ) {
             changed += WEB_FILTER

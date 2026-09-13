@@ -202,7 +202,9 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 // first-run screen, so no app ever issues the query that would prove it. This is
                 // the same answer by the same path.
                 if (intent.getStringExtra("curfew") != null) {
-                    val cut = dev.walcott.net.NetworkCurfew.cutOffNow(target.repository)
+                    val cut = dev.walcott.net.NetworkCurfew.cutOffNow(
+                        target.repository, rescued = target.syncManager.rescueOpenNow(),
+                    )
                     DebugLog.i("WalcottSeed", "curfew now: ${cut.sorted().joinToString(",").ifEmpty { "-" }}")
                     // And the standing half on its own. The sum cannot say which half named a
                     // package, and the difference is the whole reason the standing half exists:

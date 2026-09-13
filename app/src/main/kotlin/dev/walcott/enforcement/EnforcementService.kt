@@ -501,7 +501,10 @@ class EnforcementService : LifecycleService() {
                     if (keepAudible) {
                         AudioGuard.liftDoNotDisturb(this@EnforcementService)
                         if (AudioGuard.enforce(this@EnforcementService, minPercent)) {
-                            app.syncManager.recordRingerRestore()
+                            // A count for the parent, and a disk write: a failed one must cost the
+                            // count, not the process this collector runs in.
+                            runCatching { app.syncManager.recordRingerRestore() }
+                                .onFailure { DebugLog.w(TAG, "could not count a ringer restore", it) }
                         }
                     }
                     // Armed here rather than at enrollment: a device that becomes Device Owner
@@ -525,7 +528,13 @@ class EnforcementService : LifecycleService() {
         val app = application as WalcottApplication
         val receiver = AudioGuard.RingerReceiver(
             minPercent = { ringerFloor },
-            onRestored = { lifecycleScope.launch { app.syncManager.recordRingerRestore() } },
+            onRestored = {
+                lifecycleScope.launch {
+                    // lifecycleScope has no exception handler: a throw here is a process crash.
+                    runCatching { app.syncManager.recordRingerRestore() }
+                        .onFailure { DebugLog.w(TAG, "could not count a ringer restore", it) }
+                }
+            },
         )
         return runCatching {
             ContextCompat.registerReceiver(
@@ -668,7 +677,11 @@ class EnforcementService : LifecycleService() {
         // The apps that reach a person, resolved once at start-up and logged: they are exempt
         // from every rule, so "why is this one never blocked" has to be answerable from the
         // child's own debug log rather than by guessing at the OEM's packaging.
-        DebugLog.i(TAG, "phone and contacts (never limited): ${repo.inventory.alwaysReachablePackages()}")
+        DebugLog.i(
+            TAG,
+            "never limited: phone and contacts ${repo.inventory.alwaysReachablePackages()}, " +
+                "home, keyboards and alarm clocks ${repo.inventory.infrastructurePackages()}",
+        )
         var lastTick = SystemClock.elapsedRealtime()
         var lastForeground: String? = null
         // Tracks how long the child has been away from each app, so opening one after a real

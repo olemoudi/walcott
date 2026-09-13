@@ -59,6 +59,20 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Walcott">
 
+        <!-- WorkManager is initialised on demand from WalcottApplication.workManagerConfiguration,
+             which carries a handler for its start-up failing on a full or corrupted phone. The
+             default initializer would start it first with no handler, so it is removed. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
         <!-- Compose reads the configuration reactively, so handling these here rather than being
              recreated for them is what keeps a parent three screens deep in a child's limits from
              being thrown back to the home screen — and past the app lock again — by turning the

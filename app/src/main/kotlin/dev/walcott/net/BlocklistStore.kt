@@ -98,8 +98,16 @@ class BlocklistStore private constructor(private val context: Context) {
         for (id in Blocklists.known(ids)) {
             val file = fileFor(id)
             if (!file.exists()) continue
-            runCatching { file.forEachLine { if (it.isNotEmpty()) sink(it) } }
-                .onFailure { DebugLog.w(TAG, "could not read the cached $id list", it) }
+            try {
+                file.forEachLine { if (it.isNotEmpty()) sink(it) }
+            } catch (oom: OutOfMemoryError) {
+                // Not swallowed like a read error. Caught here it left the caller compiling the part
+                // of the list that fitted as if it were the whole of it; thrown, the filter keeps the
+                // matcher it already had (see WalcottVpnService's compile) and says why.
+                throw oom
+            } catch (e: Exception) {
+                DebugLog.w(TAG, "could not read the cached $id list", e)
+            }
         }
     }
 

@@ -161,6 +161,8 @@ class AppInventory(private val context: Context) {
         // browser un-cut through tonight's window.
         browsers = emptySet()
         browsersReadAt = 0L
+        // And whatever runs the phone: a keyboard or alarm clock just installed is one already.
+        infrastructureReadAt = 0L
     }
 
     private fun readLaunchableApps(): List<InstalledApp> {
@@ -224,8 +226,49 @@ class AppInventory(private val context: Context) {
      * happily when asked. This list is the belt to the platform's braces, not a substitute for
      * them: what the OS refuses is reported as an enforcement gap either way.
      */
-    internal fun criticalPackages(): Set<String> =
-        alwaysReachablePackages() + setOfNotNull(homePackage()) + enabledInputMethods()
+    internal fun criticalPackages(): Set<String> = alwaysReachablePackages() + infrastructurePackages()
+
+    @Volatile private var infrastructure: Set<String> = emptySet()
+    @Volatile private var infrastructureReadAt = 0L
+
+    /**
+     * The apps the phone itself runs on: the home screen, every enabled keyboard, and the alarm
+     * clocks. Never limited by anything Walcott does (see [WalcottRepository.essentials]).
+     *
+     * Once only a guard on what a parent may opt in to managing, because the preinstalled ones are
+     * the usual case — and that left the installed ones managed like any other app, which is how a
+     * keyboard from Play broke a phone. At bedtime, in a screen-free window, when the day's total
+     * ran out or when the rules failed closed, the accessibility blocker took the keyboard's own
+     * window for the keyboard app being opened and sent the phone home on every text field —
+     * reproduced on API 35 with the blocker on: no typing anywhere, not a message to a parent, not
+     * the rescue code. A Play alarm clock suspended overnight cannot ring (suspended apps "will not
+     * be able to ring the device"), which is the morning the child was counting on it. None of the
+     * three is a thing anybody limits on purpose.
+     *
+     * The alarm clocks are the apps that take `SET_ALARM`, plus whoever owns the next alarm the
+     * system knows about — the second covers an app that schedules alarms without advertising the
+     * intent, and it is read at the moment a bedtime starts, with the screen on, which is when
+     * the suspension for the night is decided.
+     *
+     * Cached with a short TTL: read on every enforcement tick, and a keyboard enabled in Settings
+     * sends no package broadcast to invalidate anything.
+     */
+    fun infrastructurePackages(): Set<String> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (infrastructureReadAt == 0L || now - infrastructureReadAt > INFRASTRUCTURE_TTL_MS) {
+            infrastructure = (setOfNotNull(homePackage()) + enabledInputMethods() + alarmClockPackages()) - ownPackage
+            infrastructureReadAt = now
+        }
+        return infrastructure
+    }
+
+    private fun alarmClockPackages(): Set<String> = runCatching {
+        val handlers = pm.queryIntentActivities(Intent(android.provider.AlarmClock.ACTION_SET_ALARM), 0)
+            .mapNotNull { it.activityInfo?.packageName }
+        val nextAlarmOwner = context.getSystemService(android.app.AlarmManager::class.java)
+            ?.nextAlarmClock?.showIntent?.creatorPackage
+        (handlers + listOfNotNull(nextAlarmOwner)).filterTo(mutableSetOf()) { it != RESOLVER_PACKAGE }
+    }.getOrDefault(emptySet())
 
     /** Every keyboard the system has enabled, by package. */
     private fun enabledInputMethods(): Set<String> = runCatching {
@@ -317,6 +360,9 @@ class AppInventory(private val context: Context) {
     private companion object {
         /** How long the resolved apps are trusted; they change about as often as never. */
         const val REACH_OUT_TTL_MS = 60 * 60 * 1000L
+
+        /** How long [infrastructurePackages] is trusted; enabling a keyboard sends no broadcast. */
+        const val INFRASTRUCTURE_TTL_MS = 5 * 60 * 1000L
 
         /** Backstop only — the package receivers invalidate this the moment it goes stale. */
         const val LAUNCHABLE_TTL_MS = 10 * 60 * 1000L

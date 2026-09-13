@@ -41,7 +41,14 @@ object BlocklistSource {
      * the Google hosts the phone and the Play Store need in order to work.
      *
      * Note what is NOT here: bare `google.com`. Sparing it would spare `dns.google.com` with it,
-     * and an encrypted resolver is exactly what [Blocklists.BYPASS] exists to block.
+     * and an encrypted resolver is exactly what [Blocklists.BYPASS] exists to block. The Google
+     * hosts that ARE needed are therefore listed one by one: push (every notification any app on
+     * the phone receives arrives over `mtalk`), the account sign-in, and the phone's own clock.
+     *
+     * Checked when a list is read AND when a name is looked up (see `DomainFilter.isBlocked`):
+     * the first keeps the spared names out of the compiled list, the second covers what the first
+     * cannot — a list entry that is a PARENT of a spared host, and lists compiled by an older
+     * build that never ran this check against the entries added since.
      */
     val NEVER_BLOCK: Set<String> = setOf(
         "whatsapp.com", "whatsapp.net", "wa.me",
@@ -49,6 +56,17 @@ object BlocklistSource {
         "github.com", "githubusercontent.com",
         "googleapis.com", "gstatic.com", "googleusercontent.com",
         "play.google.com", "android.clients.google.com",
+        "mtalk.google.com", "mtalk4.google.com",
+        "alt1-mtalk.google.com", "alt2-mtalk.google.com", "alt3-mtalk.google.com", "alt4-mtalk.google.com",
+        "alt5-mtalk.google.com", "alt6-mtalk.google.com", "alt7-mtalk.google.com", "alt8-mtalk.google.com",
+        "accounts.google.com", "time.android.com",
+        // Where the lists themselves come from: a list that refused its own host could never be
+        // refreshed out of the entry that refused it.
+        "oisd.nl",
+        // Huawei's route service, which its phones ask where their push and account servers are.
+        // The trackers list carries it (measured 2026-09-13); its role is documented by Huawei and
+        // not tested on a device here, which is why it is one host and not the whole domain.
+        "grs.dbankcloud.com",
     )
 
     /**

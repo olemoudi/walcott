@@ -70,7 +70,10 @@ class InstallBlockReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                app.syncManager.rearmInstallBlock()
+                // Caught: a scope with no exception handler turns a throw into a process crash, and
+                // the watchdog and the service countdown re-arm the block anyway.
+                runCatching { app.syncManager.rearmInstallBlock() }
+                    .onFailure { dev.walcott.debug.DebugLog.e("WalcottInstallBlock", "could not re-arm the install block", it) }
             } finally {
                 pending.finish()
             }

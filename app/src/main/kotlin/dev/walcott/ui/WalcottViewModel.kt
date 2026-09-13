@@ -160,6 +160,8 @@ data class AppRow(
     val app: InstalledApp,
     /** This is how the child reaches a person; broad limits do not touch it (see FamilyConfig). */
     val reachOut: Boolean = false,
+    /** The phone runs on it (keyboard, home, alarm clock) and never limits it (see InstalledAppInfo). */
+    val alwaysAvailable: Boolean = false,
     val policy: AppPolicyDto?,
     /** Which children have this app installed (registry name, legacy device name as fallback). */
     val owners: List<dev.walcott.data.AppCatalog.Owner> = emptyList(),
@@ -1035,6 +1037,19 @@ class WalcottViewModel(
             updateOverrides(childId) { it.copy(blockedDomains = it.blockedDomains.orEmpty() - domain) }
         }
 
+    /**
+     * Lets the family reach [raw] whatever the lists say (see
+     * [dev.walcott.data.PolicySettings.allowedDomains]). Family-wide, like the lists it answers.
+     */
+    fun addAllowedDomain(raw: String) {
+        val domain = normalizeDomain(raw)
+        if (domain.isEmpty()) return
+        viewModelScope.launch { repository.updateSettings { it.copy(allowedDomains = it.allowedDomains + domain) } }
+    }
+
+    fun removeAllowedDomain(domain: String) =
+        viewModelScope.launch { repository.updateSettings { it.copy(allowedDomains = it.allowedDomains - domain) } }
+
     fun setDeviceRestriction(key: String, enabled: Boolean, childId: String? = null) =
         if (childId == null) {
             viewModelScope.launch {
@@ -1371,6 +1386,7 @@ class WalcottViewModel(
                     AppRow(
                         InstalledApp(it.packageName, it.label, isSystem = it.system),
                         reachOut = it.reachOut,
+                        alwaysAvailable = it.alwaysAvailable,
                         policy = s.appPolicies[it.packageName],
                         owners = it.owners,
                     )

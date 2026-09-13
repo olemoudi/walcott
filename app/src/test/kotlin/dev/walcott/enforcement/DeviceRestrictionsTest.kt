@@ -7,6 +7,24 @@ import org.junit.jupiter.api.Test
 
 class DeviceRestrictionsTest {
 
+    @Test
+    fun `a screen timeout shorter than a minute is raised before it is locked`() {
+        // A phone enrolled at fifteen seconds would otherwise go dark mid-sentence for good.
+        org.junit.jupiter.api.Assertions.assertEquals(
+            DeviceRestrictions.MIN_LOCKED_SCREEN_TIMEOUT_MS,
+            DeviceRestrictions.lockedScreenTimeoutFloor(15_000),
+        )
+    }
+
+    @Test
+    fun `a minute or longer is somebody's choice and stays`() {
+        org.junit.jupiter.api.Assertions.assertNull(DeviceRestrictions.lockedScreenTimeoutFloor(60_000))
+        org.junit.jupiter.api.Assertions.assertNull(DeviceRestrictions.lockedScreenTimeoutFloor(10 * 60_000))
+        org.junit.jupiter.api.Assertions.assertNull(DeviceRestrictions.lockedScreenTimeoutFloor(Int.MAX_VALUE))
+        // An unreadable value is not a short one.
+        org.junit.jupiter.api.Assertions.assertNull(DeviceRestrictions.lockedScreenTimeoutFloor(0))
+    }
+
     private val keys = setOf(DeviceRestrictions.KEY_INSTALLS, DeviceRestrictions.KEY_VPN)
 
     @Test

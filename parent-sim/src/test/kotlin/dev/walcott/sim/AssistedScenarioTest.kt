@@ -30,6 +30,7 @@ class AssistedScenarioTest : DeviceScenario() {
 
     /** The PIN this suite sets and then always removes again. */
     private val PIN = "4291"
+    private val SECOND_PIN = "5307"
 
     /**
      * Posts a notification and asks for the log until something comes back.
@@ -91,6 +92,14 @@ class AssistedScenarioTest : DeviceScenario() {
                     parent.childHistory.any { it.deviceId == deviceId && it.lockResetReady },
                     "the lock was changed by a device that never once said it could be",
                 )
+                // And again, now that the phone HAS a PIN — the case a family actually meets, and
+                // the one this emulator hid. The token used to be registered again immediately
+                // before the check, and on a phone with a PIN a re-registered token stays inactive
+                // until that PIN is typed: the first change here worked because the emulator had
+                // no lock, and every change after it answered "not armed".
+                val second = parent.awaitAck(parent.sendCommand(deviceId, RemoteAction.SET_LOCK_PIN, arg = SECOND_PIN))
+                assertTrue(second.ok, "a phone that already had a PIN refused the next change: ${second.detail}")
+                assertEquals(RemoteAction.DETAIL_LOCK_SET, second.detail)
             } else {
                 assertTrue(
                     ack.detail in setOf(RemoteAction.DETAIL_LOCK_NOT_ARMED, RemoteAction.DETAIL_LOCK_REFUSED),
@@ -115,6 +124,7 @@ class AssistedScenarioTest : DeviceScenario() {
             // "unconditionally" was a comment rather than a fact — a PIN survived a run and the
             // scenario it broke was one about a lost phone, three classes later.
             runCatching { device.run("shell", "locksettings", "clear", "--old", PIN) }
+            runCatching { device.run("shell", "locksettings", "clear", "--old", SECOND_PIN) }
             runCatching { device.run("shell", "locksettings", "set-disabled", "true") }
             device.nudgeAwake()
             device.dismissSwipeKeyguard()

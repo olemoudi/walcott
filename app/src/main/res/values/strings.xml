@@ -479,6 +479,8 @@
     <string name="blocklist_exempt_title">Apps the lists leave alone</string>
     <string name="blocklist_exempt_hint">If a list breaks an app, name the app here instead of hunting for the domain. The lists stop applying to it; the domains you blocked by hand still do.</string>
     <string name="blocklist_exempt_add">Add an app</string>
+    <string name="webfilter_allowed_title">Always allowed</string>
+    <string name="webfilter_allowed_hint">Sites a list above blocks that you want to reach anyway, like a sports paper on the betting list. The lists stop blocking them; the domains you block by hand, per-app rules and bedtime still apply.</string>
     <string name="blocklist_quick_setup">Set up the filter in a minute</string>
     <string name="setup_step_filter">Turn on the web filter</string>
     <string name="preset_filter_title">Quick filter setup</string>
@@ -1656,6 +1658,9 @@
     <string name="admin_support_short_assisted">Your family set up this phone with Walcott so they can help you with it. Open Walcott to ask them for help.</string>
     <string name="admin_support_long_assisted">Your family looks after this phone with Walcott, so the settings that are easy to change by accident stay as they are. Open Walcott and press \"Ask for help\", and your family will be told.</string>
     <string name="apps_reach_out_tag">Reaches you</string>
+    <string name="apps_always_available_tag">Always available</string>
+    <string name="app_always_available_title">Their phone needs this app</string>
+    <string name="app_always_available_hint">It is the keyboard, the home screen or an alarm clock on their phone, so no limit, bedtime or screen-free time closes it. A phone that cannot be typed on, or that cannot wake them in the morning, costs more than the minutes a limit would save.</string>
     <string name="app_reach_out_title">This is how they reach a person</string>
     <string name="app_reach_out_hint">Limits nobody wrote about this app — the family default and the total screen time a day — leave it alone, so a number typed on another screen can never stop them texting you. A limit set here does apply.</string>
     <string name="app_reach_out_limited">This app is how they reach a person, and you have given it a limit. When it runs out they cannot text from this phone.</string>
@@ -1885,6 +1890,13 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_116_0">
+        <item>With the web filter on, a child\'s phone no longer loses IPv6, and apps that check for a connection by reaching a public DNS server stop saying they are offline.</item>
+        <item>A site a list blocks can now be let through on its own, in Web filter › Always allowed: a sports paper on the betting list, for example, without switching the whole list off.</item>
+        <item>Changing the lock-screen PIN of a phone you help now works when that phone already has a PIN, which is when it is needed.</item>
+        <item>A keyboard, home screen or alarm clock installed from Google Play is never limited any more: at bedtime it could stop them typing, or an alarm from ringing. The app list marks them “Always available”.</item>
+        <item>Locking an adult\'s screen timeout first raises a very short one to a minute.</item>
     </string-array>
     <string-array name="whats_new_0_115_0">
         <item>Removing someone now frees their phone too, unless you untick the box. It used to start unticked, which left the phone applying the family\'s rules with nobody able to change them.</item>

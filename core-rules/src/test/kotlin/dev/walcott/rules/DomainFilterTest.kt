@@ -8,6 +8,61 @@ class DomainFilterTest {
 
     private val blocked = setOf("youtube.com", "tiktok.com")
 
+    // --- What the family allows back from the lists, and what no list may take ---
+
+    private fun listed(
+        host: String,
+        lists: Set<String> = emptySet(),
+        family: Set<String> = emptySet(),
+        allowed: Set<String> = emptySet(),
+        pkg: String? = null,
+        rules: List<DomainAppRule> = emptyList(),
+        cutOff: Set<String> = emptySet(),
+    ) = DomainFilter.isBlocked(
+        host,
+        pkg,
+        familyDomains = DomainMatcher.of(family),
+        lists = DomainMatcher.of(lists),
+        appRules = rules,
+        cutOff = cutOff,
+        allowedDomains = DomainMatcher.of(allowed),
+    )
+
+    @Test
+    fun `a name the family allowed is reached through a list that carries it`() {
+        // The case behind the feature: a national sports daily on the betting list, measured.
+        assertTrue(listed("www.mundodeportivo.com", lists = setOf("mundodeportivo.com")))
+        assertFalse(
+            listed("www.mundodeportivo.com", lists = setOf("mundodeportivo.com"), allowed = setOf("mundodeportivo.com")),
+        )
+        // Only what was allowed: its neighbours on the list stay blocked.
+        assertTrue(
+            listed("bet365.com", lists = setOf("mundodeportivo.com", "bet365.com"), allowed = setOf("mundodeportivo.com")),
+        )
+    }
+
+    @Test
+    fun `allowing a name never overrides a rule somebody in the family chose`() {
+        assertTrue(listed("youtube.com", family = setOf("youtube.com"), allowed = setOf("youtube.com")))
+        val blockInChrome = listOf(DomainAppRule("youtube.com", "com.android.chrome", allowOnlyFromApp = false))
+        assertTrue(listed("youtube.com", pkg = "com.android.chrome", rules = blockInChrome, allowed = setOf("youtube.com")))
+        assertTrue(
+            listed("youtube.com", pkg = "com.android.chrome", cutOff = setOf("com.android.chrome"), allowed = setOf("youtube.com")),
+        )
+    }
+
+    @Test
+    fun `a list entry above a host the phone needs does not take that host`() {
+        // Push and Play, under an entry that is a PARENT of them — which the ingest-time guard never
+        // caught, because it only removed entries at or below a spared name.
+        assertFalse(listed("mtalk.google.com", lists = setOf("google.com")))
+        assertFalse(listed("android.clients.google.com", lists = setOf("clients.google.com")))
+        // The rest of what that entry covers stays blocked, the resolver the bypass list is for included.
+        assertTrue(listed("dns.google.com", lists = setOf("google.com")))
+        // And the family can still block it themselves: the guard is about lists nobody here read.
+        assertTrue(listed("mtalk.google.com", family = setOf("google.com")))
+    }
+
     private fun blocked(host: String, pkg: String? = null, rules: List<DomainAppRule> = emptyList()) =
         DomainFilter.isBlocked(host, pkg, blocked, rules)
 
@@ -83,8 +138,10 @@ class DomainFilterTest {
                 "$probe was blocked by a list; this phone will decide its Wi-Fi is dead",
             )
         }
-        // And the exemption is the probe host and nothing around it.
-        assertTrue(DomainFilter.isBlocked("ads.gstatic.com", null, DomainMatcher.EMPTY, hostile, emptyList()))
+        // And the exemption is the probe host and nothing around it. (Not `ads.gstatic.com`, which
+        // this used to name: `gstatic.com` is in NEVER_BLOCK, so no real list can block anything
+        // under it — ingest drops the entry, and the filter now asks the same question per lookup.)
+        assertTrue(DomainFilter.isBlocked("www.android.com", null, DomainMatcher.EMPTY, hostile, emptyList()))
         assertTrue(DomainFilter.isBlocked("dns.google.com", null, DomainMatcher.EMPTY, hostile, emptyList()))
         assertTrue(DomainFilter.isBlocked("tracking.miui.com", null, DomainMatcher.EMPTY, hostile, emptyList()))
     }

@@ -65,7 +65,12 @@ object HeartbeatAlarm {
     /** Publishes and kicks an update check; called on the alarm and kept short (goAsync budget). */
     internal suspend fun runCheckIn(context: Context) {
         val app = context.applicationContext as WalcottApplication
-        if (!IdentityStore(context).current().enforcesLocally) return
+        // Guarded like every step below: this runs on a scope with no exception handler, and an
+        // unreadable store must cost one check-in, not the process.
+        val identity = runCatching { IdentityStore(context).current() }
+            .onFailure { DebugLog.e(TAG, "could not read this device's identity; skipping this check-in", it) }
+            .getOrNull() ?: return
+        if (!identity.enforcesLocally) return
         // This alarm is the one wake path Doze reliably honours, so it doubles as the
         // enforcement watchdog: make sure the service is up, then verify blocking actually
         // works (the self-test re-asserts and records any gap for the publish below).

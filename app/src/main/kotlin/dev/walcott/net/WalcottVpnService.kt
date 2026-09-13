@@ -19,13 +19,16 @@ import dev.walcott.debug.DebugLog
 import dev.walcott.rules.DomainAppRule
 import dev.walcott.rules.DomainFilter
 import dev.walcott.rules.DomainMatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.FileDescriptor
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -33,20 +36,22 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 
 /**
- * Local DNS filter over VpnService. Only the sentinel DNS server is routed through the tun,
- * so we see every DNS query, decide with [DomainFilter], and either answer NXDOMAIN (block)
- * or forward to a real upstream (allow). Everything else stays on the normal network.
+ * Local DNS filter over VpnService. The sentinel DNS server and the best-known public resolvers
+ * (see [PublicResolvers]) are routed through the tun, in both address families, so we see every
+ * DNS query, decide with [DomainFilter], and either answer NXDOMAIN (block) or forward to a real
+ * upstream (allow). Everything else stays on the normal network.
  *
  * Fail-open by design: any parsing/attribution problem forwards the query rather than
  * dropping it, so the child never loses DNS resolution because of a bug here. One exception,
  * and it is not about a domain at all: an app the curfew has cut off resolves nothing, so a
  * question this loop cannot parse is not a way round it (see [dev.walcott.rules.Curfew]).
- * This blocks plain DNS only — apps using DoH/QUIC or hard-coded IPs are not caught (see
- * README); the phone's own Private DNS setting is kept off strict mode by [VpnController],
- * because that one would route every lookup past this service in two taps.
+ * This blocks plain DNS only, over UDP or TCP — apps using DoH/QUIC or hard-coded IPs are not
+ * caught (see README); the phone's own Private DNS setting is kept off strict mode by
+ * [VpnController], because that one would route every lookup past this service in two taps.
  *
- * The packet-level work lives in [IpPackets] and [DnsMessage], which are pure and tested. What
- * is left here is the part only a phone has: the descriptor, the sockets, and the lifecycle.
+ * The packet-level work lives in [IpPackets], [DnsMessage] and [DnsTcpResponder], which are pure
+ * and tested. What is left here is the part only a phone has: the descriptor, the sockets, and
+ * the lifecycle.
  */
 class WalcottVpnService : VpnService() {
 
@@ -79,13 +84,31 @@ class WalcottVpnService : VpnService() {
     private val adoptLock = Any()
 
     /**
+     * Serialises bringing the tunnel up and taking it down: [session], [retryJob], [attempts].
+     *
+     * Four things start or stop it — the service being started, a stop request, the retry after a
+     * failure, and a reader whose descriptor died — on three kinds of thread. Unserialised, the
+     * reader's clean-up (which has to run elsewhere, see [runLoop]) could land after a restart and
+     * tear the NEW tunnel down, and a start and a retry could both see "not running" and establish
+     * twice, leaking a descriptor and a reader thread for the life of the process.
+     *
+     * Ordering: this is the outermost lock. [adoptLock], [writeLock] and [dnsTcp]'s monitor are
+     * taken inside it, never the reverse, and the reader thread never takes it — which is what
+     * makes joining the reader while holding it safe.
+     */
+    private val lifecycleLock = Any()
+
+    /**
      * How many queries may be in flight at once. Each one can block a thread of the IO pool
      * for up to three resolver timeouts, and that pool is shared with the sync transport, the
      * blocklist store and the enforcement loop's writes: a Wi-Fi whose resolvers black-hole
      * (a captive portal, a bad DHCP answer) had a few hundred queued lookups starve all of them.
-     * Past the bound a query is answered SERVFAIL at once — the app retries, nothing waits.
+     * Past the bound a query waits, briefly and without a thread, for a slot (see [submit]).
      */
     private val inFlight = kotlinx.coroutines.sync.Semaphore(MAX_IN_FLIGHT)
+
+    /** Queries waiting for a slot of [inFlight], bounded by [MAX_WAITING]. */
+    private val waiting = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
      * Compiled once per policy change, matched per query (see [DomainMatcher]).
@@ -98,17 +121,32 @@ class WalcottVpnService : VpnService() {
     @Volatile private var lists: DomainMatcher = DomainMatcher.EMPTY
     @Volatile private var listExemptApps: Set<String> = emptySet()
     @Volatile private var appRules: List<DomainAppRule> = emptyList()
-    @Volatile private var running = false
 
-    private var tunnel: ParcelFileDescriptor? = null
+    /** What the family lets through whatever the lists say (see `PolicySettings.allowedDomains`). */
+    @Volatile private var allowedDomains: DomainMatcher = DomainMatcher.EMPTY
+
+    /**
+     * One established tunnel: its descriptor, the pipe that wakes its reader, and the reader.
+     *
+     * [active] belongs to THIS tunnel rather than to the service. A shared flag let a reader that
+     * outlived its tunnel be told to carry on by the tunnel that replaced it, and a clean-up meant
+     * for one tunnel can recognise now that it is looking at another.
+     */
+    private class Session(
+        val pfd: ParcelFileDescriptor,
+        /** Written to when the reader should stop, so it is woken instead of waited out. */
+        val wakeRead: FileDescriptor?,
+        val wakeWrite: FileDescriptor?,
+    ) {
+        @Volatile var active = true
+        var reader: Thread? = null
+    }
+
+    /** The tunnel that is up, or null. Guarded by [lifecycleLock]. */
+    private var session: Session? = null
 
     /** Read inside [writeLock] by every writer; null means "there is no tunnel right now". */
     private var tunFd: FileDescriptor? = null
-
-    /** Written to when the reader should stop, so it is woken instead of waited out. */
-    private var wakeRead: FileDescriptor? = null
-    private var wakeWrite: FileDescriptor? = null
-    private var reader: Thread? = null
 
     /** Consecutive failed attempts to establish, for the backoff a revocation needs. */
     @Volatile private var attempts = 0
@@ -128,7 +166,13 @@ class WalcottVpnService : VpnService() {
     @Volatile private var upstreams: List<String> = DnsUpstreams.FALLBACKS
 
     /**
-     * The resolver that answered last, tried first next time.
+     * Which of [upstreams] the network itself offered, as opposed to the public last resort
+     * appended after them. Only these may become [lastGoodUpstream] (see [DnsUpstreams.ordered]).
+     */
+    @Volatile private var ownUpstreams: Set<String> = emptySet()
+
+    /**
+     * The network's own resolver that answered last, tried first next time.
      *
      * A network whose first resolver is merely slow costs its whole timeout on every single
      * lookup otherwise — the child's phone feels like it has no internet, and the filter is the
@@ -159,6 +203,16 @@ class WalcottVpnService : VpnService() {
      * about a name touched once (see [LookupBursts]).
      */
     private val bursts = LookupBursts()
+
+    /** DNS over TCP to anything this tunnel routes (see [DnsTcpResponder]). */
+    private val dnsTcp = DnsTcpResponder(MTU)
+
+    /**
+     * Which lookup failures reach the debug log (see [OutageLog]). Offline, every single lookup
+     * fails the same way, and one line each filled the diagnostics ring in minutes.
+     */
+    private val failedLookups = OutageLog()
+    private val failedHandling = OutageLog()
 
     /**
      * What was last declared to the platform as the network underneath us, and whether anything
@@ -284,10 +338,13 @@ class WalcottVpnService : VpnService() {
     /**
      * The network this phone really reaches the internet through.
      *
-     * `cm.activeNetwork` is the answer until our own tunnel is up, at which point it IS the
-     * tunnel and something else has to decide. On Android 12 and up [reported] is the platform's
-     * own best match and is taken as read. Below that the callback reports every network that
-     * matches, so [reported] is only a prompt: the candidates are ranked instead (see
+     * `cm.activeNetwork` answers for the CALLING app, and Walcott keeps itself outside its own
+     * tunnel (see [startTunnel]), so for us it is the physical network even while the tunnel is up
+     * — the right answer, and the first one taken. It is still checked to be a real network,
+     * because the exclusion can be refused: then this app is inside its tunnel, `activeNetwork` IS
+     * the tunnel, and something else has to decide. On Android 12 and up [reported] is the
+     * platform's own best match and is taken as read. Below that the callback reports every
+     * network that matches, so [reported] is only a prompt: the candidates are ranked instead (see
      * [UnderlyingNetworks]), because the alternative is that a phone holding Wi-Fi and mobile data
      * at once asks the resolvers of whichever last changed.
      */
@@ -331,30 +388,55 @@ class WalcottVpnService : VpnService() {
             // waiting for the parent to touch a rule. Off the main thread: reading the cache is
             // disk IO, and it can be a couple of megabytes of it.
             val store = BlocklistStore.get(this@WalcottVpnService)
+            // What [lists] was last compiled from. Only collectLatest touches it, one block at a
+            // time: a block is cancelled and joined before the next one starts.
+            var compiledFrom: ListsIdentity? = null
+            var lastSummary: String? = null
             kotlinx.coroutines.flow.combine(repo.settingsFlow, store.state) { settings, state ->
                 settings to state
             }
                 .collectLatest { (settings, state) ->
-                    // Streamed into the builder rather than collected into a set first: the
-                    // downloaded half can be a million domains, and this way none of them is ever
-                    // a live String beyond the line it was read on (see DomainMatcher.Builder).
-                    // TWO matchers, not one: an app can be exempted from the lists and never from
-                    // the domains the family typed (see PolicySettings.blocklistExemptApps), so
-                    // the two have to stay answerable apart in the packet loop.
-                    val builder = DomainMatcher.builder(
-                        settings.blocklistDomains(),
-                        expectedHashed = state.domainsFor(settings.enabledBlocklists),
-                    )
-                    store.readInto(settings.enabledBlocklists) { builder.addNormalized(it) }
-                    lists = builder.build()
+                    // The downloaded half only when what it is made of changed (see ListsIdentity).
+                    // Both flows emit far more often than that — every refresh pass confirms the
+                    // lists with a 304 — and each rebuild read every enabled list off the disk again.
+                    val identity = ListsIdentity.of(settings.enabledBlocklists, settings.blocklistDomains(), state)
+                    if (identity != compiledFrom) {
+                        val built = try {
+                            // Streamed into the builder rather than collected into a set first: the
+                            // downloaded half can be a million domains, and this way none of them is
+                            // ever a live String beyond the line it was read on (see
+                            // DomainMatcher.Builder). TWO matchers, not one: an app can be exempted
+                            // from the lists and never from the domains the family typed (see
+                            // PolicySettings.blocklistExemptApps), so the two have to stay answerable
+                            // apart in the packet loop.
+                            val builder = DomainMatcher.builder(
+                                settings.blocklistDomains(),
+                                expectedHashed = state.domainsFor(settings.enabledBlocklists),
+                            )
+                            store.readInto(settings.enabledBlocklists) { builder.addNormalized(it) }
+                            builder.build()
+                        } catch (oom: OutOfMemoryError) {
+                            // Uncaught, this killed the process — which restarted, compiled the
+                            // same lists, and died again. The matcher already in hand is kept: the
+                            // lists as they were beat no filter at all and a phone in a crash loop.
+                            DebugLog.e(TAG, "not enough memory to compile the lists; keeping the previous filter", oom)
+                            null
+                        }
+                        // Recorded even when it failed, so the same inputs are not retried — and do
+                        // not fail and log again — on every emission until the lists really change.
+                        // Not recorded when cancelled: nothing reaches this line then.
+                        compiledFrom = identity
+                        if (built != null) lists = built
+                    }
                     familyDomains = DomainMatcher.of(settings.blockedDomains)
                     appRules = settings.toDomainAppRules()
                     listExemptApps = settings.blocklistExemptApps
-                    DebugLog.i(
-                        TAG,
-                        "filter compiled: ${familyDomains.size} of this family's own + ${lists.size} from lists" +
-                            if (listExemptApps.isEmpty()) "" else " (lists waived for ${listExemptApps.size} app(s))",
-                    )
+                    allowedDomains = DomainMatcher.of(settings.allowedDomains)
+                    val summary = "filter compiled: ${familyDomains.size} of this family's own + ${lists.size} from lists" +
+                        if (listExemptApps.isEmpty()) "" else " (lists waived for ${listExemptApps.size} app(s))"
+                    // Said when it says something new, not on every confirmation of the same lists.
+                    if (summary != lastSummary) DebugLog.i(TAG, summary)
+                    lastSummary = summary
                 }
         }
         // Seed from the current network, then follow it. The request asks for the network the
@@ -397,6 +479,9 @@ class WalcottVpnService : VpnService() {
         // public fallback (see [DnsUpstreams.worthAdopting]).
         if (!DnsUpstreams.worthAdopting(offered, OURS, acceptEmpty)) return
         val chosen = DnsUpstreams.choose(offered, exclude = OURS)
+        // Even when the list itself is unchanged: a network that offered 1.1.1.1 and one that
+        // offers nothing end up with the same list, and only in the first is 1.1.1.1 its own.
+        ownUpstreams = DnsUpstreams.usable(offered, exclude = OURS).toSet()
         if (chosen != upstreams) {
             DebugLog.i(TAG, "DNS upstreams: ${chosen.joinToString()}")
             upstreams = chosen
@@ -425,18 +510,33 @@ class WalcottVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopTunnel()
+            synchronized(lifecycleLock) {
+                // A retry still pending would bring back the tunnel this was asked to take down.
+                retryJob?.cancel()
+                retryJob = null
+                stopTunnel()
+            }
             stopSelf()
             return START_NOT_STICKY
         }
-        if (!running) {
-            running = true
-            startTunnel()
-        }
+        startTunnel()
         return START_STICKY
     }
 
+    /** Brings the tunnel up unless it already is. Every start goes through here, under the lock. */
     private fun startTunnel() {
+        synchronized(lifecycleLock) {
+            val current = session
+            if (current != null && current.active) return
+            // A tunnel whose reader has died and whose clean-up has not run yet. Cleaned up HERE,
+            // before anything is built, so that clean-up cannot land later on the tunnel built next.
+            if (current != null) stopTunnel()
+            establishTunnel()
+        }
+    }
+
+    /** Caller holds [lifecycleLock] and has checked that no tunnel is up. */
+    private fun establishTunnel() {
         val builder = Builder()
             .setSession("Walcott filter")
             .addAddress(TUN_ADDR, 32)
@@ -445,6 +545,19 @@ class WalcottVpnService : VpnService() {
             // Bigger than any DNS message that can arrive over UDP, and the ceiling every reply
             // written back is measured against.
             .setMtu(MTU)
+        // An IPv6 address of its own, and it is not decoration. A tunnel with no IPv6 address or
+        // route has IPv6 BLOCKED for every app in it (the platform installs `::/0 unreachable`), so
+        // a filter that only wanted to read DNS took IPv6 away from the whole phone. With an address,
+        // IPv6 goes where it always went, except to the resolvers routed below.
+        //
+        // Deliberately not `allowFamily(AF_INET6)` instead: that lets IPv6 through with no route of
+        // ours in the way, so an app with a resolver's IPv6 address compiled in would get round the
+        // filter and the curfew. And deliberately no IPv6 DNS server: the sentinel never leaves the
+        // phone, so the family of the network underneath means nothing to it — the tun carries an
+        // IPv4 query to it on an IPv6-only network as well as anywhere — and a second sentinel would
+        // only give the system resolver two servers to split its retries between, for one filter.
+        runCatching { builder.addAddress(TUN_ADDR6, 128) }
+            .onFailure { DebugLog.w(TAG, "could not give the tunnel an IPv6 address", it) }
         // The public resolvers by address, so asking one directly is not a way past the filter
         // or the curfew (see PublicResolvers). One refused route must not cost the others.
         for (route in PublicResolvers.ROUTES) {
@@ -470,15 +583,13 @@ class WalcottVpnService : VpnService() {
             .getOrNull()
         if (established == null) {
             DebugLog.w(TAG, "DNS tunnel not established (no VPN consent?); filtering is OFF")
-            running = false
             VpnStatus.set(false)
             scheduleRetry()
             return
         }
         val pipe = runCatching { Os.pipe() }.getOrNull()
-        tunnel = established
-        wakeRead = pipe?.getOrNull(0)
-        wakeWrite = pipe?.getOrNull(1)
+        val started = Session(established, wakeRead = pipe?.getOrNull(0), wakeWrite = pipe?.getOrNull(1))
+        session = started
         synchronized(writeLock) { tunFd = established.fileDescriptor }
         // A new tunnel has declared nothing yet, whatever the old one had said.
         synchronized(adoptLock) {
@@ -489,7 +600,7 @@ class WalcottVpnService : VpnService() {
         uidPackages.clear()
         DebugLog.i(TAG, "DNS tunnel established")
         VpnStatus.set(true, lockdown = lockdownNow())
-        reader = Thread({ runLoop(established) }, "walcott-dns").apply { isDaemon = true; start() }
+        started.reader = Thread({ runLoop(started) }, "walcott-dns").apply { isDaemon = true; start() }
     }
 
     /**
@@ -500,30 +611,37 @@ class WalcottVpnService : VpnService() {
      * an hour of unfiltered browsing per revocation, with nothing anywhere saying so.
      */
     private fun scheduleRetry() {
-        if (retryJob?.isActive == true) return
-        val attempt = attempts++
-        val delayMs = (RETRY_BASE_MS shl attempt.coerceAtMost(RETRY_MAX_SHIFT)).coerceAtMost(RETRY_MAX_MS)
-        DebugLog.i(TAG, "retrying the tunnel in $delayMs ms (attempt ${attempt + 1})")
-        retryJob = scope.launch {
-            delay(delayMs)
-            if (!running && tunnel == null) {
-                running = true
-                startTunnel()
+        synchronized(lifecycleLock) {
+            if (retryJob?.isActive == true) return
+            val attempt = attempts++
+            val delayMs = (RETRY_BASE_MS shl attempt.coerceAtMost(RETRY_MAX_SHIFT)).coerceAtMost(RETRY_MAX_MS)
+            DebugLog.i(TAG, "retrying the tunnel in $delayMs ms (attempt ${attempt + 1})")
+            retryJob = scope.launch {
+                delay(delayMs)
+                synchronized(lifecycleLock) {
+                    // A stop request cancels this under the same lock, and a cancel that lands after
+                    // the delay has run out is only visible here — past it, nothing would notice.
+                    if (!isActive) return@launch
+                    // No longer pending. Left set, the attempt below that fails would find this
+                    // job still active and schedule nothing: the backoff stopped after one retry.
+                    retryJob = null
+                    startTunnel()
+                }
             }
         }
     }
 
     /**
-     * The read loop.
+     * The read loop for one tunnel.
      *
      * `establish()` hands back a NON-BLOCKING descriptor, so a plain stream read returns
      * immediately whenever no packet is waiting, and looping on that spins a core flat out on an
      * idle phone with the screen off. So the loop parks in `poll()` and is woken either by a
      * packet or by the pipe [stopTunnel] writes to.
      */
-    private fun runLoop(pfd: ParcelFileDescriptor) {
-        val fd = pfd.fileDescriptor
-        val wake = wakeRead
+    private fun runLoop(tunnel: Session) {
+        val fd = tunnel.pfd.fileDescriptor
+        val wake = tunnel.wakeRead
         val buffer = ByteArray(MAX_PACKET)
         val polls = buildList {
             add(StructPollfd().apply { this.fd = fd; events = OsConstants.POLLIN.toShort() })
@@ -534,7 +652,7 @@ class WalcottVpnService : VpnService() {
         // it (a pipe this process could not create), the timeout IS how a stop is noticed — and
         // the descriptor is closed a few seconds after being asked for, so it has to be short.
         val pollTimeout = if (wake != null) POLL_TIMEOUT_MS else POLL_TIMEOUT_NO_PIPE_MS
-        while (running) {
+        while (tunnel.active) {
             polls.forEach { it.revents = 0 }
             val ready = try {
                 Os.poll(polls, pollTimeout)
@@ -564,34 +682,43 @@ class WalcottVpnService : VpnService() {
             if (length <= 0) continue
             dispatch(buffer, length)
         }
-        if (running) {
+        if (tunnel.active) {
             // We left because the descriptor died rather than because we were told to. The
             // cleanup happens on another thread on purpose: it joins this one, and a thread
             // cannot wait for itself — doing it inline would leave the dead descriptor open
             // until the next establish() replaced the field pointing at it.
-            running = false
+            //
+            // Marked inactive first, so a start arriving before the clean-up replaces this tunnel
+            // instead of believing it is up; and the clean-up only touches THIS tunnel, so if that
+            // start got there first there is nothing left for it to do.
+            tunnel.active = false
             scope.launch {
-                stopTunnel()
-                scheduleRetry()
+                synchronized(lifecycleLock) {
+                    if (session !== tunnel) return@launch
+                    stopTunnel()
+                    scheduleRetry()
+                }
             }
         }
     }
 
     /** Decides what a frame off the tun is, and answers whatever cannot be a DNS query. */
     private fun dispatch(buffer: ByteArray, length: Int) {
-        val frame = IpPackets.parse(buffer, length)
-        if (frame == null) return
+        // Null for anything this filter does not act on, which includes what the kernel sends of
+        // its own accord on a tun with an IPv6 address (see IpPackets): dropped without a word.
+        val frame = IpPackets.parse(buffer, length) ?: return
         val packet = buffer.copyOf(length)
         when (frame.protocol) {
             IpPackets.PROTO_UDP -> Unit
-            // A resolver whose reply came back truncated falls back to TCP; the tunnel used to
-            // swallow the SYN and the app waited out its connect timeout looking hung.
+            // A resolver whose reply came back truncated falls back to TCP, and so do connectivity
+            // checks that "ping" 8.8.8.8:53 with a connect. Served when it is DNS, refused at once
+            // otherwise; the tunnel used to swallow the SYN and the app looked hung.
             IpPackets.PROTO_TCP -> {
-                IpPackets.tcpReset(packet)?.let { writePacket(it) }
+                dispatchTcp(packet)
                 return
             }
             // Something checking whether its own DNS server is alive.
-            IpPackets.PROTO_ICMP -> {
+            IpPackets.PROTO_ICMP, IpPackets.PROTO_ICMPV6 -> {
                 IpPackets.echoReply(packet)?.let { writePacket(it) }
                 return
             }
@@ -607,32 +734,143 @@ class WalcottVpnService : VpnService() {
             IpPackets.portUnreachable(packet)?.let { writePacket(it) }
             return
         }
-        if (IpPackets.dnsStart(packet) == null) return
-        if (!inFlight.tryAcquire()) {
-            refuseNow(packet)
+        val dnsStart = IpPackets.dnsStart(packet) ?: return
+        submit(
+            Lookup(
+                message = packet.copyOfRange(dnsStart, IpPackets.dnsEnd(packet)),
+                protocol = OsConstants.IPPROTO_UDP,
+                source = IpPackets.sourceAddress(packet) ?: return,
+                sourcePort = IpPackets.sourcePort(packet) ?: return,
+                destination = IpPackets.destinationAddress(packet) ?: return,
+                destinationPort = DNS_PORT,
+                maxAnswer = MTU - if (frame.version == 4) IPV4_UDP_OVERHEAD else IPV6_UDP_OVERHEAD,
+                send = { answer -> IpPackets.udpResponse(packet, answer)?.let { writePacket(it) } },
+            ),
+        )
+    }
+
+    /**
+     * A TCP segment off the tun: DNS when it is addressed to port 53, a reset otherwise.
+     *
+     * Under the responder's monitor from the segment to the last write, so what it hands back
+     * reaches the tun in the order it was handed back — an answer written from the IO pool for
+     * the same connection takes the same monitor (see [tcpLookup]).
+     */
+    private fun dispatchTcp(packet: ByteArray) {
+        if (IpPackets.tcpSegment(packet)?.destinationPort != DNS_PORT) {
+            IpPackets.tcpReset(packet)?.let { writePacket(it) }
             return
         }
-        scope.launch {
-            try {
-                runCatching { handleDnsPacket(packet) }
-                    .onFailure { DebugLog.w(TAG, "a query could not be handled", it) }
-            } finally {
-                inFlight.release()
+        synchronized(dnsTcp) {
+            val result = dnsTcp.onSegment(packet, SystemClock.elapsedRealtime())
+            result.packets.forEach { writePacket(it) }
+            result.queries.forEach { submit(tcpLookup(it)) }
+        }
+    }
+
+    private fun tcpLookup(query: DnsTcpResponder.Query) = Lookup(
+        message = query.message,
+        protocol = OsConstants.IPPROTO_TCP,
+        source = query.source,
+        sourcePort = query.sourcePort,
+        destination = query.destination,
+        destinationPort = query.destinationPort,
+        // Length-prefixed in sixteen bits, and cut into segments: nothing else limits it.
+        maxAnswer = MAX_DNS_MESSAGE,
+        send = { answer ->
+            synchronized(dnsTcp) {
+                dnsTcp.answer(query, answer, SystemClock.elapsedRealtime()).forEach { writePacket(it) }
             }
+        },
+    )
+
+    /**
+     * One DNS question, whichever way it arrived — a datagram, or a message on a TCP connection —
+     * and the way back for its answer.
+     */
+    private class Lookup(
+        /** The DNS message alone: header, question, and whatever the asker put after it. */
+        val message: ByteArray,
+        /** `IPPROTO_UDP` or `IPPROTO_TCP`, then both ends as the asking app's socket sees them. */
+        val protocol: Int,
+        val source: ByteArray,
+        val sourcePort: Int,
+        val destination: ByteArray,
+        val destinationPort: Int,
+        /** The largest DNS message the way back can carry. */
+        val maxAnswer: Int,
+        val send: (ByteArray) -> Unit,
+    )
+
+    /**
+     * Hands a lookup to the IO pool, holding it until one of [MAX_IN_FLIGHT] slots is free.
+     *
+     * The wait is what used to be missing. Past the bound a query was answered SERVFAIL on the
+     * spot — and right after a network hand-over, with a resolver that is merely slow, the
+     * seventeenth lookup of a page load is exactly that query: the browser said
+     * ERR_NAME_NOT_RESOLVED about a page that would only have been slow. So a query waits for a
+     * slot for up to [SLOT_WAIT_MS], counted from when it arrived, suspended rather than parked on
+     * a thread — the reader never waits, and neither does the pool — and only then is refused. How
+     * many may wait is bounded as well ([MAX_WAITING]), so a flood of lookups is not a flood of
+     * held packets.
+     *
+     * Identical questions in flight are not merged. It would save upstream traffic in exactly this
+     * situation, but every asker has its own transaction id and transport, and a shared answer
+     * rewritten per asker is a new way to hand one app another's reply.
+     */
+    private fun submit(lookup: Lookup) {
+        if (inFlight.tryAcquire()) {
+            scope.launch { runHolding(lookup) }
+            return
+        }
+        if (waiting.incrementAndGet() > MAX_WAITING) {
+            waiting.decrementAndGet()
+            refuseNow(lookup)
+            return
+        }
+        val arrived = SystemClock.elapsedRealtime()
+        scope.launch {
+            // Set inside the timeout and read instead of its result: a timeout can land after
+            // acquire() has already handed over a slot, and withTimeoutOrNull then says null about
+            // a slot this coroutine holds. The flag cannot be wrong, because nothing between the
+            // acquire returning and the assignment can be interrupted.
+            var acquired = false
+            try {
+                withTimeoutOrNull(SLOT_WAIT_MS - (SystemClock.elapsedRealtime() - arrived)) {
+                    inFlight.acquire()
+                    acquired = true
+                }
+            } catch (e: CancellationException) {
+                if (acquired) inFlight.release()
+                throw e
+            } finally {
+                waiting.decrementAndGet()
+            }
+            if (acquired) runHolding(lookup) else refuseNow(lookup)
+        }
+    }
+
+    /** Runs [lookup] in the slot the caller acquired, and gives the slot back whatever happens. */
+    private suspend fun runHolding(lookup: Lookup) {
+        try {
+            runCatching { handleLookup(lookup) }
+                .onSuccess { failedHandling.succeeded() }
+                .onFailure {
+                    failedHandling.failed(SystemClock.elapsedRealtime())?.let { heldBack ->
+                        DebugLog.w(TAG, "a query could not be handled" + OutageLog.heldBackSuffix(heldBack), it)
+                    }
+                }
+        } finally {
+            inFlight.release()
         }
     }
 
     /** Answers a query this loop will not process right now with SERVFAIL, so the app does not wait. */
-    private fun refuseNow(packet: ByteArray) {
-        val dnsStart = IpPackets.dnsStart(packet) ?: return
-        respond(packet, dnsStart, DnsMessage.RCODE_SERVER_FAILURE)
+    private fun refuseNow(lookup: Lookup) {
+        respond(lookup, DnsMessage.RCODE_SERVER_FAILURE)
     }
 
-    private suspend fun handleDnsPacket(packet: ByteArray) {
-        val dnsStart = IpPackets.dnsStart(packet) ?: return
-        val dnsEnd = IpPackets.dnsEnd(packet)
-        val srcPort = IpPackets.sourcePort(packet) ?: return
-
+    private suspend fun handleLookup(lookup: Lookup) {
         // The curfew is asked per query rather than compiled into the matchers above: it turns
         // over on the clock, and this service can be running with no enforcement loop behind it
         // to tell it (see NetworkCurfew). Cached there, so this costs a field read most times.
@@ -643,8 +881,8 @@ class WalcottVpnService : VpnService() {
         // Which app asked is two binder round trips, and on the ordinary family nothing needs
         // the answer: no per-app domain rule, no app waived from the lists, no curfew running
         // and nobody watching the monitor. Asked only when some decision actually turns on it.
-        val pkg = if (needsAttribution(cutOff)) ownerPackage(srcPort) else null
-        val host = DnsMessage.questionName(packet, dnsStart)
+        val pkg = if (needsAttribution(cutOff)) ownerPackage(lookup) else null
+        val host = DnsMessage.questionName(lookup.message)
         if (host == null) {
             // A question this loop cannot read is forwarded — fail-open is the rule here, and a
             // parser that meets something it does not expect must never cost the child their
@@ -652,9 +890,9 @@ class WalcottVpnService : VpnService() {
             // is about the app and not about the name, so a name we cannot read is not a way
             // round it. Uncounted, deliberately: there is no domain to count it against.
             if (pkg != null && pkg in cutOff) {
-                respond(packet, dnsStart, DnsMessage.RCODE_NAME_ERROR)
+                respond(lookup, DnsMessage.RCODE_NAME_ERROR)
             } else {
-                forward(packet, dnsStart, dnsEnd)
+                forward(lookup)
             }
             return
         }
@@ -662,7 +900,7 @@ class WalcottVpnService : VpnService() {
         // here, and handed to both things that count — the live viewer and the persisted totals —
         // because two answers to the same question would disagree by a factor of two.
         val firstOfLookup = bursts.beginsLookup(
-            host, pkg, DnsMessage.questionType(packet, dnsStart), SystemClock.elapsedRealtime(),
+            host, pkg, DnsMessage.questionType(lookup.message), SystemClock.elapsedRealtime(),
         )
         // Both halves are already in hand, so a monitoring session is only a window onto a
         // decision this loop was making anyway. Recorded before the verdict on purpose: "this
@@ -672,14 +910,15 @@ class WalcottVpnService : VpnService() {
         if (DomainFilter.isBlocked(
                 host, pkg, familyDomains, lists, appRules, listExemptApps,
                 cutOff = cutOff,
+                allowedDomains = allowedDomains,
             )
         ) {
             // Counted in memory and flushed elsewhere: this is the packet loop (see BlockCounters).
             // Once per resolution, not once per question.
             if (firstOfLookup) dev.walcott.data.BlockCounters.recordNetworkBlock(host, pkg)
-            respond(packet, dnsStart, DnsMessage.RCODE_NAME_ERROR)
+            respond(lookup, DnsMessage.RCODE_NAME_ERROR)
         } else {
-            forward(packet, dnsStart, dnsEnd)
+            forward(lookup)
         }
     }
 
@@ -699,9 +938,10 @@ class WalcottVpnService : VpnService() {
      * child experiences a phone whose internet has mysteriously become slow, with no clue that a
      * filter is involved. SERVFAIL fails immediately and lets the app say so.
      */
-    private fun forward(packet: ByteArray, dnsStart: Int, dnsEnd: Int) {
-        val query = packet.copyOfRange(dnsStart, dnsEnd)
-        val candidates = orderedUpstreams()
+    private fun forward(lookup: Lookup) {
+        val query = lookup.message
+        val own = ownUpstreams
+        val candidates = DnsUpstreams.ordered(upstreams, own, lastGoodUpstream)
         // The list we are about to walk belongs to this generation of the network.
         val generation = networkGeneration
         var refusal: ByteArray? = null
@@ -713,7 +953,7 @@ class WalcottVpnService : VpnService() {
             // the app retries at once, against the resolvers that do work.
             if (index > 0 && networkGeneration != generation) {
                 DebugLog.i(TAG, "the network changed mid-lookup; SERVFAIL so the app asks again")
-                respond(packet, dnsStart, DnsMessage.RCODE_SERVER_FAILURE)
+                respond(lookup, DnsMessage.RCODE_SERVER_FAILURE)
                 return
             }
             val answer = exchange(upstream, query) ?: continue
@@ -722,17 +962,27 @@ class WalcottVpnService : VpnService() {
                 if (refusal == null) refusal = answer
                 continue
             }
-            lastGoodUpstream = upstream
-            relay(packet, completed(upstream, query, answer))
+            // Remembered only when it is one of the network's own resolvers, and only while that
+            // network is still the one in hand (see DnsUpstreams.ordered): a public last resort that
+            // beat a slow router once must not take the router's place for the rest of the day.
+            if (upstream in own && networkGeneration == generation) lastGoodUpstream = upstream
+            failedLookups.succeeded()
+            relay(lookup, completed(upstream, query, answer, lookup.maxAnswer))
             return
         }
         refusal?.let {
-            relay(packet, it)
+            relay(lookup, it)
             return
         }
-        DebugLog.w(TAG, "no upstream answered (${upstreams.joinToString()}); returning SERVFAIL")
+        failedLookups.failed(SystemClock.elapsedRealtime())?.let { heldBack ->
+            DebugLog.w(
+                TAG,
+                "no upstream answered (${upstreams.joinToString()}); returning SERVFAIL" +
+                    OutageLog.heldBackSuffix(heldBack),
+            )
+        }
         recheckResolvers()
-        respond(packet, dnsStart, DnsMessage.RCODE_SERVER_FAILURE)
+        respond(lookup, DnsMessage.RCODE_SERVER_FAILURE)
     }
 
     /**
@@ -757,19 +1007,19 @@ class WalcottVpnService : VpnService() {
      * The whole answer where [answer] says there is more of it, or [answer] unchanged.
      *
      * A resolver sets TC when its reply did not fit a datagram, and so does [exchange] when the
-     * socket cut one. Either way the asking app's only move is to ask again over TCP — and this
-     * tunnel refuses TCP, so that is a dead end, and the name simply never resolves with the
-     * filter on. Asking over TCP here instead is the difference between a DNSSEC-signed zone or a
-     * long TXT record working and not working.
+     * socket cut one. The asking app's move is then to ask again over TCP; asking over TCP here
+     * first saves it the round trip, and is the difference between a DNSSEC-signed zone or a long
+     * TXT record resolving at once and resolving on a retry.
      *
-     * If the full answer will not fit the tunnel, the truncation is relayed after all: the app
-     * then fails fast on its own TCP retry instead of waiting out a timeout for silence.
+     * If the full answer will not fit the way back — [maxAnswer], a datagram through the tunnel —
+     * the truncation is relayed after all, and the app's own TCP retry is answered by
+     * [DnsTcpResponder], which has room for the whole of it.
      */
-    private fun completed(upstream: String, query: ByteArray, answer: ByteArray): ByteArray {
+    private fun completed(upstream: String, query: ByteArray, answer: ByteArray, maxAnswer: Int): ByteArray {
         if (!DnsMessage.isTruncated(answer)) return answer
         val full = exchangeOverTcp(upstream, query) ?: return answer
-        if (full.size + IP_UDP_OVERHEAD > MTU) {
-            DebugLog.w(TAG, "the whole answer from $upstream does not fit the tunnel; relaying the truncation")
+        if (full.size > maxAnswer) {
+            DebugLog.w(TAG, "the whole answer from $upstream does not fit the way back; relaying the truncation")
             return answer
         }
         return full
@@ -803,20 +1053,13 @@ class WalcottVpnService : VpnService() {
             socket.soTimeout = left()
             input.readFully(header)
             val size = ((header[0].toInt() and 0xFF) shl 8) or (header[1].toInt() and 0xFF)
-            if (size !in 1..UPSTREAM_BUFFER) return@use null
+            if (size !in 1..MAX_DNS_MESSAGE) return@use null
             val body = ByteArray(size)
             socket.soTimeout = left()
             input.readFully(body)
             body.takeIf { DnsMessage.answersQuery(query, 0, it) }
         }
     }.getOrNull()
-
-    /** The resolvers to try, the one that answered last time first. */
-    private fun orderedUpstreams(): List<String> {
-        val best = lastGoodUpstream ?: return upstreams
-        if (upstreams.firstOrNull() == best || best !in upstreams) return upstreams
-        return listOf(best) + upstreams.filterNot { it == best }
-    }
 
     /** One question to one resolver, or null when it did not answer this question. */
     private fun exchange(upstream: String, query: ByteArray): ByteArray? = runCatching {
@@ -853,15 +1096,14 @@ class WalcottVpnService : VpnService() {
         }
     }.getOrNull()
 
-    /** Wraps a resolver's answer for the app that asked, refusing one too big for the tunnel. */
-    private fun relay(request: ByteArray, answer: ByteArray) {
-        IpPackets.udpResponse(request, answer)?.let { writePacket(it) }
+    /** Relays a resolver's answer to the app that asked, the way it asked. */
+    private fun relay(lookup: Lookup, answer: ByteArray) {
+        lookup.send(answer)
     }
 
-    /** Answers the query in [packet] with [rcode] and no records. */
-    private fun respond(packet: ByteArray, dnsStart: Int, rcode: Int) {
-        val dns = DnsMessage.answer(packet, dnsStart, rcode)
-        IpPackets.udpResponse(packet, dns)?.let { writePacket(it) }
+    /** Answers the query in [lookup] with [rcode] and no records. */
+    private fun respond(lookup: Lookup, rcode: Int) {
+        lookup.send(DnsMessage.answer(lookup.message, 0, rcode))
     }
 
     /**
@@ -877,17 +1119,24 @@ class WalcottVpnService : VpnService() {
     /**
      * Best-effort attribution of the querying app via the socket owner UID.
      *
+     * Asked with both ends exactly as the packet names them. The platform finds the socket by its
+     * whole four-tuple, and this used to ask about a socket connected to the sentinel whatever the
+     * query had really been sent to — so a lookup sent straight to a routed public resolver
+     * belonged to no app: the per-app curfew let it through and an app waived from the lists had
+     * them applied to it anyway.
+     *
      * Cached for the life of the tunnel: this used to be two binder round trips and two address
      * parses on every single DNS lookup the phone made, in an always-on process. The cache is
      * dropped when the tunnel is rebuilt and when a package is added or removed, so a recycled
      * UID cannot be attributed to an app that has been uninstalled.
      */
-    private fun ownerPackage(srcPort: Int): String? {
+    private fun ownerPackage(lookup: Lookup): String? {
         val uid = runCatching {
+            // getByAddress on raw bytes never resolves anything, so this is no lookup of its own.
             cm.getConnectionOwnerUid(
-                OsConstants.IPPROTO_UDP,
-                InetSocketAddress(tunAddress, srcPort),
-                InetSocketAddress(sentinelAddress, 53),
+                lookup.protocol,
+                InetSocketAddress(InetAddress.getByAddress(lookup.source), lookup.sourcePort),
+                InetSocketAddress(InetAddress.getByAddress(lookup.destination), lookup.destinationPort),
             )
         }.getOrDefault(Process.INVALID_UID)
         if (uid == Process.INVALID_UID || uid < Process.FIRST_APPLICATION_UID) return null
@@ -919,25 +1168,28 @@ class WalcottVpnService : VpnService() {
     /**
      * Takes the tunnel down, in the one order that is safe: stop, wake the reader, take the
      * descriptor away from the writers, join the reader, and only then close.
+     *
+     * Under [lifecycleLock], which is re-entrant, so the callers that already hold it can call this.
      */
     private fun stopTunnel() {
-        running = false
-        synchronized(writeLock) { tunFd = null }
-        runCatching { wakeWrite?.let { Os.write(it, byteArrayOf(1), 0, 1) } }
-        reader?.takeIf { it != Thread.currentThread() }?.let { thread ->
-            runCatching { thread.join(READER_JOIN_MS) }
-            if (thread.isAlive) DebugLog.w(TAG, "the tunnel's reader did not stop in time")
+        synchronized(lifecycleLock) {
+            val tunnel = session
+            session = null
+            tunnel?.active = false
+            synchronized(writeLock) { tunFd = null }
+            runCatching { tunnel?.wakeWrite?.let { Os.write(it, byteArrayOf(1), 0, 1) } }
+            tunnel?.reader?.takeIf { it != Thread.currentThread() }?.let { thread ->
+                runCatching { thread.join(READER_JOIN_MS) }
+                if (thread.isAlive) DebugLog.w(TAG, "the tunnel's reader did not stop in time")
+            }
+            runCatching { tunnel?.wakeRead?.let { Os.close(it) } }
+            runCatching { tunnel?.wakeWrite?.let { Os.close(it) } }
+            runCatching { tunnel?.pfd?.close() }
+            uidPackages.clear()
+            bursts.clear()
+            dnsTcp.clear()
+            VpnStatus.set(false, lockdown = lockdownNow())
         }
-        reader = null
-        runCatching { wakeRead?.let { Os.close(it) } }
-        runCatching { wakeWrite?.let { Os.close(it) } }
-        wakeRead = null
-        wakeWrite = null
-        runCatching { tunnel?.close() }
-        tunnel = null
-        uidPackages.clear()
-        bursts.clear()
-        VpnStatus.set(false, lockdown = lockdownNow())
     }
 
     /**
@@ -949,12 +1201,18 @@ class WalcottVpnService : VpnService() {
      */
     override fun onRevoke() {
         DebugLog.w(TAG, "VPN consent revoked")
-        stopTunnel()
-        scheduleRetry()
+        synchronized(lifecycleLock) {
+            stopTunnel()
+            scheduleRetry()
+        }
     }
 
     override fun onDestroy() {
-        stopTunnel()
+        synchronized(lifecycleLock) {
+            retryJob?.cancel()
+            retryJob = null
+            stopTunnel()
+        }
         runCatching { cm.unregisterNetworkCallback(underlyingCallback) }
         // After unregistering, so nothing is still being delivered to a looper that has gone.
         runCatching { callbackThread?.quitSafely() }
@@ -964,12 +1222,16 @@ class WalcottVpnService : VpnService() {
         super.onDestroy()
     }
 
-    private val tunAddress: InetAddress by lazy { InetAddress.getByName(TUN_ADDR) }
-    private val sentinelAddress: InetAddress by lazy { InetAddress.getByName(SENTINEL_DNS) }
-
     companion object {
         private const val TUN_ADDR = "10.111.222.1"
         private const val SENTINEL_DNS = "10.111.222.2"
+
+        /**
+         * The tun's IPv6 address: a unique local address (RFC 4193), never routed off the phone.
+         * The global id spells "walcot", as malachi's spells its own name, so two filters on one
+         * device can never claim the same address.
+         */
+        private const val TUN_ADDR6 = "fd00:7761:6c63:6f74::1"
 
         /**
          * Per-resolver timeout. Short on purpose: with up to [DnsUpstreams.MAX_UPSTREAMS] to try,
@@ -989,14 +1251,24 @@ class WalcottVpnService : VpnService() {
         /** Queries handled concurrently; see [inFlight]. */
         private const val MAX_IN_FLIGHT = 16
 
+        /** How long a query may wait for one of those slots before it is refused (see [submit]). */
+        private const val SLOT_WAIT_MS = 1_500L
+
+        /** How many may wait at once; past this a query is refused on arrival. */
+        private const val MAX_WAITING = 256
+
         /** The only port this tunnel serves. */
         private const val DNS_PORT = 53
 
         /** This tunnel's own addresses, which can never be an upstream. */
-        private val OURS = setOf(TUN_ADDR, SENTINEL_DNS)
+        private val OURS = setOf(TUN_ADDR, SENTINEL_DNS, TUN_ADDR6)
 
-        /** IPv4 + UDP headers, the overhead every relayed answer is measured against. */
-        private const val IP_UDP_OVERHEAD = 28
+        /** IP + UDP headers, the overhead every answer relayed as a datagram is measured against. */
+        private const val IPV4_UDP_OVERHEAD = 28
+        private const val IPV6_UDP_OVERHEAD = 48
+
+        /** The largest DNS message TCP can frame (a sixteen-bit length prefix). */
+        private const val MAX_DNS_MESSAGE = 0xFFFF
 
         /** The whole TCP retry of a truncated answer, connect included (see [exchangeOverTcp]). */
         private const val TCP_FALLBACK_BUDGET_MS = 3_000L
@@ -1004,7 +1276,7 @@ class WalcottVpnService : VpnService() {
         /** How often the resolvers may be re-read after a total failure (see [recheckResolvers]). */
         private const val RECHECK_INTERVAL_MS = 5_000L
 
-        /** How long the reader parks before looking at [running] again. */
+        /** How long the reader parks before looking at [Session.active] again. */
         private const val POLL_TIMEOUT_MS = 60_000
 
         /** The same, when there is no pipe to wake it and the timeout is the only way out. */

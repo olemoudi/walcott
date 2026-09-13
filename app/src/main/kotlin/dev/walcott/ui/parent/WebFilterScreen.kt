@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -81,6 +82,7 @@ fun WebFilterScreen(
     val labelOf = remember(apps) { apps.associate { it.app.packageName to it.app.label } }
 
     var newDomain by remember { mutableStateOf("") }
+    var newAllowed by remember { mutableStateOf("") }
     var ruleDomain by remember { mutableStateOf("") }
     var selectedPkg by remember { mutableStateOf<String?>(null) }
     var allowOnly by remember { mutableStateOf(true) }
@@ -190,6 +192,49 @@ fun WebFilterScreen(
                         onClick = { pickingExempt = true; pickingApp = true },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.blocklist_exempt_add)) }
+                }
+            }
+
+            // The other way out of a list, for the day the domain IS known: a sports paper on the
+            // betting list is a name, not a mystery, and switching the list off to reach it is the
+            // wrong answer. Under the lists for the same reason as the exemptions, and still shown
+            // once every list is off so what is left can be removed.
+            if (childId == null && (settings.enabledBlocklists.isNotEmpty() || settings.allowedDomains.isNotEmpty())) {
+                item {
+                    SectionHeader(
+                        stringResource(R.string.webfilter_allowed_title),
+                        icon = Icons.Outlined.TaskAlt,
+                        accent = SectionAccent.RULES,
+                        supporting = stringResource(R.string.webfilter_allowed_hint),
+                    )
+                }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        OutlinedTextField(
+                            value = newAllowed,
+                            onValueChange = { newAllowed = it },
+                            placeholder = { Text(stringResource(R.string.webfilter_domain_hint)) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedButton(
+                            enabled = newAllowed.isNotBlank(),
+                            onClick = { viewModel.addAllowedDomain(newAllowed); newAllowed = "" },
+                        ) { Text(stringResource(R.string.action_add)) }
+                    }
+                }
+                if (settings.allowedDomains.isNotEmpty()) {
+                    item {
+                        val sorted = settings.allowedDomains.sorted()
+                        CardGroup {
+                            sorted.forEachIndexed { index, domain ->
+                                DeletableRow(domain, position = cardPosition(index, sorted.size)) {
+                                    viewModel.removeAllowedDomain(domain)
+                                    snackbar.show(removedFmt.format(domain), undo) { viewModel.addAllowedDomain(domain) }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

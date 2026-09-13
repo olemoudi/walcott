@@ -478,6 +478,8 @@
     <string name="blocklist_exempt_title">Apps a las que no se aplican las listas</string>
     <string name="blocklist_exempt_hint">Si una lista rompe una app, nombra la app aquí en vez de buscar el dominio culpable. Las listas dejan de aplicársele; los dominios que bloqueaste a mano siguen aplicándose.</string>
     <string name="blocklist_exempt_add">Añadir una app</string>
+    <string name="webfilter_allowed_title">Siempre permitidos</string>
+    <string name="webfilter_allowed_hint">Sitios que una lista de arriba bloquea y que quieres poder visitar igualmente, como un diario deportivo en la lista de apuestas. Las listas dejan de bloquearlos; los dominios que bloqueas a mano, las reglas por app y la hora de dormir siguen aplicándose.</string>
     <string name="blocklist_quick_setup">Configurar el filtro en un minuto</string>
     <string name="setup_step_filter">Activar el filtro web</string>
     <string name="preset_filter_title">Configuración rápida del filtro</string>
@@ -1653,6 +1655,9 @@
     <string name="admin_support_short_assisted">Tu familia ha configurado este móvil con Walcott para poder ayudarte con él. Abre Walcott para pedirles ayuda.</string>
     <string name="admin_support_long_assisted">Tu familia cuida este móvil con Walcott, así que los ajustes que es fácil cambiar sin querer se quedan como están. Abre Walcott y pulsa \"Pedir ayuda\", y tu familia recibirá un aviso.</string>
     <string name="apps_reach_out_tag">Sirve para localizarte</string>
+    <string name="apps_always_available_tag">Siempre disponible</string>
+    <string name="app_always_available_title">Su móvil necesita esta app</string>
+    <string name="app_always_available_hint">Es el teclado, la pantalla de inicio o un despertador de su móvil, así que ningún límite, hora de dormir ni tiempo sin pantalla la cierra. Un móvil en el que no se puede escribir, o que no puede despertarle por la mañana, cuesta más que los minutos que ahorraría un límite.</string>
     <string name="app_reach_out_title">Con esta app contactan con alguien</string>
     <string name="app_reach_out_hint">Los límites que nadie escribió sobre esta app —el límite por defecto de la familia y el tiempo de pantalla total al día— no la tocan, así que un número puesto en otra pantalla no puede dejarte sin sus mensajes. Un límite puesto aquí sí se aplica.</string>
     <string name="app_reach_out_limited">Con esta app contactan con alguien, y le has puesto un límite. Cuando se acabe, no podrán escribir desde este móvil.</string>
@@ -1876,6 +1881,13 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_116_0">
+        <item>Con el filtro web activado, el móvil de un hijo ya no pierde IPv6, y las apps que comprueban la conexión contactando con un servidor DNS público dejan de decir que no hay internet.</item>
+        <item>Un sitio que bloquea una lista ya se puede dejar pasar por separado, en Filtro web › Siempre permitidos: un diario deportivo en la lista de apuestas, por ejemplo, sin quitar la lista entera.</item>
+        <item>Cambiar el PIN de pantalla de un móvil al que ayudas ya funciona cuando ese móvil tiene PIN, que es justo cuando hace falta.</item>
+        <item>Un teclado, una pantalla de inicio o un despertador instalados desde Google Play ya no se limitan nunca: a la hora de dormir podían impedir escribir o que sonara una alarma. La lista de apps los marca como «Siempre disponible».</item>
+        <item>Bloquear el tiempo de pantalla de un adulto primero sube a un minuto uno muy corto.</item>
     </string-array>
     <string-array name="whats_new_0_115_0">
         <item>Quitar a alguien libera ahora también su móvil, salvo que desmarques la casilla. Antes salía desmarcada, y el móvil seguía aplicando las reglas de la familia sin nadie que pudiera cambiarlas.</item>

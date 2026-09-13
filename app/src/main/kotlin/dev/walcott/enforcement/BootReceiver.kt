@@ -33,7 +33,11 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val identity = IdentityStore(context).current()
+                // Guarded: a throw on this scope is a crash at boot, and the watchdog and the
+                // heartbeat bring enforcement back later anyway.
+                val identity = runCatching { IdentityStore(context).current() }
+                    .onFailure { DebugLog.e(TAG, "could not read this device's identity after $action", it) }
+                    .getOrNull() ?: return@launch
                 if (identity.enforcesLocally) {
                     // A close-tracking session cannot survive a restart: its deadline is on the
                     // monotonic clock, which starts again from zero here, so a stored one would

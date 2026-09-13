@@ -3750,6 +3750,7 @@ class SyncManager(
                     .managedSystemPackages()
                 // PackageManager enumeration is blocking; keep it off the caller's thread.
                 val reachOut = withContext(Dispatchers.IO) { repository.inventory.reachOutPackages() }
+                val alwaysAvailable = withContext(Dispatchers.IO) { repository.inventory.infrastructurePackages() }
                 val apps = withContext(Dispatchers.IO) {
                     repository.inventory.launchableApps()
                         .sortedWith(
@@ -3764,6 +3765,7 @@ class SyncManager(
                                 it.label,
                                 system = it.isSystem,
                                 reachOut = it.packageName in reachOut,
+                                alwaysAvailable = it.packageName in alwaysAvailable,
                             )
                         }
                 }
@@ -4148,23 +4150,27 @@ class SyncManager(
     /**
      * This device's lock-screen reset token, minted and registered on first use (see [LockScreen]).
      *
-     * Kept device-local and re-registered every time it is read, which is cheap and covers the one
-     * failure that matters: the platform can forget a token, and a device that believes it is
-     * rescuable when it is not is worse than one that says so. Whether the SYSTEM has activated it
-     * is a separate question, answered in the snapshot ([ChildSnapshot.lockResetReady]).
+     * Kept device-local, and registered again only when the system no longer holds an active one
+     * (see [dev.walcott.enforcement.LockScreen.needsRegistration]) — which covers the failure that
+     * matters, a platform that forgot the token, without the one registering every time caused: a
+     * working token deactivated until the phone's PIN is next typed, on exactly the phones that
+     * have a PIN to forget. Whether the SYSTEM has activated it is reported in the snapshot
+     * ([ChildSnapshot.lockResetReady]).
      */
     private suspend fun lockToken(): ByteArray? {
         val stored = syncStore.current().lockTokenB64
-        val token = if (stored.isNotBlank()) {
-            runCatching { FamilyCrypto.fromB64(stored) }.getOrNull()
-        } else {
-            null
-        } ?: dev.walcott.enforcement.LockScreen.newToken().also {
+        val kept = if (stored.isNotBlank()) runCatching { FamilyCrypto.fromB64(stored) }.getOrNull() else null
+        val token = kept ?: dev.walcott.enforcement.LockScreen.newToken().also {
             syncStore.update { s -> s.copy(lockTokenB64 = FamilyCrypto.toB64(it)) }
         }
         // Mid-release the token must not be re-registered (see LockScreen.register), but the one
         // already registered is exactly what the handback needs to take the lock off.
         if (dev.walcott.enforcement.PanicRelease.inProgress) return token
+        val register = dev.walcott.enforcement.LockScreen.needsRegistration(
+            hasOwnToken = kept != null,
+            activeNow = dev.walcott.enforcement.LockScreen.isActive(context),
+        )
+        if (!register) return token
         return if (dev.walcott.enforcement.LockScreen.register(context, token)) token else null
     }
 
