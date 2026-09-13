@@ -54,3 +54,10 @@ fun LocalTime.hhmm(): String = format(hhmm)
  * which is both true and what the parent expects to see.
  */
 fun ageReference(atMs: Long, nowMs: Long): Long = maxOf(atMs, nowMs)
+
+/** "3 days ago" in the device's language, aged against [ageReference] — for ages that run to days. */
+fun relativeAge(atMs: Long, nowMs: Long): String = android.text.format.DateUtils.getRelativeTimeSpanString(
+    atMs,
+    ageReference(atMs, nowMs),
+    android.text.format.DateUtils.MINUTE_IN_MILLIS,
+).toString()

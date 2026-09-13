@@ -2484,6 +2484,8 @@ class SyncManager(
     suspend fun releaseChildDevice(targetDeviceId: String) {
         dev.walcott.debug.DebugLog.w(TAG, "asking $targetDeviceId to release itself")
         sendCommand(targetDeviceId, RemoteAction.RELEASE_DEVICE)
+        // Sent again: an alert saying the previous one ran out unconfirmed has been answered.
+        SyncNotifications.cancelReleaseUnconfirmed(context, targetDeviceId)
     }
 
     /** The devices this family has heard from for [childId] — who a release has to be sent to. */
@@ -3350,6 +3352,39 @@ class SyncManager(
             reminders = reminders + (ask.requestId to reminded.next(now))
         }
         if (reminders != s.helpReminders) syncStore.update { it.copy(helpReminders = reminders) }
+    }
+
+    /**
+     * Tells the parent, once per release, about every "free this phone" that ran out without the
+     * phone confirming it (see [SyncEngine.ReleaseStatus]).
+     *
+     * Before this the pending line simply left the list after a week, and the phone went on being
+     * managed with nobody told — the one outcome of a release the parent must hear about.
+     * [registered] is the family's registry: the alert opens a member's page when there is one, and
+     * the home, where an orphan's row is, when there is not.
+     */
+    suspend fun announceUnconfirmedReleases(registered: Set<String>) {
+        if (identityStore.current().effectiveMode != DeviceMode.PARENT) return
+        val s = syncStore.current()
+        val unconfirmed = SyncEngine.releaseStatuses(s.commands, System.currentTimeMillis()).filterValues { it.expired }
+        val events = unconfirmed
+            .filterValues { it.commandId !in s.releaseUnconfirmedNotified }
+            .mapNotNull { (deviceId, _) ->
+                // A row the parent has already forgotten has nothing to open and nobody to name.
+                val snapshot = s.children.firstOrNull { it.deviceId == deviceId } ?: return@mapNotNull null
+                SyncNotifications.notifyReleaseUnconfirmed(
+                    context, SyncNotifications.who(snapshot.displayName, familyLabel()), deviceId,
+                    snapshot.childId.takeIf { it in registered }.orEmpty(),
+                )
+                event(ParentEvent.TYPE_RELEASE_UNCONFIRMED, snapshot)
+            }
+        // Only the releases still unconfirmed: a resent one has a new id and may need saying again.
+        val announced = unconfirmed.values.map { it.commandId }.toSet()
+        if (announced != s.releaseUnconfirmedNotified) {
+            syncStore.update { state ->
+                events.fold(state.copy(releaseUnconfirmedNotified = announced)) { acc, e -> acc.plusEvent(e) }
+            }
+        }
     }
 
     /** PIN check with escalating brute-force lockout (device-local state). */

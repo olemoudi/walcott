@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.MyLocation
@@ -114,6 +115,7 @@ import dev.walcott.ui.components.SectionHeader
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.components.cardPosition
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.format.relativeAge
 import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
 import kotlinx.coroutines.delay
@@ -159,6 +161,7 @@ fun FamiliesScreen(
     val asks by viewModel.pendingAsks.collectAsStateWithLifecycle()
     val domainRequests by viewModel.domainRequests.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
+    val releases by viewModel.releases.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
     val events by viewModel.recentEvents.collectAsStateWithLifecycle()
     val ledgers by viewModel.usageLedgers.collectAsStateWithLifecycle()
@@ -644,6 +647,8 @@ fun FamiliesScreen(
                     legacyDevices.forEachIndexed { index, device ->
                         LegacyDeviceRow(
                             device,
+                            release = releases[device.deviceId],
+                            nowMs = nowMs,
                             position = cardPosition(index, legacyDevices.size),
                             onClick = { orphanDevice = device },
                         )
@@ -658,7 +663,13 @@ fun FamiliesScreen(
     orphanDevice?.let { device ->
         OrphanDeviceDialog(
             device = device,
+            release = releases[device.deviceId],
+            nowMs = nowMs,
             onDismiss = { orphanDevice = null },
+            onCancelRelease = { commandId ->
+                orphanDevice = null
+                viewModel.cancelRemoteCommand(commandId)
+            },
             onAdopt = { orphanDevice = null; adoptingDevice = device },
             onRelease = { orphanDevice = null; releasingDevice = device },
             onForget = { orphanDevice = null; removingDevice = device },
@@ -1199,10 +1210,15 @@ private fun StatusChips(snapshot: ChildSnapshot, parentVersion: Long) {
  * removed. The second is the one that used to be quietly abandoned — still enforcing the family's
  * rules, still Device Owner, unmanageable — so it is the one that gets the two ways out
  * ([onAdopt] takes it back, [onRelease] frees the phone for good).
+ *
+ * A phone with a release queued says where that stands instead ([release]): the row is kept until
+ * the phone confirms, and without saying so it looked exactly like one nobody had done anything about.
  */
 @Composable
 private fun LegacyDeviceRow(
     device: ChildSnapshot,
+    release: SyncEngine.ReleaseStatus?,
+    nowMs: Long,
     position: CardPosition = CardPosition.Single,
     onClick: () -> Unit,
 ) {
@@ -1218,13 +1234,35 @@ private fun LegacyDeviceRow(
             Spacer(Modifier.width(spacing.md))
             Column(Modifier.weight(1f)) {
                 Text(device.displayName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    stringResource(
-                        if (device.childId.isBlank()) R.string.legacy_device_hint else R.string.orphan_device_hint,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                when {
+                    release == null -> Text(
+                        stringResource(
+                            if (device.childId.isBlank()) R.string.legacy_device_hint else R.string.orphan_device_hint,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // Still managed, and nothing more will happen on its own: the parent's to act on.
+                    release.expired -> Text(
+                        stringResource(R.string.release_unconfirmed_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    // The same waiting line as an install the child has still to finish in Play.
+                    else -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                        Spacer(Modifier.width(spacing.xs))
+                        Text(
+                            stringResource(R.string.release_pending_hint, relativeAge(release.sentAtMs, nowMs)),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
             }
             Icon(
                 Icons.Filled.ChevronRight,
@@ -1244,34 +1282,63 @@ private fun LegacyDeviceRow(
 @Composable
 private fun OrphanDeviceDialog(
     device: ChildSnapshot,
+    /** Its queued release, if any: while one is on its way, the dialog is about that. */
+    release: SyncEngine.ReleaseStatus?,
+    nowMs: Long,
     onDismiss: () -> Unit,
     onAdopt: () -> Unit,
     onRelease: () -> Unit,
+    onCancelRelease: (commandId: String) -> Unit,
     onForget: () -> Unit,
 ) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(device.displayName) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacing.md)) {
-                Text(stringResource(R.string.orphan_device_body))
-                if (device.childId.isNotBlank()) {
-                    OutlinedButton(onClick = onAdopt, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.orphan_adopt))
-                    }
-                }
-                if (dev.walcott.sync.RemoteAction.canRelease(device.appVersionCode)) {
-                    OutlinedButton(onClick = onRelease, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.orphan_release))
+                Text(
+                    when {
+                        release == null -> stringResource(R.string.orphan_device_body)
+                        release.expired -> stringResource(R.string.release_unconfirmed_text)
+                        else -> stringResource(
+                            R.string.release_pending_text,
+                            relativeAge(release.sentAtMs, nowMs),
+                            android.text.format.DateUtils.formatDateTime(
+                                context,
+                                release.sentAtMs + RemoteAction.RELEASE_TTL_MS,
+                                android.text.format.DateUtils.FORMAT_SHOW_DATE or
+                                    android.text.format.DateUtils.FORMAT_SHOW_TIME,
+                            ),
+                        )
+                    },
+                )
+                if (release != null && !release.expired) {
+                    // Taking back a phone that is on its way out would contradict the order still
+                    // queued for it, and sending the order twice adds nothing: the one answer
+                    // offered is withdrawing it.
+                    OutlinedButton(onClick = { onCancelRelease(release.commandId) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.release_cancel))
                     }
                 } else {
-                    // Say why the way out is missing, rather than offering one that answers
-                    // "unsupported": this device's build predates the remote release.
-                    Text(
-                        stringResource(R.string.release_needs_update),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (device.childId.isNotBlank()) {
+                        OutlinedButton(onClick = onAdopt, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.orphan_adopt))
+                        }
+                    }
+                    if (dev.walcott.sync.RemoteAction.canRelease(device.appVersionCode)) {
+                        OutlinedButton(onClick = onRelease, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.orphan_release))
+                        }
+                    } else {
+                        // Say why the way out is missing, rather than offering one that answers
+                        // "unsupported": this device's build predates the remote release.
+                        Text(
+                            stringResource(R.string.release_needs_update),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 OutlinedButton(onClick = onForget, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.orphan_forget))
@@ -1339,6 +1406,7 @@ private fun PendingOpRow(
         RemoteAction.UPDATE_NOW -> Icons.Outlined.SystemUpdate to stringResource(R.string.remote_update_now)
         RemoteAction.REAPPLY_POLICY -> Icons.Outlined.Security to stringResource(R.string.remote_reapply)
         RemoteAction.REQUEST_PERMISSIONS -> Icons.Outlined.Key to stringResource(R.string.remote_ask_permissions)
+        RemoteAction.RELEASE_DEVICE -> Icons.Outlined.LockOpen to stringResource(R.string.release_remote_action)
         SyncEngine.ACTION_LOCATE -> Icons.Outlined.MyLocation to stringResource(R.string.pending_op_locate)
         // A newer build's action this one doesn't know: show it raw rather than hide it.
         else -> Icons.Outlined.PhoneAndroid to op.action

@@ -474,6 +474,28 @@ object SyncEngine {
         ops.any { it.action == ACTION_LOCATE && it.deviceId == deviceId }
 
     /**
+     * Where the parent's "free this phone" stands for one device (see [RemoteAction.RELEASE_DEVICE]).
+     *
+     * A release leaves the queue only when the phone acknowledges it, and that acknowledgement is
+     * also what removes the phone's row — so a release still queued is one the phone has not
+     * confirmed. [expired] once it has outlived [RemoteAction.RELEASE_TTL_MS]: the phone would
+     * refuse it if it came back now, so it is still managed, and the parent has to be told rather
+     * than left with a pending line that quietly disappears. The next command sent to anyone
+     * prunes it from the queue (see [withCommand]); the row then reads as an ordinary orphan,
+     * which is still the truth.
+     */
+    data class ReleaseStatus(val commandId: String, val sentAtMs: Long, val expired: Boolean)
+
+    /** deviceId -> its newest queued release, for every device that has one. */
+    fun releaseStatuses(commands: List<RemoteCommand>, nowMs: Long): Map<String, ReleaseStatus> =
+        commands.filter { it.action == RemoteAction.RELEASE_DEVICE }
+            .groupBy { it.deviceId }
+            .mapValues { (_, releases) ->
+                val newest = releases.maxBy { it.issuedAtMs }
+                ReleaseStatus(newest.id, newest.issuedAtMs, RemoteAction.expired(newest.action, newest.issuedAtMs, nowMs))
+            }
+
+    /**
      * What the child should be told about the parent's answer: which request it was, whether
      * it was approved, and what was granted. Denials matter as much as approvals — without
      * this the child's request would just silently vanish.

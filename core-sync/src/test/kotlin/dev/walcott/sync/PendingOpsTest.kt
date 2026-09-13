@@ -179,6 +179,44 @@ class PendingOpsTest {
         assertTrue(!SyncEngine.locatePending(ops, "child-1"))
     }
 
+    // --- A release waiting for the phone to confirm it ---
+
+    @Test
+    fun `a queued release is pending until it runs out`() {
+        val release = command("r", action = RemoteAction.RELEASE_DEVICE, issuedAtMs = now - 60_000)
+        val status = SyncEngine.releaseStatuses(listOf(release), now)["child-1"]
+        assertEquals(SyncEngine.ReleaseStatus("r", now - 60_000, expired = false), status)
+    }
+
+    @Test
+    fun `a release past its life is unconfirmed, not gone`() {
+        // The bug this pins: the pending line vanished after a week and nothing said the phone
+        // was still managed. The status outlives the pending list so the parent can be told.
+        val sentAt = now - RemoteAction.RELEASE_TTL_MS - 1
+        val release = command("r", action = RemoteAction.RELEASE_DEVICE, issuedAtMs = sentAt)
+        assertTrue(SyncEngine.pendingOps(listOf(release), emptyList(), emptyList(), now).isEmpty())
+        assertEquals(true, SyncEngine.releaseStatuses(listOf(release), now)["child-1"]?.expired)
+    }
+
+    @Test
+    fun `only releases count, each device keeps its own, and the newest wins`() {
+        val statuses = SyncEngine.releaseStatuses(
+            listOf(
+                command("update", action = RemoteAction.UPDATE_NOW),
+                command("old", action = RemoteAction.RELEASE_DEVICE, issuedAtMs = now - 60_000),
+                command("new", action = RemoteAction.RELEASE_DEVICE, issuedAtMs = now),
+                command("other", deviceId = "child-2", action = RemoteAction.RELEASE_DEVICE),
+            ),
+            now,
+        )
+        assertEquals(mapOf("child-1" to "new", "child-2" to "other"), statuses.mapValues { it.value.commandId })
+    }
+
+    @Test
+    fun `no release queued means no status`() {
+        assertTrue(SyncEngine.releaseStatuses(listOf(command("u")), now).isEmpty())
+    }
+
     // --- The "your parents answered" notice on the child home ---
 
     private fun timeRequest(id: String) =

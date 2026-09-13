@@ -537,6 +537,14 @@
     <string name="orphan_release_confirm_button">Liberar</string>
     <string name="orphan_forget">Solo quitarlo de la lista</string>
     <string name="release_remote_action">Liberar el teléfono</string>
+    <string name="release_pending_hint">Liberándose: esperando a que el teléfono lo confirme (pedido %1$s)</string>
+    <string name="release_unconfirmed_hint">Nunca confirmó que se liberara: sigue gestionado</string>
+    <string name="release_pending_text">Pediste liberar este teléfono %1$s y aún no lo ha confirmado. Si está apagado o sin conexión, se libera en cuanto vuelva, siempre que sea antes de %2$s. Cancelar solo sirve mientras el teléfono no haya recogido la orden.</string>
+    <string name="release_unconfirmed_text">Este teléfono nunca confirmó que se hubiera liberado y la orden ha caducado: puede estar apagado, roto o sin conexión. Sigue aplicando las últimas reglas que recibió. Vuelve a liberarlo desde aquí o en el propio teléfono con el PIN del padre.</string>
+    <string name="release_cancel">Cancelar la liberación</string>
+    <string name="release_unconfirmed_title">%1$s: el teléfono nunca confirmó que se liberara</string>
+    <string name="release_unconfirmed_notif_text">Sigue gestionado. Vuelve a liberarlo desde Walcott o en el propio teléfono con el PIN del padre.</string>
+    <string name="event_release_unconfirmed">%1$s: el teléfono nunca confirmó que se liberara</string>
     <string name="override_section_title">Reglas de este hijo</string>
     <string name="override_inherited_hint">Se heredan de la familia salvo que las personalices aquí.</string>
     <plurals name="override_fold_customized">

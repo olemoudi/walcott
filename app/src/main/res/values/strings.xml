@@ -540,6 +540,14 @@
     <string name="orphan_release_confirm_button">Free it</string>
     <string name="orphan_forget">Just remove from this list</string>
     <string name="release_remote_action">Free the phone</string>
+    <string name="release_pending_hint">Being freed — waiting for the phone to confirm (asked %1$s)</string>
+    <string name="release_unconfirmed_hint">Never confirmed it was freed — still managed</string>
+    <string name="release_pending_text">You asked to free this phone %1$s and it hasn\'t confirmed yet. If it is off or offline, it is freed as soon as it comes back, as long as that is before %2$s. Cancelling only works while the phone hasn\'t picked up the order.</string>
+    <string name="release_unconfirmed_text">This phone never confirmed it was freed, and the order has run out: it may be off, broken or offline. It is still applying the last rules it received. Free it again from here, or on the phone itself with the parent PIN.</string>
+    <string name="release_cancel">Cancel the release</string>
+    <string name="release_unconfirmed_title">%1$s: the phone never confirmed it was freed</string>
+    <string name="release_unconfirmed_notif_text">It is still managed. Free it again from Walcott, or on the phone itself with the parent PIN.</string>
+    <string name="event_release_unconfirmed">%1$s: the phone never confirmed it was freed</string>
     <string name="override_section_title">This child\'s rules</string>
     <string name="override_inherited_hint">Inherited from the family unless you customize them here.</string>
     <plurals name="override_fold_customized">

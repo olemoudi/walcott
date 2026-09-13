@@ -1091,6 +1091,16 @@ class WalcottViewModel(
                 .filterNot { it.id.isNotBlank() && it.id in s.dismissedOpIds }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * deviceId -> where the parent's "free this phone" stands, for every device with one queued
+     * (see [dev.walcott.sync.SyncEngine.ReleaseStatus]). On the 15s clock like [pendingOps], so a
+     * release turns unconfirmed on screen when it runs out rather than at the next sync event.
+     */
+    val releases: StateFlow<Map<String, dev.walcott.sync.SyncEngine.ReleaseStatus>> =
+        combine(sync.state, clock) { s, _ ->
+            dev.walcott.sync.SyncEngine.releaseStatuses(s.commands, System.currentTimeMillis())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** Hides a delivered-but-unfinished operation from the home for good. */
     fun dismissPendingOp(id: String) = viewModelScope.launch { sync.dismissPendingOp(id) }
 

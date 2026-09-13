@@ -121,6 +121,7 @@ import dev.walcott.rules.ruleContext
 import dev.walcott.ui.format.hhmm
 import dev.walcott.ui.components.LocalSnackbar
 import dev.walcott.ui.format.humanize
+import dev.walcott.ui.format.relativeAge
 import dev.walcott.ui.qr.rememberQrBitmap
 import dev.walcott.ui.theme.SectionAccent
 import dev.walcott.ui.theme.Tokens
@@ -163,6 +164,7 @@ fun ChildDetailScreen(
     val supersededDevices by viewModel.supersededDevices.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val pendingOps by viewModel.pendingOps.collectAsStateWithLifecycle()
+    val releases by viewModel.releases.collectAsStateWithLifecycle()
     val parentVersion by viewModel.parentVersion.collectAsStateWithLifecycle()
     val policyConfirmedAt by viewModel.policyConfirmedAt.collectAsStateWithLifecycle()
     val diagHistory by viewModel.diagHistory.collectAsStateWithLifecycle()
@@ -940,8 +942,11 @@ fun ChildDetailScreen(
                         CardGroup {
                             RemoteFixCard(
                                 snapshot = snapshot,
+                                release = releases[snapshot.deviceId],
+                                nowMs = nowMs,
                                 position = CardPosition.First,
                                 onCommand = { action -> viewModel.sendRemoteCommand(snapshot.deviceId, action) },
+                                onCancelRelease = { commandId -> viewModel.cancelRemoteCommand(commandId) },
                             )
                             LiveHealthCard(
                                 snapshot = snapshot,
@@ -2012,7 +2017,15 @@ private fun WrongPinCard(total: Int, lastAttemptMs: Long) {
  * raises a guided notification there rather than pretending to fix them from here.
  */
 @Composable
-private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = CardPosition.Single, onCommand: (String) -> Unit) {
+private fun RemoteFixCard(
+    snapshot: ChildSnapshot,
+    /** This phone's queued release, if any (see [dev.walcott.sync.SyncEngine.ReleaseStatus]). */
+    release: dev.walcott.sync.SyncEngine.ReleaseStatus?,
+    nowMs: Long,
+    position: CardPosition = CardPosition.Single,
+    onCommand: (String) -> Unit,
+    onCancelRelease: (commandId: String) -> Unit,
+) {
     val spacing = Tokens.spacing
     val context = LocalContext.current
     // Local echo: the child only acknowledges on its next check-in, so without this the
@@ -2092,11 +2105,23 @@ private fun RemoteFixCard(snapshot: ChildSnapshot, position: CardPosition = Card
             // hence the confirmation, and the wording that leads with the consequence.
             // Hidden rather than shown-and-refused on a child too old to understand it: an
             // action that can only answer "unsupported" is not an action.
-            if (RemoteAction.canRelease(snapshot.appVersionCode)) {
+            // While a release is on its way the row is about that: withdrawing it is the one thing
+            // left to do, and it asks no confirmation because it is the direction that can be
+            // undone. One that ran out unconfirmed is offered again, in red: the phone is still managed.
+            if (release != null && !release.expired) {
+                RemoteFixRow(
+                    title = stringResource(R.string.release_cancel),
+                    description = stringResource(R.string.release_pending_hint, relativeAge(release.sentAtMs, nowMs)),
+                    emphasized = false,
+                    onClick = { onCancelRelease(release.commandId) },
+                )
+            } else if (RemoteAction.canRelease(snapshot.appVersionCode)) {
                 RemoteFixRow(
                     title = stringResource(R.string.orphan_release),
-                    description = stringResource(R.string.release_child_desc),
-                    emphasized = false,
+                    description = stringResource(
+                        if (release != null) R.string.release_unconfirmed_text else R.string.release_child_desc,
+                    ),
+                    emphasized = release != null,
                     onClick = { confirmRelease = true },
                 )
             }
@@ -2713,10 +2738,14 @@ private fun OverrideSwitchRow(
  *
  * Removing used to be purely local bookkeeping, and the phone was the thing nobody told: it went
  * on applying the family's rules for ever, could not be re-linked from its own screen, and had no
- * way out but the parent PIN typed on the device itself. So the choice is made here, in words —
- * and it is a choice rather than a default, because the two mistakes are not the same size. A
- * phone left limited can be freed tomorrow; a phone freed by accident cannot be re-enrolled
- * without factory-resetting it (see [dev.walcott.sync.RemoteAction.RELEASE_DEVICE]).
+ * way out but the parent PIN typed on the device itself. So the choice is made here, in words.
+ *
+ * Freeing the phone is ticked by default wherever it can be done (ole, 2026-09-13): removing
+ * somebody is almost always the end of managing their phone too, and the unticked default left
+ * phones enforcing rules nobody could change any more. The two mistakes are still not the same
+ * size — a phone left limited can be freed tomorrow, one freed by accident cannot be re-enrolled
+ * without a factory reset (see [dev.walcott.sync.RemoteAction.RELEASE_DEVICE]) — which is why the
+ * irreversible consequence is spelled out in red under the box while it is ticked, before Delete.
  */
 @Composable
 private fun RemoveChildDialog(
@@ -2727,7 +2756,8 @@ private fun RemoveChildDialog(
     onDismiss: () -> Unit,
     onRemove: (release: Boolean) -> Unit,
 ) {
-    var release by remember { mutableStateOf(false) }
+    // Never pre-ticked on a build that cannot be released: the box is disabled there.
+    var release by remember { mutableStateOf(canRelease) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.remove_child)) },
@@ -2761,7 +2791,7 @@ private fun RemoveChildDialog(
                             },
                         ),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (release) {
+                        color = if (release && canRelease) {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -2771,7 +2801,8 @@ private fun RemoveChildDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onRemove(release) }) { Text(stringResource(R.string.action_delete)) }
+            // Guarded again at the tap: the phone's build can change while the dialog is open.
+            TextButton(onClick = { onRemove(release && canRelease) }) { Text(stringResource(R.string.action_delete)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )

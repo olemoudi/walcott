@@ -72,6 +72,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_LIVE_TRACKING_ENDED, ParentEvent.TYPE_CURFEW_CUT, ParentEvent.TYPE_RESCUE,
     ParentEvent.TYPE_CHILD_CRASHED, ParentEvent.TYPE_RULES_APPLIED,
     ParentEvent.TYPE_SETUP_PENDING, ParentEvent.TYPE_SETUP_DONE, ParentEvent.TYPE_DEVICE_REPLACED,
+    ParentEvent.TYPE_RELEASE_UNCONFIRMED,
 )
 
 @Composable
@@ -177,6 +178,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_INSTALL_WINDOW -> Icons.Outlined.InstallMobile to warn
         ParentEvent.TYPE_WRONG_APP -> Icons.Filled.Warning to error
     ParentEvent.TYPE_DEVICE_REPLACED -> Icons.Outlined.PhoneAndroid to warn
+        ParentEvent.TYPE_RELEASE_UNCONFIRMED -> Icons.Outlined.LockOpen to warn
         ParentEvent.TYPE_APP_TIME_OUT -> Icons.Outlined.Timer to neutral
         ParentEvent.TYPE_BEDTIME -> Icons.Outlined.Bedtime to neutral
         ParentEvent.TYPE_SCREEN_FREE -> Icons.Outlined.Schedule to neutral
@@ -269,6 +271,7 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_CURFEW_CUT -> stringResource(R.string.event_curfew_cut, name, event.detail)
     ParentEvent.TYPE_RESCUE -> stringResource(R.string.event_rescue, name)
     ParentEvent.TYPE_DEVICE_REPLACED -> stringResource(R.string.event_device_replaced, name)
+    ParentEvent.TYPE_RELEASE_UNCONFIRMED -> stringResource(R.string.event_release_unconfirmed, name)
     ParentEvent.TYPE_REMOTE_DONE -> stringResource(
         if (event.count > 0) R.string.event_remote_ok else R.string.event_remote_failed,
         name, remoteActionLabel(event.detail),

@@ -199,6 +199,29 @@ object SyncNotifications {
     )
 
     /**
+     * A release ran out without the phone ever confirming it (see
+     * [SyncManager.announceUnconfirmedReleases]).
+     *
+     * The status channel: nothing got worse — the phone is exactly as managed as it was — but it
+     * is the one ending of a release nobody would otherwise notice. [childId] is blank for a phone
+     * that belongs to nobody, which opens the home, where its row is.
+     */
+    fun notifyReleaseUnconfirmed(context: Context, childName: String, deviceId: String, childId: String) = post(
+        context, STATUS_CHANNEL, R.string.status_channel_name,
+        title = context.getString(R.string.release_unconfirmed_title, childName),
+        text = context.getString(R.string.release_unconfirmed_notif_text),
+        notifId = releaseUnconfirmedId(deviceId),
+        dest = childDest(childId),
+    )
+
+    /** Retires [notifyReleaseUnconfirmed]: the release was sent again, or the phone confirmed it. */
+    fun cancelReleaseUnconfirmed(context: Context, deviceId: String) {
+        runCatching { NotificationManagerCompat.from(context).cancel(releaseUnconfirmedId(deviceId)) }
+    }
+
+    private fun releaseUnconfirmedId(deviceId: String) = "releaseunconfirmed".hashCode() + deviceId.hashCode()
+
+    /**
      * A phone that was counting down to freeing itself has stopped asking.
      *
      * Posted for every ending except the parent's own refusal: withdrawn by the child, killed by
@@ -737,9 +760,10 @@ object SyncNotifications {
     /**
      * Drops the alerts about a device that has just been freed (see [RemoteAction.RELEASE_DEVICE]).
      *
-     * Only the two that outlive the device itself: the "not heard from" alert — which is exactly
-     * what a released phone looks like from here — and the open-install-window nag. Everything
-     * else is a moment, not a standing state, and a released phone posts no new ones.
+     * Only the ones that outlive the device itself: the "not heard from" alert — which is exactly
+     * what a released phone looks like from here — the open-install-window nag, and a release
+     * announced as never confirmed that has just been confirmed after all. Everything else is a
+     * moment, not a standing state, and a released phone posts no new ones.
      */
     fun cancelForDevice(context: Context, deviceId: String) {
         runCatching {
@@ -748,6 +772,7 @@ object SyncNotifications {
             manager.cancel("enf".hashCode() + deviceId.hashCode())
         }
         cancelInstallWindowOpen(context, deviceId)
+        cancelReleaseUnconfirmed(context, deviceId)
     }
 
     /** Cancels the open-window nag once the window is closed (re-blocked or expired). */

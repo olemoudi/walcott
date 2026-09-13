@@ -199,6 +199,8 @@ From your own phone, freeing one you look after is one tap: *Free this phone* on
 the same offer when you remove them from the family. Every restriction comes off, every app comes
 back, and the phone drops out of management — if it is switched off, the moment it comes back. It
 cannot be undone: enrolling it again means setting it up from scratch, so the app asks first.
+Until the phone confirms, it stays listed as being freed; the order waits a week for it, and if the
+week runs out you are told the phone is still managed.
 
 And if your phone is the one that is gone, there are two ways out from the child's phone:
 

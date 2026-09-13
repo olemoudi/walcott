@@ -78,6 +78,13 @@ object ParentCheckAlarm {
             val app = context.applicationContext as? WalcottApplication
             app?.hub?.allNow()?.forEach { family -> family.syncManager.remindUnansweredHelp() }
         }.onFailure { DebugLog.w(TAG, "help reminders failed", it) }
+        runCatching {
+            val app = context.applicationContext as? WalcottApplication
+            app?.hub?.allNow()?.forEach { family ->
+                val registered = family.settingsStore.current().children.map { it.childId }.toSet()
+                family.syncManager.announceUnconfirmedReleases(registered)
+            }
+        }.onFailure { DebugLog.w(TAG, "unconfirmed releases check failed", it) }
         // Re-pace the chain now that the poll has refreshed what the children look like. This
         // replaces the fast default the receiver armed before doing any of it — that one is the
         // safety net for a poll that throws, this one is the considered answer.

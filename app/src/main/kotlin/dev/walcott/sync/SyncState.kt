@@ -113,6 +113,9 @@ data class ParentEvent(
         /** A child checked in from a phone this family had not seen before (a replacement). */
         const val TYPE_DEVICE_REPLACED = "device_replaced"
 
+        /** A release ran out without the phone confirming it, so it is still managed (see SyncEngine.ReleaseStatus). */
+        const val TYPE_RELEASE_UNCONFIRMED = "release_unconfirmed"
+
         /**
          * The everyday rhythm, reported by the child itself (see [ChildEvent]): one app's daily
          * limit ran out ([detail] names it), bedtime began, a screen-free window began. No
@@ -532,6 +535,11 @@ data class SyncState(
      * said once per replacement rather than on every check-in.
      */
     val replacementNotified: Set<String> = emptySet(),
+    /**
+     * Ids of the releases already announced as never confirmed (see
+     * [SyncManager.announceUnconfirmedReleases]), so each is said once rather than every catch-up.
+     */
+    val releaseUnconfirmedNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for having enforcement inactive (cleared when it recovers). */
     val enforcementNotified: Set<String> = emptySet(),
     /** deviceId -> the child's pinWrongTotal we already alerted about (one alert per new failure). */
