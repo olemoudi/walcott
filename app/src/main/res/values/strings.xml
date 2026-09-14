@@ -541,6 +541,7 @@
     <string name="orphan_release_confirm">Free %1$s? Every restriction comes off and the phone stops being managed. This can\'t be undone: enrolling it again means resetting it to factory settings. If the phone is off, it is freed the next time it comes back.</string>
     <string name="orphan_release_confirm_button">Free it</string>
     <string name="orphan_forget">Just remove from this list</string>
+    <string name="orphan_forget_and_cancel">Cancel the release and remove from this list</string>
     <string name="release_remote_action">Free the phone</string>
     <string name="release_pending_hint">Being freed — waiting for the phone to confirm (asked %1$s)</string>
     <string name="release_unconfirmed_hint">Never confirmed it was freed — still managed</string>
@@ -1139,6 +1140,7 @@
     <string name="rename_family">Rename family</string>
     <string name="legacy_remove_title">Remove device</string>
     <string name="legacy_remove_confirm">Remove %1$s from the list? If the device is still active and paired, it will re-appear on its next check-in.</string>
+    <string name="legacy_remove_confirm_releasing">Remove %1$s from the list? Its pending release is cancelled too, so a phone that was lost cannot be freed in someone else\'s hands. If it comes back online it reappears here, still applying the family\'s rules, and you can free it again.</string>
     <string name="app_settings_title">App settings</string>
     <string name="app_settings_subtitle">Updates, app lock, debug logs and device mode</string>
     <string name="app_settings_section_appearance">Appearance</string>
@@ -1890,6 +1892,9 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+    <string-array name="whats_new_0_117_0">
+        <item>Removing a phone from the list while it is being freed now cancels the release, so a phone you wrote off as lost is never freed in someone else\'s hands. If it comes back, it reappears still limited and you can free it again.</item>
     </string-array>
     <string-array name="whats_new_0_116_0">
         <item>With the web filter on, a child\'s phone no longer loses IPv6, and apps that check for a connection by reaching a public DNS server stop saying they are offline.</item>

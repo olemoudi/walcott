@@ -708,7 +708,15 @@ fun FamiliesScreen(
         AlertDialog(
             onDismissRequest = { removingDevice = null },
             title = { Text(stringResource(R.string.legacy_remove_title)) },
-            text = { Text(stringResource(R.string.legacy_remove_confirm, device.displayName)) },
+            text = {
+                val releasing = releases[device.deviceId]?.let { !it.expired } == true
+                Text(
+                    stringResource(
+                        if (releasing) R.string.legacy_remove_confirm_releasing else R.string.legacy_remove_confirm,
+                        device.displayName,
+                    ),
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.removeLegacyDevice(device.deviceId)
@@ -1341,7 +1349,14 @@ private fun OrphanDeviceDialog(
                     }
                 }
                 OutlinedButton(onClick = onForget, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.orphan_forget))
+                    // Says what it does to a release on its way: it withdraws it (see
+                    // SyncManager.forgetChildDevice), and a button that read "just remove from
+                    // this list" there would be describing the opposite.
+                    Text(
+                        stringResource(
+                            if (release != null && !release.expired) R.string.orphan_forget_and_cancel else R.string.orphan_forget,
+                        ),
+                    )
                 }
             }
         },

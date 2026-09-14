@@ -2457,16 +2457,55 @@ class SyncManager(
     }
 
     /**
+     * The parent's "remove from this list" for a phone that belongs to nobody in the family: the row
+     * goes, and so does everything still queued for that phone (see [withdrawQueued]).
+     *
+     * If the phone is alive after all it reappears on its next check-in, still applying the family's
+     * rules, and can be freed again from its row — which is the reversible way round (see
+     * [SyncEngine.withoutDevice]).
+     */
+    suspend fun forgetChildDevice(deviceId: String) {
+        dev.walcott.debug.DebugLog.i(TAG, "forgetting $deviceId and withdrawing what was queued for it")
+        withdrawQueued(deviceId)
+        SyncNotifications.cancelForDevice(context, deviceId)
+        removeChildDevice(deviceId)
+    }
+
+    /**
+     * Withdraws every command and location request still queued for [deviceId], and publishes.
+     *
+     * Published, not merely dropped from the store: a command already on the relay is withdrawn
+     * only by a newer parent snapshot that no longer carries it, and a phone that comes back reads
+     * the newest one.
+     */
+    private suspend fun withdrawQueued(deviceId: String) {
+        val before = syncStore.current()
+        if (before.commands.none { it.deviceId == deviceId } && before.locationRequests.none { it.deviceId == deviceId }) {
+            return
+        }
+        syncStore.update { s ->
+            s.copy(
+                parentVersion = s.parentVersion + 1,
+                commands = SyncEngine.withoutDevice(s.commands, deviceId),
+                locationRequests = s.locationRequests.filterNot { it.deviceId == deviceId },
+            )
+        }
+        publishSelf()
+    }
+
+    /**
      * Forget a child's earlier phone: the row goes, and with it the alerts and bookkeeping that
-     * hang off its deviceId.
+     * hang off its deviceId, and whatever was still queued for it (see [withdrawQueued]).
      *
      * Not a release — that is [releaseChildDevice], and it is the other half of the answer when
      * the old phone still exists and is still enforcing. This is for the phone that is gone:
-     * broken, sold, stolen, or wiped. The child's usage history is filed under the childId
-     * rather than the deviceId (see [UsageLedger.keyOf]), so the replacement keeps it.
+     * broken, sold, stolen, or wiped — and a stolen phone with a release still on its way is the one
+     * that must not receive it. The child's usage history is filed under the childId rather than the
+     * deviceId (see [UsageLedger.keyOf]), so the replacement keeps it.
      */
     suspend fun retireChildDevice(deviceId: String) {
         dev.walcott.debug.DebugLog.w(TAG, "retiring $deviceId: this child has a newer phone")
+        withdrawQueued(deviceId)
         SyncNotifications.cancelForDevice(context, deviceId)
         removeChildDevice(deviceId)
         syncStore.update { it.copy(replacementNotified = it.replacementNotified - deviceId) }

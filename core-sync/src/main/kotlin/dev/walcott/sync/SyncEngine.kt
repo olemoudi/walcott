@@ -273,6 +273,20 @@ object SyncEngine {
                 nowMs - it.issuedAtMs > COMMAND_TTL_MS
         } + command
 
+    /**
+     * [current] with nothing left queued for [deviceId]: a phone the parent has let go of from their
+     * list, forgotten or retired as a phone that is gone.
+     *
+     * The release above all. Forgetting a phone used to delete its row and leave its queue alone, so
+     * a "free this phone" still on its way reached the phone if it ever came back — a phone written
+     * off as lost, freed in the hands of whoever found it, with no row left to show it happening or
+     * to cancel it from. The two mistakes are not the same size: a phone left limited can be freed
+     * again from its row when it reappears, and one freed by mistake cannot be re-enrolled without a
+     * factory reset.
+     */
+    fun withoutDevice(current: List<RemoteCommand>, deviceId: String): List<RemoteCommand> =
+        current.filterNot { it.deviceId == deviceId }
+
     /** How long an unacknowledged remote command stays queued in the parent snapshot. */
     const val COMMAND_TTL_MS = 7 * 24 * 60 * 60 * 1000L
 

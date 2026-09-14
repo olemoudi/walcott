@@ -3,6 +3,18 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.117.0 — a phone written off is never freed in someone else's hands
+
+- **Removing a phone from the list withdraws what was queued for it, a pending release above all.**
+  Decided with ole on 2026-09-14 (option A of three). "Just remove from this list" used to delete the
+  row and leave the queue alone, so a release still on its way reached the phone if it came back —
+  a phone written off as lost, freed in a finder's hands, with no row to see or cancel it from, and
+  its pending action shown under a raw device id. `SyncManager.forgetChildDevice` (and
+  `retireChildDevice`, for the stolen-phone case) now withdraws every queued command and location
+  request for that device and publishes (`SyncEngine.withoutDevice`, `PendingOpsTest`). While a
+  release is pending the button reads "Cancel the release and remove from this list" and the
+  confirmation says why.
+
 ## Shipped in v0.116.0 — the phone that must keep working, reviewed
 
 A review on 2026-09-13, asked for by ole ("caminos críticos que puedan dejar el móvil del hijo o del

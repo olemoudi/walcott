@@ -581,7 +581,12 @@ class WalcottViewModel(
     }
 
     /** Forget an orphaned device (it re-appears if it is still alive and paired). */
-    fun removeLegacyDevice(deviceId: String) = viewModelScope.launch { sync.removeChildDevice(deviceId) }
+    /**
+     * "Remove from this list": forgets the phone and withdraws what was queued for it, a pending
+     * release included (see [dev.walcott.sync.SyncManager.forgetChildDevice]). Durable, because it
+     * publishes, and a screen closing mid-way must not leave the release on the relay.
+     */
+    fun removeLegacyDevice(deviceId: String) = hub.launchDurable { sync.forgetChildDevice(deviceId) }
 
     /**
      * Applies [transform] to one child's overrides. The scoped rule editors funnel through

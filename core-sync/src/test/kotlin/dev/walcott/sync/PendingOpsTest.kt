@@ -213,6 +213,20 @@ class PendingOpsTest {
     }
 
     @Test
+    fun `forgetting a phone withdraws everything still queued for it, the release above all`() {
+        val queue = listOf(
+            command("release", action = RemoteAction.RELEASE_DEVICE),
+            command("update"),
+            command("sibling", deviceId = "child-2", action = RemoteAction.RELEASE_DEVICE),
+        )
+        val after = SyncEngine.withoutDevice(queue, "child-1")
+        assertEquals(listOf("sibling"), after.map { it.id })
+        // Nothing left to reach the forgotten phone, and nothing reported about it either.
+        assertTrue("child-1" !in SyncEngine.releaseStatuses(after, now))
+        assertTrue(SyncEngine.pendingOps(after, emptyList(), emptyList(), now).none { it.deviceId == "child-1" })
+    }
+
+    @Test
     fun `no release queued means no status`() {
         assertTrue(SyncEngine.releaseStatuses(listOf(command("u")), now).isEmpty())
     }

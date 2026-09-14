@@ -538,6 +538,7 @@
     <string name="orphan_release_confirm">¿Liberar %1$s? Se levantan todas las restricciones y el teléfono deja de estar gestionado. No se puede deshacer: volver a enrolarlo exige restaurarlo de fábrica. Si el teléfono está apagado, se libera en cuanto vuelva.</string>
     <string name="orphan_release_confirm_button">Liberar</string>
     <string name="orphan_forget">Solo quitarlo de la lista</string>
+    <string name="orphan_forget_and_cancel">Cancelar la liberación y quitarlo de la lista</string>
     <string name="release_remote_action">Liberar el teléfono</string>
     <string name="release_pending_hint">Liberándose: esperando a que el teléfono lo confirme (pedido %1$s)</string>
     <string name="release_unconfirmed_hint">Nunca confirmó que se liberara: sigue gestionado</string>
@@ -1136,6 +1137,7 @@
     <string name="rename_family">Renombrar familia</string>
     <string name="legacy_remove_title">Quitar dispositivo</string>
     <string name="legacy_remove_confirm">¿Quitar %1$s de la lista? Si el dispositivo sigue activo y emparejado, reaparecerá en su próximo contacto.</string>
+    <string name="legacy_remove_confirm_releasing">¿Quitar %1$s de la lista? También se cancela la liberación pendiente, para que un móvil perdido no se libere en manos de otra persona. Si vuelve a conectarse, reaparecerá aquí aplicando las reglas de la familia y podrás liberarlo otra vez.</string>
     <string name="app_settings_title">Ajustes de la app</string>
     <string name="app_settings_subtitle">Actualizaciones, bloqueo de la app, registros y modo del dispositivo</string>
     <string name="app_settings_section_appearance">Apariencia</string>
@@ -1881,6 +1883,9 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+    <string-array name="whats_new_0_117_0">
+        <item>Quitar de la lista un móvil que se está liberando ahora cancela la liberación, para que un móvil que diste por perdido no se libere en manos de otra persona. Si vuelve, reaparece aún limitado y puedes liberarlo otra vez.</item>
     </string-array>
     <string-array name="whats_new_0_116_0">
         <item>Con el filtro web activado, el móvil de un hijo ya no pierde IPv6, y las apps que comprueban la conexión contactando con un servidor DNS público dejan de decir que no hay internet.</item>
