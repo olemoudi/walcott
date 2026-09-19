@@ -5,7 +5,9 @@ they are the only proof that a phone can be freed, and that is the one thing a r
 parental-control app must never break.
 
 1. `export JAVA_HOME=~/.jdks/jdk-17.0.19+10` (java is not on the PATH here).
-2. `./gradlew test` — every JVM suite green.
+2. `./gradlew lintDebug test` — every JVM suite green, and lint too. Lint is not part of `test`
+   and the `CI` workflow runs it with `abortOnError`, so a release cut on `test` alone can leave
+   main red behind a perfectly good APK (0.118 did).
 3. Emulator up and awake, Device Owner provisioned, the **debug build signed with the release
    key and its lineage** installed (`scripts/sign-apk.sh`, see `parent-sim/README.md` and
    `docs/signing.md`). Do not rebuild while a suite is running.
