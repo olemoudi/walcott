@@ -27,8 +27,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -96,12 +99,12 @@ fun AssistedStatusScreen(
     // comparison made during composition would sit at "sending" until something unrelated
     // happened (the same freeze the find card's countdown was fixed for).
     val reaskAt = helpAsk?.let { it.createdAtEpochMs + HelpAsks.REASK_AFTER_MS } ?: 0L
-    val canReask by produceState(initialValue = reaskAt > 0 && reaskAt <= System.currentTimeMillis(), reaskAt) {
-        value = reaskAt > 0 && reaskAt <= System.currentTimeMillis()
+    var canReask by remember(reaskAt) { mutableStateOf(reaskOpen(reaskAt)) }
+    LaunchedEffect(reaskAt) {
         while (reaskAt > System.currentTimeMillis()) {
             delay(REASK_TICK_MS)
-            value = reaskAt <= System.currentTimeMillis()
         }
+        canReask = reaskOpen(reaskAt)
     }
     // The family's answer, which on this screen has one form only: somebody has dealt with it.
     val helpSeen = notice?.takeIf {
@@ -386,6 +389,9 @@ private fun HelpRanOutCard(onDismiss: () -> Unit) {
 
 /** How often the help card re-asks whether the window to send it again has opened. */
 private const val REASK_TICK_MS = 30_000L
+
+/** Whether [reaskAt] has arrived; 0 means there is no ask waiting and so nothing to re-send. */
+private fun reaskOpen(reaskAt: Long): Boolean = reaskAt > 0 && reaskAt <= System.currentTimeMillis()
 
 /** The permissions run, in one card and in the same voice as the rest of this screen. */
 @Composable
