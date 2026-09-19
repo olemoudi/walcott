@@ -324,6 +324,7 @@ class SyncManager(
             override fun onAvailable(network: android.net.Network) {
                 transport?.onNetworkAvailable()
                 legacyTransport?.onNetworkAvailable()
+                flushUnsentHelp()
             }
         }
         val request = android.net.NetworkRequest.Builder()
@@ -350,6 +351,38 @@ class SyncManager(
     }
 
     private val networkCallbackRegistered = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** When this phone last re-sent a call for help on a network coming back (see [flushUnsentHelp]). */
+    @Volatile private var lastHelpFlushAtMs = 0L
+
+    /**
+     * Sends a call for help the relay never took, the moment there is a network again.
+     *
+     * Everything else on this phone can wait for the next heartbeat; this cannot. A person who
+     * pressed the button in a basement, a lift or a dead spot had their ask written down and then
+     * waited on the re-emit (fifteen minutes, and only while the process lives) or the heartbeat
+     * (thirty) — after the coverage came back, with the screen truthfully saying "it goes the
+     * moment this phone can reach your family" and nothing making that moment arrive.
+     *
+     * Only for a help ask, and only while the relay has not confirmed it ([HelpAsks.unconfirmed]):
+     * this callback fires several times a minute on a phone being carried around, and a publish
+     * on each would be a radio bill for nothing.
+     */
+    private fun flushUnsentHelp() {
+        scope.launch {
+            val state = syncStore.current()
+            if (HelpAsks.unconfirmed(state.pendingAsks, state.askReceipts).isEmpty()) return@launch
+            val now = System.currentTimeMillis()
+            // Against a hand-off that flaps: one attempt a minute is already far faster than
+            // anything that used to carry this, and a failed publish leaves the ask unconfirmed
+            // so the next network event tries again.
+            if (now - lastHelpFlushAtMs < HELP_FLUSH_MIN_INTERVAL_MS) return@launch
+            lastHelpFlushAtMs = now
+            dev.walcott.debug.DebugLog.i(TAG, "a network is back and a call for help is unsent; publishing now")
+            runCatching { publishSelf() }
+                .onFailure { dev.walcott.debug.DebugLog.w(TAG, "re-sending the call for help failed", it) }
+        }
+    }
 
     private suspend fun connect(id: FamilyIdentity) {
         transport?.close()
@@ -966,6 +999,56 @@ class SyncManager(
             )
         }
         publishSelf()
+    }
+
+    /** What pressing the help button did (see [askForHelp]). */
+    enum class HelpAskResult {
+        /** A new call for help is on its way. */
+        SENT,
+
+        /** One is already going out, too recently for a second to add anything. */
+        TOO_SOON,
+    }
+
+    /**
+     * Child: the help button (see [ChildRequest.KIND_HELP]), which is its own path and not
+     * [askFor] for two reasons that pull in opposite directions.
+     *
+     * **It may not be sent twice in a moment.** The button is pressed by somebody flustered, and
+     * the screen turns into a statement rather than offering a second press — but the screen only
+     * changes once the store has been written, and two taps inside that window used to put two
+     * identical calls in front of the family, of which answering one left the other sitting there.
+     *
+     * **And it may be sent again later, which nothing else here may.** Every other ask is a
+     * question that stays asked until it is answered. This one is a person who is stuck, and the
+     * family answers it by telephone — so the ask itself is very often never closed, and the
+     * button it hid was gone for two days. After [HelpAsks.REASK_AFTER_MS] a new press REPLACES
+     * the old ask: the family sees one call for help, alerted again, rather than a pile of them.
+     */
+    suspend fun askForHelp(text: String): HelpAskResult {
+        val now = System.currentTimeMillis()
+        val existing = syncStore.current().pendingAsks.filter { it.kind == ChildRequest.KIND_HELP }
+        val newest = existing.maxByOrNull { it.createdAtEpochMs }
+        if (newest != null && !HelpAsks.reaskAllowed(newest.createdAtEpochMs, now)) {
+            return HelpAskResult.TOO_SOON
+        }
+        syncStore.update { s ->
+            val superseded = s.pendingAsks.filter { it.kind == ChildRequest.KIND_HELP }.toSet()
+            s.copy(
+                childVersion = s.childVersion + 1,
+                pendingAsks = s.pendingAsks - superseded + ChildRequest(
+                    requestId = UUID.randomUUID().toString(),
+                    kind = ChildRequest.KIND_HELP,
+                    text = text,
+                    createdAtEpochMs = now,
+                ),
+                // The replaced ask's receipt would otherwise sit in here until it expired, and
+                // this set is what the screen reads to say "sent" rather than "sending".
+                askReceipts = s.askReceipts - superseded.map { it.requestId }.toSet(),
+            )
+        }
+        publishSelf()
+        return HelpAskResult.SENT
     }
 
     enum class InstallRequestResult { SENT, DUPLICATE, ALREADY_INSTALLED }
@@ -1930,8 +2013,12 @@ class SyncManager(
         val deadAsks = s.pendingAsks.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
         if (deadRequests.isEmpty() && deadAsks.isEmpty()) return
         val newest = deadRequests.maxByOrNull { it.createdAtEpochMs }
+        // A call for help that ran out is not the same sentence as a request nobody answered: it
+        // is the one ask whose whole point was that somebody would come. The screen it belongs on
+        // says so in its own words and offers the button again (see AssistedStatusScreen).
+        val helpRanOut = deadAsks.any { it.kind == ChildRequest.KIND_HELP }
         val expiredNotice = NoticeEntry(
-            kind = NOTICE_EXPIRED,
+            kind = if (helpRanOut) NOTICE_HELP_EXPIRED else NOTICE_EXPIRED,
             approved = false,
             text = newest?.targetLabel ?: deadAsks.maxByOrNull { it.createdAtEpochMs }?.text.orEmpty(),
             atMs = now,
@@ -5568,6 +5655,9 @@ class SyncManager(
         // and saves a lot of radio/battery.
         private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
 
+        /** The most often a returning network may re-send an unsent help ask (see flushUnsentHelp). */
+        private const val HELP_FLUSH_MIN_INTERVAL_MS = 60_000L
+
         /**
          * How settled a socket must be before a foreground/background change is allowed to
          * replace it. Someone bouncing between Walcott and another app would otherwise pay a
@@ -5626,5 +5716,15 @@ class SyncManager(
 
         /** [NoticeEntry.kind] for a request that ran out of time unanswered. */
         const val NOTICE_EXPIRED = "expired"
+
+        /**
+         * The same, for the help button: two days in which nobody pressed "I've helped" and
+         * nothing else closed it (see [HelpAsks] and `AssistedStatusScreen`).
+         *
+         * Its own kind rather than [NOTICE_EXPIRED] because the screens read these to choose a
+         * sentence, and "nobody answered in time" said of a call for help has to offer the button
+         * back rather than name what ran out.
+         */
+        const val NOTICE_HELP_EXPIRED = "help_expired"
     }
 }

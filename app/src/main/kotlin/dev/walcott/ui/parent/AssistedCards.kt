@@ -213,16 +213,37 @@ private fun KindParagraph(icon: ImageVector, title: String, body: String) {
  * phone somebody has already configured by hand, which is the one thing a row this small must
  * never do — and the note says so, because "you can change this" reads as "this will change
  * things" unless it is denied out loud.
+ *
+ * **With one question asked out loud.** "No defaults" also meant that somebody enrolled as a child
+ * by mistake and corrected here went on inheriting the family's bedtime, screen-free hours and
+ * limits — the exact state `PolicySettings.separateAdultRules` had to migrate a whole beta out of,
+ * arrived at by a different door. Their phone has no rules screen to explain it, either. So when
+ * there is something to inherit, this asks, says how much, and does nothing without an answer.
  */
 @Composable
-fun MemberKindCard(kind: String, onSelect: (String) -> Unit) {
+fun MemberKindCard(
+    kind: String,
+    /** The family's rules this member is inheriting right now (see ChildOverrides). */
+    inheritedFamilyRules: Int,
+    onSelect: (kind: String, dropFamilyRules: Boolean) -> Unit,
+) {
     val spacing = Tokens.spacing
     var explaining by remember { mutableStateOf(false) }
+    var separating by remember { mutableStateOf(false) }
     WalcottCard {
         Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             MemberKindChooser(
                 kind = kind,
-                onSelect = onSelect,
+                onSelect = { picked ->
+                    // Only in the direction that creates the problem, and only when there is
+                    // something to lose: turning somebody back into a child inherits the family's
+                    // rules again by itself, which is what being a child means.
+                    if (picked == MemberKind.ADULT && kind != MemberKind.ADULT && inheritedFamilyRules > 0) {
+                        separating = true
+                    } else {
+                        onSelect(picked, false)
+                    }
+                },
                 onExplain = { explaining = true },
                 label = stringResource(R.string.member_kind_row_title),
             )
@@ -234,6 +255,33 @@ fun MemberKindCard(kind: String, onSelect: (String) -> Unit) {
         }
     }
     if (explaining) MemberKindSheet(onDismiss = { explaining = false })
+    if (separating) {
+        AlertDialog(
+            onDismissRequest = { separating = false },
+            title = { Text(stringResource(R.string.member_kind_separate_title)) },
+            text = {
+                Text(
+                    pluralStringResource(
+                        R.plurals.member_kind_separate_body,
+                        inheritedFamilyRules,
+                        inheritedFamilyRules,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    separating = false
+                    onSelect(MemberKind.ADULT, true)
+                }) { Text(stringResource(R.string.member_kind_separate_drop)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    separating = false
+                    onSelect(MemberKind.ADULT, false)
+                }) { Text(stringResource(R.string.member_kind_separate_keep)) }
+            },
+        )
+    }
 }
 
 /** Whether any of these is worth showing yet: a device that has never checked in has nothing to say. */
@@ -269,8 +317,15 @@ fun RingerCard(
                     color = if (audible) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
                 )
                 if (snapshot.ringerDndSilencing) {
+                    // Two different problems wearing the same sentence until now. The phone
+                    // reports the FACT (it is filtering calls right now); which of the two it is
+                    // comes from what else it says it is missing — with the guard on and the
+                    // permission not granted, the phone already lists DND_ACCESS as unmet.
+                    val noAccess = dev.walcott.setup.DeviceRequirement.DND_ACCESS.key in snapshot.setupUnmet
                     Text(
-                        stringResource(R.string.ringer_dnd_blocked),
+                        stringResource(
+                            if (noAccess) R.string.ringer_dnd_blocked else R.string.ringer_dnd_stuck,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )

@@ -23,6 +23,30 @@ object HelpAsks {
      */
     const val MAX_REMINDERS = 3
 
+    /**
+     * How long a help ask waits before its owner may send it again.
+     *
+     * The button hides itself while an ask is unanswered, which is right for the first minute and
+     * wrong for the rest: nothing closes a help ask except the family pressing "I've helped", and
+     * the family's own answer to it happens on the telephone. Somebody who rings, sorts it out and
+     * never opens the app again used to leave a dead button behind for the two days the ask lives
+     * ([SyncEngine.REQUEST_TTL_MS]) — on the one screen a person who is stuck has.
+     *
+     * Ten minutes because that is the floor of the parent's own catch-up ([ParentCadence.FAST_MS]):
+     * before it, asking again cannot have reached anybody the first ask did not, so the honest
+     * answer is still "it is on its way".
+     */
+    const val REASK_AFTER_MS = 10 * 60 * 1000L
+
+    /**
+     * Whether a help ask made at [createdAtMs] may be replaced by a fresh one at [nowMs].
+     *
+     * A clock that has gone backwards says no, like [reminderDue]: the alternative is a button
+     * that re-arms itself the moment the phone's time drifts.
+     */
+    fun reaskAllowed(createdAtMs: Long, nowMs: Long): Boolean =
+        nowMs - createdAtMs >= REASK_AFTER_MS
+
     /** How often one help ask has been announced on this phone, and when last. */
     @Serializable
     data class Reminded(

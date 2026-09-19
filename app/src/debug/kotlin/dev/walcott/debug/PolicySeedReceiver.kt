@@ -247,7 +247,15 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 // which is the one thing a headless harness cannot do.
                 intent.getStringExtra("ask")?.let { spec ->
                     val kind = spec.substringBefore(':')
-                    target.syncManager.askFor(kind, spec.substringAfter(':', ""))
+                    val text = spec.substringAfter(':', "")
+                    // The help button has its own path on the phone — it may not be sent twice in
+                    // a moment and it MAY be sent again later (see SyncManager.askForHelp) — so
+                    // the harness has to press the button the screen presses, not the one beside it.
+                    if (kind == dev.walcott.sync.ChildRequest.KIND_HELP) {
+                        target.syncManager.askForHelp(text)
+                    } else {
+                        target.syncManager.askFor(kind, text)
+                    }
                     DebugLog.i("WalcottSeed", "asked for $spec")
                 }
                 intent.getStringExtra("request_time")?.let { spec ->

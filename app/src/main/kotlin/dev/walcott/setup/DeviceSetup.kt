@@ -158,6 +158,14 @@ data class DeviceFacts(
     val ringerGuardWanted: Boolean = false,
     /** The phone's owner has let Walcott change Do Not Disturb. */
     val dndAccessGranted: Boolean = true,
+    /**
+     * This phone belongs to an adult being helped ([dev.walcott.data.MemberKind.ADULT]) and no
+     * rule on it can block an app (see [dev.walcott.rules.FamilyConfig.hasAnyRule]).
+     *
+     * Its own fact rather than "is an adult", because the kind decides defaults and never
+     * availability: an adult the family HAS given a bedtime needs the blocker like anybody else.
+     */
+    val assistedWithoutRules: Boolean = false,
 )
 
 /**
@@ -178,7 +186,8 @@ object DeviceSetup {
      * - usage access and the accessibility blocker mean nothing on a parent phone, which
      *   enforces no rules;
      * - the accessibility blocker is the fallback for devices that are NOT Device Owner — on one
-     *   that is, suspension does the blocking and the service is redundant;
+     *   that is, suspension does the blocking and the service is redundant — and it is not asked
+     *   for at all on an assisted phone with no rules to enforce ([DeviceFacts.assistedWithoutRules]);
      * - location is only asked for by a family that turned tracking on;
      * - the web filter only exists where the rules define one;
      * - battery optimisation cannot be changed on a Device Owner, so it is not asked for there.
@@ -190,8 +199,18 @@ object DeviceSetup {
     fun applicable(facts: DeviceFacts): List<DeviceRequirement> {
         val applicable = mutableListOf(DeviceRequirement.NOTIFICATIONS)
         if (facts.enforcingChild) {
+            // Usage access stays even on a phone with no rules: it is what the family's screens
+            // read to say whether this phone is being used at all, which on an assisted phone is
+            // sometimes the whole question.
             applicable += DeviceRequirement.USAGE_ACCESS
-            if (!facts.deviceOwner) applicable += DeviceRequirement.ACCESSIBILITY
+            // The blocker is not. It is the most invasive thing this app ever asks a person to
+            // switch on — a service that can read every screen — and on a phone with nothing to
+            // block it would sit there doing precisely nothing. Asking anyway is how a list like
+            // this teaches people that the items on it are noise. It comes back by itself the
+            // day somebody gives this phone a rule.
+            if (!facts.deviceOwner && !facts.assistedWithoutRules) {
+                applicable += DeviceRequirement.ACCESSIBILITY
+            }
             if (facts.webFilterWanted) applicable += DeviceRequirement.WEB_FILTER
             // Only where a log was actually asked for. A family that never turned it on must
             // never be shown a card offering to let this app read their messages.

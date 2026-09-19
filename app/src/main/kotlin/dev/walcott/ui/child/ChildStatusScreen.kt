@@ -566,9 +566,14 @@ private fun ChannelOfflineCard(sinceMs: Long) {
     }
 }
 
-/** Compact live status of an emergency release; tapping opens the full screen. */
+/**
+ * Compact live status of an emergency release; tapping opens the full screen.
+ *
+ * Shared with the assisted home ([AssistedStatusScreen]), which offers the same way out and used
+ * to say nothing at all once it was running.
+ */
 @Composable
-private fun PanicProgressRow(status: dev.walcott.sync.SyncManager.PanicStatus, onOpen: () -> Unit) {
+internal fun PanicProgressRow(status: dev.walcott.sync.SyncManager.PanicStatus, onOpen: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
     WalcottCard(onClick = onOpen, color = color.copy(alpha = 0.12f)) {
@@ -641,6 +646,10 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
         // SyncEngine.REQUEST_TTL_MS). Telling a child they were refused would be a lie.
         notice.kind == dev.walcott.sync.SyncManager.NOTICE_EXPIRED ->
             stringResource(R.string.notice_expired, categoryName)
+        // Before the plain denial as well, and for a stronger reason: a call for help that ran
+        // out must never be read back as "they said no" (see SyncManager.NOTICE_HELP_EXPIRED).
+        notice.kind == dev.walcott.sync.SyncManager.NOTICE_HELP_EXPIRED ->
+            stringResource(R.string.assist_help_ranout_title)
         !notice.approved -> stringResource(R.string.notice_denied)
         // Only a phone whose owner was changed from an adult being helped lands here with one.
         notice.kind == ChildRequest.KIND_HELP -> stringResource(R.string.assist_help_seen_title)
@@ -655,6 +664,8 @@ private fun NoticeCard(notice: dev.walcott.sync.NoticeEntry, onDismiss: () -> Un
     val subtitle = when {
         notice.kind == dev.walcott.sync.SyncManager.NOTICE_EXPIRED ->
             stringResource(R.string.notice_expired_desc)
+        notice.kind == dev.walcott.sync.SyncManager.NOTICE_HELP_EXPIRED ->
+            stringResource(R.string.assist_help_ranout_body)
         !notice.approved && notice.text.isNotBlank() -> notice.text
         !notice.approved -> stringResource(R.string.notice_denied_desc)
         notice.kind == ChildRequest.KIND_APP -> stringResource(R.string.notice_approved_app_ask_desc)

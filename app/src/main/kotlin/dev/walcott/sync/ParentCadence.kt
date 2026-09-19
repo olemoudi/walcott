@@ -46,7 +46,14 @@ object ParentCadence {
      * of a battery, while a wrongly slow one costs exactly the delay this exists to remove. Skew
      * is handled by [Staleness.silenceMs], so a check-in stamped in the future reads as recent.
      */
-    fun nextIntervalMs(newestChildSeenMs: Long?, nowMs: Long): Long {
+    fun nextIntervalMs(newestChildSeenMs: Long?, nowMs: Long, assistedMember: Boolean = false): Long {
+        // A family with somebody being helped never goes to the slow cadence, and the quiet case
+        // is exactly why. "That phone has not checked in for an hour" is a fact about the past on
+        // a child's phone and a risk on this one: it comes back from a dead spot, a flat battery
+        // or a night switched off with a call for help already written down on it, and the thirty
+        // minutes saved would be thirty minutes of somebody standing there having pressed the one
+        // button they have. Two extra wakeups an hour on a phone its owner is carrying anyway.
+        if (assistedMember) return FAST_MS
         val silence = Staleness.silenceMs(newestChildSeenMs, nowMs) ?: return SLOW_MS
         return if (silence >= QUIET_AFTER_MS) SLOW_MS else FAST_MS
     }

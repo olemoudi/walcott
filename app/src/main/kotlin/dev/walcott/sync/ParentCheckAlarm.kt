@@ -101,7 +101,12 @@ object ParentCheckAlarm {
         val newestSeen = app.hub.allNow()
             .flatMap { family -> family.syncStore.current().lastSeen.values }
             .maxOrNull()
-        return ParentCadence.nextIntervalMs(newestSeen, System.currentTimeMillis())
+        // Anybody being helped, in any family this phone looks after: their one button is the
+        // thing this alarm exists to hear (see ParentCadence).
+        val assisted = app.hub.allNow().any { family ->
+            family.settingsStore.current().children.any { it.isAdult }
+        }
+        return ParentCadence.nextIntervalMs(newestSeen, System.currentTimeMillis(), assisted)
     }
 }
 

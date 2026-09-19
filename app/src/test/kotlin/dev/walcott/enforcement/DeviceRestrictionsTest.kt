@@ -1,6 +1,7 @@
 package dev.walcott.enforcement
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -102,5 +103,23 @@ class DeviceRestrictionsTest {
         )
         assertNull(DeviceRestrictions.lockedBrightnessFloor(manual = true, current = 200))
         assertNull(DeviceRestrictions.lockedBrightnessFloor(manual = false, current = 0))
+    }
+
+    @Test
+    fun `locking the mobile settings is held back only when it would strand the phone`() {
+        // Measured on API 35: with DISALLOW_CONFIG_MOBILE_NETWORKS in force the mobile network
+        // screen does not open at all, and nothing a device owner can call switches mobile data
+        // back on. So a phone whose data is already off would be locked out of the network for
+        // good — by the switch whose own description is "with mobile data switched off, the phone
+        // goes quiet the moment it leaves home".
+        assertTrue(DeviceRestrictions.locksOutOfMobileData(simReady = true, mobileDataEnabled = false))
+
+        // Data on: locking it keeps it that way, which is the whole point.
+        assertFalse(DeviceRestrictions.locksOutOfMobileData(simReady = true, mobileDataEnabled = true))
+
+        // No SIM: nothing to strand, and a phone that is Wi-Fi only must not spend the rest of its
+        // life telling the family about a protection that has nothing to protect.
+        assertFalse(DeviceRestrictions.locksOutOfMobileData(simReady = false, mobileDataEnabled = false))
+        assertFalse(DeviceRestrictions.locksOutOfMobileData(simReady = false, mobileDataEnabled = true))
     }
 }

@@ -359,6 +359,24 @@ class AssistedScenarioTest : DeviceScenario() {
         val ask = snapshot.asks.first { it.kind == ChildRequest.KIND_HELP }
         assertTrue(ask.text.isNotBlank(), "an ask with no text reads as an empty row on the parent")
 
+        // Pressing again in the same moment does not put a second one in front of the family.
+        // The screen turns into a statement rather than offering another press, but it only does
+        // so once the store has been written, and a flustered person's second tap lands inside
+        // that window — leaving two identical calls of which answering one left the other there.
+        device.ask(ChildRequest.KIND_HELP, "Asked for help from their phone")
+        Thread.sleep(2_000)
+        val again = childEventuallyReports { child -> child.deviceId == deviceId }
+        assertEquals(
+            1,
+            again.asks.count { it.kind == ChildRequest.KIND_HELP },
+            "a second press within the window stacked another call for help: ${again.asks}",
+        )
+        assertEquals(
+            ask.requestId,
+            again.asks.first { it.kind == ChildRequest.KIND_HELP }.requestId,
+            "the second press replaced a call for help that was still on its way",
+        )
+
         // And it resolves like any other, which is what stops it sitting there for two days after
         // somebody has already been helped.
         parent.resolve(ask.requestId, approved = true)

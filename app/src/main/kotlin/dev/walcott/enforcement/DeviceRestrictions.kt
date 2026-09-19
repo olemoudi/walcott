@@ -32,6 +32,24 @@ import dev.walcott.WalcottAdminReceiver
  * And one restriction that looks made for this and is not: `DISALLOW_ADJUST_VOLUME`. Reaching for
  * it to stop somebody silencing their phone does the opposite — "if set, the master volume will be
  * muted". Keeping a ringer audible is re-assertion, not prohibition (see [AudioGuard]).
+ *
+ * **Locking a setting freezes whatever it is at that moment**, which turns three of the
+ * accident-proofing switches into the accident when they are applied at the wrong moment. Measured
+ * on API 35, one by one, because the answer is different for each:
+ *
+ *  - Brightness and screen timeout freeze a dark screen and a fifteen-second one. Both are raised
+ *    to a floor first ([lockedBrightnessFloor], [lockedScreenTimeoutFloor]).
+ *  - Airplane mode does NOT need one: the platform switches it off as the restriction goes on
+ *    (measured — `airplane_mode_on` went 1 → 0 the moment `DISALLOW_AIRPLANE_MODE` was applied).
+ *    Nothing to do here, and this note is so nobody adds something.
+ *  - Mobile networks has no floor to raise: no API lets a device owner switch mobile data back on,
+ *    and the restriction closes the screen where a person would (measured: with it in force
+ *    `android.settings.NETWORK_OPERATOR_SETTINGS` does not open at all; without it, it does). So
+ *    it is the one case that is SKIPPED rather than fixed — see [locksOutOfMobileData].
+ *  - The language has neither: a phone already switched to a script nobody reads stays there, and
+ *    there is no supported call to put it back. It is applied anyway, because the family turns it
+ *    on while looking at a phone whose language is right, which is the same moment they read what
+ *    the switch says.
  */
 object DeviceRestrictions {
 
@@ -183,6 +201,22 @@ object DeviceRestrictions {
         }
     }
 
+    /**
+     * Whether locking the mobile settings would leave this phone with no way back on to mobile
+     * data: it has a working SIM and its data is switched off right now.
+     *
+     * The failure is the one the switch exists to prevent, delivered by the switch itself. A
+     * grandparent's phone with mobile data off — switched off by a thumb, or never on since the
+     * shop — is fine at home and mute the moment it leaves, and `DISALLOW_CONFIG_MOBILE_NETWORKS`
+     * takes away the screen where anybody would turn it back on, including the person standing
+     * next to them.
+     *
+     * No SIM means nothing to strand (a Wi-Fi-only phone, a tablet), so the lock applies as asked
+     * — otherwise the parent would be told forever about a protection that has nothing to protect.
+     */
+    fun locksOutOfMobileData(simReady: Boolean, mobileDataEnabled: Boolean): Boolean =
+        simReady && !mobileDataEnabled
+
     /** [enabledKeys] minus the install block while a PIN-gated exemption window is open. */
     fun effectiveKeys(enabledKeys: Set<String>, installExemptUntilMs: Long, nowMs: Long): Set<String> =
         if (nowMs < installExemptUntilMs) enabledKeys - KEY_INSTALLS else enabledKeys
@@ -203,7 +237,19 @@ object DeviceRestrictions {
         // An alarm firing mid-release would put back what the handback is taking off, for good.
         if (PanicRelease.inProgress) return emptySet()
         val admin = WalcottAdminReceiver.componentName(context)
-        val effective = effectiveKeys(enabledKeys, installExemptUntilMs, System.currentTimeMillis())
+        val asked = effectiveKeys(enabledKeys, installExemptUntilMs, System.currentTimeMillis())
+        // The one restriction that is refused from this side (see [locksOutOfMobileData]). Held
+        // back rather than applied and regretted: everything else here can be undone from the
+        // parent's phone, and a phone with no data and no screen to turn it on cannot be reached
+        // to be told so.
+        val stranding = KEY_MOBILE_NETWORKS in asked && locksOutOfMobileData(context)
+        if (stranding) {
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "not locking the mobile settings: this phone's mobile data is off and the lock would close the way back",
+            )
+        }
+        val effective = if (stranding) asked - KEY_MOBILE_NETWORKS else asked
 
         // Every write below is made only when the system says the state differs. This runs from
         // the policy observer and from the watchdog every fifteen minutes, and it used to issue
@@ -234,7 +280,8 @@ object DeviceRestrictions {
                 }
             }
         }
-        val refused = refusedFeatures(dpm, admin, effective)
+        // What the system would not do, plus what this phone would not ask it to.
+        val refused = refusedFeatures(dpm, admin, effective) + if (stranding) setOf(KEY_MOBILE_NETWORKS) else emptySet()
         if (refused.isNotEmpty()) {
             dev.walcott.debug.DebugLog.w(TAG, "restrictions not in force after applying: ${refused.sorted().joinToString()}")
         }
@@ -314,6 +361,16 @@ object DeviceRestrictions {
             }
         }.onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not raise a dark screen", it) }
     }
+
+    /** [locksOutOfMobileData] asked of this phone. False when the platform will not say. */
+    private fun locksOutOfMobileData(context: Context): Boolean = runCatching {
+        val tm = context.getSystemService(android.telephony.TelephonyManager::class.java) ?: return false
+        locksOutOfMobileData(
+            simReady = tm.simState == android.telephony.TelephonyManager.SIM_STATE_READY,
+            // Needs ACCESS_NETWORK_STATE, which this app holds for the filter.
+            mobileDataEnabled = tm.isDataEnabled,
+        )
+    }.getOrDefault(false)
 
     /** The shortest screen timeout a phone is locked at (see [lockedScreenTimeoutFloor]). */
     const val MIN_LOCKED_SCREEN_TIMEOUT_MS = 60_000

@@ -108,6 +108,34 @@ class MemberKindTest {
     }
 
     @Test
+    fun `what a member inherits from the family is counted, so the screen can ask about it`() {
+        // The number in the question asked when somebody is corrected to an adult long after
+        // enrollment. It has to count what would actually be taken away: nothing the family does
+        // not have, and nothing this member has already answered for themselves.
+        val settings = familyWithRules.withMember("c1", "Ana", MemberKind.CHILD, addedAtMs = 1, trackingMinutes = 15)
+        val child = settings.children.single()
+        assertEquals(7, child.overrides.inheritedFamilyRuleCount(settings))
+
+        // Their own bedtime is not inherited, whatever the family's is.
+        val ownBedtime = child.overrides.copy(bedtime = emptyMap())
+        assertEquals(6, ownBedtime.inheritedFamilyRuleCount(settings))
+
+        // And a family with no rules has nothing to hand down, so the question is never asked.
+        val bare = PolicySettings().withMember("c2", "Leo", MemberKind.CHILD, addedAtMs = 1, trackingMinutes = 15)
+        assertEquals(0, bare.children.single().overrides.inheritedFamilyRuleCount(bare))
+
+        // An adult created as one already has none of them — the count and withoutFamilyRules()
+        // are two readings of the same rule and must never disagree.
+        val adultSettings = familyWithRules.withMember("a1", "Abuela", MemberKind.ADULT, addedAtMs = 1, trackingMinutes = 15)
+        assertEquals(0, adultSettings.children.single().overrides.inheritedFamilyRuleCount(adultSettings))
+        assertEquals(
+            0,
+            child.overrides.withoutFamilyRules().inheritedFamilyRuleCount(settings),
+            "withoutFamilyRules() left something the count still calls inherited",
+        )
+    }
+
+    @Test
     fun `a child added to the same family inherits every rule`() {
         val settings = familyWithRules.withMember("c1", "Ana", MemberKind.CHILD, addedAtMs = 1, trackingMinutes = 15)
         val child = settings.resolveForChild("c1")

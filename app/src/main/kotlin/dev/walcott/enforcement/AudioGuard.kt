@@ -26,9 +26,17 @@ import dev.walcott.debug.DebugLog
  *
  * **What it cannot fix, it reports.** Do Not Disturb silences the ringer regardless of volume, and
  * turning DND off needs notification-policy access, which only the phone's owner can grant in
- * Settings. So [dndSilencing] answers "is something still muting this phone?" and the answer
+ * Settings. So [State.dndSilencing] answers "is something still muting this phone?" and the answer
  * travels to the parent instead of being swallowed — a guard that cannot say when it is losing is
  * worse than no guard, because the family stops checking.
+ *
+ * That answer used to be "filtering AND we have no access", which quietly made the guard lie in
+ * the one case nobody could see coming: access granted, [liftDoNotDisturb] called, and the phone
+ * still filtering afterwards — an OEM that ignores the call, or a priority mode that silences
+ * calls anyway. The phone reported "a call would be heard", and the family read it on the day they
+ * could not reach anybody. What is reported now is the fact — this phone is filtering calls right
+ * now — and WHY is answered by what else the device says (see `RingerCard`): with the guard on and
+ * the permission missing, `DND_ACCESS` is already in its unmet list.
  */
 object AudioGuard {
 
@@ -38,7 +46,7 @@ object AudioGuard {
     data class State(
         /** True when a call would be heard: not silent, not vibrate-only, and volume above zero. */
         val audible: Boolean,
-        /** True when Do Not Disturb is filtering calls and this app cannot turn it off. */
+        /** True when Do Not Disturb is filtering calls on this phone right now. */
         val dndSilencing: Boolean,
     )
 
@@ -113,12 +121,18 @@ object AudioGuard {
         return wanted.coerceIn(1, max)
     }
 
-    /** True when DND is filtering calls AND this app has no way to lift it. */
+    /**
+     * True when DND is filtering calls on this phone right now.
+     *
+     * Read at the moment the phone describes itself, AFTER every path that lifts it has had its
+     * chance (the broadcast, the rules collector, the watchdog). Something still filtering here is
+     * therefore something this app did not manage to undo, whether or not it holds the permission
+     * — and that, not the permission, is what the family needs to know.
+     */
     private fun dndSilencing(context: Context): Boolean = runCatching {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return false
-        val filtering = nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL &&
+        nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL &&
             nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
-        filtering && !nm.isNotificationPolicyAccessGranted
     }.getOrDefault(false)
 
     /**

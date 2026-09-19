@@ -1137,8 +1137,12 @@ data class ChildSnapshot(
      * The reason this is worth a field: a phone on silent is, from the other end, exactly a phone
      * that is off, out of battery, or being ignored — and its owner does not know. [ringerAudible]
      * answers it directly. [ringerDndSilencing] separates "we put the ringer back" from "Do Not
-     * Disturb is on and this app is not allowed to switch it off", which is a permission the phone's
-     * owner has to grant and therefore a sentence the parent has to be able to read.
+     * Disturb is filtering calls on this phone right now" — which the guard could not undo,
+     * whether because the permission was never granted or because the phone ignored it. Both are
+     * sentences the parent has to be able to read, and the device says WHICH by what else it
+     * reports missing (`DND_ACCESS` in [setupUnmet]). It used to be reported only in the first
+     * case, so a phone that had the permission and stayed silent anyway said "a call would be
+     * heard".
      *
      * [ringerRestores] counts how many times this device has had to put its own ringer back — the
      * difference between a one-off and a person who silences their phone every single day, which is

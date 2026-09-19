@@ -242,16 +242,10 @@ fun ChildDetailScreen(
         )
     }
 
-    // Whether ANY rule could ever bite on this phone. Asked of the resolved config rather than of
-    // the override switches, because a member inheriting the family's bedtime has a bedtime.
-    val hasAnyRule = remember(childConfig) {
-        childConfig.bedtime.isNotEmpty() ||
-            childConfig.blockedWindows.values.any { it.isNotEmpty() } ||
-            childConfig.defaultAppBudget.isNotEmpty() ||
-            childConfig.perAppPolicies.values.any {
-                it.dailyBudget.isNotEmpty() || it.blockedWindows.values.any { w -> w.isNotEmpty() }
-            }
-    }
+    // Whether ANY rule could ever bite on this phone (see FamilyConfig.hasAnyRule). The same
+    // question the phone's own guided setup asks before it puts the blocker's permissions in
+    // front of somebody, which is why it lives in the rules module and not here.
+    val hasAnyRule = remember(childConfig) { childConfig.hasAnyRule }
 
     var showRename by remember { mutableStateOf(false) }
     var showRemove by remember { mutableStateOf(false) }
@@ -714,7 +708,7 @@ fun ChildDetailScreen(
                 val customized = entry.overrides.customRuleCount
                 FoldSection(
                     icon = Icons.Outlined.Rule,
-                    title = stringResource(R.string.override_section_title),
+                    title = stringResource(R.string.override_section_title, entry.name),
                     subtitle = if (customized > 0) {
                         pluralStringResource(R.plurals.override_fold_customized, customized, customized)
                     } else {
@@ -970,7 +964,10 @@ fun ChildDetailScreen(
                     }
                     MemberKindCard(
                         kind = entry.kind,
-                        onSelect = { picked -> viewModel.setMemberKind(childId, picked) },
+                        inheritedFamilyRules = entry.overrides.inheritedFamilyRuleCount(settings),
+                        onSelect = { picked, dropFamilyRules ->
+                            viewModel.setMemberKind(childId, picked, dropFamilyRules)
+                        },
                     )
                     UpdateWifiOverrideCard(
                         override = entry.overrides.updateWifiOnly,
@@ -1876,6 +1873,16 @@ private fun EnforcementGapCard(count: Int) {
     }
 }
 
+/**
+ * Protections that are switched on and not in force on that phone.
+ *
+ * Two different reasons wear this card, and one of them is fixable in a way worth naming: the
+ * system refusing a restriction (an OEM that does not implement it), and this app holding one
+ * back because applying it would strand the phone — which today is exactly one case, the mobile
+ * settings on a phone whose mobile data is off (see [dev.walcott.enforcement.DeviceRestrictions.locksOutOfMobileData]).
+ * A parent who is told "not in force" and not told that has no idea they can fix it in ten
+ * seconds, standing next to the phone.
+ */
 @Composable
 private fun RestrictionGapCard(keys: List<String>) {
     val spacing = Tokens.spacing
@@ -1885,11 +1892,21 @@ private fun RestrictionGapCard(keys: List<String>) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(spacing.md))
-            Text(
-                stringResource(R.string.restriction_gap_child, names.joinToString()),
-                style = MaterialTheme.typography.bodyMedium,
-                color = color,
-            )
+            Column {
+                Text(
+                    stringResource(R.string.restriction_gap_child, names.joinToString()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = color,
+                )
+                if (dev.walcott.enforcement.DeviceRestrictions.KEY_MOBILE_NETWORKS in keys) {
+                    Text(
+                        stringResource(R.string.restriction_gap_mobile_data),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = color,
+                        modifier = Modifier.padding(top = spacing.xs),
+                    )
+                }
+            }
         }
     }
 }

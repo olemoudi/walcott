@@ -496,8 +496,8 @@
     <string name="mode_select_subtitle">Choose how Walcott should work on this device.</string>
     <string name="mode_parent_card_title">This is a parent\'s phone</string>
     <string name="mode_parent_card_desc">Create the family, set the rules and follow usage</string>
-    <string name="mode_child_card_title">This is a child\'s phone</string>
-    <string name="mode_child_card_desc">Follows the family rules; joins by scanning a QR code</string>
+    <string name="mode_child_card_title">This is the phone being looked after</string>
+    <string name="mode_child_card_desc">A child\'s or an adult\'s: it joins by scanning a QR code and follows whatever the family sets</string>
     <string name="family_name_label">Family name</string>
     <string name="family_default_name">My family</string>
     <string name="action_continue">Continue</string>
@@ -523,9 +523,9 @@
     <!-- Child detail (parent mode) -->
     <string name="child_detail_show_code">Show enrollment code</string>
     <string name="bonus_no_app_matches">No app with that name.</string>
-    <string name="child_enroll_qr_instructions">On %1$s\'s phone, open Walcott, choose \"This is a child\'s phone\" and scan this code.</string>
+    <string name="child_enroll_qr_instructions">On %1$s\'s phone, open Walcott, choose \"This is the phone being looked after\" and scan this code.</string>
     <string name="rename_child">Rename</string>
-    <string name="remove_child">Remove child</string>
+    <string name="remove_child">Remove this person</string>
     <string name="remove_child_confirm">Remove %1$s from this family? Their rules, history and per-child settings go with them.</string>
     <string name="remove_child_release">Also free their phone</string>
     <string name="remove_child_release_warn">Every restriction comes off and the phone stops being managed. This can\'t be undone: enrolling it again means resetting it to factory settings.</string>
@@ -551,7 +551,7 @@
     <string name="release_unconfirmed_title">%1$s: the phone never confirmed it was freed</string>
     <string name="release_unconfirmed_notif_text">It is still managed. Free it again from Walcott, or on the phone itself with the parent PIN.</string>
     <string name="event_release_unconfirmed">%1$s: the phone never confirmed it was freed</string>
-    <string name="override_section_title">This child\'s rules</string>
+    <string name="override_section_title">%1$s\'s own rules</string>
     <string name="override_inherited_hint">Inherited from the family unless you customize them here.</string>
     <plurals name="override_fold_customized">
         <item quantity="one">%d rule customized for this child</item>
@@ -653,7 +653,7 @@
     <string name="back_online_first_text">Their phone has checked in for the first time.</string>
     <string name="event_back_online">%1$s is back online</string>
     <string name="never_reported_title">%1$s hasn\'t connected</string>
-    <string name="never_reported_text">This child device never checked in — the enrollment may not have finished</string>
+    <string name="never_reported_text">This phone never checked in — the enrollment may not have finished</string>
     <string name="hero_pending_setup">No time limits set today</string>
     <string name="setup_title">Finish setting up</string>
     <string name="setup_hint">Tap a step and we\'ll take you there.</string>
@@ -1305,7 +1305,8 @@
         <item quantity="one">%d app that should be blocked isn\'t actually suspended — Walcott is re-applying it</item>
         <item quantity="other">%d apps that should be blocked aren\'t actually suspended — Walcott is re-applying them</item>
     </plurals>
-    <string name="restriction_gap_child">This phone refused some protections, so their switches are on but not in force: %1$s</string>
+    <string name="restriction_gap_child">Some protections are switched on but not in force on this phone: %1$s</string>
+    <string name="restriction_gap_mobile_data">Mobile data is off on that phone, and locking the mobile settings would take away the screen where anybody turns it back on — so it has been left unlocked. Switch mobile data on there and this applies itself.</string>
     <plurals name="enforcement_gap_child">
         <item quantity="one">Self-test failed: %d app that should be blocked was not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
         <item quantity="other">Self-test failed: %d apps that should be blocked were not actually blocked on the device. Walcott re-applies the block on every check-in.</item>
@@ -1713,11 +1714,18 @@
     <string name="member_kind_sheet_child_title">A child — the phone sets limits</string>
     <string name="member_kind_sheet_child_body">Starts with location on and the family\'s anti-tamper locks, and inherits the family\'s rules. Next, the app walks you through bedtime, daily limits and screen-free times. On their phone they see the time they have left and the buttons to ask for more.</string>
     <string name="member_kind_sheet_adult_title">An adult you help — the phone avoids accidents</string>
-    <string name="member_kind_sheet_adult_body">Starts with no location, no bedtime and no limits. It keeps its own ringer audible, and locks the settings people change by accident: airplane mode, language, brightness, screen timeout, mobile data, network reset, accounts, default apps, and installing or removing apps. On their phone they see one screen with an \"Ask for help\" button.</string>
+    <string name="member_kind_sheet_adult_body">Starts with no location, no bedtime and no limits. It keeps its own ringer audible, and locks the settings people change by accident: airplane mode, language, brightness, screen timeout, mobile data, network reset, accounts, default apps, and installing or removing apps. On their phone they see one screen with an \"Ask for help\" button. That button is not an emergency line: with your app closed the message can take up to ten minutes to reach you, so it is a way of saying \"ring me\", not a way of calling for an ambulance.</string>
     <string name="member_kind_sheet_shared_title">Offered for both</string>
     <string name="member_kind_sheet_shared_body">The ringer, the lock screen and the notification log are offered for every phone here. A teenager\'s phone on silent for two days is the same problem as a grandparent\'s.</string>
     <string name="member_kind_row_title">This phone belongs to</string>
     <string name="member_kind_row_note">Changes what this screen leads with and what the guided setup asks. Nothing already switched on is changed.</string>
+    <string name="member_kind_separate_title">Also take the family\'s rules off this phone?</string>
+    <plurals name="member_kind_separate_body">
+        <item quantity="one">This person is inheriting %d of the family\'s rules. An adult being helped normally has none — and their phone has no screen that would explain why an app stopped opening.</item>
+        <item quantity="other">This person is inheriting %d of the family\'s rules. An adult being helped normally has none — and their phone has no screen that would explain why an app stopped opening.</item>
+    </plurals>
+    <string name="member_kind_separate_drop">Take them off</string>
+    <string name="member_kind_separate_keep">Leave them on</string>
 
     <!-- Helping with a phone from a distance: the three things that get used. -->
     <string name="assist_section_title">Helping with this phone</string>
@@ -1727,6 +1735,7 @@
     <string name="ringer_state_audible">A call would be heard right now.</string>
     <string name="ringer_state_silent">This phone is on silent right now.</string>
     <string name="ringer_dnd_blocked">Do Not Disturb is on, and that phone hasn\'t let Walcott switch it off. Walcott asks for that on the phone itself; once allowed, this puts itself right.</string>
+    <string name="ringer_dnd_stuck">Do Not Disturb is filtering calls on that phone right now, and Walcott has not been able to switch it off. It has the permission, so something on the phone itself is holding it — check Do Not Disturb in its Settings.</string>
     <plurals name="ringer_restores">
         <item quantity="one">Put back once since it was set up.</item>
         <item quantity="other">Put back %1$d times since it was set up.</item>
@@ -1771,6 +1780,10 @@
     <string name="assist_help_queued_body">It goes the moment this phone can reach your family. You don\'t need to press again.</string>
     <string name="assist_help_seen_title">Your family has seen it</string>
     <string name="assist_help_seen_body">Somebody has dealt with your call for help. If you still need a hand, press the button again.</string>
+    <string name="assist_help_again">Ask again</string>
+    <string name="assist_help_still_waiting">Nobody has answered yet. If you still need a hand, press again.</string>
+    <string name="assist_help_ranout_title">Nobody has answered</string>
+    <string name="assist_help_ranout_body">Your call for help waited two days, so this phone has let it go. Press the button again if you still need a hand.</string>
     <string name="assist_help_text">Asked for help from their phone</string>
     <string name="assist_ask_help_summary">%1$s asked for help.</string>
     <string name="assist_ask_help_hint">They pressed the help button on their phone. Call them, or use the cards on their page.</string>
@@ -1892,6 +1905,16 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+        <string-array name="whats_new_0_118_0">
+        <item>The help button on a phone you look after comes back after ten minutes, so somebody who is still stuck can press it again — until now, a call for help that nobody closed left that button gone for two days, which is what happens every time a family sorts it out on the telephone.</item>
+        <item>A call for help pressed with no coverage now goes the moment there is a network again, instead of waiting up to half an hour.</item>
+        <item>If nobody answers one for two days, their phone says so rather than quietly putting the button back.</item>
+        <item>Correcting somebody to “an adult being helped” now offers to take the family\'s rules off their phone as well, saying how many they are inheriting.</item>
+        <item>The ringer card no longer says a phone would be heard when Do Not Disturb is silencing it and Walcott could not switch it off.</item>
+        <item>Locking the mobile settings of a phone whose mobile data is switched off is now held back and explained: it would have taken away the only screen where anybody turns it back on.</item>
+        <item>A phone being helped that has no rules is no longer asked to switch on the accessibility blocker, which would have nothing to block.</item>
+        <item>An emergency release running on a phone being helped is now visible on its home screen, as it already was on a child\'s.</item>
     </string-array>
     <string-array name="whats_new_0_117_0">
         <item>Removing a phone from the list while it is being freed now cancels the release, so a phone you wrote off as lost is never freed in someone else\'s hands. If it comes back, it reappears still limited and you can free it again.</item>

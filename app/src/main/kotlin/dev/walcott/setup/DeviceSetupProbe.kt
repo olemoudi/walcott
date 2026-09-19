@@ -50,6 +50,11 @@ object DeviceSetupProbe {
             backgroundRestricted = backgroundRestricted(context),
             ringerGuardWanted = settings?.keepRingerAudible == true,
             dndAccessGranted = dndAccessGranted(context),
+            // The policy stored here is already this member's (see SyncManager: a child saves
+            // resolveForChild of what the parent sent), so the rules asked about are theirs.
+            assistedWithoutRules = settings != null &&
+                settings.isAssistedMember(identity?.childId) &&
+                !settings.toFamilyConfig(emptySet()).hasAnyRule,
         )
     }
 

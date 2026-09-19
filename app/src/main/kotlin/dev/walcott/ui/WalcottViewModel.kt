@@ -259,6 +259,16 @@ class WalcottViewModel(
     fun childAppIcon(pkg: String): ByteArray? = sync.iconBytes(pkg)
 
     fun askFor(kind: String, text: String) = viewModelScope.launch { sync.askFor(kind, text) }
+
+    /**
+     * The help button on an assisted phone (see [dev.walcott.sync.SyncManager.askForHelp]).
+     *
+     * Its own call rather than [askFor] because it is the only ask that may be sent again — and
+     * the only one that must not be sent twice in the same second. The result is not read here:
+     * what the screen shows comes from the asks themselves, so a press that was too soon simply
+     * changes nothing, which is exactly what it should do.
+     */
+    fun askForHelp(text: String) = viewModelScope.launch { sync.askForHelp(text) }
     fun allowInstallsFor(durationMs: Long) = viewModelScope.launch { sync.allowInstallsFor(durationMs) }
     fun endInstallExemption() = viewModelScope.launch { sync.endInstallExemption() }
 
@@ -328,12 +338,28 @@ class WalcottViewModel(
      * Deliberately only the label: the other kind's DEFAULTS are not applied. Defaults answer
      * "what should this start as", and by the time somebody uses this row the phone has a history
      * — re-seeding it would switch rules and locks nobody asked to change.
+     *
+     * [dropFamilyRules] is the one exception, and it is asked for rather than assumed (see
+     * [dev.walcott.data.ChildOverrides.inheritedFamilyRuleCount]): somebody enrolled as a child by
+     * mistake and corrected here keeps the family's bedtime and limits, which is the very failure
+     * `separateAdultRules` had to migrate away once — and on an assisted phone there is no rules
+     * screen to explain why an app stopped opening.
+     *
+     * Both halves in ONE write, because they are one decision: two updates would race, and a
+     * member left with the new kind and the old rules is the state this exists to prevent.
      */
-    fun setMemberKind(childId: String, kind: String) = viewModelScope.launch {
+    fun setMemberKind(childId: String, kind: String, dropFamilyRules: Boolean = false) = viewModelScope.launch {
         repository.updateSettings { s ->
             s.copy(
                 children = s.children.map {
-                    if (it.childId == childId) it.copy(kind = dev.walcott.data.MemberKind.of(kind)) else it
+                    if (it.childId != childId) {
+                        it
+                    } else {
+                        it.copy(
+                            kind = dev.walcott.data.MemberKind.of(kind),
+                            overrides = if (dropFamilyRules) it.overrides.withoutFamilyRules() else it.overrides,
+                        )
+                    }
                 },
             )
         }

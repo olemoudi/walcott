@@ -28,15 +28,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import dev.walcott.BuildConfig
 import dev.walcott.R
 import dev.walcott.sync.ChildRequest
+import dev.walcott.sync.HelpAsks
 import dev.walcott.ui.WalcottViewModel
 import dev.walcott.ui.components.WalcottCard
 import dev.walcott.ui.theme.Tokens
@@ -72,6 +75,7 @@ fun AssistedStatusScreen(
     val myAsks by viewModel.myPendingAsks.collectAsStateWithLifecycle()
     val askReceipts by viewModel.myAskReceipts.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
+    val panicStatus by viewModel.panicStatus.collectAsStateWithLifecycle()
     val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
 
     // One unanswered ask at a time. The button that sent it says so instead of offering to send a
@@ -85,9 +89,30 @@ fun AssistedStatusScreen(
         helpAsk.requestId in askReceipts -> HelpState.SENT
         else -> HelpState.WAITING
     }
+    // ...for the first ten minutes. After that the button comes back, because nothing except the
+    // family pressing "I've helped" ever closes a call for help, and they answer it by telephone:
+    // an ask nobody closed used to leave this screen without its one button for two days. Ticked
+    // rather than read while drawing — nothing else here changes when the window opens, so a
+    // comparison made during composition would sit at "sending" until something unrelated
+    // happened (the same freeze the find card's countdown was fixed for).
+    val reaskAt = helpAsk?.let { it.createdAtEpochMs + HelpAsks.REASK_AFTER_MS } ?: 0L
+    val canReask by produceState(initialValue = reaskAt > 0 && reaskAt <= System.currentTimeMillis(), reaskAt) {
+        value = reaskAt > 0 && reaskAt <= System.currentTimeMillis()
+        while (reaskAt > System.currentTimeMillis()) {
+            delay(REASK_TICK_MS)
+            value = reaskAt <= System.currentTimeMillis()
+        }
+    }
     // The family's answer, which on this screen has one form only: somebody has dealt with it.
     val helpSeen = notice?.takeIf {
         it.kind == ChildRequest.KIND_HELP && it.approved &&
+            !dev.walcott.sync.SyncEngine.noticeExpired(it.atMs, System.currentTimeMillis())
+    }
+    // And the other end of the same story: two days in which nobody came. The ask retires itself
+    // and the button simply reappeared, so the one person who needed telling was the only one not
+    // told (see SyncManager.NOTICE_HELP_EXPIRED).
+    val helpRanOut = notice?.takeIf {
+        it.kind == dev.walcott.sync.SyncManager.NOTICE_HELP_EXPIRED &&
             !dev.walcott.sync.SyncEngine.noticeExpired(it.atMs, System.currentTimeMillis())
     }
     val offline = channelOfflineSince != null
@@ -119,8 +144,17 @@ fun AssistedStatusScreen(
             item {
                 ConnectionLine(offline)
             }
+            // A release already running is the most important thing on any phone, this one
+            // included: it offers the same way out below and used to go quiet the moment it was
+            // taken, which is the "did it work?" this screen exists to answer.
+            if (panicStatus.request != null) {
+                item { PanicProgressRow(panicStatus, onOpen = onOpenPanic) }
+            }
             if (helpSeen != null) {
                 item { HelpSeenCard(onDismiss = { viewModel.dismissNotice() }) }
+            }
+            if (helpRanOut != null) {
+                item { HelpRanOutCard(onDismiss = { viewModel.dismissNotice() }) }
             }
             item {
                 // Resolved outside the lambda: the text is what the family's feed and their
@@ -129,7 +163,8 @@ fun AssistedStatusScreen(
                 val helpText = stringResource(R.string.assist_help_text)
                 HelpCard(
                     state = helpState,
-                    onAsk = { viewModel.askFor(ChildRequest.KIND_HELP, helpText) },
+                    canReask = canReask,
+                    onAsk = { viewModel.askForHelp(helpText) },
                 )
             }
             // Permissions this phone still needs. Kept because without them the support tools
@@ -208,7 +243,7 @@ private fun ConnectionLine(offline: Boolean) {
  * to answer it is on the screen in front of them.
  */
 @Composable
-private fun HelpCard(state: HelpState, onAsk: () -> Unit) {
+private fun HelpCard(state: HelpState, canReask: Boolean, onAsk: () -> Unit) {
     val spacing = Tokens.spacing
     WalcottCard(color = MaterialTheme.colorScheme.primaryContainer) {
         Column(
@@ -236,17 +271,25 @@ private fun HelpCard(state: HelpState, onAsk: () -> Unit) {
             )
             Text(
                 stringResource(
-                    when (state) {
-                        HelpState.READY -> R.string.assist_help_body
-                        HelpState.WAITING -> R.string.assist_help_queued_body
-                        HelpState.SENT -> R.string.assist_help_waiting
+                    when {
+                        // "You don't need to press again" is true for ten minutes and a lie
+                        // after them, and this is the card that has to stop saying it before
+                        // the button under it reappears.
+                        canReask && state != HelpState.READY -> R.string.assist_help_still_waiting
+                        state == HelpState.WAITING -> R.string.assist_help_queued_body
+                        state == HelpState.SENT -> R.string.assist_help_waiting
+                        else -> R.string.assist_help_body
                     },
                 ),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 textAlign = TextAlign.Center,
             )
-            if (state == HelpState.READY) {
+            // The same button, and only its word changes: somebody who has been waiting a
+            // quarter of an hour is not pressing a different control, they are pressing this one
+            // again. Full size in both states, because the second press is made by somebody who
+            // is by then rather more anxious than the first.
+            if (state == HelpState.READY || canReask) {
                 Button(
                     onClick = onAsk,
                     modifier = Modifier.fillMaxWidth().height(64.dp).padding(top = spacing.xs),
@@ -256,7 +299,10 @@ private fun HelpCard(state: HelpState, onAsk: () -> Unit) {
                     ),
                 ) {
                     Text(
-                        stringResource(R.string.assist_help_button),
+                        stringResource(
+                            if (state == HelpState.READY) R.string.assist_help_button
+                            else R.string.assist_help_again,
+                        ),
                         style = MaterialTheme.typography.titleLarge,
                     )
                 }
@@ -306,6 +352,40 @@ private fun HelpSeenCard(onDismiss: () -> Unit) {
         }
     }
 }
+
+/**
+ * Two days in which nobody pressed "I've helped".
+ *
+ * Said plainly and without blame — the commonest reason is a family who dealt with it on the
+ * telephone and never opened the app — because the alternative is what this screen used to do:
+ * retire the ask in silence and put the button back, leaving somebody to wonder whether their
+ * call for help had ever existed.
+ */
+@Composable
+private fun HelpRanOutCard(onDismiss: () -> Unit) {
+    val spacing = Tokens.spacing
+    val onColor = MaterialTheme.colorScheme.onSurfaceVariant
+    WalcottCard(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+            Text(
+                stringResource(R.string.assist_help_ranout_title),
+                style = MaterialTheme.typography.titleLarge,
+                color = onColor,
+            )
+            Text(
+                stringResource(R.string.assist_help_ranout_body),
+                style = MaterialTheme.typography.bodyLarge,
+                color = onColor,
+            )
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                Text(stringResource(R.string.action_ok))
+            }
+        }
+    }
+}
+
+/** How often the help card re-asks whether the window to send it again has opened. */
+private const val REASK_TICK_MS = 30_000L
 
 /** The permissions run, in one card and in the same voice as the rest of this screen. */
 @Composable

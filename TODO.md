@@ -3,6 +3,48 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.118.0 — the one button, and the locks that lock somebody out
+
+A review on 2026-09-19, asked for by ole ("las funcionalidades pensadas para dar soporte a adultos
+… posibles arreglos necesarios"), then "arregla todo y corta release". The help button carried most
+of it: it is the only ask nothing ever closes except the family pressing "I've helped", and the
+family answers it on the telephone.
+
+- **A call for help nobody closed took the button away for two days.** `SyncManager.askForHelp`
+  replaces it after `HelpAsks.REASK_AFTER_MS` (10 min, the floor of the parent's own catch-up) and
+  refuses a second one inside that window, which also kills the double-tap that used to stack two
+  identical calls. Verified on the emulator: at ten minutes the card reads "Nobody has answered
+  yet" over an "Ask again" button, and pressing it leaves ONE ask, not two.
+- **A help ask written down with no coverage** waited on the 15-minute re-emit or the 30-minute
+  heartbeat. `SyncManager.flushUnsentHelp` publishes it when a network comes back (throttled to one
+  a minute), for unconfirmed help asks only.
+- **One that ran out said nothing** (`NOTICE_HELP_EXPIRED`): the assisted home now says so and
+  offers the button, instead of silently putting it back.
+- **An emergency release in progress** is on the assisted home too (`PanicProgressRow`, shared).
+- **Correcting somebody to an adult kept the family's rules.** The same state `separateAdultRules`
+  migrated a beta out of, reached by the other door. `setMemberKind(dropFamilyRules)` writes both in
+  one transaction and the card asks first, with the count
+  (`ChildOverrides.inheritedFamilyRuleCount`).
+- **"Do Not Disturb is silencing this" was reported only when Walcott had no access**, so an OEM
+  that ignores `setInterruptionFilter` produced "a call would be heard" on a phone nobody could
+  reach. The phone reports the fact now; the card tells the two cases apart by the `DND_ACCESS` the
+  device already lists as unmet.
+- **Locking a setting freezes it, measured one by one on API 35** (`DeviceRestrictions` KDoc).
+  Airplane mode needs nothing — the platform switches it off as the restriction goes on (1 → 0,
+  measured). Mobile networks needed the opposite of a floor: no device-owner API switches mobile
+  data back on, and with the restriction in force `NETWORK_OPERATOR_SETTINGS` does not open at all
+  (measured, with a clean control run). So `locksOutOfMobileData` holds that one lock back on a
+  phone with a SIM and data off, and says why on the parent's card.
+- **The blocker's permission is no longer asked of an assisted phone with no rules**
+  (`DeviceFacts.assistedWithoutRules`, `FamilyConfig.hasAnyRule` — now one definition, shared with
+  the parent's "what is stopping them" section, and it counts a daily total as a rule, which the
+  parent's copy did not).
+- **The parent's catch-up never drops to the slow cadence in a family with somebody being helped.**
+- **Wording**: enrolling somebody no longer tells the family to choose "This is a child's phone" on
+  a grandmother's phone; "Remove child", "This child's rules" and the never-checked-in notice lost
+  the word too. The comparison sheet now says what the button is not: with the parent's app closed
+  it can take ten minutes, so it means "ring me", not "call an ambulance".
+
 ## Shipped in v0.117.0 — a phone written off is never freed in someone else's hands
 
 - **Removing a phone from the list withdraws what was queued for it, a pending release above all.**

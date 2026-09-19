@@ -350,6 +350,27 @@ data class FamilyConfig(
      * it looks at the night that has not started yet, decides the exception it is holding belongs
      * to some other night, and offers the parent no way to put back what they just lifted.
      */
+    /**
+     * Whether any rule in here could ever stop an app opening.
+     *
+     * Asked of the resolved config rather than of a parent's override switches, because a member
+     * inheriting the family's bedtime HAS a bedtime. Two screens ask it — the parent's detail
+     * page, to decide whether "what is stopping them right now" is a section worth drawing, and
+     * the guided setup on the phone itself, to decide whether the blocker's permissions are worth
+     * asking a person for — and they must not answer it differently.
+     *
+     * Domain rules and device restrictions are deliberately not in it: neither blocks an app, and
+     * an adult being helped normally has both.
+     */
+    val hasAnyRule: Boolean
+        get() = bedtime.isNotEmpty() ||
+            blockedWindows.values.any { it.isNotEmpty() } ||
+            defaultAppBudget.isNotEmpty() ||
+            dailyScreenBudget.isNotEmpty() ||
+            perAppPolicies.values.any {
+                it.dailyBudget.isNotEmpty() || it.blockedWindows.values.any { w -> w.isNotEmpty() }
+            }
+
     fun scheduledBedtimeAt(now: LocalDateTime): TimeWindow? = bedtime[calendar.dayTypeOf(now)]
 
     fun bedtimeAt(now: LocalDateTime): TimeWindow? {

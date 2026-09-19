@@ -34,6 +34,21 @@ class ParentCadenceTest {
     }
 
     @Test
+    fun `a family with somebody being helped never slows down`() {
+        // The quiet case is the reason. A phone silent for hours is "nothing can be happening"
+        // for a child and "it is about to come back" for somebody being helped — out of a dead
+        // spot, off a charger, with a call for help already written down on it.
+        val longSilence = now - 6 * 60 * 60 * 1000L
+        assertEquals(ParentCadence.SLOW_MS, ParentCadence.nextIntervalMs(longSilence, now))
+        assertEquals(
+            ParentCadence.FAST_MS,
+            ParentCadence.nextIntervalMs(longSilence, now, assistedMember = true),
+        )
+        // Including a family whose assisted phone has never reported at all.
+        assertEquals(ParentCadence.FAST_MS, ParentCadence.nextIntervalMs(null, now, assistedMember = true))
+    }
+
+    @Test
     fun `the slow cadence is never worse than the fixed interval it replaced`() {
         // 30 min was unconditional before ParentCadence existed; the adaptive version must not
         // be able to make any case slower than that.

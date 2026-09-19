@@ -556,6 +556,31 @@ data class ChildOverrides(
      * "inherit", is turned into an empty rule. Location, updates and the support switches are not
      * rules and are left as they are.
      */
+    /**
+     * How many of the family's rules this member is inheriting right now — exactly what
+     * [withoutFamilyRules] would take away.
+     *
+     * For the one screen that can turn somebody into an adult long after they were enrolled. The
+     * kind deliberately does not re-apply the other kind's defaults (a phone already configured by
+     * hand must not change under somebody), but saying nothing had the same result the enrollment
+     * bug had until 0.114: a grandparent on the family's bedtime, with nothing on their own phone
+     * to explain why an app stopped opening. So the screen offers it, with this number in the
+     * question, and the parent decides.
+     *
+     * Counted field by field against the family's own rules: a rule the family does not have is
+     * not something this member is inheriting, and a rule they have set for themselves is not
+     * inherited either.
+     */
+    fun inheritedFamilyRuleCount(family: PolicySettings): Int = listOf(
+        bedtime == null && family.bedtime.isNotEmpty(),
+        allAppsBlockedWindows == null && family.allAppsBlockedWindows.isNotEmpty(),
+        defaultAppBudget == null && family.defaultAppBudget.isNotEmpty(),
+        dailyScreenBudget == null && family.dailyScreenBudget.isNotEmpty(),
+        appPolicies == null && family.appPolicies.isNotEmpty(),
+        blockedDomains == null && family.blockedDomains.isNotEmpty(),
+        domainAppRules == null && family.domainAppRules.isNotEmpty(),
+    ).count { it }
+
     fun withoutFamilyRules(): ChildOverrides = copy(
         bedtime = bedtime ?: emptyMap(),
         allAppsBlockedWindows = allAppsBlockedWindows ?: emptyMap(),
