@@ -98,6 +98,27 @@ object SyncEngine {
         maxOf(ownVersion, seenVersion) + RESTORE_VERSION_LEAP
 
     /**
+     * How far ahead of this phone a child may claim to be and still be believed. Child messages
+     * are not signed, so a figure past this is a forgery, not a family; well within it is every
+     * honest way of getting there — a restore's leap, many times over.
+     */
+    const val MAX_CHILD_AHEAD = 1_000L * RESTORE_VERSION_LEAP
+
+    /**
+     * Parent side: is a child running rules NEWER than any this phone has published?
+     *
+     * The rules only travel upwards — a child adopts a snapshot strictly above the last one it
+     * applied — so a child ahead of this phone's counter refuses everything this phone sends,
+     * for as long as the counter stays below. There is no honest way to get there from this
+     * phone alone: its store was lost or reset and the counter started again, or a backup was
+     * restored over an empty store, or another phone is publishing — whose own snapshots
+     * [parentSuperseded] would have caught if this phone had been listening. The screens used to
+     * read such a child as "up to date", since what it ran was at least as new as this phone's.
+     */
+    fun childAhead(parentVersion: Long, appliedVersion: Long): Boolean =
+        appliedVersion > parentVersion && appliedVersion - parentVersion <= MAX_CHILD_AHEAD
+
+    /**
      * One device per child: the phone that spoke most recently.
      *
      * A child's phone that is factory-reset and enrolled again comes back with a NEW deviceId —
@@ -255,6 +276,85 @@ object SyncEngine {
     /** [marks] with [command] recorded as the newest of its action this device has applied. */
     fun markApplied(marks: Map<String, Long>, command: RemoteCommand): Map<String, Long> =
         marks + (command.action to maxOf(marks[command.action] ?: Long.MIN_VALUE, command.issuedAtMs))
+
+    /**
+     * How many parent phones' histories a child keeps for [commandsLive]. A family has one parent
+     * phone, two at a stretch (a restore, a second parent) — four is room to spare, and the bound
+     * is only there so a topic anyone can post to cannot grow it.
+     */
+    const val MAX_SEEN_PARENTS = 4
+
+    /**
+     * Whether the commands in a parent snapshot at [snapshotVersion] are still what that parent
+     * phone wants, given the newest version this child has seen FROM THE SAME PHONE ([seenVersion],
+     * null when it has seen none).
+     *
+     * A command is withdrawn by leaving it out of the parent's NEXT snapshot — cancelled, or
+     * dropped with a phone written off as stolen — and that next snapshot does not delete the
+     * earlier one from the relay. A phone that comes back reads the relay's backlog, and the
+     * older snapshot is in it, still carrying the command. Run on its own terms it freed a phone
+     * the family had just decided not to free, in the hands of whoever found it. So a snapshot
+     * older than one already seen speaks for a parent who has since changed their mind, and its
+     * commands are not run. The same version again is a re-emit, and is.
+     *
+     * Per phone, not per family, on purpose: a phone that has been superseded by a restored backup
+     * keeps a lower counter for good, and its commands — freeing a phone above all — must still
+     * work (see the parent's `noteForeignParent`).
+     */
+    fun commandsLive(snapshotVersion: Long, seenVersion: Long?): Boolean =
+        seenVersion == null || snapshotVersion >= seenVersion
+
+    /**
+     * The newest version seen per parent phone after a snapshot at [version] from [instanceId].
+     *
+     * Monotonic, except across a verified key rotation, which is a restored parent starting a new
+     * history and REBASES the baseline exactly as it does for the rules (see
+     * [rebasedPolicyVersion]). Bounded at [MAX_SEEN_PARENTS] by forgetting the phone furthest
+     * behind — never the one just written.
+     */
+    fun seenAfter(
+        seen: Map<String, Long>,
+        instanceId: String,
+        version: Long,
+        rotationAdopted: Boolean,
+    ): Map<String, Long> {
+        val next = if (rotationAdopted) version else maxOf(seen[instanceId] ?: Long.MIN_VALUE, version)
+        val updated = seen + (instanceId to next)
+        if (updated.size <= MAX_SEEN_PARENTS) return updated
+        val dropped = updated.filterKeys { it != instanceId }.minByOrNull { it.value }?.key
+        return updated - setOfNotNull(dropped)
+    }
+
+    /**
+     * The seen versions that belong to the family on [topic]: none at all when they were written
+     * for another family's topic. Blank means an install that predates the field, read as the
+     * current family — the same rule the child's `appliedParentTopic` follows for the rules.
+     */
+    fun seenBaseline(seenTopic: String, topic: String, seen: Map<String, Long>): Map<String, Long> =
+        if (seenTopic.isNotBlank() && seenTopic != topic) emptyMap() else seen
+
+    /**
+     * What is worth handling of a relay backlog read in one go, in the order it arrived: every
+     * message, except that of the parent snapshots only the newest from each parent phone is kept.
+     *
+     * A parent snapshot is cumulative — the rules, the commands still queued, the answers still
+     * travelling — so the newest one says everything the older ones did that is still meant, and
+     * nothing that has been taken back. Handling them all, oldest first, ran every withdrawn command
+     * on the way to the snapshot that withdrew it. A re-emit at the same version keeps the later
+     * copy. [parentOf] answers the snapshot a message carries, or null for anything else.
+     */
+    fun <T> newestParentsOf(batch: List<T>, parentOf: (T) -> ParentSnapshot?): List<T> {
+        val newest = HashMap<String, Int>()
+        batch.forEachIndexed { index, item ->
+            val snapshot = parentOf(item) ?: return@forEachIndexed
+            val best = newest[snapshot.parentInstanceId]
+            if (best == null || snapshot.version >= parentOf(batch[best])!!.version) {
+                newest[snapshot.parentInstanceId] = index
+            }
+        }
+        val keep = newest.values.toSet()
+        return batch.filterIndexed { index, item -> parentOf(item) == null || index in keep }
+    }
 
     /**
      * Queues [command], replacing any pending command with the same action AND argument for

@@ -182,6 +182,27 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     target.syncManager.openInstallForPush(pkg, "debug-cmd", pkg.substringAfterLast('.'))
                     DebugLog.i("WalcottSeed", "install window open for $pkg")
                 }
+                // `--es reopen_install com.some.app`: what tapping that app's "you can install it"
+                // card or notification does — reopens ITS window, and only while its approval is
+                // still on file. InstallPromptActivity is not exported, so nothing else can.
+                intent.getStringExtra("reopen_install")?.let { pkg ->
+                    target.syncManager.reopenInstallWindow(pkg)
+                    DebugLog.i("WalcottSeed", "reopened the install window for $pkg")
+                }
+                // `--es clear_approvals now`: forgets every pushed-install approval. They live a
+                // week and outlast a re-pair, so one scenario's approval would otherwise turn the
+                // next scenario's "unapproved" app into an approved one.
+                if (intent.getStringExtra("clear_approvals") != null) {
+                    target.syncStore.update {
+                        it.copy(
+                            pendingPushes = emptyList(),
+                            pendingInstallPackage = "",
+                            pendingInstallCommandId = "",
+                            pendingInstallLabel = "",
+                        )
+                    }
+                    DebugLog.i("WalcottSeed", "approvals cleared")
+                }
                 // `--es allow_installs_ms 600000`: the blanket window a parent opens at the phone
                 // with their PIN, without a PIN pad. 0 (or less) ends whatever window is open.
                 //
@@ -362,6 +383,28 @@ class PolicySeedReceiver : BroadcastReceiver() {
                 if (intent.getStringExtra("heartbeat") != null) {
                     dev.walcott.sync.HeartbeatAlarm.runCheckIn(context)
                     DebugLog.i("WalcottSeed", "heartbeat check-in done")
+                }
+                // `--es reconnect now`: rebuilds the relay connection on the spot — catch-up poll,
+                // then the socket — the way a phone coming back into coverage does, without
+                // waiting out the reconnect backoff a test cannot see.
+                if (intent.getStringExtra("reconnect") != null) {
+                    target.syncManager.start()
+                    DebugLog.i("WalcottSeed", "reconnecting to the relay")
+                }
+                // `--ei safe_mode_drill N`: writes down N start-ups in a row that died before
+                // enforcing (see CrashBreaker) and kills this process, so the next start is the one
+                // that opens the phone — or N=0 forgets them. A crash on purpose would need a build
+                // that crashes; this is the same state with an ordinary kill, which counts nothing.
+                val drill = intent.getIntExtra("safe_mode_drill", -1)
+                if (drill >= 0) {
+                    java.io.File(context.filesDir, dev.walcott.debug.CrashBreaker.FILE_NAME).writeText(
+                        dev.walcott.debug.BreakerStateFormat.format(
+                            dev.walcott.debug.BreakerState(drill, dev.walcott.BuildConfig.VERSION_CODE, 0),
+                        ),
+                    )
+                    DebugLog.w("WalcottSeed", "safe mode drill: $drill early crash(es) written; dying now")
+                    pending.finish()
+                    android.os.Process.killProcess(android.os.Process.myPid())
                 }
                 // `--es last_gasp battery|shutdown`: the phone's last word, without faking the
                 // battery or pulling the plug (see LastGasp). `--es ring_stop now` ends a ring.

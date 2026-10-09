@@ -75,12 +75,60 @@ fun keepsApkAfterFailure(status: Int): Boolean =
     status == android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED ||
         status == android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED
 
+/**
+ * The builds this phone has tried to install and not yet got past: which one, how many times, and
+ * when the last try was. One line on disk (see [UpdateAttempts]).
+ */
+data class InstallAttempts(val versionCode: Int, val attempts: Int, val lastAtMs: Long) {
+    companion object {
+        val NONE = InstallAttempts(0, 0, 0)
+
+        fun format(value: InstallAttempts): String = "${value.versionCode} ${value.attempts} ${value.lastAtMs}"
+
+        /** Anything unreadable reads as [NONE]: losing the count costs one extra download. */
+        fun parse(text: String?): InstallAttempts {
+            val parts = text?.trim()?.split(' ') ?: return NONE
+            if (parts.size != 3) return NONE
+            val version = parts[0].toIntOrNull() ?: return NONE
+            val attempts = parts[1].toIntOrNull()?.takeIf { it >= 0 } ?: return NONE
+            val last = parts[2].toLongOrNull()?.takeIf { it >= 0 } ?: return NONE
+            return InstallAttempts(version, attempts, last)
+        }
+    }
+}
+
+/** [previous] after one more try at installing [versionCode] at [nowMs]; a different build starts over. */
+fun InstallAttempts.plusAttempt(versionCode: Int, nowMs: Long): InstallAttempts =
+    InstallAttempts(versionCode, if (this.versionCode == versionCode) attempts + 1 else 1, nowMs)
+
+/**
+ * How long to leave a build that has been tried [attempts] times before downloading it again:
+ * an hour, then four, then a day.
+ *
+ * A build that will not install — a full phone, an install the system refuses — used to be
+ * downloaded again on every check, roughly every half hour from the heartbeat: fifty megabytes,
+ * then nine once the release shrank, forty-odd times a day, on a child's data plan for families
+ * that never set Wi-Fi-only. Nothing about the next attempt was going to be different.
+ */
+fun retryDelayAfter(attempts: Int): Long = when {
+    attempts <= 0 -> 0L
+    attempts == 1 -> 60 * 60 * 1000L
+    attempts == 2 -> 4 * 60 * 60 * 1000L
+    else -> 24 * 60 * 60 * 1000L
+}
+
+/** Whether [target] is a build already tried recently enough that this check should leave it. */
+fun InstallAttempts.backingOff(target: Int, nowMs: Long): Boolean =
+    versionCode == target && attempts > 0 && nowMs - lastAtMs < retryDelayAfter(attempts)
+
 /** What a check does next, once it knows everything it can learn without acting. */
 enum class UpdateStep {
     NOTHING_TO_DO,
     WAIT_FOR_PARENT,
     /** An APK for this update is already on disk and checked: install it, download nothing. */
     INSTALL_STAGED,
+    /** This build was tried and did not install; it is left alone for a while (see [retryDelayAfter]). */
+    BACK_OFF,
     UNTRUSTED_URL,
     WAIT_FOR_WIFI,
     NEED_SPACE,
@@ -98,8 +146,9 @@ enum class UpdateStep {
  *    they arrived. This is what makes "I cancelled the prompt by mistake" a one-tap fix
  *    instead of another fifty-megabyte download on the next scheduled check;
  *  - [force] — a parent's explicit "Update now", or the button somebody is standing in front
- *    of — overrides the two gates that are policy (the canary, Wi-Fi-only) and none of the
- *    three that are facts (an untrusted url, a full disk, a build that isn't newer).
+ *    of — overrides the gates that are policy (the canary, Wi-Fi-only, the wait after a failed
+ *    install) and none of the three that are facts (an untrusted url, a full disk, a build that
+ *    isn't newer).
  */
 fun nextUpdateStep(
     isNewer: Boolean,
@@ -109,10 +158,13 @@ fun nextUpdateStep(
     metered: Boolean,
     enoughSpace: Boolean,
     force: Boolean,
+    backingOff: Boolean = false,
 ): UpdateStep = when {
     !isNewer -> UpdateStep.NOTHING_TO_DO
     !force && parentIsBehind -> UpdateStep.WAIT_FOR_PARENT
     hasStagedApk -> UpdateStep.INSTALL_STAGED
+    // Below the staged APK, which costs no download; above everything that would download.
+    !force && backingOff -> UpdateStep.BACK_OFF
     !trustedUrl -> UpdateStep.UNTRUSTED_URL
     !force && metered -> UpdateStep.WAIT_FOR_WIFI
     !enoughSpace -> UpdateStep.NEED_SPACE

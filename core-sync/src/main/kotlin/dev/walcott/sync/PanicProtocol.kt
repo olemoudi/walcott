@@ -157,16 +157,19 @@ object PanicProtocol {
     }
 
     /**
-     * How recently the channel must have proven itself (a message actually received) for a new
-     * request to be allowed to start. Requirement one: no connectivity, no request. The child
-     * publishes at least every ~30 min, so this is "the channel works right now" without
-     * needing a bespoke round-trip handshake.
+     * How recently the channel must have proven itself (a message received, or the relay answering
+     * a catch-up) for a new request to be allowed to start. Requirement one: no connectivity, no
+     * request. The child checks in at least every ~45 min and hears its own echo, and every
+     * reconnect — opening the app is one — reads the relay, so this is "the channel works right
+     * now" without needing a bespoke round-trip handshake. Ninety minutes since the check-ins
+     * moved from a quarter of an hour to three quarters: at thirty, a healthy phone's last resort
+     * was greyed out for half of every hour.
      *
      * The request's own anchor no longer comes from here — it comes from the relay's receipt for
      * the opening publish — so this is a pre-check that greys the button rather than a
      * correctness condition.
      */
-    const val START_CHANNEL_FRESH_MS = 30 * 60 * 1000L
+    const val START_CHANNEL_FRESH_MS = 90 * 60 * 1000L
 
     /** Whether the channel has proven itself recently enough to start a request. */
     fun channelProven(msSinceChannelOk: Long): Boolean = msSinceChannelOk <= START_CHANNEL_FRESH_MS

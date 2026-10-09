@@ -123,4 +123,57 @@ class ParentSnapshotSizeTest {
 
         assertTrue(back == policy)
     }
+
+    /** Real package names: they compress far worse than `com.example.vendorN.application` does. */
+    private val realApps = listOf(
+        "com.whatsapp", "com.instagram.android", "com.zhiliaoapp.musically", "com.snapchat.android",
+        "com.google.android.youtube", "com.roblox.client", "com.mojang.minecraftpe", "com.supercell.clashroyale",
+        "com.supercell.brawlstars", "com.spotify.music", "com.netflix.mediaclient", "com.discord",
+        "tv.twitch.android.app", "com.facebook.katana", "com.twitter.android", "com.pinterest",
+        "com.reddit.frontpage", "com.duolingo", "org.telegram.messenger", "com.king.candycrushsaga",
+        "com.miniclip.eightballpool", "com.innersloth.spacemafia", "com.epicgames.fortnite",
+        "com.activision.callofduty.shooter", "com.amazon.avod.thirdpartyclient", "com.disney.disneyplus",
+        "com.google.android.apps.youtube.kids", "com.nianticlabs.pokemongo", "com.outfit7.mytalkingtom2",
+        "com.kiloo.subwaysurf",
+    )
+
+    /**
+     * A large family that is still a real one: the demanding family above, plus each of four
+     * children with limits of their own on the apps they actually use — which is what the
+     * per-member rules invite — and the domains and holidays a careful parent accumulates.
+     */
+    private fun largeFamily(appsPerChild: Int): PolicySettings {
+        val base = demandingFamily()
+        return base.copy(
+            blockedDomains = base.blockedDomains + (1..40).map { "site-number-$it.example.org" },
+            holidays = base.holidays + (1..13).map { 21_000L + it * 7 },
+            children = base.children.mapIndexed { index, child ->
+                child.copy(
+                    overrides = child.overrides.copy(
+                        appPolicies = realApps.shuffled(java.util.Random(index.toLong())).take(appsPerChild)
+                            .associateWith { pkg ->
+                                AppPolicyDto(
+                                    budgets = mapOf("SCHOOL" to 20 + index * 5, "WEEKEND" to 90),
+                                    blockedWindows = mapOf("SCHOOL" to listOf(window(8 * 60, 15 * 60))),
+                                )
+                            },
+                    ),
+                )
+            },
+        )
+    }
+
+    @Test
+    fun `how many apps of their own each child can have before the rules stop fitting`() {
+        // Measured, and said out loud in the build log: the number a family can reach without
+        // knowing it, and the reason the relay message has to be able to carry more than this.
+        var fits = 0
+        for (perChild in 0..realApps.size) {
+            val result = ParentFit.encode(snapshotOf(largeFamily(perChild)), familyKey, signing.private)
+            println("large family, $perChild apps per child: ${result.encoded.length} of ${SnapshotFit.MAX_BYTES} bytes")
+            if (result.oversize) break
+            fits = perChild
+        }
+        println("a large family fits up to $fits apps of its own per child")
+    }
 }

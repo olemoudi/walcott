@@ -60,6 +60,11 @@ class InstallGuardScenarioTest : DeviceScenario() {
 
     /** Arms the block and puts the device in the state where an install is possible but unapproved. */
     private fun armBlockAndOpenWindowFor(approvedPackage: String) {
+        // Whatever window an earlier half of the scenario left open is shut first. An app nobody
+        // approved landing no longer uses up an approval (see the app's PendingPush), so the
+        // window opened for "com.approved.example" stays open its five minutes — the guard judges
+        // what lands in it — and would hold the block down under the policy pushed next.
+        device.allowInstallsFor(0)
         parent.pushPolicy(PolicyJson.build(version = 2, restrictions = installBlock))
         awaitDevice("the install block armed") { device.installBlocked() }
         device.openInstallWindow(approvedPackage)

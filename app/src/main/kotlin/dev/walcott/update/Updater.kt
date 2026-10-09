@@ -189,6 +189,7 @@ class Updater(private val context: Context) {
             metered = wifiOnlyBlocks(),
             enoughSpace = context.cacheDir.usableSpace >= REQUIRED_FREE_BYTES,
             force = force,
+            backingOff = attempts().backingOff(info.versionCode, System.currentTimeMillis()),
         )
         DebugLog.i(TAG, "next step: $step")
         when (step) {
@@ -214,6 +215,12 @@ class Updater(private val context: Context) {
                 val ready = staged!!
                 DebugLog.i(TAG, "installing the ${ready.versionName} APK already in the cache")
                 return@withContext commit(apkFile(), ready)
+            }
+            UpdateStep.BACK_OFF -> {
+                val tried = attempts()
+                DebugLog.w(TAG, "leaving ${info.versionName} alone: tried ${tried.attempts} time(s) without installing")
+                UpdateCenter.report(UpdateUiState.Failed("did not install; trying again later"))
+                return@withContext UpdateCheckOutcome.TRANSIENT_FAILURE
             }
             UpdateStep.UNTRUSTED_URL -> {
                 DebugLog.e(TAG, "refusing an APK url outside the release host: ${info.apk}")
@@ -248,6 +255,9 @@ class Updater(private val context: Context) {
             // any of those to the installer only fails later, and less legibly.
             DebugLog.e(TAG, "the downloaded file is not an installable Walcott APK; discarding it")
             discardStagedApk()
+            // A whole download that came to nothing counts as a try: a release whose asset is
+            // wrong would otherwise be fetched in full on every check.
+            recordAttempt(info.versionCode)
             UpdateCenter.report(UpdateUiState.Failed("bad download"))
             return@withContext UpdateCheckOutcome.TRANSIENT_FAILURE
         }
@@ -260,6 +270,10 @@ class Updater(private val context: Context) {
      */
     private suspend fun commit(apk: File, target: UpdateInfo): UpdateCheckOutcome {
         DebugLog.i(TAG, "installing ${apk.length()} bytes (${target.versionName})")
+        // Counted before the outcome is known, on purpose: a success replaces this process and
+        // the count with it (the new build is no longer "newer"), while every way of failing —
+        // a refusal now, a status later, a process that dies mid-install — leaves it standing.
+        recordAttempt(target.versionCode)
         UpdateCenter.report(UpdateUiState.Installing(target))
         // Any prompt still in the shade belongs to a session install() is about to abandon, so
         // it is already a dead end — a notification that looks like the way forward and does
@@ -331,6 +345,19 @@ class Updater(private val context: Context) {
     }
 
     private fun apkFile(): File = File(context.cacheDir, APK_FILE)
+
+    /** The builds tried and not got past (see [InstallAttempts]); a plain file, read synchronously. */
+    private fun attempts(): InstallAttempts =
+        runCatching { InstallAttempts.parse(attemptsFile().takeIf { it.exists() }?.readText()) }
+            .getOrDefault(InstallAttempts.NONE)
+
+    private fun recordAttempt(versionCode: Int) {
+        runCatching {
+            attemptsFile().writeText(InstallAttempts.format(attempts().plusAttempt(versionCode, System.currentTimeMillis())))
+        }
+    }
+
+    private fun attemptsFile(): File = File(context.filesDir, ATTEMPTS_FILE)
 
     private fun discardStagedApk() {
         runCatching { apkFile().delete() }
@@ -440,6 +467,9 @@ class Updater(private val context: Context) {
 
         /** Downloaded APK, deleted once the install reaches a terminal state (see InstallReceiver). */
         const val APK_FILE = "update.apk"
+
+        /** The install attempts record (see [InstallAttempts]). */
+        private const val ATTEMPTS_FILE = "update-attempts.txt"
 
         /** Free space required before downloading, so a full phone fails fast instead of mid-write. */
         private const val REQUIRED_FREE_BYTES = 200L * 1024 * 1024

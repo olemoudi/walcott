@@ -62,6 +62,10 @@ data class ParentEvent(
         const val TYPE_WEB_FILTER_DOWN = "web_filter_down"
         const val TYPE_WEB_FILTER_BACK = "web_filter_back"
         const val TYPE_CHILD_CRASHED = "child_crashed"
+
+        /** A phone opened itself because Walcott kept dying on it (see CrashBreaker), and its end. */
+        const val TYPE_SAFE_MODE = "safe_mode"
+        const val TYPE_SAFE_MODE_OVER = "safe_mode_over"
         const val TYPE_INDOOR_LOCATION_OFF = "indoor_location_off"
         const val TYPE_NEW_APP = "new_app"
         const val TYPE_WRONG_PIN = "wrong_pin"
@@ -363,14 +367,16 @@ data class SyncState(
      */
     val lastGasp: LastGasp? = null,
     /**
-     * Target package of a parent-pushed install, while its self-closing window is open.
-     * Non-empty means "one install allowed, then re-arm the block"; "" for the blanket
-     * PIN-gated window. See [SyncManager.openInstallForPush]/[SyncManager.closeInstallWindow].
+     * The parent-pushed installs approved and not landed yet, each with its own window (see
+     * [PendingPush], [SyncManager.openInstallForPush], [SyncManager.closeInstallWindow]).
+     */
+    val pendingPushes: List<PendingPush> = emptyList(),
+    /**
+     * The single approval builds before [pendingPushes] kept. Read only through
+     * [InstallGuard.migratedPushes], and cleared by the first write that touches the approvals.
      */
     val pendingInstallPackage: String = "",
-    /** The [RemoteCommand.id] behind [pendingInstallPackage], to ack "installed" when it lands. */
     val pendingInstallCommandId: String = "",
-    /** Human name of [pendingInstallPackage] — the app isn't installed, so nothing else knows it. */
     val pendingInstallLabel: String = "",
     /**
      * The last window's target and when it closed, so an approved app that lands late is still
@@ -386,6 +392,8 @@ data class SyncState(
      */
     val knownPackages: Set<String> = emptySet(),
     val installBaselineSeeded: Boolean = false,
+    /** Whether the apps archived when this build first ran are in [knownPackages] (see [InstallGuard.seedArchived]). */
+    val archivedBaselineSeeded: Boolean = false,
     /** Open quarantine cases: apps that appeared unapproved, suspended until the parent answers. */
     val unauthorizedApps: List<UnauthorizedApp> = emptyList(),
     /** requestedAtMs of the newest location request this child has already answered. */
@@ -401,6 +409,15 @@ data class SyncState(
      * current family, so an update cannot open a one-off window for a replayed older snapshot.
      */
     val appliedParentTopic: String = "",
+    /**
+     * The newest parent snapshot version this child has seen, per parent phone
+     * ([ParentSnapshot.parentInstanceId]), whatever became of its rules. A snapshot older than
+     * this runs no commands: the parent has published since, and anything it left out of that
+     * later snapshot was taken back (see [SyncEngine.commandsLive]). [parentSeenTopic] ties it to
+     * a family the way [appliedParentTopic] ties the rules' baseline.
+     */
+    val parentSeenVersions: Map<String, Long> = emptyMap(),
+    val parentSeenTopic: String = "",
     /** The parents' latest answer (approval/denial/bonus), shown until the child dismisses it. */
     val lastNotice: NoticeEntry? = null,
     /** Consecutive wrong-PIN attempts and the lockout deadline (brute-force protection). */
@@ -517,6 +534,13 @@ data class SyncState(
     val supersededAtMs: Long = 0,
     /** The version that other phone published at, so taking the family back can outrank it. */
     val supersededVersion: Long = 0,
+    /**
+     * Whether what [supersededAtMs] reports was learned from the CHILDREN — a child running rules
+     * newer than this phone's counter (see [SyncEngine.childAhead]) — rather than from another
+     * phone's own snapshot. The same remedy, told differently: there may be no other phone at all,
+     * only this one's history lost.
+     */
+    val supersededByChildren: Boolean = false,
     val resolutions: List<Resolution> = emptyList(),
     val bonuses: List<Bonus> = emptyList(),
     /** Pending "locate now" asks, at most one per target device. */
@@ -607,6 +631,14 @@ data class SyncState(
      * (cleared when the tunnel comes back, so a later lapse alerts again).
      */
     val webFilterNotified: Set<String> = emptySet(),
+    /**
+     * Devices that tried to follow a relay move and could not find the family there (see
+     * [RemoteAction.DETAIL_RELAY_UNREACHABLE]). The old relay stays open while any is listed;
+     * a device leaves the list by moving, or by being removed.
+     */
+    val relayStranded: Set<String> = emptySet(),
+    /** Devices already alerted for being in safe mode (see the child's CrashBreaker); cleared when they leave it. */
+    val safeModeNotified: Set<String> = emptySet(),
     /**
      * Child-side throttle for the self-repair nudges: fix key -> wall-clock ms of the last
      * notification. Lives here rather than in memory because the check runs from an alarm whose
@@ -821,18 +853,48 @@ class SyncStore(context: Context, familyId: String = dev.walcott.data.FamilyIds.
         dev.walcott.data.WalcottDataStores.fileName(FILE, familyId),
     )
     private val key = stringPreferencesKey("sync_json")
+
+    /** Where a blob this build could not read is set aside, once, before anything is written over it. */
+    private val unreadableKey = stringPreferencesKey("sync_json_unreadable")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = SyncState.serializer()
 
-    private fun decode(raw: String?): SyncState =
-        raw?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() } ?: SyncState()
+    /**
+     * The last state that decoded in this process — what a read answers while the stored one
+     * cannot be read, rather than a blank one.
+     *
+     * A blank one is not harmless here. It used to be what any unreadable blob decoded to, and the
+     * next write saved it: on a parent that is the version counter back to zero, and every child
+     * — which only adopts rules newer than the last it applied — refusing every edit from then on
+     * while the screens said "up to date"; on a child, the ledger of commands already run.
+     */
+    @Volatile private var lastGood: SyncState? = null
+
+    private fun strict(raw: String): SyncState? =
+        runCatching { json.decodeFromString(serializer, raw) }.getOrNull()?.also { lastGood = it }
+
+    private fun decode(raw: String?): SyncState {
+        if (raw == null) return SyncState()
+        return strict(raw) ?: run {
+            dev.walcott.debug.DebugLog.e("WalcottSync", "stored sync state is unreadable; keeping the last good one")
+            lastGood ?: SyncState()
+        }
+    }
 
     val state: Flow<SyncState> = dataStore.data.map { decode(it[key]) }
 
     suspend fun current(): SyncState = state.first()
 
     suspend fun update(transform: (SyncState) -> SyncState) {
-        dataStore.edit { it[key] = json.encodeToString(serializer, transform(decode(it[key]))) }
+        dataStore.edit { prefs ->
+            val raw = prefs[key]
+            val parsed = raw?.let { strict(it) }
+            // Set aside before it is written over, once: what was lost is then still on the phone
+            // for whoever comes to look, instead of gone with the first write after a bad update.
+            if (raw != null && parsed == null && prefs[unreadableKey] == null) prefs[unreadableKey] = raw
+            val current = parsed ?: if (raw == null) SyncState() else decode(raw)
+            prefs[key] = json.encodeToString(serializer, transform(current))
+        }
     }
 
     private companion object {

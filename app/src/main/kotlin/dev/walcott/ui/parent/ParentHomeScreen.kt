@@ -92,6 +92,7 @@ fun ParentHomeScreen(
     val spacing = Tokens.spacing
     var showRenameFamily by remember { mutableStateOf(false) }
     val superseded by viewModel.supersededByAnotherParent.collectAsStateWithLifecycle()
+    val supersededByChildren by viewModel.supersededByChildren.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(title, onBack) {
             // The family name is user data, not chrome — let the parent change it in place.
@@ -110,6 +111,7 @@ fun ParentHomeScreen(
             // phone is keeping to itself (see SyncManager.noteForeignParent).
             if (!childDevice && superseded) {
                 SupersededCard(
+                    byChildren = supersededByChildren,
                     onTakeBack = { viewModel.takeBackControl() },
                     onDismiss = { viewModel.dismissSupersededNotice() },
                 )
@@ -305,7 +307,7 @@ private fun ProtectionBanner(deviceOwner: Boolean) {
  * phone, and a parent reading a limit they set an hour ago has no other way to find that out.
  */
 @Composable
-private fun SupersededCard(onTakeBack: () -> Unit, onDismiss: () -> Unit) {
+private fun SupersededCard(byChildren: Boolean, onTakeBack: () -> Unit, onDismiss: () -> Unit) {
     val spacing = Tokens.spacing
     val color = MaterialTheme.colorScheme.error
     WalcottCard(color = color.copy(alpha = 0.12f), modifier = Modifier.padding(top = spacing.md)) {
@@ -314,14 +316,14 @@ private fun SupersededCard(onTakeBack: () -> Unit, onDismiss: () -> Unit) {
                 Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(spacing.sm))
                 Text(
-                    stringResource(R.string.superseded_card_title),
+                    stringResource(if (byChildren) R.string.superseded_children_title else R.string.superseded_card_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = color,
                 )
             }
             Spacer(Modifier.height(spacing.xs))
             Text(
-                stringResource(R.string.superseded_card_body),
+                stringResource(if (byChildren) R.string.superseded_children_card_body else R.string.superseded_card_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )

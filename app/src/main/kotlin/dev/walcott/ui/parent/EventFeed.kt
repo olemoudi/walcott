@@ -71,6 +71,7 @@ private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_SCREEN_FREE, ParentEvent.TYPE_WEB_FILTER_DOWN, ParentEvent.TYPE_WEB_FILTER_BACK,
     ParentEvent.TYPE_LIVE_TRACKING_ENDED, ParentEvent.TYPE_CURFEW_CUT, ParentEvent.TYPE_RESCUE,
     ParentEvent.TYPE_CHILD_CRASHED, ParentEvent.TYPE_RULES_APPLIED,
+    ParentEvent.TYPE_SAFE_MODE, ParentEvent.TYPE_SAFE_MODE_OVER,
     ParentEvent.TYPE_SETUP_PENDING, ParentEvent.TYPE_SETUP_DONE, ParentEvent.TYPE_DEVICE_REPLACED,
     ParentEvent.TYPE_RELEASE_UNCONFIRMED,
 )
@@ -188,6 +189,8 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_WEB_FILTER_DOWN -> Icons.Outlined.Language to error
         ParentEvent.TYPE_WEB_FILTER_BACK -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_CHILD_CRASHED -> Icons.Filled.Warning to warn
+        ParentEvent.TYPE_SAFE_MODE -> Icons.Filled.Warning to error
+        ParentEvent.TYPE_SAFE_MODE_OVER -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_RULES_APPLIED -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_SETUP_PENDING -> Icons.Filled.Warning to error
         ParentEvent.TYPE_SETUP_DONE -> Icons.Filled.CheckCircle to good
@@ -216,6 +219,8 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_RULES_APPLIED -> stringResource(R.string.event_rules_applied, name)
     ParentEvent.TYPE_CHILD_CRASHED ->
         pluralStringResource(R.plurals.event_child_crashed, event.count, name, event.count)
+    ParentEvent.TYPE_SAFE_MODE -> stringResource(R.string.safe_mode_title, name)
+    ParentEvent.TYPE_SAFE_MODE_OVER -> stringResource(R.string.event_safe_mode_over, name)
     ParentEvent.TYPE_NEW_APP ->
         if (event.count > 0) {
             stringResource(R.string.event_new_app_more, name, event.detail, event.count)

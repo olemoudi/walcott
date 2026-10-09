@@ -77,7 +77,11 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
         super.onCreate()
         DebugLog.init(this)
         dev.walcott.debug.CrashCounter.init(this)
+        dev.walcott.sync.PublishLedger.init(this)
         installCrashLogger()
+        // Before anything that could be what is crashing (see CrashBreaker): a build that dies at
+        // start-up on a child's phone must not be able to leave it frozen in its rules.
+        dev.walcott.debug.CrashBreaker.onProcessStart(this)
         themeStore = ThemeStore(this)
         dev.walcott.ui.format.DurationUnits.load(this)
         // The database is opened — and, if it cannot be, thrown away and rebuilt — off the main
@@ -175,6 +179,18 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             private var started = 0
 
+            // From the moment an activity starts being created until it is destroyed: a crash
+            // anywhere in a screen's life — its onCreate included, which runs before it is
+            // "started", and which is where an exported screen reads what it was sent — is
+            // something the person holding the phone can reach, and must never count towards
+            // opening it (see CrashBreaker).
+            private var alive = 0
+
+            override fun onActivityPreCreated(activity: android.app.Activity, bundle: android.os.Bundle?) {
+                alive++
+                dev.walcott.debug.CrashBreaker.screenShown = true
+            }
+
             override fun onActivityStarted(activity: android.app.Activity) {
                 if (started++ == 0) setInteractive(true)
             }
@@ -190,7 +206,10 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
             override fun onActivityResumed(activity: android.app.Activity) = Unit
             override fun onActivityPaused(activity: android.app.Activity) = Unit
             override fun onActivitySaveInstanceState(activity: android.app.Activity, bundle: android.os.Bundle) = Unit
-            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) {
+                alive = (alive - 1).coerceAtLeast(0)
+                dev.walcott.debug.CrashBreaker.screenShown = alive > 0
+            }
         })
     }
 
@@ -261,6 +280,7 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
     private fun installCrashLogger() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching { dev.walcott.debug.CrashBreaker.recordCrash() }
             runCatching { DebugLog.crash(TAG, "uncaught exception on thread ${thread.name}", error) }
             previous?.uncaughtException(thread, error)
         }

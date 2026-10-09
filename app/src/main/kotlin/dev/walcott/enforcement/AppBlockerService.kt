@@ -39,6 +39,15 @@ class AppBlockerService : AccessibilityService() {
 
     @Volatile private var config: FamilyConfig? = null
     @Volatile private var managed: Set<String> = emptySet()
+
+    /**
+     * When [config] was last worked out. It used to be only when the policy changed — and the
+     * essentials inside it (the home screen, the keyboards, the dialer) are asked of the PHONE,
+     * which changes without the policy noticing: a keyboard enabled after the last rule edit was
+     * judged as an ordinary app, and at bedtime every text field sent the phone home — the 0.116
+     * bug, back through a stale copy. Refreshed now and then from the events themselves.
+     */
+    @Volatile private var configReadAt = 0L
     /**
      * Whether this device enforces at all. A parent phone — and a device freed by an emergency
      * release ([PanicRelease]) — must never be kicked out of apps.
@@ -75,6 +84,7 @@ class AppBlockerService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             app.repository.inventory.invalidate()
             scope.launch { runCatching { managed = app.repository.managedPackagesNow() } }
+            refreshConfig()
         }
     }
 
@@ -127,9 +137,11 @@ class AppBlockerService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        if (!enforcing) return
+        // In safe mode nothing is blocked (see CrashBreaker): this service is enforcement too.
+        if (!enforcing || dev.walcott.debug.CrashBreaker.active) return
         val pkg = event.packageName?.toString() ?: return
         val cfg = config ?: return
+        if (android.os.SystemClock.elapsedRealtime() - configReadAt > CONFIG_TTL_MS) refreshConfig()
         // Quarantined first, and before the managed check: an app that appeared without approval
         // answers to no rule, so nothing below would ever block it. Suspension is the real
         // mechanism (this only runs on a Device Owner device); this is what still stands between
@@ -158,7 +170,9 @@ class AppBlockerService : AccessibilityService() {
         val failClosed = (!usageAccessGranted() && RuleEngine.requiresUsageCounting(cfg)) ||
             (!clockTrusted && RuleEngine.requiresTrustedClock(cfg))
         val verdict = if (failClosed) {
-            Verdict.Blocked(dev.walcott.rules.BlockReason.FAIL_CLOSED)
+            // As on the Device Owner path, the messaging app is not failed closed: that can last
+            // days, and it is how a child says they are running late.
+            if (pkg in cfg.reachOutPackages) Verdict.Allowed else Verdict.Blocked(dev.walcott.rules.BlockReason.FAIL_CLOSED)
         } else {
             RuleEngine.evaluate(cfg, pkg, LocalDateTime.now(), usage, extra)
         }
@@ -166,6 +180,12 @@ class AppBlockerService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_HOME)
             notifyBlocked(pkg)
         }
+    }
+
+    /** Works the config out again, essentials included, off the event thread (see [configReadAt]). */
+    private fun refreshConfig() {
+        configReadAt = android.os.SystemClock.elapsedRealtime()
+        scope.launch { runCatching { config = app.repository.configNow() } }
     }
 
     /** Usage access, re-read at most every [USAGE_ACCESS_TTL_MS] (see [usageAccessOk]). */
@@ -205,6 +225,9 @@ class AppBlockerService : AccessibilityService() {
         private const val NOTIFY_THROTTLE_MS = 30_000L
         /** How long the cached usage-access answer is trusted (see [usageAccessOk]). */
         private const val USAGE_ACCESS_TTL_MS = 10_000L
+
+        /** How long the blocker trusts the essentials it worked out (see [configReadAt]). */
+        private const val CONFIG_TTL_MS = 60_000L
 
         /** True while the accessibility blocker is connected. */
         fun isConnected(): Boolean = INSTANCE != null

@@ -227,9 +227,19 @@ data class AppPolicyDto(
      * [dev.walcott.rules.AppPolicy.manageSystemApp]). Ignored for an app the family installed.
      */
     val manageSystemApp: Boolean = false,
+    /**
+     * No rule ever touches this app — not bedtime, not a screen-free window, not a pause, not a
+     * phone failing closed — exactly like the phone and contacts (it joins
+     * [dev.walcott.rules.FamilyConfig.essentialPackages]).
+     *
+     * For the apps a family cannot have go quiet: a glucose monitor, a seizure alert, a carer's
+     * app. There was no way to say so, and a Device Owner's suspension stops an app ringing — so
+     * the alarm a child's night depended on was the one bedtime silenced.
+     */
+    val alwaysAvailable: Boolean = false,
 ) {
     val isEmpty: Boolean
-        get() = budgets.isEmpty() && blockedWindows.isEmpty() && !unlimited && !manageSystemApp
+        get() = budgets.isEmpty() && blockedWindows.isEmpty() && !unlimited && !manageSystemApp && !alwaysAvailable
 }
 
 /** Persistable per-app domain rule (see [DomainAppRule]). */
@@ -1156,7 +1166,7 @@ data class PolicySettings(
             blockedWindows = allAppsBlockedWindows
                 .byDayType()
                 .mapValues { entry -> entry.value.mapNotNull { it.toTimeWindowOrNull() } },
-            essentialPackages = essentials,
+            essentialPackages = essentials + appPolicies.filterValues { it.alwaysAvailable }.keys,
             reachOutPackages = reachOut,
             calendar = SchoolCalendar(
                 holidays = holidays.map(LocalDate::ofEpochDay).toSet(),

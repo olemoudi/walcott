@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.HourglassEmpty
@@ -133,8 +134,8 @@ fun ChildStatusScreen(
     val state by viewModel.childState.collectAsStateWithLifecycle()
     val identity by viewModel.identity.collectAsStateWithLifecycle()
     val channelOfflineSince by viewModel.channelOfflineSince.collectAsStateWithLifecycle()
-    val pendingInstall by viewModel.pendingInstall.collectAsStateWithLifecycle()
-    val pendingInstallLabel by viewModel.pendingInstallLabel.collectAsStateWithLifecycle()
+    val pendingPushes by viewModel.pendingPushes.collectAsStateWithLifecycle()
+    val heldApps by viewModel.heldApps.collectAsStateWithLifecycle()
     val myRequests by viewModel.myPendingRequests.collectAsStateWithLifecycle()
     val myAsks by viewModel.myPendingAsks.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
@@ -334,27 +335,27 @@ fun ChildStatusScreen(
             }
             // An approved app ask opened the timed install window: say so, with the countdown.
             val exemptionLeftMs = installExemption - nowMs
-            if (identity.role == Role.CHILD && exemptionLeftMs > 0 && pendingInstall.isEmpty()) {
+            // Unless the window is a pushed install's own (its card below says so): approvals now
+            // wait a week, and hiding this for any of them hid a PIN window's countdown too.
+            if (identity.role == Role.CHILD && exemptionLeftMs > 0 && pendingPushes.none { it.windowUntilMs > nowMs }) {
                 item { InstallWindowCard(exemptionLeftMs) }
             }
             // Backstop for the silent install-prompt notification: a parent-pushed install
-            // stays visible here until it completes, and tapping re-opens the install window.
-            if (pendingInstall.isNotEmpty()) {
-                item {
-                    PendingInstallCard(
-                        // The name the parent's device sent: the app isn't installed here yet,
-                        // so the package name is all this device could work out by itself.
-                        appName = pendingInstallLabel.ifBlank { pendingInstall },
-                        onOpen = {
-                            runCatching {
-                                context.startActivity(
-                                    android.content.Intent(context, dev.walcott.install.InstallPromptActivity::class.java)
-                                        .putExtra(dev.walcott.install.InstallPromptActivity.EXTRA_PACKAGE, pendingInstall),
-                                )
-                            }
-                        },
-                    )
-                }
+            // stays visible here until it completes, and tapping re-opens its install window.
+            // One card per approval: a family approves two apps in a row as often as one.
+            items(pendingPushes, key = { "push-${it.pkg}" }) { push ->
+                PendingInstallCard(
+                    // The name the parent's device sent: the app isn't installed here yet,
+                    // so the package name is all this device could work out by itself.
+                    appName = push.label.ifBlank { push.pkg },
+                    onOpen = { openPushedInstall(context, push.pkg) },
+                )
+            }
+            // An app installed without asking, kept paused for the family's answer — said here,
+            // because the only other thing on this phone that mentions it is Android's own "this
+            // app is paused" dialog, which says nothing about why or until when.
+            items(heldApps, key = { "held-${it.pkg}" }) { held ->
+                HeldAppCard(appName = held.label.ifBlank { held.pkg }, untilMs = held.holdUntilMs)
             }
             // Everything is blocked because the clock can't be trusted — say so, and say what
             // fixes it. Without this the child just sees every app dead for no stated reason.
@@ -826,7 +827,7 @@ private fun WaitingCard(texts: List<String>) {
 
 /** An approved app waiting to be installed: the tap that opens Play (window re-opens on tap). */
 @Composable
-private fun PendingInstallCard(appName: String, onOpen: () -> Unit) {
+internal fun PendingInstallCard(appName: String, onOpen: () -> Unit) {
     val spacing = Tokens.spacing
     WalcottCard(onClick = onOpen, color = MaterialTheme.colorScheme.secondaryContainer) {
         Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
@@ -847,6 +848,56 @@ private fun PendingInstallCard(appName: String, onOpen: () -> Unit) {
                     stringResource(R.string.install_child_card_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        }
+    }
+}
+
+/** Opens a parent-pushed install: re-opens its window, then its Play page (see InstallPromptActivity). */
+internal fun openPushedInstall(context: android.content.Context, pkg: String) {
+    runCatching {
+        context.startActivity(
+            android.content.Intent(context, dev.walcott.install.InstallPromptActivity::class.java)
+                .putExtra(dev.walcott.install.InstallPromptActivity.EXTRA_PACKAGE, pkg),
+        )
+    }
+}
+
+/**
+ * An app installed here without approval, paused until the family answers — or until [untilMs],
+ * after which it is removed. Read-only on purpose: the answer is the family's, and the asking
+ * already happened when it was installed.
+ */
+@Composable
+internal fun HeldAppCard(appName: String, untilMs: Long) {
+    val spacing = Tokens.spacing
+    val context = LocalContext.current
+    val until = remember(untilMs) {
+        android.text.format.DateUtils.formatDateTime(
+            context, untilMs,
+            android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or android.text.format.DateUtils.FORMAT_SHOW_TIME,
+        )
+    }
+    WalcottCard(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(Modifier.padding(spacing.lg), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.HourglassTop,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.held_app_card_title, appName),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.held_app_card_desc, until),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

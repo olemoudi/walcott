@@ -199,4 +199,25 @@ class ParentFitTest {
         assertNull(fitted.degraded)
         assertFalse(fitted.oversize)
     }
+
+    @Test
+    fun `larger messages only when the relay keeps them and every phone can read them`() {
+        val ready = ParentFit.ATTACHMENT_MIN_CHILD_VERSION
+        assertEquals(ParentFit.LARGE_MESSAGE_MAX_BYTES, ParentFit.messageCeiling(true, listOf(ready, ready + 3)))
+        // One phone on an older build would read the placeholder ntfy leaves and drop the rules.
+        assertEquals(SnapshotFit.MAX_BYTES, ParentFit.messageCeiling(true, listOf(ready, ready - 1)))
+        // A relay that may refuse them: one message, as always.
+        assertEquals(SnapshotFit.MAX_BYTES, ParentFit.messageCeiling(false, listOf(ready)))
+        // Nobody to send to yet: no reason to assume anything.
+        assertEquals(SnapshotFit.MAX_BYTES, ParentFit.messageCeiling(true, emptyList()))
+    }
+
+    @Test
+    fun `only the hosted relay is counted on to keep large messages`() {
+        assertTrue(RelayServer.keepsLargeMessages("https://ntfy.sh"))
+        assertTrue(RelayServer.keepsLargeMessages("https://NTFY.sh/"))
+        assertFalse(RelayServer.keepsLargeMessages("https://ntfy.example.com"))
+        assertFalse(RelayServer.keepsLargeMessages("https://ntfy.sh.evil.com"))
+        assertFalse(RelayServer.keepsLargeMessages("not a url"))
+    }
 }

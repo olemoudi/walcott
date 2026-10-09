@@ -41,6 +41,15 @@ class Enforcer(context: Context) {
     fun isDeviceOwner(): Boolean = !PanicRelease.inProgress && dpm.isDeviceOwnerApp(ownPackage)
 
     /**
+     * Whether this reconciler may suspend or unsuspend anything: [isDeviceOwner], and not in safe
+     * mode — a phone this app has just had to open must not be shut again by it (see
+     * CrashBreaker). Its own predicate, because "is this a Device Owner" is asked elsewhere for
+     * other reasons, and answering no there in safe mode made the install guard absolve every
+     * unapproved app and the health report call a Device Owner phone unmanaged.
+     */
+    fun mayEnforce(): Boolean = !dev.walcott.debug.CrashBreaker.active && isDeviceOwner()
+
+    /**
      * Syncs suspension of [managed] so that exactly [blocked] end up suspended. Only calls
      * the system for the differences, avoiding churn.
      *
@@ -58,7 +67,7 @@ class Enforcer(context: Context) {
         giveBack: Set<String> = emptySet(),
         fullSweep: Boolean = true,
     ) {
-        if (!isDeviceOwner()) return
+        if (!mayEnforce()) return
         val targets = managed + giveBack
         val wantBlocked = blocked - giveBack
         val check = packagesToCheck(targets, wantBlocked, lastLeft, fullSweep)
@@ -116,14 +125,14 @@ class Enforcer(context: Context) {
      * "it is blocked" are different claims and the parent is shown one of them.
      */
     fun quarantine(packages: List<String>): Set<String> {
-        if (packages.isEmpty() || !isDeviceOwner()) return emptySet()
+        if (packages.isEmpty() || !mayEnforce()) return emptySet()
         suspend(packages, true)
         return packages.filter { runCatching { dpm.isPackageSuspended(admin, it) }.getOrDefault(false) }.toSet()
     }
 
     /** Lifts the suspension of [packages] (the parent allowed a quarantined app to stay). */
     fun release(packages: List<String>) {
-        if (packages.isEmpty() || !isDeviceOwner()) return
+        if (packages.isEmpty() || !mayEnforce()) return
         suspend(packages, false)
     }
 
@@ -136,13 +145,13 @@ class Enforcer(context: Context) {
      * A package the query throws on (just uninstalled) is not counted: it can't be used either.
      */
     fun unenforced(blocked: Set<String>): List<String> {
-        if (!isDeviceOwner()) return emptyList()
+        if (!mayEnforce()) return emptyList()
         return blocked.filter { runCatching { !dpm.isPackageSuspended(admin, it) }.getOrDefault(false) }
     }
 
     /** Lifts all suspensions of [managed] (e.g. if enforcement is turned off). */
     fun releaseAll(managed: Set<String>) {
-        if (!isDeviceOwner()) return
+        if (!mayEnforce()) return
         val suspended = managed.filter {
             runCatching { dpm.isPackageSuspended(admin, it) }.getOrDefault(false)
         }

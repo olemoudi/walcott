@@ -56,6 +56,8 @@ class RemoteCommandRunner(
     private val setLostMode: suspend (on: Boolean, message: String) -> Unit = { _, _ -> },
     /** Opens the blanket install window for this long (see [RemoteAction.ALLOW_INSTALLS]). */
     private val allowInstalls: suspend (durationMs: Long) -> Unit = { },
+    /** Whether this family can be heard on the relay at [server] (see [RemoteAction.SET_RELAY]). */
+    private val probeRelay: suspend (server: String) -> Boolean = { true },
 ) {
 
     /**
@@ -172,6 +174,10 @@ class RemoteCommandRunner(
      *    the guard stayed paused for the remaining eight hours. The button did nothing.
      */
     private suspend fun reapplyPolicy(): Pair<Boolean, String> {
+        // The parent's way to put the rules back on a phone that opened itself because this app
+        // kept dying on it (see CrashBreaker) — after reading the crash reports, or simply because
+        // they would rather try again than wait for the next build.
+        dev.walcott.debug.CrashBreaker.leave("the parent re-applied the rules")
         LocationPolicy.ensureEnforced(context)
         endInstallWindow()
         repository.settingsFlow.first().restrictionKeysToApply()?.let { restrictions ->
@@ -301,11 +307,20 @@ class RemoteCommandRunner(
      * Validated rather than trusted: the address arrives inside a signed envelope, so it is the
      * parent's, but a typo would point this phone at nothing and it would have no way back.
      */
-    private fun setRelay(server: String): Pair<Boolean, String> {
+    private suspend fun setRelay(server: String): Pair<Boolean, String> {
         val normalized = dev.walcott.sync.RelayServer.normalize(server, cleartextAllowed = dev.walcott.BuildConfig.DEBUG)
         if (normalized == null) {
             DebugLog.w(TAG, "refusing to move to an address that is not a relay: $server")
             return false to RemoteAction.DETAIL_RELAY_REFUSED
+        }
+        // Looked at before leaving, because leaving is for good: this phone only ever hears the
+        // parent on the relay it is on, so a move to an address it cannot reach — a typo, a home
+        // server that only answers on the parent's own Wi-Fi, one that is down — left it hearing
+        // nobody, the emergency release included. Staying put costs nothing: the parent keeps
+        // listening on the old relay while any phone has not moved, and is told this one could not.
+        if (!probeRelay(normalized)) {
+            DebugLog.w(TAG, "could not find the family on $normalized; staying where it is")
+            return false to RemoteAction.DETAIL_RELAY_UNREACHABLE
         }
         return true to RemoteAction.DETAIL_RELAY_MOVED
     }

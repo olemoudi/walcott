@@ -3,6 +3,79 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.119.0 — what a phone does when nobody is looking, and the installs a family actually does
+
+A full reliability review on 2026-10-09, asked for by ole ("revisión completa de fiabilidad y buen
+funcionamiento… misión crítica… flujos de instalación intuitivos y resistentes"). Plan in
+`~/.claude/plans/hace-un-tiempo-que-compiled-clover.md`; decisions ole took: hold-and-ask in the
+watched mode, a safe mode that OPENS the phone, "always available" in this batch, family on ntfy.sh.
+Every finding below was read in the code; the ones marked (AVD) were reproduced red on 0.118 first.
+
+- **A withdrawn command ran anyway (AVD).** The child ran the commands of every parent snapshot the
+  relay replayed, oldest first, so a release cancelled — or a phone retired as stolen — while the
+  phone was off was carried out when it came back. Commands now run only from a snapshot at least as
+  new as the newest seen from that parent phone (`SyncEngine.commandsLive`, per `parentInstanceId`,
+  because a superseded phone's commands must still work), and a reconnect reads its backlog with a
+  poll and hands it over WHOLE (`NtfyTransport.catchUpThenOpen`, `SyncManager.handleBacklog`): only
+  the newest parent snapshot per phone is handled. Incoming messages have one consumer, in order.
+  A child's first connection reads 12 h of backlog; pairing resets the cursor.
+- **Apps stayed suspended after a window ended with the screen off (AVD).** The loop parks while the
+  screen is off and nothing re-applied, so a suspended messaging app could not ring until somebody
+  picked the phone up. `CloseWatch.nextOpening` + `EnforcementWakeAlarm` wake it at the minute the
+  rules give something back; rule, pause and grant changes poke it too.
+- **The heartbeat's self-test re-suspended a phone a rescue code had opened (AVD)**, and freed
+  quarantined apps. It now builds its inputs like the loop (rescue, quarantine, give-back).
+- **A crash loop froze a child's phone for good.** `CrashBreaker`: three starts in a row that die
+  before the first apply with no app screen visible (so a child cannot trigger it), or five loop
+  failures, open the phone (every app given back, always-on VPN let go; Device Owner and restrictions
+  kept), stop enforcement, keep sync + updater, and tell the parent (`safeModeSinceMs`). Left on a
+  new versionCode, the parent's REAPPLY_POLICY, or pairing. `SafeModeScenarioTest` (drill hook).
+- **Approving two apps in a row lost the first (AVD).** One approval slot; and any new package — or
+  the parent's Catch up / Re-apply — used up the approval. Now `SyncState.pendingPushes`
+  (`PendingPush`, migrated from the old fields on read), consumed only by the app that lands, which
+  also joins the baseline in the same write; REAPPLY shuts windows and keeps approvals; the list is
+  updated inside one `syncStore.update` (two concurrent approvals used to overwrite each other).
+- **The watched mode removed apps before the parent could answer (AVD).** Now held, suspended, for
+  `InstallGuard.HOLD_MS` (48 h, `UnauthorizedApp.holdUntilMs`); removed on "Remove", on expiry, or
+  in the strict mode. Child and assisted homes say what is waiting. The cap keeps open cases and
+  evicts the oldest HELD case to make room (it used to drop — and unsuspend — the oldest case).
+- **Android 15 archived apps came back as strangers (AVD).** `userPackages()` asks with
+  `MATCH_ARCHIVED_PACKAGES`; a one-time `archivedBaselineSeeded` keeps already-archived apps known.
+- **The parent approved the label the child typed**: the install-ask notification shows the package.
+- **ntfy.sh's daily limit** (read live: 250 messages a day per address, cache 12 h). `PublishLedger`
+  counts per UTC day; the daily-quota 429 (42908) is not retried, alerts at once, and holds routine
+  publishes (one probe every 15 min) until the relay's midnight. Cadence cut: one 45-min floor for a
+  child's routine publishes (`SyncManager.ROUTINE_PUBLISH_MIN_MS`), no child re-emit, parent re-emit
+  hourly plus a republish for a child seen behind, no parent publish on a cold start that published
+  lately, a publish when the network comes back after a failed one. `Staleness.RESTING_AFTER_MS` 2 h,
+  `ChannelHealth.RECONNECT_AFTER_MS` 90 min. Children report `publishesToday`.
+- **Rules over 4,096 bytes stopped reaching every phone, silently.** ntfy.sh keeps them as a file and
+  leaves "You received a file: attachment.txt" (measured). `RelayBacklog.resolved` fetches the file
+  on every receive path; `ParentFit.messageCeiling` allows 60 kB on ntfy.sh once every phone is on
+  ≥168; a notification when the rules do not fit. Measured: a large real family fits ~25 own-app
+  limits per child, and from ~20 the parent was already dropping answers and commands to fit.
+- **A parent behind its children was shown as "up to date".** `SyncStore` keeps the last good state
+  and sets an unreadable blob aside instead of writing defaults over it; a child ahead of the
+  parent's counter (`SyncEngine.childAhead`) raises the takeover card ("byChildren" copy) whose
+  "Take it back" leaps above it; the PIN card says "Ignoring this phone".
+- **Relay migration**: a child probes the new relay for a parent snapshot before moving and answers
+  `relay_unreachable` otherwise; the parent keeps the old relay open while a phone is stranded.
+- **A failed self-update was downloaded again every ~30 min**: `InstallAttempts` backoff (1 h, 4 h, 24 h).
+- **"Always available"** per app (`AppPolicyDto.alwaysAvailable` → essentials) and bedtime exceptions in
+  the editor; the messaging app is exempt from failing closed and from the DNS curfew; the loop's
+  curfew now spares what the running window allows (a homework window's dictionary lost its DNS after
+  two minutes); Play, GMS, GSF, WebView and Settings cannot be opted into management; the
+  accessibility blocker refreshes its essentials every minute.
+- `lastSeen` is stamped with the relay's time, so a backlog read at breakfast no longer makes a phone
+  silent since the night look just heard from.
+
+Left for another batch (seen, judged not grave or too rare): remote removal of an approved app / a
+full phone; the mobile-networks lock blocking roaming abroad; no rescue-code entry on the assisted
+home; `VpnStatus.lockdown` read by nobody; captive portals with the no-bypass tunnel (needs a real
+phone); identity file lost → mode select without PIN; a reset child counter freezing its row; a
+parent clock once ahead; RTC alarms on TIME_SET; `connect()` not serialised; close tracking still
+publishes a fix a minute (an explicit, time-boxed choice, but ~60 messages an hour on ntfy.sh).
+
 ## Shipped in v0.118.0 — the one button, and the locks that lock somebody out
 
 A review on 2026-09-19, asked for by ole ("las funcionalidades pensadas para dar soporte a adultos

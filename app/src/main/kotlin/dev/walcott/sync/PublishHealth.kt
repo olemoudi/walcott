@@ -31,9 +31,16 @@ object PublishHealth {
         /** HTTP status of the last rejection (429 = rate limited), or 0 for a network failure. */
         val lastRejectionCode: Int = 0,
         val lastFailureAtMs: Long = 0,
+        /**
+         * The last rejection was the relay's daily message quota (see [LedgerDay.isDailyQuota]):
+         * not a moment's trouble but the rest of its day, so worth saying at once rather than
+         * after three in a row — a parent's phone whose process lives for one alarm's worth of
+         * publishing never reached three.
+         */
+        val quota: Boolean = false,
     ) {
         /** True once the failures are consistent enough to be worth telling someone about. */
-        val failing: Boolean get() = consecutiveFailures >= FAILURES_BEFORE_ALERT
+        val failing: Boolean get() = consecutiveFailures >= FAILURES_BEFORE_ALERT || quota
 
         /** True when the relay is refusing us for sending too much, which needs its own advice. */
         val rateLimited: Boolean get() = failing && lastRejectionCode == HTTP_TOO_MANY_REQUESTS
@@ -49,14 +56,14 @@ object PublishHealth {
      * a single success has to clear it completely — a channel that works is not half-broken
      * because it was broken this morning.
      */
-    fun next(previous: Status, ok: Boolean, code: Int, atMs: Long): Status =
+    fun next(previous: Status, ok: Boolean, code: Int, atMs: Long, quota: Boolean = false): Status =
         if (ok) {
             Status()
         } else {
-            Status(previous.consecutiveFailures + 1, code, atMs)
+            Status(previous.consecutiveFailures + 1, code, atMs, quota)
         }
 
-    fun record(ok: Boolean, code: Int = 0, atMs: Long = System.currentTimeMillis()) {
-        mutable.value = next(mutable.value, ok, code, atMs)
+    fun record(ok: Boolean, code: Int = 0, atMs: Long = System.currentTimeMillis(), quota: Boolean = false) {
+        mutable.value = next(mutable.value, ok, code, atMs, quota)
     }
 }

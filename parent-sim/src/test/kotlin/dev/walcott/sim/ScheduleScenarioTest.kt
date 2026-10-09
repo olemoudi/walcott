@@ -117,6 +117,35 @@ class ScheduleScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `a window that ends while the screen is off gives the app back without anyone turning it on`() {
+        // A suspended app cannot ring. The loop parks while the screen is off, and it used to stay
+        // parked when a window ENDED too — so the parent's call on a messaging app went unanswered
+        // until somebody happened to pick the phone up, on a phone whose rules said it should ring.
+        settleAllowed()
+        // Ends one to two minutes from now: soon enough to wait for, late enough to be asleep first.
+        val (start, end) = windowAround(-30, 2)
+        parent.pushPolicy(PolicyJson.build(version = 3, screenFree = listOf(start to end)))
+        awaitDevice("the app suspended by a screen-free window", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
+
+        device.sleepScreen()
+        // Waited on WITHOUT waking the phone, which every other wait in this suite does on purpose:
+        // the whole point here is what happens while nobody is looking.
+        val deadline = System.currentTimeMillis() + SCREEN_OFF_GIVE_BACK_MS
+        var givenBack = false
+        while (System.currentTimeMillis() < deadline) {
+            if (!device.isSuspended(app)) {
+                givenBack = true
+                break
+            }
+            Thread.sleep(2_000)
+        }
+        val stayedAsleep = !device.screenAwake()
+        device.keepAwake()
+        assertTrue(stayedAsleep, "the screen came on during the wait, so this proves nothing")
+        assertTrue(givenBack, "the app stayed suspended after its window ended with the screen off")
+    }
+
+    @Test
     fun `extra time granted during bedtime does not open anything`() {
         // The precedence the rules engine has always had — bedtime outranks every budget — as
         // the family experiences it. It is why the child's screen must not offer to ask for more
@@ -157,6 +186,13 @@ class ScheduleScenarioTest : DeviceScenario() {
          */
         const val WINDOW_APPLY_TIMEOUT_MS = 120_000L
         /** Comfortably past the enforcement loop's idle tick (15s), so it has run at least once. */
+        /**
+         * The window's end (at most two minutes away) plus Doze's slack on an allow-while-idle
+         * alarm, which an emulator on power barely uses: four minutes is the documented worst case
+         * with room to spare, not a guess at the typical one.
+         */
+        const val SCREEN_OFF_GIVE_BACK_MS = 240_000L
+
         const val LOOP_SETTLE_MS = 20_000L
 
         /**

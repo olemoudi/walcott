@@ -53,6 +53,9 @@ object SyncNotifications {
     /** Fixed too: one outage, one line in the shade. */
     private const val RELAY_REFUSING_NOTIF_ID = 8802
 
+    /** Fixed: one family's rules, one alert while they do not fit. */
+    private const val POLICY_TOO_LARGE_NOTIF_ID = 8803
+
     /** Intent extra + values used to deep-link a notification tap to a screen. */
     const val EXTRA_DEST = "walcott_dest"
     const val DEST_APPS = "apps"
@@ -169,11 +172,17 @@ object SyncNotifications {
      * URGENT, and it names the consequence rather than the mechanism: what a parent needs to know
      * is that the rules they change here stop arriving, not that a version counter was outranked.
      */
-    fun notifyFamilyTakenOver(context: Context, family: String?) = post(
+    fun notifyFamilyTakenOver(context: Context, family: String?, byChildren: Boolean = false) = post(
         context, URGENT_CHANNEL, R.string.urgent_channel_name,
-        title = context.getString(R.string.superseded_title),
-        text = family?.let { context.getString(R.string.superseded_text_family, it) }
-            ?: context.getString(R.string.superseded_text),
+        // Learned from the children there may be no other phone at all — only this one's own
+        // history lost — so the alert does not claim one.
+        title = context.getString(if (byChildren) R.string.superseded_children_title else R.string.superseded_title),
+        text = if (byChildren) {
+            context.getString(R.string.superseded_children_text)
+        } else {
+            family?.let { context.getString(R.string.superseded_text_family, it) }
+                ?: context.getString(R.string.superseded_text)
+        },
         notifId = SUPERSEDED_NOTIF_ID,
     )
 
@@ -267,6 +276,19 @@ object SyncNotifications {
             if (rateLimited) R.string.relay_refusing_rate_limited else R.string.relay_refusing_text,
         ),
         notifId = RELAY_REFUSING_NOTIF_ID,
+    )
+
+    /**
+     * This family's rules have grown past what one relay message carries for the phones it has:
+     * rule changes stop reaching them until the rules shrink — or, on the hosted relay, until
+     * every phone runs a build that reads larger messages (see ParentFit.messageCeiling).
+     */
+    fun notifyPolicyTooLarge(context: Context, family: String?) = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = family?.let { context.getString(R.string.policy_too_large_title_family, it) }
+            ?: context.getString(R.string.policy_too_large_title),
+        text = context.getString(R.string.policy_too_large_text),
+        notifId = POLICY_TOO_LARGE_NOTIF_ID,
     )
 
     /** A publish got through: whatever was in the way is gone. */
@@ -373,6 +395,20 @@ object SyncNotifications {
         title = context.getString(R.string.web_filter_down_title, childName),
         text = context.getString(R.string.web_filter_down_text),
         notifId = "webfilter".hashCode() + deviceId.hashCode(),
+        dest = childDest(childId),
+    )
+
+    /**
+     * Alert when a child's phone has opened itself because Walcott kept dying on it at start-up
+     * (the child's CrashBreaker): every app is usable and no rule applies until the next build,
+     * or until the parent re-applies the rules. Urgent, because nothing else on either phone says
+     * that the rules have stopped.
+     */
+    fun notifySafeMode(context: Context, childName: String, deviceId: String, childId: String = "") = post(
+        context, URGENT_CHANNEL, R.string.urgent_channel_name,
+        title = context.getString(R.string.safe_mode_title, childName),
+        text = context.getString(R.string.safe_mode_text),
+        notifId = "safemode".hashCode() + deviceId.hashCode(),
         dest = childDest(childId),
     )
 
@@ -598,11 +634,19 @@ object SyncNotifications {
         dest = requestDest(requestId),
     )
 
-    /** A child shared one concrete app from Play and wants it installed (see KIND_INSTALL). */
+    /**
+     * A child shared one concrete app from Play and wants it installed (see KIND_INSTALL).
+     *
+     * The package goes on its own line. [appLabel] is the text the child's phone shared, which the
+     * child controls — and "Approve" installs [pkg], not the name. A share reading "Duolingo"
+     * around a link to something else was approved as Duolingo from the shade, where the package
+     * was nowhere to be seen (the in-app card always showed it).
+     */
     fun notifyInstallAsk(
         context: Context,
         childName: String,
         appLabel: String,
+        pkg: String,
         requestId: String,
         quickAnswer: Boolean,
     ) {
@@ -610,7 +654,8 @@ object SyncNotifications {
         post(
             context, CHANNEL, R.string.sync_request_channel_name,
             title = context.getString(R.string.sync_install_ask_title, childName),
-            text = context.getString(R.string.sync_install_ask_text, appLabel),
+            text = context.getString(R.string.sync_install_ask_text, appLabel) +
+                pkg.takeIf { it.isNotBlank() && it != appLabel }?.let { "\n" + it }.orEmpty(),
             notifId = notifId,
             dest = requestDest(requestId),
             // Approving here opens the single-app install window, exactly as the card does.
@@ -680,6 +725,8 @@ object SyncNotifications {
         childId: String = "",
         installer: String = "",
         quickAnswer: Boolean = true,
+        /** When the child's phone removes it if nobody answers; 0 when it is being removed now. */
+        holdUntilMs: Long = 0,
     ) {
         fun action(intentAction: String, labelRes: Int): NotificationCompat.Action {
             val intent = Intent(context, UnauthorizedAppReceiver::class.java)
@@ -701,7 +748,20 @@ object SyncNotifications {
             // Who installed it, on its own line. Play installs components on its own account, and
             // without this that arrives worded exactly like a child downloading a game — the
             // parent is asked the same question with none of what decides it.
-            text = context.getString(R.string.unauthorized_app_text, appLabel) +
+            text = (
+                if (holdUntilMs > System.currentTimeMillis()) {
+                    context.getString(
+                        R.string.unauthorized_app_text_held, appLabel,
+                        android.text.format.DateUtils.formatDateTime(
+                            context, holdUntilMs,
+                            android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
+                                android.text.format.DateUtils.FORMAT_SHOW_TIME,
+                        ),
+                    )
+                } else {
+                    context.getString(R.string.unauthorized_app_text, appLabel)
+                }
+                ) +
                 installerLine(context, installer)?.let { "\n" + it }.orEmpty(),
             notifId = UnauthorizedAppReceiver.notificationId(deviceId, pkg),
             dest = childDest(childId),

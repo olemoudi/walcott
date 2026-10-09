@@ -41,12 +41,30 @@ class MockRelay(
     private val nowSec: () -> Long = { System.currentTimeMillis() / 1000 },
 ) {
 
-    /** One published message, as the relay would hand it back. */
-    data class Message(val body: String, val timeSec: Long)
+    /**
+     * One published message, as the relay would hand it back. [id] is what a `since=` can name to
+     * mean "everything after this one", which is how the app picks the socket up exactly where its
+     * catch-up poll left off.
+     */
+    data class Message(
+        val body: String,
+        val timeSec: Long,
+        val id: String = "",
+        /**
+         * The real body when it was too long to be a message, as ntfy keeps it: [body] is then
+         * the placeholder sentence and this is served at `/file/<id>.txt` (see [MESSAGE_LIMIT]).
+         */
+        val attachment: String? = null,
+    )
+
+    private val nextMessageId = java.util.concurrent.atomic.AtomicLong()
 
     private class Topic {
         val messages = CopyOnWriteArrayList<Message>()
         val sockets = CopyOnWriteArrayList<WebSocket>()
+
+        /** The parent sim's own subscription, which [pauseSubscribers] leaves alone (see [PARENT_MARK]). */
+        val parentSockets = CopyOnWriteArrayList<WebSocket>()
 
         /**
          * Held while a subscriber is being taken on, and while a message is going out.
@@ -234,6 +252,33 @@ class MockRelay(
         return published(topic).size > moreThan
     }
 
+    /**
+     * Topics whose subscribers are being kept away: their sockets are closed and every attempt to
+     * read the topic — the socket or the catch-up poll — is refused, while publishes are still
+     * taken and kept. A phone that is off, or out of coverage, as seen from the relay: what is
+     * published meanwhile waits for it, which is exactly the backlog [resumeSubscribers] hands it.
+     */
+    private val pausedTopics = ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Cuts [topic]'s subscribers off and keeps them off until [resumeSubscribers] — the phones, not
+     * the parent sim, which marks its own subscription (see [PARENT_MARK]): a scenario about a phone
+     * that was away still needs the parent to hear it come back.
+     */
+    fun pauseSubscribers(topic: String) {
+        pausedTopics += topic
+        topics[topic]?.let { state ->
+            synchronized(state.gate) {
+                state.sockets.filterNot { it in state.parentSockets }.forEach { it.close(1000, "paused") }
+            }
+        }
+    }
+
+    /** Lets [topic]'s subscribers back in; they read what they missed on their next connection. */
+    fun resumeSubscribers(topic: String) {
+        pausedTopics -= topic
+    }
+
     /** Swallows the next [count] publishes to [topic] (see [dropCounts]). */
     fun dropNext(topic: String, count: Int = 1) {
         dropCounts[topic] = (dropCounts[topic] ?: 0) + count
@@ -255,7 +300,15 @@ class MockRelay(
     /** Publishes [body] to [topic] as any client would. Used by the parent sim. */
     fun publish(topic: String, body: String) {
         val state = topics.computeIfAbsent(topic) { Topic() }
-        val message = Message(body, nowSec())
+        // What ntfy does with a body over its message limit: keeps it as a file, answers 200, and
+        // leaves a sentence where the body was. A relay double that delivered it inline would
+        // hide the one failure that matters about large rules (see the app's RelayBacklog).
+        val id = "m${nextMessageId.incrementAndGet()}"
+        val message = if (body.length > MESSAGE_LIMIT) {
+            Message(ATTACHMENT_PLACEHOLDER, nowSec(), id, attachment = body)
+        } else {
+            Message(body, nowSec(), id)
+        }
         val toDrop = dropCounts[topic] ?: 0
         if (toDrop > 0) {
             dropCounts[topic] = toDrop - 1
@@ -272,6 +325,12 @@ class MockRelay(
         val path = (request.path ?: "/").substringBefore('?').trim('/')
         val query = (request.path ?: "").substringAfter('?', "")
         val segments = path.split('/').filter { it.isNotBlank() }
+        if (segments.firstOrNull() == "file" && request.method == "GET") {
+            val wanted = segments.getOrNull(1)?.substringBefore('.') ?: return MockResponse().setResponseCode(404)
+            val kept = topics.values.flatMap { it.messages }.firstOrNull { it.id == wanted }?.attachment
+                ?: return MockResponse().setResponseCode(404)
+            return MockResponse().setResponseCode(200).setBody(kept)
+        }
         val topic = segments.firstOrNull() ?: return MockResponse().setResponseCode(404)
         val endpoint = segments.getOrNull(1)
 
@@ -288,13 +347,14 @@ class MockRelay(
                     MockResponse().setResponseCode(200).setBody("""{"id":"sim","time":${nowSec()}}""")
                 }
             }
-            endpoint == "ws" -> webSocketFor(topic, sinceOf(query))
-            // The parent app polls this when its socket has been down; the sim doesn't use it,
-            // but a relay that 404s on it is not the relay the app was written against.
+            (endpoint == "ws" || endpoint == "json") && topic in pausedTopics && PARENT_MARK !in query ->
+                MockResponse().setResponseCode(503).setBody("subscribers paused")
+            endpoint == "ws" -> webSocketFor(topic, query)
+            // Every app catch-up reads its backlog here in one go before opening the socket, and
+            // the parent polls it when its socket has been down.
             endpoint == "json" -> {
-                val since = sinceOf(query)
-                val body = published(topic).filter { it.timeSec >= since }
-                    .joinToString("\n") { eventJson(it) }
+                val state = topics.computeIfAbsent(topic) { Topic() }
+                val body = backlog(state, query).joinToString("\n") { eventJson(it) }
                 MockResponse().setResponseCode(200).setBody(body)
             }
             else -> MockResponse().setResponseCode(404)
@@ -306,15 +366,14 @@ class MockRelay(
      * The replay happens inside onOpen so it cannot race a message published a moment later:
      * the socket is not in the broadcast list until its backlog has gone out.
      */
-    private fun webSocketFor(topicName: String, since: Long): MockResponse {
+    private fun webSocketFor(topicName: String, query: String): MockResponse {
         val state = topics.computeIfAbsent(topicName) { Topic() }
         return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
                 synchronized(state.gate) {
-                    if (since > 0) {
-                        state.messages.filter { it.timeSec >= since }.forEach { webSocket.send(eventJson(it)) }
-                    }
+                    backlog(state, query).forEach { webSocket.send(eventJson(it)) }
                     state.sockets += webSocket
+                    if (PARENT_MARK in query) state.parentSockets += webSocket
                 }
                 // Sent LAST, and that is what makes it usable as a signal: a subscriber that has
                 // seen this frame is in the broadcast list, so a test (or the sim) can publish
@@ -326,23 +385,33 @@ class MockRelay(
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 state.sockets -= webSocket
+                state.parentSockets -= webSocket
                 println("relay ${server.port}: subscriber left $topicName (${state.sockets.size} now)")
                 webSocket.close(1000, null)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
                 state.sockets -= webSocket
+                state.parentSockets -= webSocket
                 println("relay ${server.port}: subscriber lost on $topicName: ${t.javaClass.simpleName}")
             }
         })
     }
 
-    /** ntfy accepts a unix-seconds cursor or "all"; the app only ever sends the former. */
-    private fun sinceOf(query: String): Long {
+    /**
+     * What a `since=` asks for, the three ways ntfy accepts it: `all`, a unix-seconds cursor
+     * (inclusive of that second), or a message id (everything after it). No `since=` at all asks
+     * for nothing. An id the relay no longer holds answers everything it has, which is the safe
+     * reading for a client that only wanted to miss nothing.
+     */
+    private fun backlog(state: Topic, query: String): List<Message> {
         val raw = query.split('&').firstOrNull { it.startsWith("since=") }?.removePrefix("since=")
-            ?: return 0
-        if (raw == "all") return 1
-        return raw.toLongOrNull() ?: 0
+            ?: return emptyList()
+        val messages = state.messages.toList()
+        if (raw == "all") return messages
+        raw.toLongOrNull()?.let { since -> return if (since > 0) messages.filter { it.timeSec >= since } else emptyList() }
+        val index = messages.indexOfFirst { it.id == raw }
+        return if (index < 0) messages else messages.drop(index + 1)
     }
 
 
@@ -352,6 +421,20 @@ class MockRelay(
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n")
-        return """{"event":"message","time":${message.timeSec},"message":"$escaped"}"""
+        val attachment = message.attachment?.let {
+            ""","attachment":{"name":"attachment.txt","size":${it.length},"url":"http://127.0.0.1:${server.port}/file/${message.id}.txt"}"""
+        }.orEmpty()
+        return """{"id":"${message.id}","event":"message","time":${message.timeSec},"message":"$escaped"$attachment}"""
+    }
+
+    companion object {
+        /** The query mark the parent sim's subscription carries, so a pause can tell it from a phone's. */
+        const val PARENT_MARK = "sim=parent"
+
+        /** ntfy's message limit: a longer body is kept as a file. */
+        const val MESSAGE_LIMIT = 4_096
+
+        /** What ntfy leaves where such a body was (measured on ntfy.sh). */
+        const val ATTACHMENT_PLACEHOLDER = "You received a file: attachment.txt"
     }
 }

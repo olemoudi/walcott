@@ -741,6 +741,12 @@ fun ChildDetailScreen(
                             specialDaysOwnRules = settings.specialDaysOwnRules,
                             onOpenSpecialDays = onOpenSpecialDays,
                             onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
+                            exceptionApps = remember(snapshot) {
+                                snapshot?.apps.orEmpty()
+                                    .map { dev.walcott.ui.components.PickableApp(it.packageName, it.label) }
+                            },
+                            exceptionIcons = { viewModel.childAppIcon(it) },
+                            exceptionInventory = viewModel.repository.inventory,
                         ) { updated ->
                             viewModel.setChildOverrides(childId, entry.overrides.copy(bedtime = updated))
                         }
@@ -1822,9 +1828,17 @@ private fun UnauthorizedAppCard(
             // was never going to happen. Said only once it is really stuck, so an ordinary
             // retry-and-succeed never says anything.
             val stuck = entry.removalAttempts >= dev.walcott.sync.InstallGuard.STUCK_REMOVAL_ATTEMPTS
+            // Held for an answer (the watched mode): paused there, and removed only if nobody says.
+            val heldUntil = entry.holdUntilMs.takeIf { it > System.currentTimeMillis() }?.let {
+                android.text.format.DateUtils.formatDateTime(
+                    LocalContext.current, it,
+                    android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or android.text.format.DateUtils.FORMAT_SHOW_TIME,
+                )
+            }
             Text(
                 when {
                     stuck -> stringResource(R.string.unauthorized_app_card_stuck, entry.removalAttempts)
+                    heldUntil != null && entry.suspended -> stringResource(R.string.unauthorized_app_card_state_held, heldUntil)
                     // Suspension is the promise being made on this screen, so a device that
                     // could not deliver it says so instead of implying the app is harmless now.
                     entry.suspended -> stringResource(R.string.unauthorized_app_card_state)
@@ -2250,6 +2264,11 @@ internal fun remoteResultLabel(context: android.content.Context, detail: String)
     "removing" -> context.getString(R.string.remote_result_removing)
     "not_installed" -> context.getString(R.string.remote_result_not_installed)
     "allowed" -> context.getString(R.string.remote_result_allowed)
+    // "Let it stay" for an app that had already gone: in the strict mode it is removed on sight,
+    // and this used to fall through to "the child was notified" — in red, under a heading saying
+    // it failed. Said as what happened, with the way to get it there after all.
+    "not_quarantined" -> context.getString(R.string.remote_result_already_removed)
+    "relay_unreachable" -> context.getString(R.string.remote_result_relay_unreachable)
     "waiting_parent" -> context.getString(R.string.remote_result_waiting_parent)
     "waiting_wifi" -> context.getString(R.string.remote_result_waiting_wifi)
     "busy" -> context.getString(R.string.remote_result_busy)

@@ -74,6 +74,9 @@ abstract class DeviceScenario {
         // budget on that fixture an hour of allowance — which read as a phone that had stopped
         // enforcing, on the destructive suite first of all.
         device.clearExtra()
+        // Nor any app another scenario approved: an approval lives a week and outlasts a re-pair,
+        // and a fixture approved once would be "approved" in every scenario after it.
+        device.clearApprovals()
         // Wait for it to be real before going on: a seed broadcast returns when the receiver was
         // dispatched, not when the OS has acted, and a scenario that starts while the previous
         // one's install block is still armed fails on its first `adb install` for no reason of

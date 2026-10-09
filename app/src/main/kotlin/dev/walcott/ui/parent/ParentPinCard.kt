@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Password
 import androidx.compose.material.icons.outlined.Sync
@@ -229,7 +230,7 @@ private fun RevealPinDialog(viewModel: WalcottViewModel, pin: String, onDismiss:
 }
 
 /** Whether a child's phone is known to be running the parent's current rules. */
-internal enum class PolicyAdoption { UP_TO_DATE, PENDING, UNKNOWN }
+internal enum class PolicyAdoption { UP_TO_DATE, PENDING, AHEAD, UNKNOWN }
 
 /**
  * Read-side mirror of [dev.walcott.sync.SyncEngine.adoptsPolicy]: a child only ever adopts a
@@ -243,6 +244,9 @@ internal enum class PolicyAdoption { UP_TO_DATE, PENDING, UNKNOWN }
  */
 internal fun policyAdoption(appliedPolicyVersion: Long?, parentVersion: Long): PolicyAdoption = when {
     appliedPolicyVersion == null || appliedPolicyVersion <= 0L -> PolicyAdoption.UNKNOWN
+    // On rules newer than this phone has ever sent: it refuses everything from here, the new PIN
+    // included (see SyncEngine.childAhead). This used to read "up to date".
+    dev.walcott.sync.SyncEngine.childAhead(parentVersion, appliedPolicyVersion) -> PolicyAdoption.AHEAD
     appliedPolicyVersion >= parentVersion -> PolicyAdoption.UP_TO_DATE
     else -> PolicyAdoption.PENDING
 }
@@ -260,6 +264,11 @@ private fun AdoptionRow(name: String, adoption: PolicyAdoption) {
             Icons.Outlined.Sync,
             R.string.parent_pin_child_pending,
             MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        PolicyAdoption.AHEAD -> Triple(
+            Icons.Filled.Warning,
+            R.string.parent_pin_child_ahead,
+            MaterialTheme.colorScheme.error,
         )
         PolicyAdoption.UNKNOWN -> Triple(
             Icons.Outlined.HelpOutline,

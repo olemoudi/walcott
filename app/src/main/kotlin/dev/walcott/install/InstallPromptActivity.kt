@@ -23,9 +23,10 @@ class InstallPromptActivity : ComponentActivity() {
             return
         }
         lifecycleScope.launch {
-            // Re-opens only while this push is still pending; a stale tap after the install
-            // completed just lands on the app's Play page ("Open"), with the block armed.
-            app.syncManager.reopenInstallWindow()
+            // Re-opens only while THIS app's approval is still pending — the one tapped, not
+            // whichever was approved last; a stale tap after the install completed just lands on
+            // the app's Play page ("Open"), with the block armed.
+            app.syncManager.reopenInstallWindow(pkg)
             runCatching { startActivity(PlayIntents.storePage(this@InstallPromptActivity, pkg)) }
             finish()
         }

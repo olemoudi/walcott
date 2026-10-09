@@ -225,8 +225,18 @@ class AppInventory(private val context: Context) {
      * keyboard cannot type its own unlock PIN, and this AVD suspends the Gboard package quite
      * happily when asked. This list is the belt to the platform's braces, not a substitute for
      * them: what the OS refuses is reported as an enforcement gap either way.
+     *
+     * And what the phone's other apps run on: Play, which every approved install goes through —
+     * managed, a bedtime or a spent day left an approval opening a suspended store — Play
+     * services and its framework, without which notifications, location and sign-in stop for
+     * every app at once, the WebView every in-app page is drawn with, and Settings, where the
+     * permissions this app needs are given back.
      */
-    internal fun criticalPackages(): Set<String> = alwaysReachablePackages() + infrastructurePackages()
+    internal fun criticalPackages(): Set<String> =
+        alwaysReachablePackages() + infrastructurePackages() + PLATFORM_PACKAGES + setOfNotNull(webViewPackage())
+
+    private fun webViewPackage(): String? =
+        runCatching { android.webkit.WebView.getCurrentWebViewPackage()?.packageName }.getOrNull()
 
     @Volatile private var infrastructure: Set<String> = emptySet()
     @Volatile private var infrastructureReadAt = 0L
@@ -293,11 +303,37 @@ class AppInventory(private val context: Context) {
      * app arrived, which is exactly the app it exists to catch.
      */
     fun userPackages(): Set<String>? = runCatching {
-        pm.getInstalledApplications(0)
+        installedApplications()
             .filterNot { it.isSystemApp() }
             .map { it.packageName }
             .toSet() - ownPackage
     }.getOrNull()
+
+    /**
+     * Every installed application, the archived ones included (Android 15).
+     *
+     * An archived app is one the phone still has — its data, its icon, a tap from coming back —
+     * and Play archives apps on its own when storage runs low. Asked without the flag, the system
+     * leaves them out (measured on API 35: `pm list packages` stops listing one the moment it is
+     * archived), so it dropped out of the install guard's baseline the day it was archived and
+     * came back as a stranger: judged unapproved, suspended, and removed with the very data the
+     * archive existed to keep.
+     */
+    private fun installedApplications(): List<ApplicationInfo> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.MATCH_ARCHIVED_PACKAGES))
+        } else {
+            pm.getInstalledApplications(0)
+        }
+
+    /** The packages archived right now (Android 15 and later; nothing before). */
+    fun archivedPackages(): Set<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            runCatching { installedApplications().filter { it.isArchived }.map { it.packageName }.toSet() }
+                .getOrDefault(emptySet())
+        } else {
+            emptySet()
+        }
 
     /**
      * Packages whose screen time is COUNTED — deliberately wider than [managedPackages], which is
@@ -369,5 +405,13 @@ class AppInventory(private val context: Context) {
 
         /** The system's "which app should open this?" chooser, not an app in its own right. */
         const val RESOLVER_PACKAGE = "android"
+
+        /** See [criticalPackages]: Play, Play services and its framework, and Settings. */
+        val PLATFORM_PACKAGES = setOf(
+            "com.android.vending",
+            "com.google.android.gms",
+            "com.google.android.gsf",
+            "com.android.settings",
+        )
     }
 }

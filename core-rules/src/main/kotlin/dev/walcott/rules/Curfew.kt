@@ -114,7 +114,9 @@ object Curfew {
                 // What the window itself leaves open is spared, and this is the half of an
                 // allow-list that would be silently missing without it: a homework window that
                 // permits the dictionary and then takes its DNS away has permitted nothing.
-                spared = config.essentialPackages + RuleEngine.windowExemptions(config, now),
+                // The messaging app too: the curfew is not a rule written about it by name, and a
+                // text that cannot resolve its server is a message home that does not leave.
+                spared = config.essentialPackages + config.reachOutPackages + RuleEngine.windowExemptions(config, now),
             ),
             exempt = RuleEngine.windowExemptions(config, now),
         )

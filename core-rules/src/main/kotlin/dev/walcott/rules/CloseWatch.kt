@@ -142,6 +142,45 @@ object CloseWatch {
         return listOfNotNull(timed, screen).minByOrNull { it.left }
     }
 
+    /**
+     * The first minute after [now] at which any of [blocked] would be allowed again, or null when
+     * nothing is blocked.
+     *
+     * For a phone whose screen is off. The enforcement loop parks while nobody is looking, which
+     * is right for closing things — an app that cannot be seen being used needs no closing — and
+     * was wrong for opening them: bedtime ended, the phone stayed in a pocket, and every app it had
+     * suspended stayed suspended until somebody happened to turn the screen on. A suspended app
+     * cannot ring, so the parent's call on a messaging app went unanswered on a phone whose rules
+     * said it should be ringing. This is when to wake up and give them back.
+     *
+     * Walked a minute at a time against [RuleEngine], like [nextClose], for the same reason: every
+     * window has its own rules about day types and special days, and restating them here is how
+     * two answers about one clock come to disagree. The walk stops at midnight, which is itself an
+     * answer when something is still blocked: the day's counters start again, the day type can
+     * change, and the caller asks afresh then. Counted against today's [usageToday], which cannot
+     * go down before then.
+     */
+    fun nextOpening(
+        config: FamilyConfig,
+        blocked: Set<String>,
+        now: LocalDateTime,
+        usageToday: Map<String, Duration> = emptyMap(),
+        extraTime: Map<String, Duration> = emptyMap(),
+    ): LocalDateTime? {
+        if (blocked.isEmpty()) return null
+        val start = now.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)
+        val midnight = now.toLocalDate().plusDays(1).atStartOfDay()
+        var at = start.plusMinutes(1)
+        while (at.isBefore(midnight)) {
+            val opens = blocked.any { pkg ->
+                RuleEngine.evaluate(config, pkg, at, usageToday, extraTime) !is Verdict.Blocked
+            }
+            if (opens) return at
+            at = at.plusMinutes(1)
+        }
+        return midnight
+    }
+
     /** The warning [left] has earned — the smallest threshold it has reached — or null. */
     fun thresholdFor(left: Duration): Int? =
         WARN_MINUTES.filter { left <= Duration.ofMinutes(it.toLong()) }.minOrNull()

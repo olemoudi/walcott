@@ -32,9 +32,17 @@ object EnforcementSelfTest {
         val enforcer = Enforcer(context)
         // Suspension state is only measurable (and enforced this way) as Device Owner; on the
         // accessibility backend there is nothing to query, so the self-test stays silent.
-        if (!enforcer.isDeviceOwner()) return
+        if (!enforcer.mayEnforce()) return
         val repo = app.repository
+        // What the loop wants, worked out the way the loop works it out — every input of it. This
+        // check used to leave two of them out, and each turned it into the thing it was checking
+        // for: without the rescue code it took a phone a code had just opened and shut it again
+        // every half hour, on the one phone with nothing else left (see RescueCode); without the
+        // quarantine and the preinstalled apps it handed apps that appeared without approval back
+        // to the child, and could never give back a preinstalled app nobody manages any more.
         val managed = repo.managedPackagesNow()
+        val quarantined = app.syncManager.quarantined.value
+        val giveBack = repo.inventory.systemLaunchablePackages() - managed
         val blocked = RuleEngine.blockedPackages(
             repo.configNow(),
             managed,
@@ -43,15 +51,18 @@ object EnforcementSelfTest {
             repo.effectiveExtraNow(),
             usageCountingAvailable = UsageAccess.grantedForEnforcement(context),
             clockTrusted = !dev.walcott.sync.ClockGuard.isTampered(app.syncManager.state.value.effectiveClockSkewMs),
-        )
+            rescued = app.syncManager.rescueOpenNow(),
+        ) + quarantined
         val drift = enforcer.unenforced(blocked)
-        // Nothing to fix: report the clean bill of health (this is what clears a standing alert).
+        // Applied whether or not anything is unenforced: a full pass also gives back what is
+        // suspended and should not be, which nothing else looks for while the screen is off.
+        enforcer.apply(managed + quarantined, blocked, giveBack = giveBack, fullSweep = true)
+        // Nothing was missing: report the clean bill of health (this is what clears a standing alert).
         if (drift.isEmpty()) {
             app.syncManager.recordEnforcementGap(emptyList())
             return
         }
-        DebugLog.i(TAG, "self-test found drift; re-asserting: ${drift.joinToString()}")
-        enforcer.apply(managed, blocked)
+        DebugLog.i(TAG, "self-test found drift; re-asserted: ${drift.joinToString()}")
         // Re-measure: whatever is still unsuspended after asking the OS again is a real,
         // unfixable gap. The transient we just repaired stays in the log and out of the feed.
         val persistent = enforcer.unenforced(blocked)

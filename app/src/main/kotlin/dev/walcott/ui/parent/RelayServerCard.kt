@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +50,8 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
     val health by viewModel.publishHealth.collectAsStateWithLifecycle()
     val tooLarge by viewModel.policyTooLarge.collectAsStateWithLifecycle()
     val migration by viewModel.relayMigration.collectAsStateWithLifecycle()
+    val ledger by viewModel.publishedToday.collectAsStateWithLifecycle()
+    val children by viewModel.children.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf(false) }
 
     WalcottCard(onClick = { editing = true }) {
@@ -72,6 +75,20 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
             // A move in flight, and who has not followed yet. The one thing worth saying on this
             // card while it lasts: until every phone has moved, the old relay is still carrying
             // this family, and a phone that never moves has to be noticed rather than assumed.
+            // How much of the hosted relay's day this family has spent: this phone, and every phone
+            // that reported a count for the same UTC day. On the hosted relay only, where the limit
+            // is real and shared by every phone behind one router.
+            if (dev.walcott.sync.RelayServer.keepsLargeMessages(server)) {
+                val day = dev.walcott.sync.LedgerDay.utcDayOf(System.currentTimeMillis())
+                val own = ledger.on(System.currentTimeMillis()).sent
+                val theirs = children.filter { it.publishesUtcDay == day }.sumOf { it.publishesToday }
+                Text(
+                    stringResource(R.string.relay_sent_today, own + theirs, own),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = spacing.sm),
+                )
+            }
             migration?.let {
                 Text(
                     stringResource(R.string.relay_migrating, it.to, it.moved, it.total),
@@ -79,6 +96,17 @@ fun RelayServerCard(viewModel: WalcottViewModel) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = spacing.sm),
                 )
+                // Phones that tried and could not find the family there. They stay on the old
+                // relay, which is kept open for them, and the way to have one address again is
+                // moving the family back — said here, with the address to type.
+                if (it.stranded > 0) {
+                    Text(
+                        pluralStringResource(R.plurals.relay_stranded, it.stranded, it.stranded, it.from),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = spacing.xs),
+                    )
+                }
             }
             if (tooLarge || health.failing) {
                 val color = MaterialTheme.colorScheme.error

@@ -15,8 +15,13 @@ object Staleness {
     /** How a child's check-in silence should be presented on the parent home. */
     enum class Tier { FRESH, RESTING, SILENT }
 
-    /** Silence after which the row mentions it, neutrally (phones sleep for hours). */
-    const val RESTING_AFTER_MS = 60 * 60 * 1000L
+    /**
+     * Silence after which the row mentions it, neutrally (phones sleep for hours). Two hours,
+     * because a child's routine check-ins are now three quarters of an hour apart at the least
+     * (see SyncManager.ROUTINE_PUBLISH_MIN_MS) and Doze stretches them: an hour would call a phone
+     * that is simply between two of them "resting".
+     */
+    const val RESTING_AFTER_MS = 2 * 60 * 60 * 1000L
 
     /** Silence after which the parent gets a notification (and the row turns red). */
     const val ALERT_AFTER_MS = 12 * 60 * 60 * 1000L

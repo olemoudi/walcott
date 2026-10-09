@@ -235,6 +235,7 @@
     <string name="parent_pin_child_up_to_date">Al día</string>
     <string name="parent_pin_child_pending">Actualizando</string>
     <string name="parent_pin_child_unknown">Sin reportar</string>
+    <string name="parent_pin_child_ahead">Ignora este móvil</string>
     <string name="parent_pin_change_prompt">Escribe tu PIN actual para cambiarlo.</string>
     <string name="parent_pin_new_prompt">Elige el PIN nuevo. Cada móvil de los hijos lo recoge en la siguiente sincronización.</string>
     <string name="action_enter">Entrar</string>
@@ -680,7 +681,7 @@
     <string name="install_mode_strict">Bloqueado, con ventana nocturna</string>
     <string name="install_mode_strict_desc">No se instala nada salvo durante la ventana de abajo. Lo que aparezca nuevo en ella se suspende y te preguntamos, igual que a cualquier otra hora.</string>
     <string name="install_mode_guarded">Vigilado en vez de bloqueado</string>
-    <string name="install_mode_guarded_desc">Play funciona todo el día. Lo que aparezca nuevo se suspende en segundos y te preguntamos si permitirlo o quitarlo — así que la app está en el móvil esos segundos. Las fuentes desconocidas siguen bloqueadas por su propio interruptor.</string>
+    <string name="install_mode_guarded_desc">Play funciona todo el día. Lo que aparezca nuevo se suspende en segundos y te preguntamos si permitirlo o quitarlo. Espera en pausa hasta dos días, y se quita si nadie responde. Las fuentes desconocidas siguen bloqueadas por su propio interruptor.</string>
     <string name="update_window_title">Dejar que las apps se actualicen de noche</string>
     <string name="update_window_desc">El bloqueo se levanta un rato para que Play actualice lo que ya está instalado. Sin esto, un móvil bloqueado deja de recibir parches de seguridad.</string>
     <string name="update_window_at">A partir de las</string>
@@ -1154,6 +1155,11 @@
     <string name="relay_migrate_title">¿Mover a toda la familia?</string>
     <string name="relay_migrate_body">Se avisará a todos los teléfonos que cuidas para que se muden a %1$s. El relay antiguo sigue conectado hasta que lo hayan hecho todos, así que un teléfono que ahora esté apagado encontrará el aviso cuando vuelva.</string>
     <string name="relay_migrate_confirm">Mover a todos</string>
+    <plurals name="relay_stranded">
+        <item quantity="one">%1$d teléfono no pudo llegar al relay nuevo y se queda en %2$s, que sigue abierto para él. Para volver a tener una sola dirección, devuelve la familia a %2$s.</item>
+        <item quantity="other">%1$d teléfonos no pudieron llegar al relay nuevo y se quedan en %2$s, que sigue abierto para ellos. Para volver a tener una sola dirección, devuelve la familia a %2$s.</item>
+    </plurals>
+    <string name="relay_sent_today">Mensajes hoy: %1$d de los 250 que el relay público permite por conexión de casa (este móvil: %2$d).</string>
     <string name="relay_migrating">Mudándose a %1$s: %2$d de %3$d teléfonos han seguido. El relay antiguo sigue en pie hasta que estén todos.</string>
     <string name="relay_error_migrating">Ya hay una mudanza en marcha. Espera a que los teléfonos la sigan antes de empezar otra.</string>
     <string name="relay_error_locked">El servidor solo se puede cambiar antes de configurar el primer móvil de un hijo — un móvil ya emparejado se quedaría escuchando al anterior.</string>
@@ -1237,18 +1243,25 @@
     <!-- Instalación aprobada pendiente de terminar (inicio del hijo) -->
     <string name="install_child_card_title">Ya puedes instalar %1$s</string>
     <string name="install_child_card_desc">Toca aquí para abrirla en Google Play y pulsa Instalar.</string>
+    <!-- Una app instalada sin aprobación, en pausa a la espera de la familia (InstallGuard.HOLD_MS) -->
+    <string name="held_app_card_title">%1$s está esperando a tu familia</string>
+    <string name="held_app_card_desc">Se instaló sin pedirla, así que queda en pausa hasta que respondan. Si nadie lo hace, se quitará el %1$s.</string>
     <!-- Una app apareció en el móvil del hijo sin que nadie la aprobara -->
     <string name="unauthorized_app_title">App sin aprobar en el móvil de %1$s</string>
     <string name="unauthorized_app_text">Se instaló «%1$s» sin aprobación. Está bloqueada y se está eliminando.</string>
+    <string name="unauthorized_app_text_held">Se instaló «%1$s» sin aprobación. Queda en pausa en su móvil hasta que decidas; si no, se quitará el %2$s.</string>
     <string name="unauthorized_app_remove">Eliminar</string>
     <string name="unauthorized_app_allow">Dejarla</string>
     <string name="unauthorized_app_card_title">Se instaló «%1$s» sin aprobación</string>
     <string name="unauthorized_app_card_state">Está bloqueada en su móvil y se está eliminando.</string>
+    <string name="unauthorized_app_card_state_held">En pausa en su móvil hasta que decidas. Si no, se quitará el %1$s.</string>
     <string name="unauthorized_app_card_state_unsuspended">Su móvil no ha podido bloquearla — elimínala desde aquí.</string>
     <string name="unauthorized_app_card_stuck">Su móvil ha intentado eliminarla %1$d veces y sigue ahí. Continúa bloqueada y no se puede usar, pero solo se puede desinstalar desde ese móvil.</string>
     <string name="remote_result_removing">eliminándola</string>
     <string name="remote_result_not_installed">esa app no está instalada allí</string>
     <string name="remote_result_allowed">la app puede quedarse</string>
+    <string name="remote_result_relay_unreachable">no pudo llegar al relay nuevo, así que se ha quedado en el antiguo</string>
+    <string name="remote_result_already_removed">ya se había quitado: compártela desde Google Play con Walcott para mandársela</string>
     <string name="update_wifi_only_title">Actualizar solo con Wi-Fi</string>
     <string name="update_wifi_only_desc">Los dispositivos de los hijos descargan actualizaciones y listas de bloqueo solo con Wi-Fi (no con datos móviles). «Actualizar ahora» sigue funcionando con cualquier conexión.</string>
     <string name="update_wifi_following_family">Sigue el ajuste de la familia: %1$s</string>
@@ -1313,6 +1326,10 @@
     <string name="web_filter_down_text">Las webs bloqueadas se están cargando con normalidad. Puede que otra app de VPN haya tomado el control, o que se le haya retirado el permiso al filtro.</string>
     <string name="web_filter_down_child">El filtro web está desactivado en este dispositivo. Abre Walcott para volver a activarlo — puede que otra app de VPN haya ocupado su lugar.</string>
     <string name="event_web_filter_back">%1$s: el filtro web vuelve a funcionar</string>
+    <!-- El móvil del hijo se abrió solo porque Walcott moría al arrancar (CrashBreaker) -->
+    <string name="safe_mode_title">%1$s: reglas en pausa — Walcott se cerraba solo</string>
+    <string name="safe_mode_text">Walcott dejó de poder arrancar en este móvil, así que ha devuelto todas las apps para que el móvil se pueda usar. Las reglas vuelven con la próxima actualización, o ya mismo con «Reaplicar protección» en su ficha.</string>
+    <string name="event_safe_mode_over">%1$s: las reglas vuelven a aplicarse</string>
     <!-- La app del hijo murió por una excepción no capturada -->
     <string name="child_crashed_title">%1$s: Walcott se ha cerrado solo</string>
     <plurals name="child_crashed_text">
@@ -1670,6 +1687,8 @@
     <string name="app_manage_system_hint">Las apps que vienen de fábrica no se tocan por defecto. Actívalo y se cerrará como cualquier otra. Algunos móviles no dejan cerrar ciertas apps de fábrica; si pasa, te lo digo en la pantalla del miembro.</string>
     <string name="app_manage_system_old_child">%1$s tiene que actualizar Walcott para que esto funcione en su móvil.</string>
     <string name="app_limit_not_applied">Este límite no hace nada todavía: la app viene con el móvil. Activa el interruptor de arriba para que sea de verdad.</string>
+    <string name="app_keep_available">Siempre disponible</string>
+    <string name="app_keep_available_hint">Ninguna regla la limita nunca — ni la hora de dormir, ni una pausa, ni un móvil bloqueado —, igual que las llamadas y los contactos. Para apps que no pueden quedarse en silencio: médicas, de seguridad, de un cuidador.</string>
     <string name="app_no_limit_ever">No limitar nunca esta app</string>
     <string name="app_no_limit_ever_hint">Ignora el límite por defecto de la familia. La hora de dormir y los horarios sin pantalla siguen aplicando.</string>
     <string name="dashboard_default_limit">Límite por app</string>
@@ -1861,6 +1880,8 @@
     <string name="hero_still_open">Sigue abierto: %1$s</string>
     <string name="window_still_open">sigue abierto: %1$s</string>
     <string name="window_allowed_label">Abiertas durante este horario</string>
+    <string name="bedtime_allowed_label">Abiertas a la hora de dormir</string>
+    <string name="bedtime_allowed_none">Nada: la hora de dormir cierra todas las apps salvo llamadas y contactos.</string>
     <string name="window_allowed_add">Añadir una app</string>
     <string name="window_allowed_none">Nada: este horario cierra todas las apps.</string>
     <string name="window_allowed_remove">Quitar %1$s</string>
@@ -1896,6 +1917,16 @@
         <item>La lista de apps se ordena por más usadas, con lo que se ha llevado cada una esta semana al lado de su límite — que es como se encuentra la que necesita uno.</item>
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
+    </string-array>
+        <string-array name="whats_new_0_119_0">
+        <item>Una liberación que retiras — o un móvil que das por robado — ya no la ejecuta ese móvil por haber estado apagado cuando lo hiciste: solo hace caso de lo último que pediste.</item>
+        <item>Las apps cerradas por la hora de dormir, un tiempo sin pantalla o una pausa vuelven en cuanto termina, aunque el móvil esté en un bolsillo. Antes seguían cerradas hasta que alguien encendía la pantalla, y una app cerrada no puede sonar.</item>
+        <item>Si alguna vez una actualización de Walcott no consiguiera arrancar en el móvil de un hijo, ahora el móvil devuelve todas las apps y te avisa, en vez de quedarse bloqueado hasta un reset de fábrica.</item>
+        <item>Aprobar dos apps seguidas funciona: la primera ya no se toma por una app sin aprobar y se quita. «Ponerse al día» y «Reaplicar protección» ya no cancelan una aprobación.</item>
+        <item>Con «Vigilado en vez de bloqueado», una app instalada sin pedirla espera en pausa tu respuesta hasta dos días — y su móvil lo dice — en vez de desaparecer antes de que pudieras dejarla. Las apps que Android archiva para liberar espacio ya no se toman por nuevas cuando vuelven.</item>
+        <item>«Siempre disponible» en la ficha de una app: ninguna regla la limita nunca, como las llamadas; para apps médicas o de seguridad. Y la hora de dormir puede dejar abiertas las apps que elijas.</item>
+        <item>Los móviles mandan muchos menos mensajes, para no pasar del límite del relay público de 250 al día por conexión de casa, y si aun así se alcanza te enteras al momento. Las reglas demasiado grandes para un solo mensaje ahora llegan a los móviles.</item>
+        <item>Ahora se detecta un móvil que ignora los cambios de reglas de este porque este perdió su historial, con forma de recuperar la familia; mudarse a otro relay ya no deja ningún móvil aislado; y una actualización que no se instala ya no se descarga otra vez cada media hora.</item>
     </string-array>
         <string-array name="whats_new_0_118_0">
         <item>El botón de pedir ayuda de un móvil al que ayudas vuelve a los diez minutos, para que quien siga atascado pueda pulsarlo otra vez: hasta ahora, una petición que nadie cerraba dejaba ese botón fuera durante dos días, que es lo que pasa cada vez que la familia lo resuelve por teléfono.</item>
@@ -2213,6 +2244,9 @@
     <string name="superseded_card_title">Otro móvil está gestionando esta familia</string>
     <string name="superseded_card_body">Alguien restauró la copia de esta familia en otro móvil, así que los hijos toman de allí sus reglas. Lo que cambies aquí se queda en este móvil.</string>
     <string name="superseded_card_take">Recuperarla</string>
+    <string name="superseded_children_title">Tus cambios de reglas no llegan a los hijos</string>
+    <string name="superseded_children_text">El móvil de un hijo tiene reglas más nuevas que todas las que ha enviado este móvil: o este móvil perdió su historial, o hay otro móvil gestionando la familia. Recupéralo para que sigan las reglas de este móvil.</string>
+    <string name="superseded_children_card_body">El móvil de un hijo tiene reglas más nuevas que las que ha enviado este móvil, así que ignora todo lo que salga de aquí. O este móvil perdió su historial, o ahora gestiona la familia otro móvil.</string>
     <string name="superseded_card_leave">Dejársela</string>
     <string name="device_replaced_title">%1$s ha aparecido desde un móvil nuevo</string>
     <string name="device_replaced_text">Su móvil anterior sigue registrado. Abre su ficha para retirarlo y que las acciones y los avisos dejen de ir al antiguo.</string>
@@ -2233,6 +2267,9 @@
     <string name="panic_stopped_text">La cuenta atrás de ese móvil se ha parado. Si nadie la canceló, coge el móvil y compruébalo.</string>
     <string name="rescue_used_title">%1$s ha usado un código de rescate</string>
     <string name="rescue_used_text">Ese móvil ha tenido todas las reglas levantadas un rato. Los códigos de rescate funcionan sin red y sin PIN, así que este aviso es el único registro.</string>
+    <string name="policy_too_large_title">Tus reglas son demasiado grandes para enviarlas</string>
+    <string name="policy_too_large_title_family">%1$s: tus reglas son demasiado grandes para enviarlas</string>
+    <string name="policy_too_large_text">Los cambios de reglas no llegan a los móviles. Quita límites que ya no necesites, y comprueba que todos los móviles han actualizado Walcott, que deja pasar reglas más grandes.</string>
     <string name="relay_refusing_title">Tus móviles no pueden hablar entre ellos</string>
     <string name="relay_refusing_title_family">%1$s: tus móviles no pueden hablar entre ellos</string>
     <string name="relay_refusing_text">El relay está rechazando los mensajes de este móvil, así que los cambios de reglas no llegan a los hijos. Revisa el servidor de relay en los ajustes.</string>

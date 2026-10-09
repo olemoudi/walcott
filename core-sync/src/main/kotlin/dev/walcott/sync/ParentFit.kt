@@ -82,6 +82,36 @@ object ParentFit {
         bonuses.filter { todayEpochDay - it.epochDay <= BONUS_MAX_AGE_DAYS }
 
     /**
+     * The first child build that reads a message the relay kept as a file (see the app's
+     * `RelayBacklog.resolved`). An older one reads the sentence ntfy leaves in its place, fails
+     * to decode it, and drops every rule change from then on.
+     */
+    const val ATTACHMENT_MIN_CHILD_VERSION = 168
+
+    /**
+     * How big a parent message may be when every phone can read one kept as a file: the rules of
+     * a family far past any real one, under the most a child fetches (64 kB).
+     */
+    const val LARGE_MESSAGE_MAX_BYTES = 60_000
+
+    /**
+     * How big this family's parent message may be. One ntfy message, as always — unless the relay
+     * keeps larger ones as files AND every phone in the family is on a build that reads them.
+     *
+     * Measured on a large but real family (four children, eighty blocked sites, twenty-five
+     * holidays): its rules fit one message up to about twenty-five apps with limits of their own
+     * per child, and from about twenty they only fit by dropping answers and queued commands —
+     * a "free this phone" included. Past the ceiling, being able to send more is the difference
+     * between rules that reach the phones and rules that silently stop.
+     */
+    fun messageCeiling(keepsLargeMessages: Boolean, childVersionCodes: List<Int>): Int =
+        if (keepsLargeMessages && childVersionCodes.isNotEmpty() && childVersionCodes.all { it >= ATTACHMENT_MIN_CHILD_VERSION }) {
+            LARGE_MESSAGE_MAX_BYTES
+        } else {
+            SnapshotFit.MAX_BYTES
+        }
+
+    /**
      * What had to be sacrificed to make the message fit, for the caller's log line, and whether
      * even the bare snapshot was too big ([oversize] — nothing left to trade).
      */

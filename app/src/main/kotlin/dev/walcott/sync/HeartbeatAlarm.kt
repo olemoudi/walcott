@@ -32,8 +32,8 @@ object HeartbeatAlarm {
     /** How often the child checks in while idle. */
     const val INTERVAL_MS = 30 * 60 * 1000L
 
-    /** Skip the publish when something else already published this recently. */
-    private const val PUBLISH_MIN_INTERVAL_MS = 20 * 60 * 1000L
+    /** Skip the publish when something else already published this recently (see [SyncManager.ROUTINE_PUBLISH_MIN_MS]). */
+    private const val PUBLISH_MIN_INTERVAL_MS = SyncManager.ROUTINE_PUBLISH_MIN_MS
 
     private const val TAG = "WalcottHeartbeat"
     private const val REQUEST_CODE = 4711

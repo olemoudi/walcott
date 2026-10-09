@@ -102,7 +102,9 @@ a child has to be able to call, and above all to call you — and a number they 
 a call they can't make. Nor is what the phone runs on, even when it came from Google Play: the
 keyboard, the home screen and the alarm clock. A limit on the keyboard is a limit on every app
 at once, and an alarm clock closed for the night cannot ring in the morning. The app list marks
-them "Always available".
+them "Always available" — and you can mark any other app the same way from its page, for the
+ones that must never go quiet: a glucose monitor, a seizure alert. Bedtime can also leave apps
+of your choosing open.
 
 **Web filtering.** Block specific domains without root, using a local VPN that only inspects
 DNS. You can see what a child's app is actually contacting and block it from there. Curated lists
@@ -176,6 +178,11 @@ There is no Walcott account and no Walcott server. Your phones talk to each othe
 public notification relay, and everything they say is **encrypted end-to-end** with a key
 created when you pair — the relay carries sealed envelopes it cannot read, and rule changes
 are signed so only your parent phone can issue them.
+
+The public relay allows 250 messages a day per home connection — every phone behind one router
+together. Walcott's phones check in sparingly to stay well under it, each one shows how many it
+has sent today, and if the limit is reached anyway you are told at once; a family with many
+phones can point everything at a relay of its own.
 
 Nothing about your family reaches us, because there is no "us" to reach: no analytics, no
 crash reporting, no ads, no telemetry of any kind.

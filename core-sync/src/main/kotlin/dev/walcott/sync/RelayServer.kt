@@ -19,6 +19,16 @@ object RelayServer {
     const val DEFAULT = "https://ntfy.sh"
 
     /**
+     * Whether [server] keeps a message longer than one ntfy message (4,096 bytes) as a file the
+     * phones can fetch, rather than refusing it. The hosted relay does — measured: a 5,000-byte
+     * publish is answered 200 with the body moved to `/file/<id>` — and a server of a family's own
+     * only does if its admin turned attachments on, which nothing here can see; so only the
+     * hosted one is counted on.
+     */
+    fun keepsLargeMessages(server: String): Boolean =
+        runCatching { java.net.URI(server.trim()).host }.getOrNull().equals("ntfy.sh", ignoreCase = true)
+
+    /**
      * [input] as a usable relay base URL, or null when it isn't one.
      *
      * Accepts a bare host ("ntfy.example.com" becomes https) and refuses anything carrying a

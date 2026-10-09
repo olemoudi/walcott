@@ -19,7 +19,8 @@ class UpdateStepTest {
         metered: Boolean = false,
         enoughSpace: Boolean = true,
         force: Boolean = false,
-    ) = nextUpdateStep(isNewer, parentIsBehind, hasStagedApk, trustedUrl, metered, enoughSpace, force)
+        backingOff: Boolean = false,
+    ) = nextUpdateStep(isNewer, parentIsBehind, hasStagedApk, trustedUrl, metered, enoughSpace, force, backingOff)
 
     @Test
     fun `the happy path downloads`() {
@@ -75,5 +76,41 @@ class UpdateStepTest {
     @Test
     fun `a full disk is caught before the download rather than during it`() {
         assertEquals(UpdateStep.NEED_SPACE, step(enoughSpace = false))
+    }
+
+    @Test
+    fun `a build that did not install is left alone for a while instead of downloaded again`() {
+        assertEquals(UpdateStep.BACK_OFF, step(backingOff = true))
+        // Bytes already on disk cost nothing to try again, and the parent's "Update now" is the
+        // explicit "try anyway".
+        assertEquals(UpdateStep.INSTALL_STAGED, step(backingOff = true, hasStagedApk = true))
+        assertEquals(UpdateStep.DOWNLOAD, step(backingOff = true, force = true))
+        // And the canary still outranks it.
+        assertEquals(UpdateStep.WAIT_FOR_PARENT, step(backingOff = true, parentIsBehind = true))
+    }
+
+    @Test
+    fun `the wait after a failed install grows, and belongs to that build alone`() {
+        val now = 1_760_000_000_000L
+        val once = InstallAttempts.NONE.plusAttempt(170, now)
+        assertEquals(InstallAttempts(170, 1, now), once)
+        assertEquals(true, once.backingOff(170, now + 59 * 60_000))
+        assertEquals(false, once.backingOff(170, now + 61 * 60_000))
+        // A newer release is a different build: it gets its own tries.
+        assertEquals(false, once.backingOff(171, now + 1))
+        val twice = once.plusAttempt(170, now)
+        assertEquals(true, twice.backingOff(170, now + 3 * 60 * 60_000))
+        val often = twice.plusAttempt(170, now).plusAttempt(170, now)
+        assertEquals(true, often.backingOff(170, now + 23 * 60 * 60_000))
+        assertEquals(InstallAttempts(171, 1, now), often.plusAttempt(171, now))
+    }
+
+    @Test
+    fun `the attempts file round-trips, and anything unreadable is no attempts at all`() {
+        val value = InstallAttempts(170, 2, 1_760_000_000_000L)
+        assertEquals(value, InstallAttempts.parse(InstallAttempts.format(value)))
+        assertEquals(InstallAttempts.NONE, InstallAttempts.parse(null))
+        assertEquals(InstallAttempts.NONE, InstallAttempts.parse("170 x 1"))
+        assertEquals(InstallAttempts.NONE, InstallAttempts.parse("170 -1 1"))
     }
 }

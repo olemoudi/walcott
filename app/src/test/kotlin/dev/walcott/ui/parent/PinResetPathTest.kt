@@ -70,10 +70,11 @@ class PolicyAdoptionTest {
     }
 
     @Test
-    fun `a child ahead of the parent still counts as up to date`() {
-        // Happens after a backup restore, which leaps the parent's counter (RESTORE_VERSION_LEAP)
-        // and can leave a child briefly reporting a version the parent has already passed.
-        assertEquals(PolicyAdoption.UP_TO_DATE, policyAdoption(appliedPolicyVersion = 13, parentVersion = 12))
+    fun `a child ahead of the parent is ignoring it, not up to date`() {
+        // A restore leaps the PARENT ahead of its children, never the other way round. A child on
+        // rules newer than this phone ever sent refuses everything from it — the new PIN included —
+        // and this row used to tell the parent it had it.
+        assertEquals(PolicyAdoption.AHEAD, policyAdoption(appliedPolicyVersion = 13, parentVersion = 12))
     }
 
     @Test

@@ -15,6 +15,30 @@ import java.time.LocalDate
 class PolicySettingsTest {
 
     @Test
+    fun `an always-available app answers to no rule, bedtime and pause included`() {
+        // The glucose monitor that bedtime used to silence: suspended apps cannot ring.
+        val monitor = "com.dexcom.g7"
+        val family = PolicySettings(
+            version = 1,
+            bedtime = mapOf(DayType.SCHOOL.name to WindowDto(0, 23 * 60 + 59)),
+            appPolicies = mapOf(monitor to AppPolicyDto(alwaysAvailable = true)),
+        )
+        val config = family.toFamilyConfig(essentials = setOf("com.android.dialer"))
+        assertTrue(monitor in config.essentialPackages)
+        assertTrue("com.android.dialer" in config.essentialPackages)
+        val midday = java.time.LocalDateTime.of(2026, 3, 4, 12, 0)
+        assertEquals(emptySet<String>(), dev.walcott.rules.RuleEngine.blockedPackages(config, setOf(monitor), midday, emptyMap()))
+        // Failing closed too — a revoked permission must not silence it either.
+        assertEquals(
+            emptySet<String>(),
+            dev.walcott.rules.RuleEngine.blockedPackages(config, setOf(monitor), midday, emptyMap(), clockTrusted = false),
+        )
+        // And it survives a member's own copy of the policy.
+        val member = family.copy(children = listOf(ChildEntry(childId = "c1", name = "Ana"))).resolveForChild("c1")
+        assertTrue(monitor in member.toFamilyConfig(emptySet()).essentialPackages)
+    }
+
+    @Test
     fun `the day's total reaches the engine, and a member can have one of their own`() {
         val family = PolicySettings(
             version = 1,

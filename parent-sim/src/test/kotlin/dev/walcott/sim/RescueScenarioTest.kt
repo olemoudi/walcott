@@ -46,6 +46,23 @@ class RescueScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `the half-hourly check-in does not shut a phone a code has opened`() {
+        // The heartbeat's self-test worked out what should be suspended WITHOUT the rescue, found
+        // the opened apps "unenforced", and re-suspended them — on the one phone with nothing else
+        // left, every half hour.
+        app = installFixtureApp(Fixture.STARTABLE)
+        parent.pushPolicy(PolicyJson.build(version = 2, dailyMinutes = mapOf(app to 0)))
+        childEventuallyReports { it.appliedPolicyVersion >= parent.currentVersion() }
+        awaitDevice("the app shut by the rule", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
+
+        type(parent.rescueCode(RescueCode.ACTION_OPEN_1H, deviceId))
+        awaitDevice("the phone opened by a code", timeoutMs = APPLY_TIMEOUT_MS) { !device.isSuspended(app) }
+
+        device.heartbeat()
+        assertDeviceNever("the check-in shut a phone a code had opened", windowMs = 15_000) { device.isSuspended(app) }
+    }
+
+    @Test
     fun `the same code will not open it twice`() {
         // The property that makes a code safe to say out loud in a room: overheard, photographed
         // or remembered, it is worth nothing a second time.

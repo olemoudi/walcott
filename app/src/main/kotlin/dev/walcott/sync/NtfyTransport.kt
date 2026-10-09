@@ -29,6 +29,15 @@ class NtfyTransport(
      * while the socket was down are replayed instead of lost. 0 = no replay (legacy behavior).
      */
     private val sinceProvider: () -> Long = { 0L },
+    /**
+     * How far back a connection with no cursor yet reads, in seconds; 0 reads nothing.
+     *
+     * A phone that has just been paired has no cursor, and used to ask for nothing — so the rules
+     * the parent had already published sat on the relay unread, and the child ran with none until
+     * the parent happened to publish again. Safe now that a backlog is handled as one batch in
+     * which only the newest parent snapshot counts (see [SyncTransport.connect]).
+     */
+    private val firstConnectBacklogSec: Long = 0L,
 ) : SyncTransport {
 
     private val httpBase = server.trimEnd('/')
@@ -75,6 +84,12 @@ class NtfyTransport(
     private val reconnectGeneration = AtomicInteger(0)
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var onMessage: ((String, Long) -> Unit)? = null
+    @Volatile private var onBacklog: ((List<RelayMessage>) -> Unit)? = null
+
+    /** The client the catch-up poll uses: one bounded call, so a stalled read cannot hold a reconnect. */
+    private val pollClient: OkHttpClient by lazy {
+        client.newBuilder().callTimeout(POLL_TIMEOUT_SEC, TimeUnit.SECONDS).build()
+    }
 
     override fun publish(message: String) = publish(message, attempt = 1)
 
@@ -99,11 +114,14 @@ class NtfyTransport(
         return runCatching {
             receiptClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    DebugLog.w(TAG, "receipted publish rejected: HTTP ${response.code}")
-                    PublishHealth.record(ok = false, code = response.code)
+                    val quota = LedgerDay.isDailyQuota(response.code, runCatching { response.peekBody(ERROR_BODY_BYTES).string() }.getOrDefault(""))
+                    DebugLog.w(TAG, "receipted publish rejected: HTTP ${response.code}${if (quota) " (daily quota)" else ""}")
+                    PublishHealth.record(ok = false, code = response.code, quota = quota)
+                    PublishLedger.recordRefused(quota)
                     return null
                 }
                 PublishHealth.record(ok = true)
+                PublishLedger.recordSent()
                 // A 200 is NOT enough on its own, and this is the difference between a delivered
                 // notice and a fabricated one. The only caller counts twelve hours on the
                 // RELAY's clock, so a response with no usable `time` is a response from
@@ -141,6 +159,15 @@ class NtfyTransport(
      * hammering it would only burn the relay's rate limit that a 429 is already complaining about.
      */
     private fun publish(message: String, attempt: Int) {
+        // The relay has refused this address for the rest of its day: every request now is one
+        // more "no" spent on nothing, and the messages that matter most — the emergency release,
+        // a call for help — go through publishForReceipt, which still tries. Routine snapshots
+        // converge again on the first publish after the relay's midnight — or sooner, through the
+        // one publish every quarter of an hour that goes anyway to ask (see PublishLedger.probeDue).
+        if (attempt == 1 && PublishLedger.quotaExhausted() && !PublishLedger.probeDue()) {
+            DebugLog.i(TAG, "not publishing: the relay's daily quota is used up (${message.length} bytes held)")
+            return
+        }
         val request = Request.Builder()
             .url("$httpBase/$topic")
             .post(message.toByteArray().toRequestBody())
@@ -158,20 +185,25 @@ class NtfyTransport(
             override fun onResponse(call: okhttp3.Call, response: Response) {
                 val code = response.code
                 val ok = response.isSuccessful
+                val errorBody = if (ok) "" else runCatching { response.peekBody(ERROR_BODY_BYTES).string() }.getOrDefault("")
                 response.close()
                 if (ok) {
                     PublishHealth.record(ok = true)
+                    PublishLedger.recordSent()
                     return
                 }
-                if (retryable(code) && attempt < MAX_PUBLISH_ATTEMPTS) {
+                // The daily quota is not retried: it is the rest of the relay's day, not a moment.
+                val quota = LedgerDay.isDailyQuota(code, errorBody)
+                if (!quota && retryable(code) && attempt < MAX_PUBLISH_ATTEMPTS) {
                     retryPublish(message, attempt)
                     return
                 }
                 // Kept visible: a swallowed HTTP 413 (oversized message) once hid a permanent,
                 // deterministic publish failure, and a 429 is the relay saying this family sends
                 // more than it allows — which is a thing they can act on.
-                DebugLog.w(TAG, "publish rejected: HTTP $code (${message.length} bytes, attempt $attempt)")
-                PublishHealth.record(ok = false, code = code)
+                DebugLog.w(TAG, "publish rejected: HTTP $code${if (quota) " (daily quota)" else ""} (${message.length} bytes, attempt $attempt)")
+                PublishHealth.record(ok = false, code = code, quota = quota)
+                PublishLedger.recordRefused(quota)
             }
         })
     }
@@ -191,25 +223,99 @@ class NtfyTransport(
     private fun retryable(code: Int): Boolean =
         code == 408 || code == PublishHealth.HTTP_TOO_MANY_REQUESTS || code >= 500
 
-    override fun connect(onMessage: (String, Long) -> Unit) {
+    override fun connect(onMessage: (String, Long) -> Unit, onBacklog: (List<RelayMessage>) -> Unit) {
         this.onMessage = onMessage
+        this.onBacklog = onBacklog
         openSocket()
     }
 
+    /**
+     * Connects: catches up on whatever was published while this device was not listening, then
+     * opens the socket for what comes next.
+     *
+     * The catch-up used to be the socket's own `since=` replay, which hands the backlog over one
+     * message at a time, oldest first, with nothing to say where it ends. That order is wrong for
+     * the one thing that cannot be undone: a parent snapshot that queued "free this phone" is
+     * followed by the one that took it back, and handled one by one the release ran on the way to
+     * the snapshot that cancelled it. Read with a poll instead, the backlog arrives whole, and the
+     * caller can see which snapshot is the newest before acting on any of them (see
+     * [SyncTransport.connect]). The socket then starts after the last message the poll returned.
+     *
+     * A cursor is floored at a window rather than taken at face value. It is how a phone that was
+     * off catches up, and a phone off for a week asks for a week: every message the topic still
+     * holds, decrypted one at a time inside the sync loop, on a topic anyone who knows its name
+     * can post to. Anything older than the window has been superseded by a re-emit anyway —
+     * snapshots converge, and the parent re-publishes every fifteen minutes.
+     */
     private fun openSocket() {
         if (closed.get()) return
-        // A cursor is floored at a window rather than taken at face value. It is how a phone
-        // that was off catches up, and a phone off for a week asks for a week: every message the
-        // topic still holds, decrypted one at a time inside the sync loop, on a topic anyone who
-        // knows its name can post to. Anything older than the window has been superseded by a
-        // re-emit anyway — snapshots converge, and the parent re-publishes every fifteen minutes.
-        // No cursor at all (a first connection) still asks for nothing, as it always has.
         val cursor = sinceProvider()
-        val url = if (cursor > 0) {
-            "$wsUrl?since=${cursor.coerceAtLeast(System.currentTimeMillis() / 1000 - MAX_BACKLOG_SEC)}"
-        } else {
-            wsUrl
+        val nowSec = System.currentTimeMillis() / 1000
+        val since = when {
+            cursor > 0 -> cursor.coerceAtLeast(nowSec - MAX_BACKLOG_SEC).toString()
+            firstConnectBacklogSec > 0 -> (nowSec - firstConnectBacklogSec).toString()
+            else -> null
         }
+        if (since == null) openWebSocket(since = null) else catchUpThenOpen(since)
+    }
+
+    /**
+     * Reads the backlog from [since] in one request, hands it over whole, and only then opens the
+     * socket. A catch-up that fails is a connection that failed: it goes on the same backoff,
+     * rather than opening a socket that would replay the backlog one message at a time after all.
+     */
+    private fun catchUpThenOpen(since: String) {
+        val generation = reconnectGeneration.get()
+        val request = Request.Builder().url(RelayBacklog.pollUrl(httpBase, topic, since)).build()
+        pollClient.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                DebugLog.w(TAG, "could not read the relay backlog: ${e.javaClass.simpleName}: ${e.message}")
+                reconnectSoon()
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                val backlog = response.use {
+                    if (!it.isSuccessful) {
+                        DebugLog.w(TAG, "the relay refused the backlog: HTTP ${it.code}")
+                        null
+                    } else {
+                        runCatching {
+                            // A file that cannot be fetched stays in the batch, unresolved, so the
+                            // caller can see there is a hole in it (see SyncManager.handleBacklog).
+                            RelayBacklog.parse(it.peekBody(RelayBacklog.MAX_BYTES).string())
+                                .map { message -> RelayBacklog.resolved(message, httpBase, pollClient) ?: message }
+                        }.getOrNull()
+                    }
+                }
+                // Superseded while the poll was out: a reconnect brought forward by the network
+                // coming back has started its own catch-up, and two sockets would follow.
+                if (closed.get() || reconnectGeneration.get() != generation) return
+                if (backlog == null) {
+                    // The relay answered, and would not hand the backlog over — a proxy that knows
+                    // the socket and not the poll, a burst limit on requests. Being connected
+                    // matters more than the backlog, so the socket opens anyway rather than leaving
+                    // this phone deaf on a backoff the same refusal would meet every time — and
+                    // opens LIVE: replayed by the socket, one message at a time, the backlog would
+                    // run a command its own next message withdrew. What was missed comes with the
+                    // parent's next publish.
+                    openWebSocket(since = null)
+                    return
+                }
+                // Handed over even when empty: an answer from the relay is proof the channel works.
+                if (backlog.isNotEmpty()) DebugLog.i(TAG, "caught up on ${backlog.size} message(s) from the relay")
+                runCatching { onBacklog?.invoke(backlog) }
+                    .onFailure { DebugLog.e(TAG, "handling the backlog failed", it) }
+                // After the last message read, by id: a timestamp would hand that same second's
+                // messages over a second time. With nothing read, the window the poll asked for
+                // still covers anything published in between.
+                openWebSocket(since = backlog.lastOrNull()?.id?.takeIf { it.isNotBlank() } ?: since)
+            }
+        })
+    }
+
+    private fun openWebSocket(since: String?) {
+        if (closed.get()) return
+        val url = if (since != null) "$wsUrl?since=$since" else wsUrl
         val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -220,13 +326,15 @@ class NtfyTransport(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 // ntfy events look like {"event":"message","time":<unix s>,"message":"<body>",...};
                 // we only care about actual messages, not the "open"/"keepalive" events.
-                val event = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
-                if (event["event"]?.jsonPrimitive?.content != "message") return
-                val body = event["message"]?.jsonPrimitive?.content ?: return
-                val timeSec = event["time"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-                this@NtfyTransport.onMessage?.invoke(body, timeSec)
+                val message = RelayBacklog.messageOf(text) ?: return
+                // A body kept as a file is fetched here, on the socket's own thread: it holds up the
+                // next frame for one small request, rarely, and keeps the order messages arrive in.
+                val resolved = RelayBacklog.resolved(message, httpBase, pollClient) ?: run {
+                    DebugLog.w(TAG, "a message kept as a file could not be fetched; skipping it")
+                    return
+                }
+                this@NtfyTransport.onMessage?.invoke(resolved.body, resolved.timeSec)
             }
-
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 // Worth a line: a relay that vanishes without a word is only discovered at the
                 // next keepalive ping, and until this was said out loud "the socket died minutes
@@ -324,16 +432,22 @@ class NtfyTransport(
         /** Ceiling on one receipted publish, so its caller's retry schedule means what it says. */
         private const val RECEIPT_TIMEOUT_SEC = 15L
 
-        /** First retry delay; doubles per attempt (1 s, then 2 s). */
         /**
          * How far back a reconnect asks the relay to replay.
          *
          * Twelve hours covers a phone that was off overnight, which is the case the cursor exists
          * for, and bounds what a topic anyone can post to can make this phone read.
          */
-        private const val MAX_BACKLOG_SEC = 12 * 60 * 60L
+        const val MAX_BACKLOG_SEC = 12 * 60 * 60L
 
+        /** First retry delay; doubles per attempt (1 s, then 2 s). */
         private const val PUBLISH_RETRY_BASE_MS = 1_000L
+
+        /** Ceiling on the catch-up poll; a failed one goes on the reconnect backoff. */
+        private const val POLL_TIMEOUT_SEC = 30L
+
+        /** How much of a refusal's body is read to tell the daily quota from a burst limit. */
+        private const val ERROR_BODY_BYTES = 2_048L
 
         /** First wait before reopening a dropped socket; doubles per consecutive failure. */
         private const val RECONNECT_BASE_MS = 3_000L

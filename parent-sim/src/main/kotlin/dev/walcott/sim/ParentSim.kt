@@ -131,7 +131,7 @@ class ParentSim(
      */
     fun start(): ParentSim {
         if (socket != null) return this
-        val wsUrl = relayBase.trimEnd('/').replaceFirst("http", "ws") + "/$topic/ws"
+        val wsUrl = relayBase.trimEnd('/').replaceFirst("http", "ws") + "/$topic/ws?${MockRelay.PARENT_MARK}"
         val opened = CountDownLatch(1)
         socket = client.newWebSocket(
             Request.Builder().url(wsUrl).build(),
@@ -186,6 +186,16 @@ class ParentSim(
         commands += RemoteCommand(id, deviceId, action, issuedAtMs, arg, label)
         publishSnapshot()
         return id
+    }
+
+    /**
+     * Takes a queued command back — the parent's "Cancel", or a phone written off — by publishing
+     * a snapshot without it, which is the only way a parent CAN take something back: the snapshot
+     * that carried it stays on the relay.
+     */
+    fun cancelCommand(commandId: String): ParentSnapshot {
+        commands.removeIf { it.id == commandId }
+        return publishSnapshot()
     }
 
     fun grantBonus(deviceId: String, categoryId: String, minutes: Int, epochDay: Long): String {
@@ -375,6 +385,9 @@ class ParentSim(
                 "acks seen: ${childHistory.mapNotNull { it.lastCommand }.map { it.id.take(8) + "=" + it.detail }}",
         )
     }
+
+    /** Whether any snapshot the child has sent so far acknowledged [commandId]. */
+    fun acknowledged(commandId: String): Boolean = childHistory.any { it.lastCommand?.id == commandId }
 
     fun awaitDiag(timeoutMs: Long = DEFAULT_TIMEOUT_MS): DiagPayload =
         awaitOrNull(timeoutMs) { diagReports.lastOrNull() }

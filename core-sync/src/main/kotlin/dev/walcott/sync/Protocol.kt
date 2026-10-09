@@ -674,6 +674,13 @@ object RemoteAction {
     const val DETAIL_RELAY_SAME = "relay_same"
 
     /**
+     * The phone could not find the family on the relay it was sent to, and stayed where it was.
+     * Moving anyway left a phone on an address that reached nobody — no rules, no commands, no
+     * emergency release — with no way back.
+     */
+    const val DETAIL_RELAY_UNREACHABLE = "relay_unreachable"
+
+    /**
      * How long the parent keeps the OLD relay alive after a migration.
      *
      * A migration is not an instant: a phone that is off, abroad or in a drawer has to be able to
@@ -811,6 +818,17 @@ object RemoteAction {
     fun canScreenBudget(childAppVersionCode: Int): Boolean =
         childAppVersionCode >= SCREEN_BUDGET_MIN_CHILD_VERSION
 
+    /**
+     * The first child build that honours an app's "always available" (the app's
+     * `AppPolicyDto.alwaysAvailable`). An older one ignores the field — the forward-compatible
+     * decoder drops it — and goes on limiting the app like any other.
+     */
+    const val ALWAYS_AVAILABLE_MIN_CHILD_VERSION = 168
+
+    /** Whether a child reporting [childAppVersionCode] keeps an "always available" app out of every rule. */
+    fun honoursAlwaysAvailable(childAppVersionCode: Int): Boolean =
+        childAppVersionCode >= ALWAYS_AVAILABLE_MIN_CHILD_VERSION
+
     /** Whether a child reporting [childAppVersionCode] can manage its preinstalled apps. */
     fun canManageSystemApps(childAppVersionCode: Int): Boolean =
         childAppVersionCode >= MANAGE_SYSTEM_MIN_CHILD_VERSION
@@ -920,6 +938,14 @@ data class UnauthorizedApp(
     val installer: String = "",
     /** How many times removal has been attempted, so a stuck one is visible rather than silent. */
     val removalAttempts: Int = 0,
+    /**
+     * Until when the app is kept — suspended, not removed — waiting for the parent's answer; 0
+     * means it is being removed. Only the "watched" install mode holds (see
+     * [InstallGuard.HOLD_MS]): there the child installed it from Play in plain sight, and the
+     * parent's "let it stay" used to arrive to an app already gone. 0 is also what every build
+     * before this field reads and writes, and they remove — which is what they always did.
+     */
+    val holdUntilMs: Long = 0,
 )
 
 /** How a child device says a [RemoteCommand] went, echoed back in its snapshot. */
@@ -1178,6 +1204,21 @@ data class ChildSnapshot(
      */
     val crashTotal: Int = 0,
     val lastCrashMs: Long = 0,
+    /**
+     * When this phone opened itself because Walcott kept dying on it before it could enforce
+     * anything — every app given back, no rule in force until the next build or until the parent
+     * re-applies them (the app's `CrashBreaker`). 0 = enforcing normally, or a legacy child.
+     */
+    val safeModeSinceMs: Long = 0,
+    /**
+     * Messages this phone has published on the relay's day [publishesUtcDay] (days since the epoch,
+     * UTC — the day the hosted relay counts its quota by), and until when the relay has refused it
+     * for the rest of that day (0 = it has not). What lets a family see how close the phones
+     * behind one home connection are to the hosted relay's daily limit, before they reach it.
+     */
+    val publishesToday: Int = 0,
+    val publishesUtcDay: Long = 0,
+    val relayQuotaUntilMs: Long = 0,
     /**
      * Apps that appeared here without approval, quarantined and awaiting the parent's answer
      * (see [UnauthorizedApp]). Empty on a healthy device and on every legacy child, so it costs

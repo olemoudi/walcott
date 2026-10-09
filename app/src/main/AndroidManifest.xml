@@ -225,6 +225,13 @@
             android:name=".enforcement.InstallBlockReceiver"
             android:exported="false" />
 
+        <!-- Hands apps back when a window, a pause or bedtime ends on a phone with its screen off
+             (see EnforcementWakeAlarm): a suspended app cannot ring, so it must not wait for the
+             screen to come on. -->
+        <receiver
+            android:name=".enforcement.EnforcementWakeReceiver"
+            android:exported="false" />
+
         <!-- The child's periodic location fix (see LocationAlarm). An alarm rather than an
              in-process timer, because a timer does not tick while the device is asleep. -->
         <receiver

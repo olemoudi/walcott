@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
@@ -211,7 +212,13 @@ class EnforcementService : LifecycleService() {
             stopSelf()
             return
         }
+        if (dev.walcott.debug.CrashBreaker.active) {
+            DebugLog.w(TAG, "in safe mode: not starting the enforcement loop")
+            stopSelf()
+            return
+        }
         observeCounters()
+        observeChangesThatGiveBack()
         lifecycleScope.launch { runLoopResilient() }
         observeWebFilter()
         observeBlocklists()
@@ -427,6 +434,17 @@ class EnforcementService : LifecycleService() {
     }
 
     /** Starts/stops the DNS filter VPN as web-filter rules appear or disappear. */
+    /**
+     * Pokes the parked loop when the parent changes something that can hand an app back with the
+     * screen off — a rule edited, a pause ended, minutes granted. The clock's own openings are on
+     * an alarm (see [armWakeForAppsDueBack]); these are the ones no clock can predict.
+     */
+    private fun observeChangesThatGiveBack() {
+        val repo = (application as WalcottApplication).repository
+        lifecycleScope.launch { repo.settingsFlow.drop(1).collect { EnforcementWakeAlarm.poke() } }
+        lifecycleScope.launch { repo.effectiveExtraTodayFlow.drop(1).collect { EnforcementWakeAlarm.poke() } }
+    }
+
     private fun observeWebFilter() {
         val repo = (application as WalcottApplication).repository
         lifecycleScope.launch {
@@ -666,6 +684,13 @@ class EnforcementService : LifecycleService() {
                 throw e
             } catch (t: Throwable) {
                 DebugLog.e(TAG, "enforcement loop crashed; restarting", t)
+                // A loop that fails on every tick never crashes the process and never applies the
+                // rules either, so whatever it last suspended stays suspended. Counted, and past a
+                // few in a row the phone is opened like a crash loop's would be (see CrashBreaker).
+                if (dev.walcott.debug.CrashBreaker.recordLoopFailure(this)) {
+                    stopSelf()
+                    return
+                }
                 delay(TICK_IDLE_MILLIS)
             }
         }
@@ -747,12 +772,24 @@ class EnforcementService : LifecycleService() {
         // outage has already been written down (see below).
         var lastVpnHealAt = 0L
         var healingFilter = false
+        // Whether the last pass was failing closed, which no minute on the clock ends (see below).
+        var lastFailingClosed = false
+        // The first pass runs whatever the screen is doing: a service started with the screen off
+        // — after a reboot, by an alarm — must still put the rules in force once, and that first
+        // apply is what tells the crash breaker this build starts (see CrashBreaker).
+        var firstPass = true
 
         while (currentCoroutineContext().isActive) {
             // A device that stopped enforcing — left child mode, was released — is handing its
             // apps and settings back at this very moment. The stop that follows that transition
             // is awaited, but a service the system has just restarted (START_STICKY) or a tick
             // that outran the wait must not re-assert into the middle of the handback.
+            // Safe mode began under this loop (see CrashBreaker.recordLoopFailure).
+            if (dev.walcott.debug.CrashBreaker.active) {
+                DebugLog.w(TAG, "in safe mode: leaving the enforcement loop")
+                stopSelf()
+                return
+            }
             if (!app.syncManager.identity.value.enforcesLocally) {
                 if (!usageBatch.isEmpty) flushUsage()
                 DebugLog.w(TAG, "this device no longer enforces: leaving the enforcement loop")
@@ -770,7 +807,7 @@ class EnforcementService : LifecycleService() {
             // Screen off: blocked apps stay suspended. With idle-earn off we park with zero
             // wakeups; with it on we wake every few minutes so "putting the phone down" earns
             // (screen off = not using managed apps = idle).
-            if (!screenOn.value) {
+            if (!screenOn.value && !firstPass) {
                 // Written down before parking: the loop may sleep for hours from here, and
                 // everything else that reads the counters — the parent, the child's home — reads
                 // the database, not this loop's memory.
@@ -779,13 +816,25 @@ class EnforcementService : LifecycleService() {
                     lastUsageFlushAt = SystemClock.elapsedRealtime()
                 }
                 lastForeground = null
+                // Read before anything is decided, so a poke that lands while the alarm is being
+                // armed still ends the park (see EnforcementWakeAlarm.pokeCount).
+                val pokedBefore = EnforcementWakeAlarm.pokeCount.value
+                armWakeForAppsDueBack(config, lastAppliedBlocked.orEmpty(), lastFailingClosed)
                 val parkStart = SystemClock.elapsedRealtime()
+                // Parked until the screen comes on, or until something is due back: the alarm at
+                // the minute the rules open an app, or a rule, a pause or a grant changing.
+                val woken: suspend () -> Unit = {
+                    kotlinx.coroutines.flow.merge(
+                        screenOn.filter { it }.map { },
+                        EnforcementWakeAlarm.pokeCount.filter { it != pokedBefore }.map { },
+                    ).first()
+                }
                 // Only wake periodically to accrue idle when earning is actually possible now
                 // (feature on AND inside an earn window); otherwise park with zero wakeups.
                 if (idleCfg == null || !earningNow) {
-                    screenOn.first { it }
+                    woken()
                 } else {
-                    kotlinx.coroutines.withTimeoutOrNull(IDLE_STEP_MILLIS) { screenOn.first { it } }
+                    kotlinx.coroutines.withTimeoutOrNull(IDLE_STEP_MILLIS) { woken() }
                 }
                 val offSeconds = (SystemClock.elapsedRealtime() - parkStart) / 1000
                 if (earningNow && offSeconds > 0) idleAccumSeconds += offSeconds.coerceAtMost(MAX_IDLE_STEP_SECONDS)
@@ -797,14 +846,22 @@ class EnforcementService : LifecycleService() {
                     idleAccumSeconds = 0
                     lastEarnFlushAt = SystemClock.elapsedRealtime()
                 }
-                if (!screenOn.value) continue // still off: keep accruing in the next step
+                // Still off: keep accruing in the next step — unless something is due back, in
+                // which case this pass runs with the screen off and hands it back. The pass is an
+                // ordinary one; with the foreground forgotten above it credits no time to anyone.
+                val poked = EnforcementWakeAlarm.pokeCount.value != pokedBefore
+                if (!screenOn.value && !poked) continue
+                if (!screenOn.value) DebugLog.i(TAG, "screen off: one pass to give back what the rules allow now")
             }
 
             val nowClock = SystemClock.elapsedRealtime()
             val deltaSeconds = (nowClock - lastTick) / 1000
             lastTick = nowClock
 
-            val foreground = sampler.currentForeground()
+            // Nobody is using an app with the screen off: the sampler would answer with the last one
+            // that was in front, and a pass run for apps due back (see EnforcementWakeAlarm) must
+            // not warn about that app's time or count down on it.
+            val foreground = if (screenOn.value) sampler.currentForeground() else null
             // Fresh clock for rule evaluation: a screen-off park above can span minutes.
             val now = LocalDateTime.now()
 
@@ -937,6 +994,7 @@ class EnforcementService : LifecycleService() {
             val failingClosed = !rescued &&
                 ((!usageAccessOk && RuleEngine.requiresUsageCounting(config)) ||
                     (!clockTrusted && RuleEngine.requiresTrustedClock(config)))
+            lastFailingClosed = failingClosed
 
             // --- What the suspension cannot reach (see Curfew) ---
             //
@@ -967,8 +1025,11 @@ class EnforcementService : LifecycleService() {
                 browsers = browsers,
                 lingering = lingering,
                 // Never the phone and contacts: reaching a person is the one promise that
-                // outranks every rule here, and half of reaching them is resolving a name.
-                spared = config.essentialPackages,
+                // outranks every rule here, and half of reaching them is resolving a name. Nor
+                // the messaging app, nor what the running window itself leaves open — the same
+                // set Curfew.standing spares, which this list had drifted from: a dictionary a
+                // homework window allowed lost its DNS after two minutes of being used.
+                spared = config.essentialPackages + config.reachOutPackages + RuleEngine.windowExemptions(config, now),
             )
             if (cutOff != lastCutOff) {
                 dev.walcott.net.NetworkCurfew.set(cutOff)
@@ -1137,6 +1198,8 @@ class EnforcementService : LifecycleService() {
                 }
                 val fullSweep = nowClock - lastFullSweepAt > FULL_SWEEP_MILLIS
                 enforcer.apply(managed + quarantined, blocked + quarantined, giveBack = reclaimable, fullSweep = fullSweep)
+                dev.walcott.debug.CrashBreaker.markEnforced()
+                firstPass = false
                 if (fullSweep) lastFullSweepAt = nowClock
                 lastAppliedBlocked = blocked
                 lastAppliedManaged = managed
@@ -1174,6 +1237,35 @@ class EnforcementService : LifecycleService() {
             // needs it); blocked apps are already suspended, so idling can tick slowly.
             delay(if (foreground != null && foreground in managed) TICK_ACTIVE_MILLIS else TICK_IDLE_MILLIS)
         }
+    }
+
+    /**
+     * Arms the alarm for the next minute anything in [blocked] is due back (see
+     * [EnforcementWakeAlarm]), or cancels it when nothing is.
+     *
+     * Not while failing closed: a revoked permission or a moved clock ends when it is put right,
+     * not at a minute on the clock, and the rules alone would answer "the next minute" for ever —
+     * a wake-up a minute all night for a pass that changes nothing. Walked off the main thread:
+     * a long bedtime with many apps is tens of thousands of rule evaluations.
+     */
+    private suspend fun armWakeForAppsDueBack(
+        config: dev.walcott.rules.FamilyConfig,
+        blocked: Set<String>,
+        failingClosed: Boolean,
+    ) {
+        val due = if (failingClosed) {
+            null
+        } else {
+            runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    dev.walcott.rules.CloseWatch.nextOpening(config, blocked, LocalDateTime.now(), usageToday, extraToday)
+                }
+            }.onFailure { DebugLog.w(TAG, "could not work out when apps are due back", it) }.getOrNull()
+        }
+        EnforcementWakeAlarm.arm(
+            this,
+            due?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli(),
+        )
     }
 
     /** What the ongoing notification currently says, so it is only re-posted when that changes. */
@@ -1435,7 +1527,7 @@ class EnforcementService : LifecycleService() {
         /** How long a shutdown in progress is held open for the last word to go out. */
         private const val SHUTDOWN_WORD_BUDGET_MILLIS = 3_000L
         /** Screen-off checkpoint publish, skipped if anything published this recently. */
-        private const val SCREEN_OFF_PUBLISH_MIN_MS = 5 * 60_000L
+        private const val SCREEN_OFF_PUBLISH_MIN_MS = dev.walcott.sync.SyncManager.ROUTINE_PUBLISH_MIN_MS
 
         /** Publish throttle for package add/remove — prompt, but one message a minute at most. */
         private const val PACKAGE_PUBLISH_MIN_MS = 60_000L
@@ -1457,6 +1549,12 @@ class EnforcementService : LifecycleService() {
             // release in progress must not have the loop it just stopped brought back under it.
             if (PanicRelease.inProgress) {
                 DebugLog.w(TAG, "a release is in progress: not starting enforcement")
+                return
+            }
+            // Safe mode (see CrashBreaker): this service is the likeliest thing to be dying, and
+            // the phone has been opened precisely so that it does not have to run.
+            if (dev.walcott.debug.CrashBreaker.active) {
+                DebugLog.w(TAG, "in safe mode: not starting enforcement")
                 return
             }
             val intent = Intent(context, EnforcementService::class.java)

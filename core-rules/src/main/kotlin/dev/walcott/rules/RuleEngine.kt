@@ -205,8 +205,15 @@ object RuleEngine {
         // outcome no rule of this app may produce, and a fail-closed that swept them up did —
         // on a phone whose dialer or contacts app is an ordinary installed one, which the
         // managed set includes like any other (see AppInventory.alwaysReachablePackages).
-        if (!usageCountingAvailable && requiresUsageCounting(config)) return managed - config.essentialPackages
-        if (!clockTrusted && requiresTrustedClock(config)) return managed - config.essentialPackages
+        //
+        // Nor the messaging app. It answers to rules written about it by name (see
+        // FamilyConfig.reachOutPackages), and failing closed is not one: it can last days, on a
+        // permission somebody revoked or a clock somebody moved, and a child who cannot text home
+        // for days is not what any family set up.
+        if (!usageCountingAvailable && requiresUsageCounting(config)) {
+            return managed - config.essentialPackages - config.reachOutPackages
+        }
+        if (!clockTrusted && requiresTrustedClock(config)) return managed - config.essentialPackages - config.reachOutPackages
         return managed.filterTo(mutableSetOf()) {
             evaluate(config, it, now, usageToday, extraTime) is Verdict.Blocked
         }

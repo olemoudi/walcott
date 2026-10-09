@@ -93,8 +93,8 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
     companion object {
         private const val NAME = "walcott_watchdog"
         private const val TAG = "WalcottWatchdog"
-        /** Skip the heartbeat when something already published this recently (awake periods). */
-        private const val HEARTBEAT_MIN_INTERVAL_MS = 10 * 60 * 1000L
+        /** Skip the heartbeat when something already published this recently (see SyncManager.ROUTINE_PUBLISH_MIN_MS). */
+        private const val HEARTBEAT_MIN_INTERVAL_MS = dev.walcott.sync.SyncManager.ROUTINE_PUBLISH_MIN_MS
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<WatchdogWorker>(15, TimeUnit.MINUTES).build()

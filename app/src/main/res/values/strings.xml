@@ -235,6 +235,7 @@
     <string name="parent_pin_child_up_to_date">Up to date</string>
     <string name="parent_pin_child_pending">Updating</string>
     <string name="parent_pin_child_unknown">Not reported</string>
+    <string name="parent_pin_child_ahead">Ignoring this phone</string>
     <string name="parent_pin_change_prompt">Enter your current PIN to change it.</string>
     <string name="parent_pin_new_prompt">Choose the new PIN. Every child device picks it up on the next sync.</string>
     <string name="action_enter">Enter</string>
@@ -683,7 +684,7 @@
     <string name="install_mode_strict">Blocked, with a nightly window</string>
     <string name="install_mode_strict_desc">Nothing installs at all except during the window below. Anything new that appears in it is suspended and you are asked about it, exactly as at any other hour.</string>
     <string name="install_mode_guarded">Watched instead of blocked</string>
-    <string name="install_mode_guarded_desc">Play works all day. Anything new that appears is suspended within seconds and you are asked to allow it or remove it — so the app is on the phone for those seconds. Sideloading stays blocked by its own switch.</string>
+    <string name="install_mode_guarded_desc">Play works all day. Anything new that appears is suspended within seconds and you are asked to allow it or remove it. It waits, paused, for up to two days, and is removed if nobody answers. Sideloading stays blocked by its own switch.</string>
     <string name="update_window_title">Let apps update at night</string>
     <string name="update_window_desc">The block lifts for a while so Play can update what is already installed. Without this, a blocked phone stops getting security fixes.</string>
     <string name="update_window_at">Starting at</string>
@@ -1157,6 +1158,11 @@
     <string name="relay_migrate_title">Move the whole family?</string>
     <string name="relay_migrate_body">Every phone you look after will be told to move to %1$s. The old relay stays connected until each of them has, so a phone that is off right now still finds the instruction when it comes back.</string>
     <string name="relay_migrate_confirm">Move everyone</string>
+    <plurals name="relay_stranded">
+        <item quantity="one">%1$d phone could not reach the new relay and stays on %2$s, which is kept open for it. To have one address again, move the family back to %2$s.</item>
+        <item quantity="other">%1$d phones could not reach the new relay and stay on %2$s, which is kept open for them. To have one address again, move the family back to %2$s.</item>
+    </plurals>
+    <string name="relay_sent_today">Messages today: %1$d of the 250 the public relay allows each home connection (this phone: %2$d).</string>
     <string name="relay_migrating">Moving to %1$s — %2$d of %3$d phones have followed. The old relay stays up until they all have.</string>
     <string name="relay_error_migrating">A move is already under way. Wait for the phones to follow before starting another.</string>
     <string name="relay_error_locked">The server can only be changed before the first child phone is set up — a paired phone would be left listening to the old one.</string>
@@ -1240,18 +1246,25 @@
     <!-- Approved install waiting to be finished (child home) -->
     <string name="install_child_card_title">You can install %1$s</string>
     <string name="install_child_card_desc">Tap here to open it in Google Play, then tap Install.</string>
+    <!-- An app installed without approval, kept paused for the family's answer (InstallGuard.HOLD_MS) -->
+    <string name="held_app_card_title">%1$s is waiting for your family</string>
+    <string name="held_app_card_desc">It was installed without asking, so it stays paused until they answer. If nobody does, it is removed on %1$s.</string>
     <!-- An app appeared on a child device that nobody approved -->
     <string name="unauthorized_app_title">Unapproved app on %1$s\'s phone</string>
     <string name="unauthorized_app_text">"%1$s" was installed without approval. It\'s blocked and is being removed.</string>
+    <string name="unauthorized_app_text_held">"%1$s" was installed without approval. It\'s paused on their phone until you decide — removed on %2$s if you don\'t.</string>
     <string name="unauthorized_app_remove">Remove</string>
     <string name="unauthorized_app_allow">Let it stay</string>
     <string name="unauthorized_app_card_title">"%1$s" was installed without approval</string>
     <string name="unauthorized_app_card_state">It\'s blocked on their phone and is being removed.</string>
+    <string name="unauthorized_app_card_state_held">Paused on their phone until you decide. Removed on %1$s if you don\'t.</string>
     <string name="unauthorized_app_card_state_unsuspended">Their phone couldn\'t block it — remove it from here.</string>
     <string name="unauthorized_app_card_stuck">Their phone has tried %1$d times to remove it and it is still there. It stays blocked and unusable, but it can only be uninstalled from that phone.</string>
     <string name="remote_result_removing">removing it</string>
     <string name="remote_result_not_installed">that app isn\'t installed there</string>
     <string name="remote_result_allowed">the app may stay</string>
+    <string name="remote_result_relay_unreachable">it could not reach the new relay, so it stayed on the old one</string>
+    <string name="remote_result_already_removed">it had already been removed — share it from Google Play to Walcott to send it to them</string>
     <string name="update_wifi_only_title">Update on Wi-Fi only</string>
     <string name="update_wifi_only_desc">Child devices download updates and blocklists only on Wi-Fi (not on mobile data). "Update now" still works on any connection.</string>
     <string name="update_wifi_following_family">Following the family setting: %1$s</string>
@@ -1316,6 +1329,10 @@
     <string name="web_filter_down_text">The blocked sites are loading normally. Another VPN app may have taken over, or the filter\'s permission was withdrawn.</string>
     <string name="web_filter_down_child">Web filtering is switched off on this device. Open Walcott to turn it back on — another VPN app may have taken its place.</string>
     <string name="event_web_filter_back">%1$s: web filtering is running again</string>
+    <!-- The child's phone opened itself because Walcott kept dying at start-up (CrashBreaker) -->
+    <string name="safe_mode_title">%1$s: rules paused — Walcott kept crashing</string>
+    <string name="safe_mode_text">Walcott stopped being able to start on this phone, so it gave every app back to keep the phone usable. The rules come back with the next update, or now with “Re-apply protection” on their page.</string>
+    <string name="event_safe_mode_over">%1$s: the rules are back on</string>
     <!-- The child app died of an uncaught exception -->
     <string name="child_crashed_title">%1$s: Walcott crashed</string>
     <plurals name="child_crashed_text">
@@ -1673,6 +1690,8 @@
     <string name="app_manage_system_hint">Apps that came with the phone are left alone by default. Turn this on and it gets closed like any other app. Some phones refuse to close certain built-in apps; if that happens you\'ll be told on the member\'s screen.</string>
     <string name="app_manage_system_old_child">%1$s needs to update Walcott before this works on their phone.</string>
     <string name="app_limit_not_applied">This limit does nothing yet: the app came with the phone. Turn on the switch above to make it real.</string>
+    <string name="app_keep_available">Always available</string>
+    <string name="app_keep_available_hint">No rule ever limits it — not bedtime, not a pause, not a locked-down phone — just like calls and contacts. For apps that must never go quiet: medical, safety, a carer\'s.</string>
     <string name="app_no_limit_ever">Never limit this app</string>
     <string name="app_no_limit_ever_hint">It ignores the family default. Bedtime and screen-free times still apply.</string>
     <string name="dashboard_default_limit">Limit per app</string>
@@ -1870,6 +1889,8 @@
     <string name="hero_still_open">Still open: %1$s</string>
     <string name="window_still_open">still open: %1$s</string>
     <string name="window_allowed_label">Still open during this window</string>
+    <string name="bedtime_allowed_label">Still open at bedtime</string>
+    <string name="bedtime_allowed_none">Nothing: bedtime closes every app except calls and contacts.</string>
     <string name="window_allowed_add">Add an app</string>
     <string name="window_allowed_none">Nothing: this window closes every app.</string>
     <string name="window_allowed_remove">Remove %1$s</string>
@@ -1905,6 +1926,16 @@
         <item>The app list sorts by most used, with what each app took this week beside its limit — which is how you find the app that needs one.</item>
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
+    </string-array>
+        <string-array name="whats_new_0_119_0">
+        <item>A release you take back — or a phone you write off as stolen — is no longer carried out by that phone because it was switched off when you did: it acts only on what you asked for last.</item>
+        <item>Apps closed at bedtime, in a screen-free time or by a pause come back the moment it ends, even with the phone in a pocket. They used to stay closed until somebody turned the screen on, and a closed app cannot ring.</item>
+        <item>If an update of Walcott ever kept failing to start on a child\'s phone, the phone now gives every app back and tells you, instead of staying locked until a factory reset.</item>
+        <item>Approving two apps in a row works: the first is no longer taken for an unapproved app and removed. “Catch up” and “Re-apply protection” no longer cancel an approval.</item>
+        <item>With “Watched instead of blocked”, an app installed without asking waits, paused, for your answer for up to two days — and their phone says so — instead of disappearing before you could let it stay. Apps Android archives to save space are no longer taken for new ones when they come back.</item>
+        <item>“Always available” on an app\'s page: no rule ever limits it, like calls — for medical or safety apps. Bedtime can also leave chosen apps open.</item>
+        <item>The phones send far fewer messages, to stay under the public relay\'s limit of 250 a day per home connection, and you are told at once if it is reached anyway. Rules too big for one message now reach the phones.</item>
+        <item>A phone ignoring this phone\'s rule changes because this phone lost its history is now spotted, with a way to take the family back; moving to another relay never strands a phone; and an update that fails to install is no longer downloaded again every half hour.</item>
     </string-array>
         <string-array name="whats_new_0_118_0">
         <item>The help button on a phone you look after comes back after ten minutes, so somebody who is still stuck can press it again — until now, a call for help that nobody closed left that button gone for two days, which is what happens every time a family sorts it out on the telephone.</item>
@@ -2222,6 +2253,9 @@
     <string name="superseded_card_title">Another phone is managing this family</string>
     <string name="superseded_card_body">Someone restored this family\'s backup on another phone, so the children take their rules from there now. Anything you change here stays on this phone.</string>
     <string name="superseded_card_take">Take it back</string>
+    <string name="superseded_children_title">Your rule changes are not reaching the children</string>
+    <string name="superseded_children_text">A child\'s phone is on newer rules than this phone has ever sent — this phone lost its history, or another phone is managing the family. Take it back to make this phone\'s rules the ones they follow.</string>
+    <string name="superseded_children_card_body">A child\'s phone is on newer rules than this phone has sent, so it ignores everything from here. Either this phone lost its history, or another phone manages the family now.</string>
     <string name="superseded_card_leave">Leave it with them</string>
     <string name="device_replaced_title">%1$s checked in from a new phone</string>
     <string name="device_replaced_text">Their earlier phone is still on file. Open their page to retire it, so actions and alerts stop going to the old one.</string>
@@ -2242,6 +2276,9 @@
     <string name="panic_stopped_text">The countdown on that phone has stopped. If nobody cancelled it, open the phone and check.</string>
     <string name="rescue_used_title">%1$s used a rescue code</string>
     <string name="rescue_used_text">That phone had every rule lifted for a while. Rescue codes work offline and without a PIN, so this notice is the only record.</string>
+    <string name="policy_too_large_title">Your rules are too big to send</string>
+    <string name="policy_too_large_title_family">%1$s: your rules are too big to send</string>
+    <string name="policy_too_large_text">Rule changes are not reaching the phones. Remove some limits you no longer need — and make sure every phone has updated Walcott, which lets larger rules through.</string>
     <string name="relay_refusing_title">Your phones cannot reach each other</string>
     <string name="relay_refusing_title_family">%1$s: your phones cannot reach each other</string>
     <string name="relay_refusing_text">The relay is refusing this phone\'s messages, so rule changes are not reaching the children. Check the relay server in settings.</string>

@@ -10,9 +10,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
@@ -45,34 +42,22 @@ object ParentPoll {
         if (!id.isPaired) return
         val since = family.syncStore.current().ntfySinceSec
         val sinceParam = if (since > 0) since.toString() else "all"
-        val url = "${id.ntfyServer.trimEnd('/')}/${id.topic}/json?poll=1&since=$sinceParam"
+        val url = RelayBacklog.pollUrl(id.ntfyServer, id.topic, sinceParam)
 
         val client = dev.walcott.net.Http.client.newBuilder().callTimeout(30, TimeUnit.SECONDS).build()
-        val json = Json { ignoreUnknownKeys = true }
-        val lines = runCatching {
+        val messages = runCatching {
             client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     DebugLog.w(TAG, "poll rejected: HTTP ${resp.code}")
                     return@runCatching emptyList()
                 }
-                // Bounded: a topic anyone who knows its name can post to must not be read into
-                // memory whole, and a poll from `since=all` after a relay move is exactly when
-                // the backlog is longest.
-                resp.peekBody(MAX_POLL_BYTES).string().lines()
+                RelayBacklog.parse(resp.peekBody(RelayBacklog.MAX_BYTES).string())
+                    .mapNotNull { RelayBacklog.resolved(it, id.ntfyServer, client) }
             }
         }.onFailure { DebugLog.w(TAG, "poll failed", it) }.getOrDefault(emptyList())
 
-        var applied = 0
-        for (line in lines) {
-            if (line.isBlank()) continue
-            val event = runCatching { json.parseToJsonElement(line).jsonObject }.getOrNull() ?: continue
-            if (event["event"]?.jsonPrimitive?.content != "message") continue
-            val body = event["message"]?.jsonPrimitive?.content ?: continue
-            val timeSec = event["time"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-            family.syncManager.applyIncoming(body, timeSec)
-            applied++
-        }
-        if (applied > 0) DebugLog.i(TAG, "poll applied $applied message(s) to ${family.id}")
+        for (message in messages) family.syncManager.applyIncoming(message.body, message.timeSec)
+        if (messages.isNotEmpty()) DebugLog.i(TAG, "poll applied ${messages.size} message(s) to ${family.id}")
     }
 }
 
@@ -114,6 +99,3 @@ class ParentPollWorker(context: Context, params: WorkerParameters) : CoroutineWo
         }
     }
 }
-
-/** The most one poll reads from the relay; a message is under 4 kB, so this is hundreds of them. */
-private const val MAX_POLL_BYTES = 4L * 1024 * 1024

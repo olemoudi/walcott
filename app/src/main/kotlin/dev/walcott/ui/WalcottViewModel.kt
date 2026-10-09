@@ -241,9 +241,10 @@ class WalcottViewModel(
      * anyone "you can install your app now" while it runs is both false and an invitation.
      */
     val installExemption: StateFlow<Long> = sync.personalInstallExemption
-    /** Package of a parent-pushed install still waiting for its tap on this device, or "". */
-    val pendingInstall: StateFlow<String> = sync.pendingInstall
-    val pendingInstallLabel: StateFlow<String> = sync.pendingInstallLabel
+    /** The parent-pushed installs still waiting for their tap on this device, one card each. */
+    val pendingPushes: StateFlow<List<dev.walcott.sync.PendingPush>> = sync.pendingPushes
+    /** Apps installed here without approval, kept paused for the family's answer. */
+    val heldApps: StateFlow<List<dev.walcott.sync.UnauthorizedApp>> = sync.heldApps
     /** This device's own unanswered requests/asks, for the child home's "waiting" section. */
     val myPendingRequests: StateFlow<List<dev.walcott.sync.ExtraTimeRequest>> = sync.myPendingRequests
     val myPendingAsks: StateFlow<List<dev.walcott.sync.ChildRequest>> = sync.myPendingAsks
@@ -436,6 +437,9 @@ class WalcottViewModel(
     /** Whether messages are currently being rejected by the relay (see [dev.walcott.sync.PublishHealth]). */
     val publishHealth: StateFlow<dev.walcott.sync.PublishHealth.Status> = dev.walcott.sync.PublishHealth.status
 
+    /** What this phone has published on the relay's day (see PublishLedger). */
+    val publishedToday: StateFlow<dev.walcott.sync.LedgerDay> = dev.walcott.sync.PublishLedger.today
+
     /**
      * Whether this family's rules have outgrown one relay message (see [dev.walcott.sync.ParentFit]).
      * Every publish is then refused, so nothing reaches any child — the one failure this app must
@@ -450,6 +454,11 @@ class WalcottViewModel(
      */
     val supersededByAnotherParent: StateFlow<Boolean> =
         sync.state.map { it.supersededAtMs > 0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Whether that was learned from a child running newer rules, rather than from another phone. */
+    val supersededByChildren: StateFlow<Boolean> =
+        sync.state.map { it.supersededByChildren }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     suspend fun setRelayServer(server: String): dev.walcott.sync.SyncManager.RelayChangeResult =
@@ -1543,6 +1552,10 @@ class WalcottViewModel(
      */
     fun setAppUnlimited(pkg: String, unlimited: Boolean, childId: String? = null) =
         mutateAppPolicy(pkg, childId) { it.copy(unlimited = unlimited) }
+
+    /** "Always available": no rule ever touches the app (see AppPolicyDto.alwaysAvailable). */
+    fun setAppAlwaysAvailable(pkg: String, always: Boolean, childId: String? = null) =
+        mutateAppPolicy(pkg, childId) { it.copy(alwaysAvailable = always) }
 
     /**
      * Manage [pkg] on the child's phone even though it came with it (see

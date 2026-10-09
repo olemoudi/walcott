@@ -79,6 +79,9 @@ fun AssistedStatusScreen(
     val askReceipts by viewModel.myAskReceipts.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     val panicStatus by viewModel.panicStatus.collectAsStateWithLifecycle()
+    val pendingPushes by viewModel.pendingPushes.collectAsStateWithLifecycle()
+    val heldApps by viewModel.heldApps.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val deviceSetup = dev.walcott.ui.setup.rememberDeviceSetup()
 
     // One unanswered ask at a time. The button that sent it says so instead of offering to send a
@@ -169,6 +172,16 @@ fun AssistedStatusScreen(
                     canReask = canReask,
                     onAsk = { viewModel.askForHelp(helpText) },
                 )
+            }
+            // An app the family has sent to install, and an app installed without them, waiting
+            // for their answer. The same cards as a child's: this home had neither, so an
+            // approval whose notification was swiped away could not be reached at all, and an
+            // app installed from Play vanished with nothing here saying why.
+            items(pendingPushes, key = { "push-${it.pkg}" }) { push ->
+                PendingInstallCard(appName = push.label.ifBlank { push.pkg }, onOpen = { openPushedInstall(context, push.pkg) })
+            }
+            items(heldApps, key = { "held-${it.pkg}" }) { held ->
+                HeldAppCard(appName = held.label.ifBlank { held.pkg }, untilMs = held.holdUntilMs)
             }
             // Permissions this phone still needs. Kept because without them the support tools
             // simply do not work, and nobody else is standing here to grant them.

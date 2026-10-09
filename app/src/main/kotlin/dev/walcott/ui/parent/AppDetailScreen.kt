@@ -96,6 +96,16 @@ fun AppDetailScreen(
                 .distinct()
         }
     }
+    // The members whose phones would still limit this app: a build from before "always
+    // available" drops the field and treats the app like any other.
+    val ignoresAlwaysAvailable = remember(children, settings, packageName, childId) {
+        children
+            .filter { childId == null || it.childId == childId }
+            .filter { snap -> snap.apps.any { it.packageName == packageName } }
+            .filterNot { dev.walcott.sync.RemoteAction.honoursAlwaysAvailable(it.appVersionCode) }
+            .map { snap -> settings.children.firstOrNull { it.childId == snap.childId }?.name ?: snap.displayName }
+            .distinct()
+    }
     val appPolicy = if (childId == null) {
         settings.appPolicies[packageName]
     } else {
@@ -211,6 +221,36 @@ fun AppDetailScreen(
                                     modifier = Modifier.padding(top = spacing.sm),
                                 )
                             }
+                        }
+                    }
+                }
+            }
+            // Above every limit, because it overrides all of them: an app that must never go quiet.
+            // Not offered for the apps the phone needs anyway (the card above says why).
+            if (!alwaysAvailable) item {
+                WalcottCard {
+                    Column(Modifier.padding(spacing.lg)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.app_keep_available), style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    stringResource(R.string.app_keep_available_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            androidx.compose.material3.Switch(
+                                checked = appPolicy?.alwaysAvailable == true,
+                                onCheckedChange = { viewModel.setAppAlwaysAvailable(packageName, it, childId) },
+                            )
+                        }
+                        if (appPolicy?.alwaysAvailable == true && ignoresAlwaysAvailable.isNotEmpty()) {
+                            Text(
+                                stringResource(R.string.app_manage_system_old_child, ignoresAlwaysAvailable.joinToString(", ")),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = spacing.sm),
+                            )
                         }
                     }
                 }

@@ -117,4 +117,22 @@ class ReachOutAppsTest {
             RuleEngine.evaluate(config, "com.android.dialer", monday, mapOf(game to Duration.ofHours(9))),
         )
     }
+
+    @Test
+    fun `failing closed does not take the messaging app, which can last days`() {
+        // A revoked permission or a moved clock is not a rule written about it by name.
+        val config = config(default = Duration.ofHours(1), bedtime = TimeWindow(LocalTime.of(22, 0), LocalTime.of(7, 0)))
+        val managed = setOf(sms, game)
+        val withoutCounter = RuleEngine.blockedPackages(config, managed, monday, emptyMap(), usageCountingAvailable = false)
+        assertEquals(setOf(game), withoutCounter)
+        val wrongClock = RuleEngine.blockedPackages(config, managed, monday, emptyMap(), clockTrusted = false)
+        assertEquals(setOf(game), wrongClock)
+    }
+
+    @Test
+    fun `the network curfew spares it, while the window still closes the rest`() {
+        val config = config(bedtime = TimeWindow(LocalTime.of(16, 0), LocalTime.of(20, 0)))
+        val standing = Curfew.standing(config, browsers = setOf("com.browser", sms), now = monday)
+        assertEquals(setOf("com.browser"), standing.packages)
+    }
 }

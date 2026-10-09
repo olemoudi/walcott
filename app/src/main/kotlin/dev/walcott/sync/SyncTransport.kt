@@ -23,8 +23,20 @@ interface SyncTransport {
      */
     fun publishForReceipt(message: String): Long? = null
 
-    /** [onMessage] gets the body plus the server-side receive time in unix seconds (0 if unknown). */
-    fun connect(onMessage: (body: String, timeSec: Long) -> Unit)
+    /**
+     * [onMessage] gets the body plus the server-side receive time in unix seconds (0 if unknown).
+     *
+     * [onBacklog] gets what was published while this device was not listening, all of it at once
+     * and in the relay's order, before anything live. One call rather than one per message because
+     * the order alone cannot be trusted with a backlog: a parent snapshot that withdrew a command
+     * comes AFTER the one that queued it, and handling them one by one ran the command on the way
+     * there (see [SyncEngine.newestParentsOf]). A transport with no notion of a backlog may leave
+     * the default, which hands each message to [onMessage].
+     */
+    fun connect(
+        onMessage: (body: String, timeSec: Long) -> Unit,
+        onBacklog: (List<RelayMessage>) -> Unit = { backlog -> backlog.forEach { onMessage(it.body, it.timeSec) } },
+    )
     fun close()
 
     /**
@@ -37,3 +49,9 @@ interface SyncTransport {
      */
     fun onNetworkAvailable() {}
 }
+
+/**
+ * One message as the relay stored it: its body, its server time in unix seconds, and its id —
+ * and, when the relay kept the body as a file instead (see [RelayBacklog.resolved]), where.
+ */
+data class RelayMessage(val body: String, val timeSec: Long, val id: String = "", val attachmentUrl: String = "")

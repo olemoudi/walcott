@@ -84,6 +84,9 @@ fun BudgetsScreen(
                     onSetSpecialDaysOwnRules = viewModel::setSpecialDaysOwnRules,
                     overriddenBy = RuleOverrides.namedMembersOverriding(settings, FamilyRule.BEDTIME),
                     onOpenMemberRules = onOpenMemberRules,
+                    exceptionApps = exceptionApps,
+                    exceptionIcons = { viewModel.childAppIcon(it) },
+                    exceptionInventory = viewModel.repository.inventory,
                     onChange = viewModel::setBedtime,
                 )
             }

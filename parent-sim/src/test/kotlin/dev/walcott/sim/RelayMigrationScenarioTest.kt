@@ -42,6 +42,13 @@ class RelayMigrationScenarioTest : DeviceScenario() {
         parent.pushPolicy(PolicyJson.build(version = 2, restrictions = setOf("installs")))
         awaitDevice("the install block armed") { device.installBlocked() }
 
+        // The family already published on the new relay — as the app's own migration does: it
+        // publishes there the moment it moves. The child looks for the family there before it
+        // follows (see RemoteCommandRunner.setRelay). A throwaway copy of the parent, because a
+        // copy takes the version counter as it stands, and the one that goes on below must start
+        // from after the instruction to move.
+        parent.sameFamilyOn(newRelay.localUrl, newRelay.loopbackUrl).reEmit()
+
         // The instruction goes out on the relay the child is listening to, and the child answers
         // there — before it moves. That ordering is the whole design: an acknowledgement sent
         // after the switch would arrive somewhere the parent is no longer waiting.
@@ -77,6 +84,23 @@ class RelayMigrationScenarioTest : DeviceScenario() {
         assertEquals(RemoteAction.DETAIL_RELAY_REFUSED, ack.detail)
 
         // Still where it was, and still listening: the parent can still reach it.
+        parent.pushPolicy(PolicyJson.build(version = 2, restrictions = setOf("installs")))
+        awaitDevice("the child is still on the original relay") { device.installBlocked() }
+    }
+
+    @Test
+    fun `a relay where the family cannot be found is not followed`() {
+        // A relay that answers but where the parent cannot be heard — a typo, a server only the
+        // parent's own Wi-Fi reaches, one that came up empty. Followed, it left the phone hearing
+        // nobody, the emergency release included, with no way back.
+        newRelay = MockRelay().start()
+        device.reversePort(newRelay.port)
+        val commandId = parent.sendCommand(deviceId, RemoteAction.SET_RELAY, arg = "http://127.0.0.1:${newRelay.port}")
+        val ack = parent.awaitAck(commandId, timeoutMs = 90_000)
+        assertEquals(false, ack.ok)
+        assertEquals(RemoteAction.DETAIL_RELAY_UNREACHABLE, ack.detail)
+
+        // Still where it was, and still listening.
         parent.pushPolicy(PolicyJson.build(version = 2, restrictions = setOf("installs")))
         awaitDevice("the child is still on the original relay") { device.installBlocked() }
     }

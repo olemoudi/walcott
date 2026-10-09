@@ -87,6 +87,14 @@ internal fun BedtimeCard(
     overriddenBy: List<dev.walcott.data.ChildEntry> = emptyList(),
     /** Opens one of [overriddenBy]'s own rules. See [OverriddenNote]. */
     onOpenMemberRules: ((String) -> Unit)? = null,
+    /**
+     * The apps bedtime may be told to leave OPEN — the same picker the screen-free windows have
+     * (see [dev.walcott.rules.TimeWindow.allowedPackages]), which the engine always honoured for
+     * bedtime and no screen ever offered. Empty hides it.
+     */
+    exceptionApps: List<dev.walcott.ui.components.PickableApp> = emptyList(),
+    exceptionIcons: ((String) -> ByteArray?)? = null,
+    exceptionInventory: dev.walcott.data.AppInventory? = null,
     onChange: (Map<String, WindowDto>) -> Unit,
 ) {
     val spacing = Tokens.spacing
@@ -95,6 +103,9 @@ internal fun BedtimeCard(
     // "There is a bedtime" is any day type having one; the master switch seeds or clears them all.
     val on = RULE_DAY_TYPES.any { bedtime[it.name] != null }
     var editing by remember { mutableStateOf<BedtimeEdit?>(null) }
+    var pickingException by remember { mutableStateOf(false) }
+    // One list for every night: "the alarm clock stays on at bedtime" is not a rule about Tuesdays.
+    val allowed = bedtime.values.flatMap { it.allowedPackages }.distinct()
 
     fun windowOf(dayType: DayType): Pair<LocalTime, LocalTime> {
         val w = bedtime[dayType.name]
@@ -104,13 +115,13 @@ internal fun BedtimeCard(
     fun setAll(s: LocalTime?, e: LocalTime?) {
         onChange(
             if (s == null || e == null) emptyMap()
-            else RULE_DAY_TYPES.associate { it.name to WindowDto(s.toMinute(), e.toMinute()) },
+            else RULE_DAY_TYPES.associate { it.name to WindowDto(s.toMinute(), e.toMinute(), allowedPackages = allowed) },
         )
     }
 
     /** Writes one day type only. The mirror pass folds WEEKEND onto HOLIDAY while it is off. */
     fun setOne(dayType: DayType, s: LocalTime, e: LocalTime) {
-        onChange(bedtime + (dayType.name to WindowDto(s.toMinute(), e.toMinute())))
+        onChange(bedtime + (dayType.name to WindowDto(s.toMinute(), e.toMinute(), allowedPackages = allowed)))
     }
 
     WalcottCard(position = position) {
@@ -171,8 +182,33 @@ internal fun BedtimeCard(
                         onChange = onSetSpecialDaysOwnRules,
                     ) { bedtimeRow(DayType.HOLIDAY) }
                 }
+                if (enabled && exceptionApps.isNotEmpty() && exceptionInventory != null) {
+                    AllowedApps(
+                        allowed = allowed,
+                        apps = exceptionApps,
+                        label = stringResource(R.string.bedtime_allowed_label),
+                        none = stringResource(R.string.bedtime_allowed_none),
+                        onRemove = { pkg ->
+                            onChange(bedtime.mapValues { (_, w) -> w.copy(allowedPackages = w.allowedPackages - pkg) })
+                        },
+                        onAdd = { pickingException = true },
+                    )
+                }
             }
         }
+    }
+
+    if (pickingException && exceptionInventory != null) {
+        dev.walcott.ui.components.AppPickerSheet(
+            apps = exceptionApps.filterNot { it.packageName in allowed },
+            inventory = exceptionInventory,
+            iconBytes = exceptionIcons,
+            onDismiss = { pickingException = false },
+            onPick = { app ->
+                onChange(bedtime.mapValues { (_, w) -> w.copy(allowedPackages = (w.allowedPackages + app.packageName).distinct()) })
+                pickingException = false
+            },
+        )
     }
 
     editing?.let { which ->
@@ -612,11 +648,13 @@ private fun AllowedApps(
     apps: List<dev.walcott.ui.components.PickableApp>,
     onRemove: (String) -> Unit,
     onAdd: () -> Unit,
+    label: String = stringResource(R.string.window_allowed_label),
+    none: String = stringResource(R.string.window_allowed_none),
 ) {
     val spacing = Tokens.spacing
     Column(Modifier.padding(top = spacing.sm)) {
         Text(
-            stringResource(R.string.window_allowed_label),
+            label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -640,7 +678,7 @@ private fun AllowedApps(
         }
         if (allowed.isEmpty()) {
             Text(
-                stringResource(R.string.window_allowed_none),
+                none,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -216,6 +216,12 @@ class ChildDevice(
      */
     fun allowInstallsFor(ms: Long) = seed("--es", "allow_installs_ms", ms.toString())
 
+    /** What tapping an approved app's card does: reopens that app's install window. */
+    fun reopenInstall(pkg: String) = seed("--es", "reopen_install", pkg)
+
+    /** Forgets every pushed-install approval (they outlast a re-pair; see the app's PendingPush). */
+    fun clearApprovals() = seed("--es", "clear_approvals", "now")
+
     /**
      * Asks the DNS filter what it would refuse right now, and answers the packages it names.
      *
@@ -296,6 +302,15 @@ class ChildDevice(
     /** Runs the ~30-minute check-in now, so a scenario needn't wait half an hour for one. */
     fun heartbeat() = seed("--es", "heartbeat", "now")
 
+    /** Rebuilds the relay connection now — catch-up, then socket — as coverage coming back would. */
+    fun reconnect() = seed("--es", "reconnect", "now")
+
+    /**
+     * Writes down [earlyCrashes] start-ups in a row that died before enforcing and kills the app,
+     * so its next start decides whether to open the phone (see the app's CrashBreaker). 0 forgets.
+     */
+    fun safeModeDrill(earlyCrashes: Int) = seed("--ei", "safe_mode_drill", earlyCrashes.toString())
+
     /**
      * Wakes the screen and keeps it awake.
      *
@@ -344,6 +359,13 @@ class ChildDevice(
     }
 
     fun screenAwake(): Boolean = run("shell", "dumpsys", "power").contains("mWakefulness=Awake")
+
+    /** Turns the screen off and waits until it is, for a scenario about a phone nobody is looking at. */
+    fun sleepScreen(timeoutMs: Long = 10_000) {
+        run("shell", "input", "keyevent", "KEYCODE_SLEEP")
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline && screenAwake()) Thread.sleep(250)
+    }
 
     /**
      * Whether this user's credential-encrypted storage is mounted — "is the phone unlocked", as
@@ -684,6 +706,15 @@ class ChildDevice(
             .contains("no_install_apps")
 
     fun install(apkPath: String): String = run("install", "-r", apkPath)
+
+    /** Installs as if from Play, which is what Android 15's archiving needs of an app's installer. */
+    fun installAsPlay(apkPath: String): String = run("install", "-r", "-i", "com.android.vending", apkPath)
+
+    /** Archives [pkg] the way Play does on a full phone: the app goes, its data and icon stay (Android 15). */
+    fun archive(pkg: String): String = run("shell", "pm", "archive", pkg)
+
+    /** The device's API level. */
+    fun sdk(): Int = run("shell", "getprop", "ro.build.version.sdk").trim().toIntOrNull() ?: 0
 
     fun uninstall(pkg: String): String = run("uninstall", pkg)
 

@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -101,6 +102,83 @@ class SyncManager(
     private var settingsWatchJob: Job? = null
     /** In-memory mirror of [SyncState.ntfySinceSec] so the transport's sinceProvider never blocks. */
     @Volatile private var sinceCache: Long = 0
+
+    /**
+     * Everything the relay hands over, handled one item at a time and in the order it arrived.
+     *
+     * Each message used to be handled in a coroutine of its own on the default dispatcher, so two
+     * that arrived a moment apart could be applied in either order — and for a parent snapshot that
+     * withdrew a command, "either order" includes running the command after it was taken back.
+     * One consumer, started on the first connection, makes arrival order the order of effect.
+     */
+    private val inbound = kotlinx.coroutines.channels.Channel<Inbound>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    private val inboundConsumer: Job by lazy {
+        scope.launch {
+            for (item in inbound) {
+                // Nothing an item does may end this loop. It is the only reader of everything the
+                // relay sends: a throw that escaped it — a store write refused on a full phone, say
+                // — left the channel filling with messages nobody would ever read, on a phone that
+                // went on publishing and so looked perfectly alive to the parent.
+                try {
+                    when (item) {
+                        is Inbound.Live -> {
+                            // Advance the cursor even if handling throws: a single message that
+                            // always fails to process must not wedge the `since=` replay and
+                            // re-deliver itself forever. Losing its content is fine — the sender
+                            // re-emits every cycle.
+                            runCatching { handleIncoming(item.raw, item.connectedAs, item.timeSec) }
+                                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handleIncoming failed", it) }
+                            if (item.advancesCursor) advanceCursor(item.timeSec)
+                        }
+                        is Inbound.Backlog -> {
+                            runCatching { handleBacklog(item.messages, item.connectedAs) }
+                                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handling the relay backlog failed", it) }
+                            val newest = item.messages.maxOfOrNull { it.timeSec }
+                            if (newest != null) advanceCursor(newest) else markChannelOk()
+                            caughtUp.value = caughtUp.value + 1
+                        }
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    dev.walcott.debug.DebugLog.e(TAG, "the relay reader hit a failure it survives", t)
+                }
+            }
+        }
+    }
+
+    /**
+     * How many catch-ups have been handled — each read of the relay's backlog, empty ones too. A
+     * counter, so a caller can wait for the catch-up that follows a reconnect of its own (see
+     * [releaseAfterListening]) rather than for a fixed few seconds.
+     */
+    private val caughtUp = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
+    /**
+     * The relay just answered this phone's catch-up, with or without anything in it: the channel
+     * works right now. Counted like a received message (see [advanceCursor]), because the
+     * check-ins that used to bring this phone its own echo every quarter of an hour are now three
+     * quarters apart, and "the channel works" is what the emergency release is gated on.
+     */
+    private suspend fun markChannelOk() {
+        val now = System.currentTimeMillis()
+        syncStore.update { it.copy(lastChannelOkMs = now) }
+    }
+
+    /** One thing [inbound] carries: a message as it arrives, or a backlog read in one go. */
+    private sealed interface Inbound {
+        val connectedAs: FamilyIdentity
+
+        class Live(
+            val raw: String,
+            val timeSec: Long,
+            override val connectedAs: FamilyIdentity,
+            /** False on the socket kept open to an old relay, whose stream has no cursor here. */
+            val advancesCursor: Boolean,
+        ) : Inbound
+
+        class Backlog(val messages: List<RelayMessage>, override val connectedAs: FamilyIdentity) : Inbound
+    }
     /** When the live socket was opened, so a socket that never delivered anything can still be
      *  judged stale (see [reconnectIfChannelStale]). */
     @Volatile private var connectedAtMs: Long = 0
@@ -255,7 +333,19 @@ class SyncManager(
         scope.launch {
             val id = identityStore.current()
             connect(id)
-            if (id.isPaired) publishSelf()
+            // A parent's process is started by its catch-up alarm every ten to thirty minutes
+            // whenever Android has let it go, and each start used to publish — up to a hundred
+            // messages a day from that alone. It publishes on start only when it has not lately.
+            val lastSent = PublishLedger.today.value.lastSentAtMs
+            val recently = System.currentTimeMillis() - lastSent < ROUTINE_PUBLISH_MIN_MS
+            // Unless something was queued after that last publish got through — a command or an
+            // answer whose own publish failed in a process that has since gone.
+            val s = syncStore.current()
+            val queuedSince = maxOf(
+                s.commands.maxOfOrNull { it.issuedAtMs } ?: 0L,
+                s.resolutions.maxOfOrNull { it.resolvedAtEpochMs } ?: 0L,
+            )
+            if (id.isPaired && !(id.role == Role.PARENT && recently && queuedSince <= lastSent)) publishSelf()
         }
         watchNetwork()
         watchPublishHealth()
@@ -325,6 +415,7 @@ class SyncManager(
                 transport?.onNetworkAvailable()
                 legacyTransport?.onNetworkAvailable()
                 flushUnsentHelp()
+                flushFailedPublish()
             }
         }
         val request = android.net.NetworkRequest.Builder()
@@ -384,6 +475,45 @@ class SyncManager(
         }
     }
 
+    @Volatile private var lastFailedFlushAtMs = 0L
+
+    /**
+     * A network is back and the last publish this phone tried did not get through: send the
+     * current state now. With the quarter-hourly re-emit gone, a request or an answer lost to a
+     * dead zone would otherwise wait for the next heartbeat; this is the same idea as
+     * [flushUnsentHelp], for everything else. At most once a minute: hand-overs come in flurries.
+     */
+    private fun flushFailedPublish() {
+        if (PublishHealth.status.value.consecutiveFailures == 0) return
+        val now = System.currentTimeMillis()
+        if (now - lastFailedFlushAtMs < 60_000L) return
+        lastFailedFlushAtMs = now
+        scope.launch {
+            dev.walcott.debug.DebugLog.i(TAG, "a network is back after a failed publish; publishing now")
+            runCatching { publishSelf() }
+        }
+    }
+
+    /** When the parent last republished for each child it saw was behind (see [republishIfBehind]). */
+    private val behindRepublishedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /**
+     * Parent: a child just said it is on older rules than this phone has published — the snapshot
+     * that would bring it up to date was lost, or sent before it was listening. Publishing again,
+     * once in a while per child, is what the quarter-hourly re-emit used to do for everybody all
+     * the time. Not straight after a publish of our own: the child may simply not have read it yet.
+     */
+    private fun republishIfBehind(snapshot: ChildSnapshot, parentVersion: Long) {
+        if (snapshot.appliedPolicyVersion !in 1 until parentVersion) return
+        val now = System.currentTimeMillis()
+        if (now - lastPublishAtMs < BEHIND_GRACE_MS) return
+        val last = behindRepublishedAt[snapshot.deviceId] ?: 0L
+        if (now - last < BEHIND_REPUBLISH_MIN_MS) return
+        behindRepublishedAt[snapshot.deviceId] = now
+        dev.walcott.debug.DebugLog.i(TAG, "${snapshot.deviceId} is behind (${snapshot.appliedPolicyVersion} < $parentVersion); publishing again")
+        scope.launch { runCatching { publishSelf() } }
+    }
+
     private suspend fun connect(id: FamilyIdentity) {
         transport?.close()
         if (!id.isPaired) return
@@ -402,17 +532,16 @@ class SyncManager(
             client = if (interactive) dev.walcott.net.Http.activeWebSocketClient
             else dev.walcott.net.Http.webSocketClient,
             sinceProvider = { sinceCache },
+            // A child that has just been paired reads what its parent has already published, so it
+            // starts on the family's rules rather than on none until the next publish. A parent
+            // has nothing in a backlog it needs before it has a cursor.
+            firstConnectBacklogSec = if (id.role == Role.CHILD) NtfyTransport.MAX_BACKLOG_SEC else 0L,
         ).also { t ->
-            t.connect { raw, timeSec ->
-                scope.launch {
-                    // Advance the cursor even if handling throws: a single message that always
-                    // fails to process must not wedge the `since=` replay and re-deliver itself
-                    // forever. Losing its content is fine — the sender re-emits every cycle.
-                    runCatching { handleIncoming(raw, id, timeSec) }
-                        .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handleIncoming failed", it) }
-                    advanceCursor(timeSec)
-                }
-            }
+            inboundConsumer.start()
+            t.connect(
+                onMessage = { raw, timeSec -> inbound.trySend(Inbound.Live(raw, timeSec, id, advancesCursor = true)) },
+                onBacklog = { backlog -> inbound.trySend(Inbound.Backlog(backlog, id)) },
+            )
         }
         connectLegacy(id)
         // Parent republishes whenever the rules change. Cancel any previous collector
@@ -440,8 +569,11 @@ class SyncManager(
                 .onFailure { dev.walcott.debug.DebugLog.e(TAG, "flushing the held policy failed", it) }
         }
         // Re-emit heals lost messages from the moment a device is paired — including devices
-        // paired during this process's lifetime (pairing used to publish exactly once).
-        periodicReEmit()
+        // paired during this process's lifetime (pairing used to publish exactly once). The
+        // parent's only: a child's check-ins are its heartbeat (see ROUTINE_PUBLISH_MIN_MS), and a
+        // child re-emitting every quarter of an hour on top of it was most of what took a home to
+        // the hosted relay's daily limit (see PublishLedger).
+        if (id.role == Role.PARENT) periodicReEmit()
     }
 
     /** Whether someone is currently looking at the app; picks the keepalive (see [connect]). */
@@ -563,19 +695,22 @@ class SyncManager(
             // that matter on this socket are acknowledgements, which arrive live.
             sinceProvider = { 0 },
         ).also { t ->
-            t.connect { raw, timeSec ->
-                scope.launch {
-                    runCatching { handleIncoming(raw, id, timeSec) }
-                        .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handleIncoming (legacy) failed", it) }
-                }
-            }
+            inboundConsumer.start()
+            t.connect(
+                onMessage = { raw, timeSec -> inbound.trySend(Inbound.Live(raw, timeSec, id, advancesCursor = false)) },
+            )
         }
     }
 
+
     /** Whether a migration is still running: a previous relay, inside its window. */
-    private fun migrationOpen(id: FamilyIdentity): Boolean =
-        id.role == Role.PARENT && id.previousNtfyServer.isNotBlank() &&
-            System.currentTimeMillis() - id.relayMigratedAtMs < RemoteAction.RELAY_MIGRATION_WINDOW_MS
+    private suspend fun migrationOpen(id: FamilyIdentity): Boolean =
+        id.role == Role.PARENT && id.previousNtfyServer.isNotBlank() && (
+            System.currentTimeMillis() - id.relayMigratedAtMs < RemoteAction.RELAY_MIGRATION_WINDOW_MS ||
+                // Past its window, still open for a phone that could not follow: the old relay is
+                // the only place it can hear the family (see closeMigrationIfDone).
+                syncStore.current().relayStranded.isNotEmpty()
+            )
 
     /**
      * Ends the migration once nobody is left behind — every device the parent knows about has
@@ -592,6 +727,10 @@ class SyncManager(
             it.lastCommand?.action == RemoteAction.SET_RELAY && it.lastCommand?.ok == true
         }
         val expired = System.currentTimeMillis() - id.relayMigratedAtMs >= RemoteAction.RELAY_MIGRATION_WINDOW_MS
+        // Not while a phone has said it cannot reach the new relay: the old one is the only
+        // address it can hear the family on, and closing it — on the window's own clock — is
+        // what used to strand it for good. It closes once that phone moves, or is moved back.
+        if (syncStore.current().relayStranded.isNotEmpty()) return
         if (!allMoved && !expired) return
         dev.walcott.debug.DebugLog.w(
             TAG,
@@ -651,6 +790,37 @@ class SyncManager(
         return RelayChangeResult.OK
     }
 
+    /**
+     * Child: whether this family's parent can be heard on the relay at [server] — a parent
+     * snapshot, signed by the key this phone trusts, among what the relay holds. The parent
+     * publishes there the moment it moves, so a relay that has nothing of it is a relay this
+     * phone would be deaf on. A few tries a few seconds apart: the instruction to move and the
+     * parent's first publish on the new relay leave at nearly the same moment, in that order.
+     */
+    private suspend fun relayCarriesFamily(server: String): Boolean = withContext(Dispatchers.IO) {
+        val id = identityStore.current()
+        val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
+        val parentPublic = FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(id.parentPublicKeyB64))
+        val client = dev.walcott.net.Http.client.newBuilder()
+            .callTimeout(RELAY_PROBE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS).build()
+        val since = System.currentTimeMillis() / 1000 - NtfyTransport.MAX_BACKLOG_SEC
+        val request = okhttp3.Request.Builder().url(RelayBacklog.pollUrl(server, id.topic, since.toString())).build()
+        repeat(RELAY_PROBE_ATTEMPTS) { attempt ->
+            if (attempt > 0) kotlinx.coroutines.delay(RELAY_PROBE_GAP_MS)
+            val found = runCatching {
+                client.newCall(request).execute().use { resp ->
+                    resp.isSuccessful && RelayBacklog.parse(resp.peekBody(RelayBacklog.MAX_BYTES).string()).any { message ->
+                        val body = RelayBacklog.resolved(message, server, client)?.body ?: return@any false
+                        SyncProtocol.decode(body, familyKey, parentPublic) is IncomingMessage.FromParent
+                    }
+                }
+            }.onFailure { dev.walcott.debug.DebugLog.w(TAG, "probing $server failed: ${it.javaClass.simpleName}") }
+                .getOrDefault(false)
+            if (found) return@withContext true
+        }
+        false
+    }
+
     /** Child: adopts the relay the parent named, and reconnects there. */
     private suspend fun adoptRelay(server: String) {
         val normalized = RelayServer.normalize(server, cleartextAllowed = dev.walcott.BuildConfig.DEBUG) ?: return
@@ -668,7 +838,12 @@ class SyncManager(
      * What the parent's screen shows while a migration runs: where the family is going, and which
      * phones have not been heard from since. Null when nothing is in flight.
      */
-    data class RelayMigration(val from: String, val to: String, val moved: Int, val total: Int)
+    /**
+     * A relay move in flight. [stranded] are the phones that tried and could not find the family
+     * on the new relay (see [RemoteAction.DETAIL_RELAY_UNREACHABLE]): they stay on [from], which is
+     * kept open for them.
+     */
+    data class RelayMigration(val from: String, val to: String, val moved: Int, val total: Int, val stranded: Int = 0)
 
     val relayMigration: StateFlow<RelayMigration?> =
         kotlinx.coroutines.flow.combine(identityStore.identity, syncStore.state) { id, sync ->
@@ -682,6 +857,7 @@ class SyncManager(
                         it.lastCommand?.action == RemoteAction.SET_RELAY && it.lastCommand?.ok == true
                     },
                     total = sync.children.size,
+                    stranded = sync.relayStranded.size,
                 )
             }
         }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
@@ -691,7 +867,7 @@ class SyncManager(
         reEmitJob = scope.launch {
             while (true) {
                 delay(RE_EMIT_MILLIS)
-                publishSelf()
+                if (!routineHeldByQuota()) publishSelf()
             }
         }
     }
@@ -963,9 +1139,26 @@ class SyncManager(
             ntfyServer = payload.ntfyServer,
         )
         identityStore.save(identity)
+        // Joining a family is somebody at the phone choosing its rules: whatever this app did to
+        // keep a phone it was crashing on usable (see CrashBreaker) has just been overruled.
+        dev.walcott.debug.CrashBreaker.leave("the phone joined a family")
         // A fresh pairing is a new trust bootstrap (the QR in hand IS the family): drop the
         // replay baseline so a new family's lower version counter isn't mistaken for replay.
-        syncStore.update { it.copy(appliedParentVersion = 0, appliedParentTopic = payload.topic) }
+        syncStore.update {
+            it.copy(
+                appliedParentVersion = 0,
+                appliedParentTopic = payload.topic,
+                // The same for the commands' baseline: a new family's phones start their own histories.
+                parentSeenVersions = emptyMap(),
+                parentSeenTopic = payload.topic,
+                // And the relay cursor, which belongs to the stream this phone was reading before:
+                // a joining phone reads what its new family has already published (see
+                // NtfyTransport's first-connection backlog), the same whether this is its first
+                // family or a re-pair in a process that still remembers the last one's position.
+                ntfySinceSec = 0,
+            )
+        }
+        sinceCache = 0
         // Offer the guided setup again: a new family means new rules — possibly a web filter or
         // tracking the last one never asked for — and a different adult holding this phone.
         runCatching { dev.walcott.setup.DeviceSetupStore(context).resetJourney() }
@@ -1476,7 +1669,12 @@ class SyncManager(
      * with no network waits the same moment and then goes, which is what it earned.
      */
     private suspend fun releaseAfterListening(request: PanicRequest, intervalSec: Long) {
+        // The catch-up that follows the reconnect is waited for, not guessed at: a reconnect now
+        // reads the relay's backlog in one request before it opens the socket, and a refusal
+        // sitting there has to have been handled before this phone decides nobody refused.
+        val before = caughtUp.value
         runCatching { reconnectNow() }
+        kotlinx.coroutines.withTimeoutOrNull(RELEASE_CATCH_UP_MS) { caughtUp.first { it > before } }
         delay(PanicProtocol.finalGraceMs(intervalSec).coerceAtMost(RELEASE_LISTEN_MS))
         val live = syncStore.current().panic
         if (live == null || live.id != request.id) {
@@ -1607,122 +1805,179 @@ class SyncManager(
      * this action exists to end, so the window itself is closed here afterwards.
      */
     suspend fun endInstallExemption() {
-        val s = syncStore.current()
-        if (s.pendingInstallPackage.isNotEmpty()) closeInstallWindow()
-        syncStore.update { it.copy(installExemptionUntilMs = 0, installWindowBlanket = false) }
+        // Every approval is kept, with its window shut: the child's card and notification still
+        // open it again on a tap. Withdrawing them was never what anybody pressing these meant —
+        // "re-apply protection" and "catch up" are what a parent presses while trying to work out
+        // why an approved app will not install, and they used to cancel the approval.
+        syncStore.update {
+            it.copy(
+                installExemptionUntilMs = 0,
+                installWindowBlanket = false,
+                pendingPushes = InstallGuard.closedWindows(pushesOf(it)),
+                pendingInstallPackage = "",
+                pendingInstallCommandId = "",
+                pendingInstallLabel = "",
+            )
+        }
         applyInstallWindow(0)
         runCatching { publishSelf() }
     }
 
-    /** True while a parent-pushed install's tight window is open (drives the close-on-install). */
-    val pendingInstall: StateFlow<String> =
-        syncStore.state.map { it.pendingInstallPackage }.stateIn(scope, SharingStarted.Eagerly, "")
+    /**
+     * The approvals as they stand, the single one an older build kept folded in (see
+     * [InstallGuard.migratedPushes]). Every write that touches them clears that old slot.
+     */
+    private fun pushesOf(s: SyncState): List<PendingPush> = InstallGuard.migratedPushes(
+        s.pendingPushes, s.pendingInstallPackage, s.pendingInstallCommandId, s.pendingInstallLabel,
+        legacyUntilMs = s.installExemptionUntilMs, nowMs = System.currentTimeMillis(),
+    )
 
-    /** Its human name, as the parent's device sent it; "" before it is known. */
-    val pendingInstallLabel: StateFlow<String> =
-        syncStore.state.map { it.pendingInstallLabel }.stateIn(scope, SharingStarted.Eagerly, "")
+    /** The parent-pushed installs waiting for their app (the child's "you can install X" cards). */
+    val pendingPushes: StateFlow<List<PendingPush>> =
+        syncStore.state.map { pushesOf(it) }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /**
-     * Opens the tight, self-closing window for a parent-pushed install of [pkg]. The safety
-     * cap is short: [closeInstallWindow] normally slams it shut on the first install, so this
-     * ceiling only matters if nothing installs at all. [reopenInstallWindow] re-extends it
-     * whenever the child actually engages, so this first window expiring costs nothing.
+     * Apps on this phone kept paused for the family's answer (see [InstallGuard.HOLD_MS]), for the
+     * person holding it. They used to vanish within seconds with nothing on this phone saying why;
+     * now the home says what is waiting, and for whom.
+     */
+    val heldApps: StateFlow<List<UnauthorizedApp>> = syncStore.state
+        .map { s -> s.unauthorizedApps.filter { InstallGuard.held(it, System.currentTimeMillis()) } }
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * Opens the tight, self-closing window for a parent-pushed install of [pkg], and keeps the
+     * approval until the app lands or runs out (see [PendingPush]).
+     *
+     * The window's cap is short: the approved app landing shuts it, and so does the cap if
+     * nothing installs at all. [reopenInstallWindow] re-extends it whenever the child actually
+     * engages, so this first window expiring costs nothing — the approval is still there.
+     *
+     * A window somebody else opened is not cut short by it: a blanket one is the person at the
+     * phone installing with their PIN, and the nightly one is the phone's security updates. The
+     * push used to replace either, ending tonight's update hour five minutes after it arrived.
      */
     suspend fun openInstallForPush(pkg: String, commandId: String, label: String = "") {
         val now = System.currentTimeMillis()
-        val s = syncStore.current()
-        // A blanket window is somebody's own: a push landing inside it neither shortens it nor
-        // turns it into a window that judges what the person at the phone is installing.
-        val blanketOpen = InstallGuard.blanketOpen(
-            s.installExemptionUntilMs, now, s.installWindowBlanket, s.installWindowMaintenance,
-            s.pendingInstallPackage,
-        )
-        val until = if (blanketOpen) {
-            maxOf(s.installExemptionUntilMs, now + INSTALL_PUSH_EXEMPTION_MS)
-        } else {
-            now + INSTALL_PUSH_EXEMPTION_MS
-        }
+        // Worked out INSIDE the write, from the state it replaces: two approvals arriving together
+        // — a command and a tap on another app's card — each read the list, added their own and
+        // wrote it back, and the second write dropped the first approval.
+        var until = 0L
+        var forgotten = emptyList<String>()
         syncStore.update { state ->
+            val pushes = pushesOf(state)
+            val blanketOpen = InstallGuard.blanketOpen(
+                state.installExemptionUntilMs, now, state.installWindowBlanket, state.installWindowMaintenance,
+                pushWindowOpen = InstallGuard.windowDeadline(pushes, now) > 0,
+            )
+            val maintenanceOpen = state.installWindowMaintenance && state.installExemptionUntilMs > now
+            val next = InstallGuard.withPush(
+                pushes,
+                PendingPush(pkg, commandId, label, approvedAtMs = now, windowUntilMs = now + INSTALL_PUSH_EXEMPTION_MS),
+            )
+            forgotten = pushes.map { it.pkg } - next.map { it.pkg }.toSet()
+            until = maxOf(
+                if (blanketOpen || maintenanceOpen) state.installExemptionUntilMs else 0L,
+                InstallGuard.windowDeadline(next, now),
+            )
             state.copy(
                 installExemptionUntilMs = until,
-                installWindowMaintenance = false,
+                installWindowMaintenance = maintenanceOpen,
                 installWindowBlanket = blanketOpen,
-                pendingInstallPackage = pkg,
-                pendingInstallCommandId = commandId,
-                // Kept across a reopen: the second call comes from a tap, which knows no label.
-                pendingInstallLabel = label.ifBlank { state.pendingInstallLabel },
+                pendingPushes = next,
+                pendingInstallPackage = "",
+                pendingInstallCommandId = "",
+                pendingInstallLabel = "",
             )
         }
+        // An approval the cap had to forget takes its prompt with it.
+        forgotten.forEach { InstallPromptNotifications.cancel(context, it) }
         // Synchronous lift, mirroring closeInstallWindow's re-arm: the child may be looking
         // at Play seconds from now, so don't depend on the exemption collector's timing.
         applyInstallWindow(until)
     }
 
     /**
-     * Re-extends the pushed-install window at the moment the child engages (notification or
-     * in-app card tap). The original window opens when the command ARRIVES, which can be long
-     * before anyone looks at the device; without this, tapping after it expired would open
-     * Play only for the install to be blocked by [DeviceRestrictions.KEY_INSTALLS].
+     * Re-extends [pkg]'s install window at the moment the child engages (notification or in-app
+     * card tap). The window opens when the command ARRIVES, which can be long before anyone
+     * looks at the device; without this, tapping after it expired would open Play only for the
+     * install to be blocked by [DeviceRestrictions.KEY_INSTALLS]. Only for an approval still on
+     * file: a stale tap after the app landed just reaches its Play page, with the block armed.
      */
-    suspend fun reopenInstallWindow() {
-        val s = syncStore.current()
-        if (s.pendingInstallPackage.isEmpty()) return
-        openInstallForPush(s.pendingInstallPackage, s.pendingInstallCommandId)
+    suspend fun reopenInstallWindow(pkg: String) {
+        val push = pushesOf(syncStore.current()).firstOrNull { it.pkg == pkg } ?: return
+        openInstallForPush(push.pkg, push.commandId)
     }
 
     /**
-     * Closes the pushed-install window and re-arms [DeviceRestrictions.KEY_INSTALLS]
-     * immediately (not just via the collector), so the child can't slip a second install in.
-     * When [installedPkg] is the pushed package itself, the "opened" acknowledgement is
-     * upgraded to "installed" so the parent sees the install actually completed.
+     * An approved app has landed: its approval is used up, the "opened" acknowledgement becomes
+     * "installed", and the install block comes back unless another window still wants it down.
      *
-     * Closing is all this does. What landed — the approved app, something else, or both — is
-     * judged by [reconcileInstalls], which runs right after and, unlike a window, is still
-     * there when the second app arrives three seconds later.
-     *
-     * And what it closes is the PUSH, not necessarily the window: inside a blanket window the
-     * deadline belongs to the person standing at the phone with their PIN entered, and the first
-     * thing they install is not their cue to be locked out of the next four.
+     * Only the app that was approved closes anything. Any new package used to close the window
+     * for the one approved — a game sneaked in, an app Play installed on its own — and the
+     * approved one, landing a minute later, was judged as never approved. Whatever else turned
+     * up is judged by [reconcileInstalls], which runs right after and is still there when the
+     * second app arrives three seconds later.
      */
-    suspend fun closeInstallWindow(installedPkg: String? = null) {
-        val s = syncStore.current()
-        if (s.pendingInstallPackage.isEmpty()) return
-        val blanketOpen = InstallGuard.blanketOpen(
-            s.installExemptionUntilMs, System.currentTimeMillis(), s.installWindowBlanket,
-            s.installWindowMaintenance, s.pendingInstallPackage,
-        )
-        val until = if (blanketOpen) s.installExemptionUntilMs else 0L
-        val pushedLanded = installedPkg == s.pendingInstallPackage && s.pendingInstallCommandId.isNotEmpty()
-        syncStore.update {
-            it.copy(
+    suspend fun closeInstallWindow(installedPkg: String) {
+        val now = System.currentTimeMillis()
+        // Inside the write for the same reason as openInstallForPush: an approval arriving while
+        // another app lands must not be lost to a list read a moment earlier. And under the
+        // guard's lock: a reconciliation in flight writes the baseline from what it read before
+        // this, and would take back the landed app's place in it — the second of two approved
+        // apps landing together was judged unapproved that way.
+        var landed: PendingPush? = null
+        var until = 0L
+        installGuardMutex.withLock { syncStore.update { state ->
+            val pushes = pushesOf(state)
+            val match = pushes.firstOrNull { it.pkg == installedPkg } ?: return@update state
+            landed = match
+            val rest = InstallGuard.withoutPush(pushes, match.pkg)
+            val blanketOpen = InstallGuard.blanketOpen(
+                state.installExemptionUntilMs, now, state.installWindowBlanket, state.installWindowMaintenance,
+                pushWindowOpen = InstallGuard.windowDeadline(pushes, now) > 0,
+            )
+            val maintenanceOpen = state.installWindowMaintenance && state.installExemptionUntilMs > now
+            until = maxOf(
+                if (blanketOpen || maintenanceOpen) state.installExemptionUntilMs else 0L,
+                InstallGuard.windowDeadline(rest, now),
+            )
+            val acked = match.commandId.isNotEmpty()
+            state.copy(
                 installExemptionUntilMs = until,
                 installWindowBlanket = blanketOpen,
+                pendingPushes = rest,
                 pendingInstallPackage = "",
                 pendingInstallCommandId = "",
                 pendingInstallLabel = "",
                 // Remembered so an approved app that lands late is still recognised as approved
                 // (see InstallGuard.LATE_LANDING_GRACE_MS).
-                lastWindowPackage = s.pendingInstallPackage,
-                lastWindowClosedAtMs = System.currentTimeMillis(),
-                lastCommandAck = if (pushedLanded) {
+                lastWindowPackage = match.pkg,
+                lastWindowClosedAtMs = now,
+                // And known from this moment, in the same write that used up its approval. The
+                // grace above holds ONE package: two approved apps landing seconds apart left the
+                // first judged after the second had taken its place — new, unapproved, removed.
+                knownPackages = state.knownPackages + match.pkg,
+                lastCommandAck = if (acked) {
                     CommandAck(
-                        id = s.pendingInstallCommandId,
+                        id = match.commandId,
                         action = RemoteAction.INSTALL_APP,
                         ok = true,
                         detail = RemoteAction.DETAIL_INSTALLED,
-                        completedAtMs = System.currentTimeMillis(),
-                        arg = s.pendingInstallPackage,
+                        completedAtMs = now,
+                        arg = match.pkg,
                     )
                 } else {
-                    it.lastCommandAck
+                    state.lastCommandAck
                 },
-                childVersion = if (pushedLanded) it.childVersion + 1 else it.childVersion,
+                childVersion = if (acked) state.childVersion + 1 else state.childVersion,
             )
-        }
-        InstallPromptNotifications.cancel(context, s.pendingInstallPackage)
+        } }
+        val done = landed ?: return
+        InstallPromptNotifications.cancel(context, done.pkg)
         // Synchronous re-arm: don't wait for the settings/exemption collector to react.
         applyInstallWindow(until)
-        if (pushedLanded) publishSelf()
+        if (done.commandId.isNotEmpty()) publishSelf()
     }
 
     /**
@@ -1779,6 +2034,34 @@ class SyncManager(
     }
 
     /**
+     * The approvals' own housekeeping, before anything is judged: an approved app that is already
+     * here landed while nothing was listening — a service an OEM had killed, a phone that was off
+     * — and its card would otherwise go on offering an install that happened days ago, lifting the
+     * block every time it was tapped. An approval that has run out goes, with its prompt.
+     */
+    private suspend fun settlePushes(installed: Set<String>) {
+        val pushes = pushesOf(syncStore.current())
+        if (pushes.isEmpty()) return
+        // Not an archived app: it is listed as installed and is not, and a push for one is the
+        // family approving it to come back — used up only when it really does.
+        val present = installed - repository.inventory.archivedPackages()
+        pushes.filter { it.pkg in present }.forEach { closeInstallWindow(it.pkg) }
+        val now = System.currentTimeMillis()
+        val current = pushesOf(syncStore.current())
+        val live = InstallGuard.livePushes(current, now)
+        if (live.size == current.size) return
+        (current - live.toSet()).forEach { InstallPromptNotifications.cancel(context, it.pkg) }
+        syncStore.update {
+            it.copy(
+                pendingPushes = InstallGuard.livePushes(pushesOf(it), now),
+                pendingInstallPackage = "",
+                pendingInstallCommandId = "",
+                pendingInstallLabel = "",
+            )
+        }
+    }
+
+    /**
      * Compares what is installed against what was, and answers for the difference.
      *
      * This is the guarantee behind "approving one app installs one app". The install block is
@@ -1797,6 +2080,7 @@ class SyncManager(
      * receiver that fires during it has better things to do than wait for a socket.
      */
     suspend fun reconcileInstalls() {
+        withContext(Dispatchers.IO) { repository.inventory.userPackages() }?.let { settlePushes(it) }
         if (installGuardMutex.withLock { withContext(Dispatchers.IO) { reconcileLocked() } }) {
             publishSelf()
         }
@@ -1804,9 +2088,22 @@ class SyncManager(
 
     /** The reconciliation itself; returns whether the parent needs to hear about it. */
     private suspend fun reconcileLocked(): Boolean {
+        // Frozen in safe mode (see CrashBreaker): nothing is enforced, so nothing is judged — and,
+        // just as much, nothing is absolved. Run through the not-guarding branch, every open case
+        // was released and every unapproved app folded into the baseline for good.
+        if (dev.walcott.debug.CrashBreaker.active) return false
         // Null, not empty: a device with no user apps at all is a normal state to record as the
         // baseline. Only a PackageManager that could not answer is a reason to judge nothing.
         val installed = repository.inventory.userPackages() ?: return false
+        if (!syncStore.current().archivedBaselineSeeded) {
+            val archived = repository.inventory.archivedPackages()
+            syncStore.update {
+                it.copy(
+                    knownPackages = InstallGuard.seedArchived(it.knownPackages, archived, it.unauthorizedApps.map { e -> e.pkg }.toSet()),
+                    archivedBaselineSeeded = true,
+                )
+            }
+        }
         val s = syncStore.current()
         val now = System.currentTimeMillis()
         // A maintenance window is NOT a blanket one: nobody is standing at the phone installing
@@ -1815,9 +2112,10 @@ class SyncManager(
         // exactly what the guard exists for. Neither is a pushed install's window, which forgives
         // its one target and nothing else (see [InstallGuard.blanketOpen] for what this used to
         // get wrong, and what it cost).
+        val pushes = pushesOf(s)
         val blanketWindow = InstallGuard.blanketOpen(
             s.installExemptionUntilMs, now, s.installWindowBlanket, s.installWindowMaintenance,
-            s.pendingInstallPackage,
+            pushWindowOpen = InstallGuard.windowDeadline(pushes, now) > 0,
         )
         // Device Owner is part of the question, not just of the answer: the install block is a
         // user restriction only a Device Owner can set, so anywhere else there is no block to
@@ -1857,9 +2155,7 @@ class SyncManager(
             return true
         }
 
-        val approved = InstallGuard.approved(
-            s.pendingInstallPackage, s.lastWindowPackage, s.lastWindowClosedAtMs, now,
-        )
+        val approved = InstallGuard.approved(pushes, s.lastWindowPackage, s.lastWindowClosedAtMs, now)
         val fresh = InstallGuard
             .fresh(installed, s.knownPackages, approved, s.unauthorizedApps.map { it.pkg }.toSet())
             .map {
@@ -1888,11 +2184,29 @@ class SyncManager(
             )
         }
 
+        // Held, in the watched mode, rather than removed on sight (see InstallGuard.HOLD_MS): the
+        // child installed it from Play in plain sight, and the parent's "let it stay" used to
+        // arrive to an app that was already gone. Held cases still suspend; only the removal
+        // waits for the answer, or for the hold to run out. A full ledger gives up its oldest
+        // held case, so the apps the cap is holding out are not left usable for days.
+        val guarded = dev.walcott.enforcement.AppUpdates.modeOf(settingsStore.current().installMode) ==
+            dev.walcott.enforcement.AppUpdates.MODE_GUARDED
+        val held = InstallGuard.heldUnder(open, fresh.map { it.pkg }.toSet(), guarded, now)
+        // Room already on its way out — cases being removed — is room: without counting it, each
+        // pass gave up another held case for the same app still waiting.
+        val leaving = held.count { InstallGuard.dueForRemoval(it, now) }
+        val judged = InstallGuard.makeRoom(
+            held,
+            waiting = if (guarded) (dropped.size - leaving).coerceAtLeast(0) else 0,
+            nowMs = now,
+        )
+
         // Suspend before removing: it takes effect immediately, it survives a refused or
         // interrupted uninstall, and it is the part that can be taken back if the parent
         // decides the app may stay.
-        val suspended = enforcer.quarantine(open.map { it.pkg })
-        val updated = open.map { entry ->
+        val suspended = enforcer.quarantine(judged.map { it.pkg })
+        val updated = judged.map { entry ->
+            if (!InstallGuard.dueForRemoval(entry, now)) return@map entry.copy(suspended = entry.pkg in suspended)
             runCatching { silentUninstall(entry.pkg) }
             val attempts = entry.removalAttempts + 1
             if (attempts == InstallGuard.STUCK_REMOVAL_ATTEMPTS) {
@@ -1914,7 +2228,11 @@ class SyncManager(
         // failed fifteen minutes ago is not news, and a snapshot per heartbeat for the lifetime
         // of a stuck case would be the loudest thing on the channel.
         val changed = fresh.isNotEmpty() || resolved.isNotEmpty() ||
-            updated.any { entry -> s.unauthorizedApps.any { it.pkg == entry.pkg && it.suspended != entry.suspended } }
+            updated.any { entry ->
+                s.unauthorizedApps.any {
+                    it.pkg == entry.pkg && (it.suspended != entry.suspended || it.holdUntilMs != entry.holdUntilMs)
+                }
+            }
         if (changed) syncStore.update { it.copy(childVersion = it.childVersion + 1) }
         return changed
     }
@@ -2521,6 +2839,8 @@ class SyncManager(
         syncStore.update { s ->
             s.copy(
                 children = s.children.filterNot { it.deviceId == deviceId },
+                // A phone written off cannot keep a migration open for ever.
+                relayStranded = s.relayStranded - deviceId,
                 lastSeen = s.lastSeen - deviceId,
                 staleNotifiedLastSeen = s.staleNotifiedLastSeen - deviceId,
                 enforcementNotified = s.enforcementNotified - deviceId,
@@ -3031,17 +3351,17 @@ class SyncManager(
         val client = dev.walcott.net.Http.client.newBuilder()
             .callTimeout(PROBE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
             .build()
-        val lines = runCatching {
+        val messages = runCatching {
             client.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { resp ->
                 if (!resp.isSuccessful) return@use emptyList()
-                resp.peekBody(PROBE_MAX_BYTES).string().lines()
+                RelayBacklog.parse(resp.peekBody(PROBE_MAX_BYTES).string())
             }
         }.getOrNull() ?: return@withContext null
         var highest: Long? = null
-        for (line in lines) {
-            if (line.isBlank()) continue
-            val event = runCatching { json.parseToJsonElement(line).jsonObject }.getOrNull() ?: continue
-            val body = event["message"]?.jsonPrimitive?.content ?: continue
+        for (message in messages) {
+            // A large family's rules travel as a file (see RelayBacklog.resolved), and a probe that
+            // could not read them would see no live parent at all — and restore over it.
+            val body = RelayBacklog.resolved(message, payload.ntfyServer, client)?.body ?: continue
             val decoded = SyncProtocol.decode(body, familyKey, parentPublic) as? IncomingMessage.FromParent
                 ?: continue
             // Only a phone that has already leapt counts. Below that it is this family's own
@@ -3446,8 +3766,17 @@ class SyncManager(
      */
     suspend fun publishHeartbeatIfStale(minIntervalMs: Long) {
         if (System.currentTimeMillis() - lastPublishAtMs < minIntervalMs) return
+        if (routineHeldByQuota()) return
         publishSelf()
     }
+
+    /**
+     * Whether a ROUTINE publish should hold off because the relay has refused this phone for the
+     * rest of its day — save one every quarter of an hour, which asks whether it has started
+     * taking them again (see [PublishLedger.probeDue]). Only routine ones: a request, a call for
+     * help, an answer or an acknowledgement still goes, and is refused or not on its own merits.
+     */
+    private fun routineHeldByQuota(): Boolean = PublishLedger.quotaExhausted() && !PublishLedger.probeDue()
 
     /**
      * Parent: says again that somebody pressed the help button, while nobody has dealt with it
@@ -3798,12 +4127,19 @@ class SyncManager(
                 // Measured rather than hoped: an oversized parent message is refused by the relay
                 // every single time, so the rules would stop reaching every child at once and
                 // nothing would ever say why (see ParentFit).
-                val fitted = ParentFit.encode(snapshot, familyKey, signingKey(id), rotation)
+                val ceiling = ParentFit.messageCeiling(
+                    RelayServer.keepsLargeMessages(id.ntfyServer),
+                    SyncEngine.currentDevices(state.children, state.lastSeen).map { it.appVersionCode },
+                )
+                val fitted = ParentFit.encode(snapshot, familyKey, signingKey(id), rotation, maxBytes = ceiling)
                 fitted.degraded?.let {
                     dev.walcott.debug.DebugLog.w(TAG, "parent snapshot did not fit; dropped $it")
                 }
                 if (fitted.oversize != state.policyTooLarge) {
                     syncStore.update { st -> st.copy(policyTooLarge = fitted.oversize) }
+                    // Said out loud the moment it starts: from here on no rule change reaches any
+                    // phone, and the only other place that says so is the relay card in settings.
+                    if (fitted.oversize) SyncNotifications.notifyPolicyTooLarge(context, familyLabel())
                 }
                 if (fitted.oversize) {
                     dev.walcott.debug.DebugLog.e(
@@ -3908,6 +4244,7 @@ class SyncManager(
                 // trail is decimated so it can't push the snapshot past ntfy's message cap.
                 val historyOn = settings.resolveForChild(id.childId).locationHistoryEnabled
                 val crashes = dev.walcott.debug.CrashCounter.current()
+                val ledger = PublishLedger.today.value.on(System.currentTimeMillis())
                 // Counts and timestamps only — reading it does not touch the cached lists.
                 val blocklistState = withContext(Dispatchers.IO) {
                     dev.walcott.net.BlocklistStore.get(context).state.value
@@ -4018,6 +4355,10 @@ class SyncManager(
                         NotificationLog.accessGranted(context),
                     crashTotal = crashes.total,
                     lastCrashMs = crashes.lastAtMs,
+                    safeModeSinceMs = dev.walcott.debug.CrashBreaker.safeModeSinceMs,
+                    publishesToday = ledger.sent,
+                    publishesUtcDay = ledger.utcDay,
+                    relayQuotaUntilMs = ledger.quotaUntilMs,
                     unauthorized = s.unauthorizedApps,
                     setupUnmet = setupUnmet,
                     lostMode = s.lostMode,
@@ -4381,6 +4722,46 @@ class SyncManager(
         }
 
     private suspend fun handleIncoming(raw: String, connectedAs: FamilyIdentity, timeSec: Long) {
+        val decoded = decodeIncoming(raw, connectedAs) ?: return
+        handleDecoded(decoded, connectedAs, timeSec)
+    }
+
+    /**
+     * A backlog read in one go (see [SyncTransport.connect]): decoded whole, then handled in the
+     * relay's order with only the newest parent snapshot from each parent phone among it.
+     *
+     * The older ones are not lost: a parent snapshot carries everything still meant — the rules,
+     * the commands still queued, the answers still travelling — so the newest says all of it, and
+     * leaves out only what was taken back. Handling them all, oldest first, is what ran a release
+     * the family had cancelled on the way to the snapshot that cancelled it.
+     */
+    private suspend fun handleBacklog(backlog: List<RelayMessage>, connectedAs: FamilyIdentity) {
+        // A message the relay kept as a file that could not be fetched is a hole in the batch, and
+        // it may be the newest parent snapshot — the one that withdrew a command. Picking the
+        // newest among the rest would then run exactly what was withdrawn, so a batch with a hole
+        // runs no commands at all: the rules still apply, and the parent's next publish brings the
+        // commands it still means.
+        val commandsAllowed = backlog.none { it.attachmentUrl.isNotBlank() }
+        if (!commandsAllowed) {
+            dev.walcott.debug.DebugLog.w(TAG, "a message in the backlog could not be fetched; running no commands from it")
+        }
+        val decoded = backlog.mapNotNull { message ->
+            runCatching { decodeIncoming(message.body, connectedAs) }.getOrNull()?.let { it to message.timeSec }
+        }
+        val kept = SyncEngine.newestParentsOf(decoded) { (it.first.message as? IncomingMessage.FromParent)?.snapshot }
+        if (kept.size < decoded.size) {
+            dev.walcott.debug.DebugLog.i(
+                TAG, "backlog of ${backlog.size}: handling the newest parent snapshot, skipping ${decoded.size - kept.size} older",
+            )
+        }
+        for ((message, timeSec) in kept) {
+            runCatching { handleDecoded(message, connectedAs, timeSec, commandsAllowed) }
+                .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handling a backlog message failed", it) }
+        }
+    }
+
+    /** [raw] opened with this family's keys, or null when it is not a message of this family's. */
+    private suspend fun decodeIncoming(raw: String, connectedAs: FamilyIdentity): SyncProtocol.Decoded? {
         // The identity as it is NOW, not as it was when the socket was opened. The one that
         // changes underneath a live socket is the parent's signing key, adopted below: read from
         // the connect-time copy, every message after a rotation failed the direct check, went
@@ -4390,7 +4771,16 @@ class SyncManager(
         val id = identityStore.current().takeIf { it.familyKeyB64.isNotBlank() } ?: connectedAs
         val familyKey = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(id.familyKeyB64))
         val parentPublic = FamilyCrypto.publicKeyFromBytes(FamilyCrypto.fromB64(id.parentPublicKeyB64))
-        val decoded = SyncProtocol.decodeVerbose(raw, familyKey, parentPublic) ?: return
+        return SyncProtocol.decodeVerbose(raw, familyKey, parentPublic)
+    }
+
+    private suspend fun handleDecoded(
+        decoded: SyncProtocol.Decoded,
+        connectedAs: FamilyIdentity,
+        timeSec: Long,
+        commandsAllowed: Boolean = true,
+    ) {
+        val id = identityStore.current().takeIf { it.familyKeyB64.isNotBlank() } ?: connectedAs
         val message = decoded.message
 
         // A restored parent proved a key rotation (see KeyRotation): make the new key this
@@ -4425,8 +4815,8 @@ class SyncManager(
 
         when {
             id.role == Role.CHILD && message is IncomingMessage.FromParent ->
-                applyParentSnapshot(message.snapshot, rotationAdopted = rotatedKey != null)
-            id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot)
+                applyParentSnapshot(message.snapshot, rotationAdopted = rotatedKey != null, commandsAllowed = commandsAllowed)
+            id.role == Role.PARENT && message is IncomingMessage.FromChild -> applyChildSnapshot(message.snapshot, timeSec)
             // A parent hears parent snapshots: its own, echoed back, and its older ones replayed
             // out of the backlog. Almost always nothing to do — and once in a while the thing
             // this family most needs to be told (see noteForeignParent).
@@ -4477,7 +4867,11 @@ class SyncManager(
         // every fifteen minutes, and this is a notification a parent must not learn to swipe away.
         if (state.supersededVersion >= snapshot.version) return
         syncStore.update {
-            it.copy(supersededAtMs = System.currentTimeMillis(), supersededVersion = snapshot.version)
+            it.copy(
+                supersededAtMs = System.currentTimeMillis(),
+                supersededVersion = snapshot.version,
+                supersededByChildren = false,
+            )
         }
         dev.walcott.debug.DebugLog.w(
             TAG,
@@ -4500,7 +4894,7 @@ class SyncManager(
         if (state.supersededAtMs == 0L) return
         val version = SyncEngine.takeoverVersion(state.parentVersion, state.supersededVersion)
         syncStore.update {
-            it.copy(parentVersion = version, supersededAtMs = 0, supersededVersion = 0)
+            it.copy(parentVersion = version, supersededAtMs = 0, supersededVersion = 0, supersededByChildren = false)
         }
         dev.walcott.debug.DebugLog.w(TAG, "taking this family back at version $version")
         SyncNotifications.cancelFamilyTakenOver(context)
@@ -4620,10 +5014,14 @@ class SyncManager(
      */
     private val parentSnapshotMutex = Mutex()
 
-    private suspend fun applyParentSnapshot(snapshot: ParentSnapshot, rotationAdopted: Boolean) =
-        parentSnapshotMutex.withLock { applyParentSnapshotLocked(snapshot, rotationAdopted) }
+    private suspend fun applyParentSnapshot(snapshot: ParentSnapshot, rotationAdopted: Boolean, commandsAllowed: Boolean = true) =
+        parentSnapshotMutex.withLock { applyParentSnapshotLocked(snapshot, rotationAdopted, commandsAllowed) }
 
-    private suspend fun applyParentSnapshotLocked(snapshot: ParentSnapshot, rotationAdopted: Boolean) {
+    private suspend fun applyParentSnapshotLocked(
+        snapshot: ParentSnapshot,
+        rotationAdopted: Boolean,
+        commandsAllowed: Boolean = true,
+    ) {
         val id = identityStore.current()
         // Replay gate: an old captured envelope is still validly signed, so freshness must
         // come from the version counter (see SyncEngine.adoptsPolicy). Everything below the
@@ -4677,6 +5075,23 @@ class SyncManager(
         val deviceId = id.deviceId
         val s = syncStore.current()
 
+        // Whether this snapshot still speaks for the phone that published it. One older than a
+        // snapshot already seen from that phone carries commands it has since taken back — a
+        // release cancelled, a phone written off as stolen — replayed out of the relay's backlog
+        // (see SyncEngine.commandsLive). Written down before anything below acts on it, and only
+        // when it moves: a re-emit every fifteen minutes is not worth a rewrite of the store.
+        val seen = SyncEngine.seenBaseline(s.parentSeenTopic, id.topic, s.parentSeenVersions)
+        val live = commandsAllowed && SyncEngine.commandsLive(snapshot.version, seen[snapshot.parentInstanceId])
+        val seenNext = SyncEngine.seenAfter(seen, snapshot.parentInstanceId, snapshot.version, rotationAdopted)
+        if (seenNext != s.parentSeenVersions || s.parentSeenTopic != id.topic) {
+            syncStore.update { it.copy(parentSeenVersions = seenNext, parentSeenTopic = id.topic) }
+        }
+        if (!live) {
+            dev.walcott.debug.DebugLog.i(
+                TAG, "parent snapshot v${snapshot.version} is older than one already seen; running none of its commands",
+            )
+        }
+
         // Track the parent app's build for the update canary. Monotonic max, so a replayed
         // older parent snapshot can't yank a child's already-allowed target back down.
         if (snapshot.parentVersionCode > s.parentAppVersionCode) {
@@ -4701,7 +5116,7 @@ class SyncManager(
         }
 
         // On-demand: answer a fresh "locate now" addressed to this device.
-        val locReq = SyncEngine.freshLocationRequest(snapshot, deviceId, s.appliedLocationRequestMs)
+        val locReq = if (live) SyncEngine.freshLocationRequest(snapshot, deviceId, s.appliedLocationRequestMs) else null
         if (locReq != null) {
             // Background location rides entirely on the location-typed foreground service (the
             // background permission is deliberately denied — see LocationPolicy), so a service
@@ -4736,7 +5151,7 @@ class SyncManager(
         // first; each command publishes its own acknowledgement.
         // Nothing may follow a release: the stores it just wiped would be written back into
         // existence by the bookkeeping below, on a device that is no longer part of any family.
-        if (applyCommands(snapshot, deviceId)) return
+        if (live && applyCommands(snapshot, deviceId)) return
 
         // Answer the parent's app-icon requests for apps this child has (a bounded trickle).
         if (snapshot.iconRequests.isNotEmpty()) runCatching { answerIconRequests(snapshot.iconRequests, id) }
@@ -4851,6 +5266,7 @@ class SyncManager(
                 },
                 setLostMode = { on, message -> if (on) enableLostMode(message) else disableLostMode() },
                 allowInstalls = { durationMs -> allowInstallsFor(durationMs) },
+                probeRelay = { server -> relayCarriesFamily(server) },
             )
         }
         val before = syncStore.current()
@@ -4905,12 +5321,17 @@ class SyncManager(
         count = count,
     )
 
-    private suspend fun applyChildSnapshot(snapshot: ChildSnapshot) = childSnapshotMutex.withLock {
-        applyChildSnapshotLocked(snapshot)
+    private suspend fun applyChildSnapshot(snapshot: ChildSnapshot, relayTimeSec: Long = 0) = childSnapshotMutex.withLock {
+        applyChildSnapshotLocked(snapshot, relayTimeSec)
     }
 
-    private suspend fun applyChildSnapshotLocked(snapshot: ChildSnapshot) {
+    private suspend fun applyChildSnapshotLocked(snapshot: ChildSnapshot, relayTimeSec: Long = 0) {
         val before = syncStore.current()
+        // When the phone SAID this, by the relay's clock — not when this phone got round to reading
+        // it. A parent reading a night's backlog at breakfast used to stamp a phone that went quiet
+        // eleven hours ago as heard from just now, and its "unreachable" alert came a day late.
+        val now = System.currentTimeMillis()
+        val heardAtMs = if (relayTimeSec > 0) minOf(now, relayTimeSec * 1000) else now
         // Alerts are the only thing that leaves this family's screens, so on a device holding
         // several families they say which one they came from. The feed doesn't need it — each
         // family has its own — and neither does a device with a single family, where the suffix
@@ -5016,7 +5437,7 @@ class SyncManager(
         syncStore.update {
             it.copy(
                 children = merged,
-                lastSeen = it.lastSeen + (snapshot.deviceId to System.currentTimeMillis()),
+                lastSeen = it.lastSeen + (snapshot.deviceId to maxOf(it.lastSeen[snapshot.deviceId] ?: 0L, heardAtMs)),
                 commands = if (ackedId != null) it.commands.filterNot { c -> c.id == ackedId } else it.commands,
                 usageHistory = if (ledger != null) it.usageHistory + (ledgerKey to ledger) else it.usageHistory,
                 usageByApp = if (byApp != null) it.usageByApp + (ledgerKey to byApp) else it.usageByApp,
@@ -5058,8 +5479,20 @@ class SyncManager(
             SyncNotifications.cancelInstallWindowOpen(context, snapshot.deviceId)
         }
 
+        // A device that could not follow the family to a new relay is written down by id, and kept
+        // until it moves: read off its last acknowledgement, it was forgotten the moment any other
+        // command was answered, and the old relay — the only one it can hear — was let go.
+        val relayAck = snapshot.lastCommand?.takeIf { it.action == RemoteAction.SET_RELAY }
+        if (relayAck != null) {
+            val stranded = !relayAck.ok && relayAck.detail == RemoteAction.DETAIL_RELAY_UNREACHABLE
+            if (stranded != (snapshot.deviceId in before.relayStranded)) {
+                syncStore.update {
+                    it.copy(relayStranded = if (stranded) it.relayStranded + snapshot.deviceId else it.relayStranded - snapshot.deviceId)
+                }
+            }
+        }
         // A device saying it has moved relay may have been the last one the parent was waiting for.
-        if (snapshot.lastCommand?.action == RemoteAction.SET_RELAY && snapshot.lastCommand?.ok == true) {
+        if (relayAck?.ok == true) {
             runCatching { closeMigrationIfDone() }
                 .onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not close the migration", it) }
         }
@@ -5156,6 +5589,7 @@ class SyncManager(
                 SyncNotifications.notifyUnauthorizedApp(
                     context, who, name, entry.pkg, snapshot.deviceId, snapshot.childId,
                     installer = entry.installer,
+                    holdUntilMs = entry.holdUntilMs,
                     // The same gate the extra-time answers use: a family that turned the app
                     // lock on asked for a gate in front of decisions, and "let it stay" is one.
                     quickAnswer = !identityStore.current().appLock,
@@ -5276,6 +5710,30 @@ class SyncManager(
             }
         }
 
+        // A child on rules newer than anything this phone has published refuses every rule this
+        // phone sends (see SyncEngine.childAhead) — and every screen here read it as "up to date".
+        // Said, once per version, with the same remedy as a takeover: publish above it.
+        if (SyncEngine.childAhead(before.parentVersion, snapshot.appliedPolicyVersion) &&
+            snapshot.appliedPolicyVersion > before.supersededVersion
+        ) {
+            val alreadySaid = before.supersededAtMs > 0
+            syncStore.update {
+                it.copy(
+                    supersededAtMs = if (it.supersededAtMs > 0) it.supersededAtMs else System.currentTimeMillis(),
+                    supersededVersion = maxOf(it.supersededVersion, snapshot.appliedPolicyVersion),
+                    supersededByChildren = if (it.supersededAtMs > 0) it.supersededByChildren else true,
+                )
+            }
+            dev.walcott.debug.DebugLog.w(
+                TAG,
+                "${snapshot.deviceId} runs rules at ${snapshot.appliedPolicyVersion}, above this phone's " +
+                    "${before.parentVersion}: this phone's edits no longer reach it",
+            )
+            if (!alreadySaid) SyncNotifications.notifyFamilyTakenOver(context, familyLabel(), byChildren = true)
+        }
+
+        republishIfBehind(snapshot, before.parentVersion)
+
         // The child has caught up with the parent's rules. Recorded so the detail screen can say
         // "up to date, confirmed at X" instead of leaving the parent to read meaning into the
         // ABSENCE of a warning — which is also what a child that has never reported looks like.
@@ -5314,6 +5772,23 @@ class SyncManager(
             syncStore.update {
                 it.copy(webFilterNotified = it.webFilterNotified - snapshot.deviceId)
                     .plusEvent(event(ParentEvent.TYPE_WEB_FILTER_BACK, snapshot))
+            }
+        }
+
+        // The phone opened itself because Walcott kept dying on it (see CrashBreaker): every app is
+        // open and no rule applies until the next build, or until the parent re-applies them. Said
+        // once, loudly, and the closing line when the rules are back.
+        val safeMode = snapshot.safeModeSinceMs > 0
+        if (safeMode && snapshot.deviceId !in before.safeModeNotified) {
+            SyncNotifications.notifySafeMode(context, who, snapshot.deviceId, snapshot.childId)
+            syncStore.update {
+                it.copy(safeModeNotified = it.safeModeNotified + snapshot.deviceId)
+                    .plusEvent(event(ParentEvent.TYPE_SAFE_MODE, snapshot))
+            }
+        } else if (!safeMode && snapshot.deviceId in before.safeModeNotified) {
+            syncStore.update {
+                it.copy(safeModeNotified = it.safeModeNotified - snapshot.deviceId)
+                    .plusEvent(event(ParentEvent.TYPE_SAFE_MODE_OVER, snapshot))
             }
         }
 
@@ -5553,7 +6028,7 @@ class SyncManager(
             // Install requests get their own wording — "asks for something" undersells the
             // one ask the parent can answer entirely from the notification shade's tap.
             if (ask.kind == ChildRequest.KIND_INSTALL) {
-                SyncNotifications.notifyInstallAsk(context, who, ask.text, ask.requestId, quickAnswer)
+                SyncNotifications.notifyInstallAsk(context, who, ask.text, ask.pkg, ask.requestId, quickAnswer)
             } else if (ask.kind == ChildRequest.KIND_HELP) {
                 // The one ask with no answer to give from the shade — it is a person, not a
                 // permission (see notifyHelpAsk).
@@ -5650,10 +6125,40 @@ class SyncManager(
          */
         private const val INSTALL_PUSH_EXEMPTION_MS = 5 * 60 * 1000L
 
+        /** Looking for the family on a relay before moving to it (see [relayCarriesFamily]). */
+        private const val RELAY_PROBE_ATTEMPTS = 4
+        private const val RELAY_PROBE_GAP_MS = 5_000L
+        private const val RELAY_PROBE_TIMEOUT_SEC = 20L
+
         // Re-emits only heal lost messages: real changes (settings edits, requests,
         // resolutions) publish immediately, so a long interval costs little freshness
         // and saves a lot of radio/battery.
-        private const val RE_EMIT_MILLIS = 15 * 60 * 1000L
+        /**
+         * The parent's re-emit. An hour, not the quarter it was: everything time-critical leaves
+         * on its own publish the moment it happens, a child that is behind is answered with a
+         * publish of its own (see [republishIfBehind]), and what this still heals — a publish the
+         * relay lost — can wait an hour. Four an hour from every parent phone were a large share
+         * of a home's 250 messages a day on the hosted relay.
+         */
+        private const val RE_EMIT_MILLIS = 60 * 60 * 1000L
+
+        /**
+         * How often a child's ROUTINE publishes may go out — the heartbeat, the watchdog, the
+         * screen going off, a phone that has not moved — however many of them come due. Events
+         * (a request, a rule biting, an app installed) still go at once.
+         *
+         * The hosted relay allows 250 messages a day per address, shared by every phone behind
+         * one home router, and a child used to spend most of that on its own: a heartbeat every
+         * twenty minutes, a watchdog every ten, a re-emit every fifteen, a publish every time the
+         * screen went off. Forty-five minutes is about thirty routine messages a day.
+         */
+        const val ROUTINE_PUBLISH_MIN_MS = 45 * 60 * 1000L
+
+        /** How often the parent republishes for a child it can see is behind (see [republishIfBehind]). */
+        private const val BEHIND_REPUBLISH_MIN_MS = 30 * 60 * 1000L
+
+        /** How long after its own publish the parent waits before reading "behind" as "lost". */
+        private const val BEHIND_GRACE_MS = 5 * 60 * 1000L
 
         /** The most often a returning network may re-send an unsent help ask (see flushUnsentHelp). */
         private const val HELP_FLUSH_MIN_INTERVAL_MS = 60_000L
@@ -5713,6 +6218,9 @@ class SyncManager(
 
         /** Ceiling on the moment a device gives the relay to hand over a refusal before releasing. */
         const val RELEASE_LISTEN_MS = 10_000L
+
+        /** The most the release waits for its last catch-up before listening (see [releaseAfterListening]). */
+        private const val RELEASE_CATCH_UP_MS = 35_000L
 
         /** [NoticeEntry.kind] for a request that ran out of time unanswered. */
         const val NOTICE_EXPIRED = "expired"

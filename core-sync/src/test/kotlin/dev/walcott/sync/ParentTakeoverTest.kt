@@ -76,4 +76,33 @@ class ParentTakeoverTest {
             ),
         )
     }
+
+    @Test
+    fun `a child on rules newer than this phone ever sent is ahead of it`() {
+        // This phone's store was lost and its counter restarted, or a backup was restored over an
+        // empty one: the children refuse every edit until the counter climbs past them.
+        assertTrue(SyncEngine.childAhead(parentVersion = 0, appliedVersion = 37))
+        assertTrue(SyncEngine.childAhead(parentVersion = 12, appliedVersion = 12 + SyncEngine.RESTORE_VERSION_LEAP))
+    }
+
+    @Test
+    fun `a child at or behind this phone is not ahead`() {
+        assertFalse(SyncEngine.childAhead(parentVersion = 12, appliedVersion = 12))
+        assertFalse(SyncEngine.childAhead(parentVersion = 12, appliedVersion = 3))
+    }
+
+    @Test
+    fun `a claim too far ahead to be honest is not believed`() {
+        // Child messages are not signed; a forged "I applied Long.MAX_VALUE" must not send this
+        // phone's counter leaping into an overflow.
+        assertFalse(SyncEngine.childAhead(parentVersion = 12, appliedVersion = Long.MAX_VALUE))
+        assertFalse(SyncEngine.childAhead(parentVersion = 0, appliedVersion = SyncEngine.MAX_CHILD_AHEAD + 1))
+    }
+
+    @Test
+    fun `taking it back from the children puts this phone above them`() {
+        val applied = 1_000_037L
+        val version = SyncEngine.takeoverVersion(ownVersion = 0, seenVersion = applied)
+        assertTrue(SyncEngine.adoptsPolicy(version, appliedVersion = applied, rotationAdopted = false))
+    }
 }

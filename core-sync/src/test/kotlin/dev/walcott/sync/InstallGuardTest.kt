@@ -35,7 +35,7 @@ class InstallGuardTest {
     fun `the open window's target is approved`() {
         assertEquals(
             setOf("com.game"),
-            InstallGuard.approved("com.game", lastWindowPackage = "", lastWindowClosedAtMs = 0, nowMs = now),
+            InstallGuard.approved(listOf(PendingPush("com.game")), lastWindowPackage = "", lastWindowClosedAtMs = 0, nowMs = now),
         )
     }
 
@@ -45,20 +45,20 @@ class InstallGuardTest {
         // install to land is what closes the window. Quarantining the approved app for being
         // slow would punish exactly the child who did as they were told.
         val closed = now - InstallGuard.LATE_LANDING_GRACE_MS + 1
-        assertTrue("com.game" in InstallGuard.approved("", "com.game", closed, now))
+        assertTrue("com.game" in InstallGuard.approved(emptyList(), "com.game", closed, now))
     }
 
     @Test
     fun `approval does not last for ever`() {
         val closed = now - InstallGuard.LATE_LANDING_GRACE_MS - 1
-        assertEquals(emptySet<String>(), InstallGuard.approved("", "com.game", closed, now))
+        assertEquals(emptySet<String>(), InstallGuard.approved(emptyList(), "com.game", closed, now))
     }
 
     @Test
     fun `a second app installed behind the approved one is not approved`() {
         val installed = setOf("com.launcher", "com.game", "com.sneaky")
         val baseline = setOf("com.launcher")
-        val approved = InstallGuard.approved("com.game", "", 0, now)
+        val approved = InstallGuard.approved(listOf(PendingPush("com.game")), "", 0, now)
         assertEquals(
             setOf("com.sneaky"),
             InstallGuard.fresh(installed, baseline, approved, quarantined = emptySet()),
@@ -166,7 +166,7 @@ class InstallGuardTest {
         assertTrue(
             InstallGuard.blanketOpen(
                 untilMs = now + 1, nowMs = now, blanket = true, maintenance = false,
-                pendingPackage = "com.pushed.but.never.installed",
+                pushWindowOpen = true,
             ),
         )
     }
@@ -176,7 +176,7 @@ class InstallGuardTest {
         assertFalse(
             InstallGuard.blanketOpen(
                 untilMs = now + 1, nowMs = now, blanket = false, maintenance = false,
-                pendingPackage = "com.game",
+                pushWindowOpen = true,
             ),
         )
     }
@@ -187,7 +187,7 @@ class InstallGuardTest {
         // is nothing pending, and being wrong THIS way costs a window in which nothing is judged.
         assertTrue(
             InstallGuard.blanketOpen(
-                untilMs = now + 1, nowMs = now, blanket = false, maintenance = false, pendingPackage = "",
+                untilMs = now + 1, nowMs = now, blanket = false, maintenance = false, pushWindowOpen = false,
             ),
         )
     }
@@ -197,7 +197,7 @@ class InstallGuardTest {
         // Nobody is standing at the phone at four in the morning, so nothing in it is forgiven.
         assertFalse(
             InstallGuard.blanketOpen(
-                untilMs = now + 1, nowMs = now, blanket = true, maintenance = true, pendingPackage = "",
+                untilMs = now + 1, nowMs = now, blanket = true, maintenance = true, pushWindowOpen = false,
             ),
         )
     }
@@ -206,22 +206,23 @@ class InstallGuardTest {
     fun `an expired window forgives nothing`() {
         assertFalse(
             InstallGuard.blanketOpen(
-                untilMs = now, nowMs = now, blanket = true, maintenance = false, pendingPackage = "",
+                untilMs = now, nowMs = now, blanket = true, maintenance = false, pushWindowOpen = false,
             ),
         )
     }
 
     @Test
-    fun `the ledger is capped, and names what it had to leave out`() {
+    fun `the ledger is capped by holding the newest out, never by letting an open case go`() {
+        // It used to keep the newest and drop the oldest case — and an app dropped from the ledger
+        // is an app nothing keeps suspended any more: unapproved, and handed back to make room.
         val ledger = (1..InstallGuard.MAX_QUARANTINE).map { UnauthorizedApp("com.app$it", atMs = now) }
         val installed = ledger.map { it.pkg }.toSet() + "com.newest"
         val fresh = listOf(UnauthorizedApp("com.newest", atMs = now + 1))
         val next = InstallGuard.nextQuarantine(ledger, fresh, installed)
-        assertEquals(InstallGuard.MAX_QUARANTINE, next.size)
-        assertEquals("com.newest", next.last().pkg)
+        assertEquals(ledger.map { it.pkg }, next.map { it.pkg })
         // Named rather than counted: the caller has to keep these OUT of the baseline of known
         // packages, or the cap turns a delayed case into an app that is never looked at again.
-        assertEquals(listOf("com.app1"), InstallGuard.overflow(ledger, fresh, installed).map { it.pkg })
+        assertEquals(listOf("com.newest"), InstallGuard.overflow(ledger, fresh, installed).map { it.pkg })
     }
 
     @Test
@@ -249,5 +250,148 @@ class InstallGuardTest {
         val next = InstallGuard.nextQuarantine(ledger, listOf(waiting), stillInstalled)
         assertTrue(next.any { it.pkg == waiting.pkg }, "the waiting app never got its slot")
         assertEquals(emptyList<UnauthorizedApp>(), InstallGuard.overflow(ledger, listOf(waiting), stillInstalled))
+    }
+
+    // --- Several approvals at once ---
+
+    @Test
+    fun `approving a second app keeps the first`() {
+        // The bug: one slot, so B overwrote A — and A, installed a minute later, was suspended,
+        // removed and reported to the parent as installed behind their back.
+        val a = PendingPush("com.a", "cmd-a", "App A", approvedAtMs = now, windowUntilMs = now + 1)
+        val b = PendingPush("com.b", "cmd-b", "App B", approvedAtMs = now, windowUntilMs = now + 1)
+        val both = InstallGuard.withPush(InstallGuard.withPush(emptyList(), a), b)
+        assertEquals(setOf("com.a", "com.b"), InstallGuard.approved(both, "", 0, now))
+    }
+
+    @Test
+    fun `pushing the same app again retries it rather than stacking it`() {
+        val first = PendingPush("com.a", "cmd-1", "App A", approvedAtMs = now - 1000, windowUntilMs = 0)
+        // A tap reopens the window and knows no name; the name and the age stay the first one's.
+        val again = InstallGuard.withPush(listOf(first), PendingPush("com.a", "", "", approvedAtMs = now, windowUntilMs = now + 5))
+        assertEquals(1, again.size)
+        assertEquals("App A", again.single().label)
+        assertEquals("cmd-1", again.single().commandId)
+        assertEquals(now - 1000, again.single().approvedAtMs)
+        assertEquals(now + 5, again.single().windowUntilMs)
+    }
+
+    @Test
+    fun `an app that lands consumes its own approval and nobody else's`() {
+        val pushes = listOf(PendingPush("com.a"), PendingPush("com.b"))
+        assertEquals(listOf(PendingPush("com.b")), InstallGuard.withoutPush(pushes, "com.a"))
+        // An app nobody approved consumes nothing: it is the guard's to judge.
+        assertEquals(pushes, InstallGuard.withoutPush(pushes, "com.sneaky"))
+        assertFalse("com.sneaky" in InstallGuard.approved(pushes, "", 0, now))
+    }
+
+    @Test
+    fun `closing the windows keeps the approvals`() {
+        // "Re-apply protection" and "Close now" end what is open; they used to withdraw the
+        // approval too, while the parent was trying to work out why it would not install.
+        val pushes = listOf(PendingPush("com.a", windowUntilMs = now + 60_000))
+        val closed = InstallGuard.closedWindows(pushes)
+        assertEquals(0L, InstallGuard.windowDeadline(closed, now))
+        assertEquals(setOf("com.a"), InstallGuard.approved(closed, "", 0, now))
+    }
+
+    @Test
+    fun `the install window lasts as long as the last open push window`() {
+        val pushes = listOf(
+            PendingPush("com.a", windowUntilMs = now + 1_000),
+            PendingPush("com.b", windowUntilMs = now + 5_000),
+            PendingPush("com.c", windowUntilMs = 0),
+        )
+        assertEquals(now + 5_000, InstallGuard.windowDeadline(pushes, now))
+        assertEquals(0L, InstallGuard.windowDeadline(pushes, now + 5_000))
+    }
+
+    @Test
+    fun `an approval runs out with the command that carried it`() {
+        val old = PendingPush("com.old", approvedAtMs = now - InstallGuard.PUSH_LIFETIME_MS - 1)
+        val fresh = PendingPush("com.fresh", approvedAtMs = now - 1_000)
+        assertEquals(listOf(fresh), InstallGuard.livePushes(listOf(old, fresh), now))
+    }
+
+    @Test
+    fun `an approval whose window is open does not run out under it`() {
+        val tapped = PendingPush("com.late", approvedAtMs = now - InstallGuard.PUSH_LIFETIME_MS - 1, windowUntilMs = now + 60_000)
+        assertEquals(listOf(tapped), InstallGuard.livePushes(listOf(tapped), now))
+        assertEquals(emptyList<PendingPush>(), InstallGuard.livePushes(listOf(tapped), now + 60_001))
+    }
+
+    @Test
+    fun `too many approvals make room by forgetting the oldest`() {
+        var pushes = emptyList<PendingPush>()
+        for (i in 1..InstallGuard.MAX_PENDING_PUSHES + 1) pushes = InstallGuard.withPush(pushes, PendingPush("com.app$i"))
+        assertEquals(InstallGuard.MAX_PENDING_PUSHES, pushes.size)
+        assertFalse(pushes.any { it.pkg == "com.app1" })
+    }
+
+    @Test
+    fun `the one approval an older build kept is still an approval`() {
+        val migrated = InstallGuard.migratedPushes(emptyList(), "com.a", "cmd-a", "App A", now + 10, now)
+        // Dated by its window, so reading it again later does not make it new again.
+        assertEquals(listOf(PendingPush("com.a", "cmd-a", "App A", now + 10, now + 10)), migrated)
+        // Folded in once: already there, it is not added twice.
+        assertEquals(migrated, InstallGuard.migratedPushes(migrated, "com.a", "cmd-a", "App A", now + 10, now))
+        assertEquals(emptyList<PendingPush>(), InstallGuard.migratedPushes(emptyList(), "", "", "", 0, now))
+    }
+
+    // --- Holding an app for the parent's answer ---
+
+    @Test
+    fun `in the watched mode a new case is held for an answer, not removed`() {
+        val entries = listOf(UnauthorizedApp("com.new", atMs = now))
+        val held = InstallGuard.heldUnder(entries, fresh = setOf("com.new"), guarded = true, nowMs = now)
+        assertEquals(now + InstallGuard.HOLD_MS, held.single().holdUntilMs)
+        assertFalse(InstallGuard.dueForRemoval(held.single(), now))
+        // Unanswered for the whole hold, it goes.
+        assertTrue(InstallGuard.dueForRemoval(held.single(), now + InstallGuard.HOLD_MS))
+    }
+
+    @Test
+    fun `an existing hold keeps its own deadline`() {
+        val entries = listOf(UnauthorizedApp("com.old", atMs = now - 1000, holdUntilMs = now + 5))
+        assertEquals(entries, InstallGuard.heldUnder(entries, fresh = emptySet(), guarded = true, nowMs = now))
+    }
+
+    @Test
+    fun `the strict mode holds nothing, including what the watched one was holding`() {
+        val entries = listOf(
+            UnauthorizedApp("com.new", atMs = now),
+            UnauthorizedApp("com.held", atMs = now - 1000, holdUntilMs = now + InstallGuard.HOLD_MS),
+        )
+        val strict = InstallGuard.heldUnder(entries, fresh = setOf("com.new"), guarded = false, nowMs = now)
+        assertTrue(strict.all { InstallGuard.dueForRemoval(it, now) })
+    }
+
+    @Test
+    fun `a full ledger gives up its oldest held case to make room`() {
+        // Five apps held for an answer must not leave a sixth usable for two days.
+        val entries = (1..InstallGuard.MAX_QUARANTINE).map {
+            UnauthorizedApp("com.app$it", atMs = now + it, holdUntilMs = now + InstallGuard.HOLD_MS)
+        }
+        val roomy = InstallGuard.makeRoom(entries, waiting = 1, nowMs = now)
+        assertTrue(InstallGuard.dueForRemoval(roomy.first { it.pkg == "com.app1" }, now))
+        assertEquals(1, roomy.count { InstallGuard.dueForRemoval(it, now) })
+        assertEquals(entries, InstallGuard.makeRoom(entries, waiting = 0, nowMs = now))
+    }
+
+    // --- Archived apps (Android 15) ---
+
+    @Test
+    fun `apps already archived when the guard first sees them are not strangers`() {
+        val known = setOf("com.kept")
+        val seeded = InstallGuard.seedArchived(known, archived = setOf("com.archived"), openCases = emptySet())
+        assertEquals(setOf("com.kept", "com.archived"), seeded)
+        // So the pass that follows finds nothing new.
+        assertEquals(emptySet<String>(), InstallGuard.fresh(seeded, seeded, emptySet(), emptySet()))
+    }
+
+    @Test
+    fun `an open case is not absolved by being archived`() {
+        val seeded = InstallGuard.seedArchived(emptySet(), archived = setOf("com.sneaky"), openCases = setOf("com.sneaky"))
+        assertFalse("com.sneaky" in seeded)
     }
 }

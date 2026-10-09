@@ -77,7 +77,7 @@ object LocationAlarm {
     private const val STATIONARY_M = 60f
 
     /** Slowest a stationary phone's position is re-sent: the heartbeat's own rate. */
-    private const val STATIONARY_PUBLISH_MIN_MS = 30 * 60 * 1000L
+    private const val STATIONARY_PUBLISH_MIN_MS = dev.walcott.sync.SyncManager.ROUTINE_PUBLISH_MIN_MS
 
     /** Arms the next fix [delayMs] from now. Idempotent — the PendingIntent is unique. */
     fun schedule(context: Context, delayMs: Long) {

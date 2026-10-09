@@ -191,7 +191,7 @@ class PanicProtocolTest {
     }
 
     @Test
-    fun `starting needs a channel that proved itself within the last half hour`() {
+    fun `starting needs a channel that proved itself within the last hour and a half`() {
         assertTrue(PanicProtocol.channelProven(0))
         assertTrue(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS))
         assertFalse(PanicProtocol.channelProven(PanicProtocol.START_CHANNEL_FRESH_MS + 1))
