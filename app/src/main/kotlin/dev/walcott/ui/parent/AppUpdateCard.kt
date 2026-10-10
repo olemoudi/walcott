@@ -110,6 +110,21 @@ internal fun AppUpdateCard(deviceOwner: Boolean) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // Samsung's Auto Blocker, on by default since One UI 6.1.1, refuses installs
+                    // from anywhere but its own stores — this app's updates included — and the
+                    // install fails with nothing that names it. Only said where it can be the
+                    // cause: a Samsung, not managed, whose install just failed.
+                    val failedInstall = (updateState as? UpdateUiState.Failed)?.step?.startsWith("install") == true
+                    if (failedInstall && !deviceOwner &&
+                        dev.walcott.setup.OemPowerSettings.thisPhone() == dev.walcott.setup.OemPowerSettings.Maker.SAMSUNG
+                    ) {
+                        Text(
+                            stringResource(R.string.update_samsung_auto_blocker),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = spacing.xs),
+                        )
+                    }
                 }
             }
 
@@ -118,7 +133,8 @@ internal fun AppUpdateCard(deviceOwner: Boolean) {
                     text = stringResource(R.string.perm_install_missing),
                     action = stringResource(R.string.perm_install_fix),
                     onFix = {
-                        context.startActivity(
+                        dev.walcott.setup.DeviceSetupProbe.openOrAppPage(
+                            context,
                             Intent(
                                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                                 Uri.parse("package:${context.packageName}"),
@@ -132,10 +148,7 @@ internal fun AppUpdateCard(deviceOwner: Boolean) {
                     text = stringResource(R.string.perm_notifications_missing),
                     action = stringResource(R.string.perm_notifications_fix),
                     onFix = {
-                        context.startActivity(
-                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-                        )
+                        dev.walcott.setup.DeviceSetupProbe.openFix(context, dev.walcott.setup.DeviceRequirement.NOTIFICATIONS)
                     },
                 )
             }

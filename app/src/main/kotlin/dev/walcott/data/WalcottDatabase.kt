@@ -102,6 +102,9 @@ abstract class WalcottDatabase : RoomDatabase() {
         @Volatile var wasRebuilt: Boolean = false
             private set
 
+        private const val LOCKED_RETRIES = 3
+        private const val LOCKED_WAIT_MS = 250L
+
         fun get(context: Context): WalcottDatabase = instance ?: synchronized(this) {
             instance ?: open(context.applicationContext).also { instance = it }
         }
@@ -126,7 +129,17 @@ abstract class WalcottDatabase : RoomDatabase() {
          */
         private fun open(context: Context): WalcottDatabase {
             val db = build(context)
-            val opened = runCatching { db.openHelper.writableDatabase }
+            var opened = runCatching { db.openHelper.writableDatabase }
+            // A lock is the one failure that goes away by itself, and throwing the day's counters
+            // away over it hands the child a fresh budget for nothing. Anything else is rebuilt —
+            // a full disk included, deliberately: kept, the file would fail every query, the loop
+            // and its collectors would crash on it until the CrashBreaker opened the phone, and a
+            // lost day of counters is the far smaller loss.
+            var tries = 0
+            while (opened.exceptionOrNull() is android.database.sqlite.SQLiteDatabaseLockedException && tries++ < LOCKED_RETRIES) {
+                Thread.sleep(LOCKED_WAIT_MS)
+                opened = runCatching { db.openHelper.writableDatabase }
+            }
             if (opened.isSuccess) return db
             DebugLog.e(TAG, "database unusable; rebuilding from scratch", opened.exceptionOrNull())
             runCatching { db.close() }

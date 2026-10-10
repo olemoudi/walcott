@@ -112,6 +112,21 @@ enum class DeviceRequirement(
         titleRes = R.string.req_battery_title,
         bodyRes = R.string.req_battery_body,
     ),
+
+    /**
+     * Both, on the makers that kill apps on their own (see OemPowerSettings): the "autostart" and
+     * battery switches that live outside Android's own settings.
+     *
+     * The one requirement nothing can read back, so it is met by having been visited, and it is
+     * never nagged about from outside the screen it is on: no notification, and not reported to
+     * the parent as setup left undone (see ChildHealthCheck and the child snapshot's setupUnmet)
+     * — a reminder about something no code can confirm would never go away.
+     */
+    OEM_BACKGROUND(
+        critical = false,
+        titleRes = R.string.req_oem_background_title,
+        bodyRes = R.string.req_oem_background_body,
+    ),
     ;
 
     /** Stable key for persistence, so reordering or renaming the enum can't lose a dismissal. */
@@ -166,6 +181,10 @@ data class DeviceFacts(
      * availability: an adult the family HAS given a bedtime needs the blocker like anybody else.
      */
     val assistedWithoutRules: Boolean = false,
+    /** This phone's maker runs its own app killer (see OemPowerSettings). */
+    val oemKillsApps: Boolean = false,
+    /** Someone has opened that maker's settings for Walcott from here (see DeviceSetupStore). */
+    val oemBackgroundVisited: Boolean = false,
 )
 
 /**
@@ -234,6 +253,8 @@ object DeviceSetup {
         // Everywhere: nothing on this list is worth anything to a process Android lets run once
         // a day, and a phone that is managed may still offer the switch.
         applicable += DeviceRequirement.BACKGROUND_RESTRICTION
+        // Device Owner or not: a maker's own killer answers to neither (see OemPowerSettings).
+        if (facts.oemKillsApps) applicable += DeviceRequirement.OEM_BACKGROUND
         return applicable.sortedByDescending { it.critical }
     }
 
@@ -249,11 +270,22 @@ object DeviceSetup {
         DeviceRequirement.DND_ACCESS -> facts.dndAccessGranted
         DeviceRequirement.BATTERY_OPTIMIZATION -> facts.ignoringBatteryOptimizations
         DeviceRequirement.BACKGROUND_RESTRICTION -> !facts.backgroundRestricted
+        DeviceRequirement.OEM_BACKGROUND -> facts.oemBackgroundVisited
     }
 
     /** Everything currently not satisfied that applies to this device, most serious first. */
     fun unmet(facts: DeviceFacts): List<DeviceRequirement> =
         applicable(facts).filterNot { satisfied(facts, it) }
+
+    /**
+     * [unmet] minus what is only ever asked for on the screen itself: the maker's own background
+     * switches, which nothing can read back (see [DeviceRequirement.OEM_BACKGROUND]). What goes
+     * into a notification, a reply to the parent's "ask to fix", or the parent's list of setup
+     * left undone — each of which would otherwise repeat for ever about something no code can
+     * see being done.
+     */
+    fun reportable(unmet: List<DeviceRequirement>): List<DeviceRequirement> =
+        unmet.filterNot { it == DeviceRequirement.OEM_BACKGROUND }
 
     /**
      * What the home screen should nag about: the unmet requirements minus the ones dismissed.

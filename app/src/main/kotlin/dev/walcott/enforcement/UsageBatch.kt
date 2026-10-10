@@ -50,7 +50,7 @@ class UsageBatch {
         return out
     }
 
-    /** Everything pending, emptied. The caller writes it; a write that fails is lost, not retried. */
+    /** Everything pending, emptied. The caller writes it, and credits back what fails to write. */
     @Synchronized
     fun drain(): List<Credit> {
         val out = pending.map { (key, seconds) -> Credit(key.first, key.second, seconds) }

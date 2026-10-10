@@ -98,12 +98,16 @@ object DebugLog {
     fun e(tag: String, message: String, t: Throwable? = null) = add('E', tag, message, t)
 
     private fun add(level: Char, tag: String, message: String, t: Throwable?) {
-        when (level) {
-            'E' -> Log.e(tag, message, t)
-            'W' -> Log.w(tag, message, t)
-            else -> Log.i(tag, message)
+        // Guarded only so that code which logs can run in a JVM unit test, where android.util.Log
+        // is a stub that throws; on a device none of these can fail.
+        runCatching {
+            when (level) {
+                'E' -> Log.e(tag, message, t)
+                'W' -> Log.w(tag, message, t)
+                else -> Log.i(tag, message)
+            }
         }
-        val body = capEntry(if (t != null) "$message\n${Log.getStackTraceString(t)}" else message)
+        val body = capEntry(if (t != null) "$message\n${stackOf(t)}" else message)
         val entry = LogEntry(System.currentTimeMillis(), level, tag, body)
         mutable.value = LogFormat.cap(mutable.value, entry, MAX_ENTRIES)
         val f = file ?: return
@@ -127,6 +131,9 @@ object DebugLog {
         // if they ask for a DIAGNOSE. The tally is what reaches them on the next heartbeat.
         runCatching { CrashCounter.record(now) }
     }
+
+    private fun stackOf(t: Throwable): String =
+        runCatching { Log.getStackTraceString(t) }.getOrElse { t.stackTraceToString() }
 
     /**
      * One entry at most [MAX_ENTRY_CHARS]: the head of a stack trace says what broke, and a

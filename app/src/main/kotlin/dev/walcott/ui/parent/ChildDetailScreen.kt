@@ -54,6 +54,7 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
@@ -1547,6 +1548,19 @@ private fun DeviceStatusStrip(snapshot: ChildSnapshot, rulesSyncing: Boolean, ru
                 color = if (low) MaterialTheme.colorScheme.error else null,
             )
         }
+        // Only when nearly full: a phone that cannot save anything goes quiet in ways nothing else
+        // on this screen explains (see HealthAlerts.LOW_STORAGE_BYTES).
+        if (dev.walcott.sync.HealthAlerts.storageLow(snapshot.storageFreeBytes)) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            StatusItem(
+                icon = Icons.Outlined.Storage,
+                text = stringResource(
+                    R.string.child_storage_low,
+                    android.text.format.Formatter.formatShortFileSize(context, snapshot.storageFreeBytes),
+                ),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         // The nightly hour in which Play may update what is installed (see AppUpdates). Worth a
         // line of its own: it is the one time this phone's install block is deliberately down,
         // and until now the only phone that knew it was happening was the child's.
@@ -2254,6 +2268,8 @@ internal fun remoteResultLabel(context: android.content.Context, detail: String)
     "installing" -> context.getString(R.string.remote_result_installing)
     "download_failed" -> context.getString(R.string.remote_result_download_failed)
     "install_failed" -> context.getString(R.string.remote_result_install_failed)
+    "no_space" -> context.getString(R.string.remote_result_no_space)
+    RemoteAction.DETAIL_UPDATE_CHECKING -> context.getString(R.string.remote_result_update_checking)
     "reapplied" -> context.getString(R.string.remote_result_reapplied)
     "nothing_missing" -> context.getString(R.string.remote_result_nothing_missing)
     "opened" -> context.getString(R.string.remote_result_install_opened)

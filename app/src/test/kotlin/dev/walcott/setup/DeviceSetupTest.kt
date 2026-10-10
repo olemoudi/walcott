@@ -314,4 +314,25 @@ class DeviceSetupTest {
         assertTrue(DeviceSetup.satisfied(facts, DeviceRequirement.NOTIFICATIONS))
         assertFalse(DeviceSetup.satisfied(facts, DeviceRequirement.USAGE_ACCESS))
     }
+
+    @Test
+    fun `the maker's own background switches are asked for on those phones, managed or not`() {
+        // Stock Android keeps a device owner alive; a maker's own killer answers to neither.
+        assertTrue(DeviceRequirement.OEM_BACKGROUND in DeviceSetup.unmet(healthy().copy(oemKillsApps = true)))
+        assertTrue(
+            DeviceRequirement.OEM_BACKGROUND in
+                DeviceSetup.unmet(healthy(enforcingChild = false, deviceOwner = false).copy(oemKillsApps = true)),
+            "a parent's phone is killed just the same",
+        )
+        assertFalse(DeviceRequirement.OEM_BACKGROUND in DeviceSetup.applicable(healthy()))
+    }
+
+    @Test
+    fun `the maker's switches count as done once their screen has been visited`() {
+        // Nothing can read them back, so the visit is the only answer there will ever be: a card
+        // that could not clear would teach people to ignore the ones that can.
+        val visited = healthy().copy(oemKillsApps = true, oemBackgroundVisited = true)
+        assertFalse(DeviceRequirement.OEM_BACKGROUND in DeviceSetup.unmet(visited))
+        assertTrue(DeviceRequirement.OEM_BACKGROUND in DeviceSetup.applicable(visited))
+    }
 }

@@ -6,8 +6,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import dev.walcott.debug.DebugLog
+import dev.walcott.runHeld
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 
 /**
@@ -19,9 +21,9 @@ import kotlinx.coroutines.flow.update
  * on — and a suspended app cannot ring. The parent's call on a messaging app went unanswered on a
  * phone whose rules said it should be ringing; so did one after a homework window, or a pause.
  *
- * An alarm rather than a timer, because `delay()` does not tick in deep sleep, and inexact and
- * allow-while-idle like every other alarm here: Doze may hold it a few minutes, which is a
- * different order of problem from holding it until morning.
+ * An alarm rather than a timer, because `delay()` does not tick in deep sleep; and an exact one
+ * (see [dev.walcott.OnTimeAlarm]), because an inexact alarm may arrive up to an hour late, which
+ * for "bedtime is over" is most of the way back to holding it until morning.
  *
  * The loop decides when ([dev.walcott.rules.CloseWatch.nextOpening]) and arms this before it
  * parks. Anything else that can give something back while the screen is off — a parent ending a
@@ -49,6 +51,34 @@ object EnforcementWakeAlarm {
         pokes.update { it + 1 }
     }
 
+    private val passes = MutableStateFlow(0L)
+
+    /** How many passes the loop has finished — what a wake-up waits on before letting the CPU sleep. */
+    val passCount: StateFlow<Long> = passes
+
+    /** Called by the loop at the end of every pass, applied or not. */
+    fun passDone() {
+        passes.update { it + 1 }
+    }
+
+    /**
+     * Keeps the CPU up through the pass an alarm asked for. Always with a timeout, always released.
+     *
+     * The alarm wakes the phone only for as long as its receiver runs, and the pass runs after the
+     * receiver has returned — on the loop, which first reads the database. Without this the
+     * processor was free to suspend again in between, and the apps due back stayed suspended
+     * until something else woke the phone (the same hole LocationAlarm closes the same way).
+     */
+    internal fun wakeLock(context: Context): android.os.PowerManager.WakeLock? = runCatching {
+        context.getSystemService(android.os.PowerManager::class.java)
+            .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "walcott:apps-due-back")
+            .apply { setReferenceCounted(false); acquire(WAKELOCK_TIMEOUT_MS) }
+    }.getOrNull()
+
+    /** Long enough for a pass on a slow phone whose service the alarm itself had to start. */
+    internal const val PASS_WAIT_MS = 15_000L
+    private const val WAKELOCK_TIMEOUT_MS = PASS_WAIT_MS + 5_000L
+
     /** Wakes the phone at [atMs]; cancels the alarm for null or a moment already past. */
     fun arm(context: Context, atMs: Long?) {
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return
@@ -57,7 +87,7 @@ object EnforcementWakeAlarm {
             return
         }
         runCatching {
-            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs + SLACK_MS, pendingIntent(context))
+            dev.walcott.OnTimeAlarm.set(alarms, atMs + SLACK_MS, pendingIntent(context))
         }.onFailure { DebugLog.e(TAG, "could not schedule the wake-up for apps due back", it) }
     }
 
@@ -78,8 +108,20 @@ object EnforcementWakeAlarm {
  */
 class EnforcementWakeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val lock = EnforcementWakeAlarm.wakeLock(context)
+        val passesBefore = EnforcementWakeAlarm.passCount.value
         runCatching { EnforcementService.start(context) }
             .onFailure { DebugLog.w("WalcottEnforce", "could not start enforcement for apps due back", it) }
         EnforcementWakeAlarm.poke()
+        runHeld {
+            try {
+                val done = kotlinx.coroutines.withTimeoutOrNull(EnforcementWakeAlarm.PASS_WAIT_MS) {
+                    EnforcementWakeAlarm.passCount.first { it > passesBefore }
+                }
+                if (done == null) DebugLog.w("WalcottEnforce", "no pass within ${EnforcementWakeAlarm.PASS_WAIT_MS / 1000}s of the wake-up")
+            } finally {
+                runCatching { lock?.release() }
+            }
+        }
     }
 }

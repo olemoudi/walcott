@@ -28,7 +28,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 // Icons are immutable per package: in-memory cache avoids re-decoding while scrolling.
-private val iconCache = LruCache<String, ImageBitmap>(256)
+//
+// Bounded by bytes, not by count: a count of 256 meant up to some 25 MB of bitmaps at the sizes
+// the lists draw, held for the life of a child's process — which is weeks. A sixteenth of the
+// heap (at most 32 MB) still holds every icon a list scrolls through, and it is emptied when the
+// app goes to the background (see trimAppIconCache).
+private val iconCache = object : LruCache<String, ImageBitmap>(
+    (Runtime.getRuntime().maxMemory() / 16).coerceAtMost(32L * 1024 * 1024).toInt(),
+) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
+}
+
+/** Drops the decoded icons; they are re-decoded off the main thread the next time a list shows them. */
+fun trimAppIconCache() = iconCache.evictAll()
 
 /**
  * App icon loaded off the main thread, with a placeholder while it decodes. Prefers the

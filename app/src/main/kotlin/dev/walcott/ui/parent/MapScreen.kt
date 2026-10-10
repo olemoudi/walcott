@@ -225,6 +225,11 @@ private fun TrailMap(
             userAgentValue = context.packageName
             osmdroidBasePath = File(context.cacheDir, "osmdroid")
             osmdroidTileCache = File(osmdroidBasePath, "tiles")
+            // osmdroid's own ceiling is 600 MB. A family's map covers a few neighbourhoods, which
+            // is a few megabytes of tiles; the rest was Settings showing hundreds of megabytes
+            // "used by Walcott" on the parent's phone.
+            tileFileSystemCacheMaxBytes = MAP_CACHE_MAX_BYTES
+            tileFileSystemCacheTrimBytes = MAP_CACHE_TRIM_BYTES
         }
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
@@ -762,3 +767,7 @@ private const val TRAIL_WIDTH_PX = 8f
  * a stale position can never be read as a current one.
  */
 private const val FRESH_ENOUGH_MS = 5 * 60 * 1000L
+
+/** Ceiling of the map's tile cache, and what it is trimmed back to (see MapScreen). */
+private const val MAP_CACHE_MAX_BYTES = 50L * 1024 * 1024
+private const val MAP_CACHE_TRIM_BYTES = 40L * 1024 * 1024

@@ -39,15 +39,20 @@ object RelayBacklog {
             .mapNotNull { messageOf(it) }
             .toList()
 
-    /** One event's message, or null for anything else ntfy sends (`open`, `keepalive`…). */
-    fun messageOf(event: JsonObject): RelayMessage? {
-        if (event["event"]?.jsonPrimitive?.content != "message") return null
-        val body = event["message"]?.jsonPrimitive?.content ?: return null
+    /**
+     * One event's message, or null for anything else ntfy sends (`open`, `keepalive`…) — and for
+     * an event whose fields are not the shapes ntfy gives them. Reading a field that is an object
+     * where a string belongs throws, and thrown from here one odd line failed the whole poll, whose
+     * cursor then could not move past it for as long as the relay kept it.
+     */
+    fun messageOf(event: JsonObject): RelayMessage? = runCatching {
+        if (event["event"]?.jsonPrimitive?.content != "message") return@runCatching null
+        val body = event["message"]?.jsonPrimitive?.content ?: return@runCatching null
         val timeSec = event["time"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
         val id = event["id"]?.jsonPrimitive?.content.orEmpty()
         val attachment = runCatching { event["attachment"]?.jsonObject?.get("url")?.jsonPrimitive?.content }.getOrNull()
-        return RelayMessage(body, timeSec, id, attachmentUrl = attachment.orEmpty())
-    }
+        RelayMessage(body, timeSec, id, attachmentUrl = attachment.orEmpty())
+    }.getOrNull()
 
     /**
      * The most a message kept as a file may weigh. A family's rules are a few kilobytes even when

@@ -310,6 +310,11 @@ class BlocklistStore private constructor(private val context: Context) {
 
     /** Forgets the lists the family has switched off, on disk and in [state]. */
     private fun prune(keep: Set<String>) {
+        // The files too, not only what the state remembers: a state file lost to power going at
+        // the wrong moment left its lists on disk for good, megabytes each, with nothing to say
+        // they were there.
+        File(context.filesDir, DIR).listFiles { f -> f.name.endsWith(".txt") && f.name.removeSuffix(".txt") !in keep }
+            ?.forEach { runCatching { it.delete() } }
         val gone = _state.value.lists.keys - keep
         if (gone.isEmpty()) return
         for (id in gone) runCatching { fileFor(id).delete() }
@@ -329,15 +334,15 @@ class BlocklistStore private constructor(private val context: Context) {
     private fun stateFile() = File(File(context.filesDir, DIR).apply { mkdirs() }, "state.json")
 
     private fun readState(): State = runCatching {
-        val file = stateFile()
-        if (!file.exists()) State() else json.decodeFromString(State.serializer(), file.readText())
+        val text = dev.walcott.data.AtomicText.read(stateFile())
+        if (text == null) State() else json.decodeFromString(State.serializer(), text)
     }.getOrElse {
         DebugLog.w(TAG, "blocklist state unreadable; starting from nothing", it)
         State()
     }
 
     private fun writeState(state: State) {
-        runCatching { stateFile().writeText(json.encodeToString(State.serializer(), state)) }
+        runCatching { dev.walcott.data.AtomicText.write(stateFile(), json.encodeToString(State.serializer(), state)) }
             .onFailure { DebugLog.w(TAG, "could not store the blocklist state", it) }
     }
 

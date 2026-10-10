@@ -376,9 +376,13 @@ class ParentSim(
      * `children`, and a scenario that awaited the first would hang on a command that was in
      * fact executed.
      */
-    fun awaitAck(commandId: String, timeoutMs: Long = DEFAULT_TIMEOUT_MS): dev.walcott.sync.CommandAck {
+    fun awaitAck(
+        commandId: String,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+        accept: (dev.walcott.sync.CommandAck) -> Boolean = { true },
+    ): dev.walcott.sync.CommandAck {
         val ack = awaitOrNull(timeoutMs) {
-            childHistory.asReversed().firstNotNullOfOrNull { it.lastCommand?.takeIf { a -> a.id == commandId } }
+            childHistory.asReversed().firstNotNullOfOrNull { it.lastCommand?.takeIf { a -> a.id == commandId && accept(a) } }
         }
         return ack ?: throw AssertionError(
             "command $commandId was never acknowledged within ${timeoutMs}ms; " +

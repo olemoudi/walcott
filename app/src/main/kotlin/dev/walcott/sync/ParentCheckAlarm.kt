@@ -7,9 +7,7 @@ import android.content.Context
 import android.content.Intent
 import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import dev.walcott.runHeld
 
 /**
  * The parent's guaranteed catch-up, and the mirror image of [HeartbeatAlarm].
@@ -117,13 +115,9 @@ class ParentCheckReceiver : BroadcastReceiver() {
         // the fast cadence deliberately — the failure this guards is one where nothing was
         // learned, and the cheap mistake to make with no information is waking up too often.
         ParentCheckAlarm.schedule(context)
-        val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                ParentCheckAlarm.runCheck(context)
-            } finally {
-                pending.finish()
-            }
-        }
+        // Held like the child's check-in, and released by a timer at the same bound (see
+        // RECEIVER_BUDGET_MS): a poll and its file fetches, one family after another on a slow
+        // network, could outlast the minute.
+        runHeld(holdMs = RECEIVER_BUDGET_MS) { ParentCheckAlarm.runCheck(context) }
     }
 }

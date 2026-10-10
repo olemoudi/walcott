@@ -37,13 +37,20 @@ enum class UpdateCheckOutcome {
     WAITING_FOR_WIFI,
     /** Another check already holds the lock; this caller stood aside instead of fighting it. */
     BUSY,
+    /**
+     * Not enough free storage to download it. Its own outcome so the parent reads "the phone is
+     * full" — which they can do something about — rather than "could not download", which reads
+     * like a network problem and sent people to the router.
+     */
+    NO_SPACE,
 }
 
 /**
  * Self-updates from GitHub Releases. On a Device Owner device the install is silent (no
- * dialog, can't be skipped). Elsewhere we still request a user-action-free install
- * (granted once Walcott is its own installer of record on Android 12+); when the system
- * insists on confirmation, [InstallReceiver] surfaces it as a notification.
+ * dialog, can't be skipped). Elsewhere the system asks first: a user-action-free install is still
+ * requested, but outside a device owner Android grants it only to an installer that declares
+ * `UPDATE_PACKAGES_WITHOUT_USER_ACTION`, which this app does not — the parent confirms its own
+ * updates, as the project intends. [InstallReceiver] surfaces that confirmation as a notification.
  *
  * The downloaded APK in the cache is deliberately the ONLY record that an update is pending.
  * Nothing else is persisted, and nothing needs to be: the file answers "is there one?", "which
@@ -199,6 +206,7 @@ class Updater(private val context: Context) {
                 // process that was replaced. Fifty megabytes on the phone least able to spare
                 // them, kept for an install that can never happen again.
                 discardStagedApk()
+                discardPartials()
                 UpdateCenter.report(UpdateUiState.UpToDate(current))
                 return@withContext UpdateCheckOutcome.UP_TO_DATE
             }
@@ -235,7 +243,7 @@ class Updater(private val context: Context) {
             UpdateStep.NEED_SPACE -> {
                 DebugLog.w(TAG, "not enough free space for the update (${context.cacheDir.usableSpace} bytes)")
                 UpdateCenter.report(UpdateUiState.Failed("no space"))
-                return@withContext UpdateCheckOutcome.TRANSIENT_FAILURE
+                return@withContext UpdateCheckOutcome.NO_SPACE
             }
             UpdateStep.DOWNLOAD -> Unit
         }
@@ -348,12 +356,15 @@ class Updater(private val context: Context) {
 
     /** The builds tried and not got past (see [InstallAttempts]); a plain file, read synchronously. */
     private fun attempts(): InstallAttempts =
-        runCatching { InstallAttempts.parse(attemptsFile().takeIf { it.exists() }?.readText()) }
+        runCatching { InstallAttempts.parse(dev.walcott.data.AtomicText.read(attemptsFile())) }
             .getOrDefault(InstallAttempts.NONE)
 
     private fun recordAttempt(versionCode: Int) {
         runCatching {
-            attemptsFile().writeText(InstallAttempts.format(attempts().plusAttempt(versionCode, System.currentTimeMillis())))
+            dev.walcott.data.AtomicText.write(
+                attemptsFile(),
+                InstallAttempts.format(attempts().plusAttempt(versionCode, System.currentTimeMillis())),
+            )
         }
     }
 
@@ -377,37 +388,95 @@ class Updater(private val context: Context) {
      * a body that does not end must not fill the phone least able to spare the space — and,
      * when version.json announced a digest, only bytes that match it. Anything else is deleted
      * before this throws, so a bad download can never be found "staged" by the next check.
+     *
+     * Resumed when it was cut off. The download used to start from zero every time, inside a
+     * five-minute ceiling: on a weak mobile signal — the child at the edge of coverage, the plan
+     * throttled after its data ran out — nine megabytes never arrived, and the same first few
+     * were fetched again on every check, all day. Now the bytes that did arrive are kept in a
+     * file named after the digest the release announced, and the next try asks for the rest.
+     * The APK only appears under its real name once all of it is there and the digest matches,
+     * so a piece of one can never be taken for a staged update.
      */
     private fun download(url: String, expectedSha256: String) {
         val target = apkFile()
+        // Resumable only when the release names its digest: that is what proves the pieces kept
+        // from an earlier try belong to the same file as the ones still to come.
+        val part = expectedSha256.takeIf { it.isNotBlank() }?.let { partFile(it) }
+        discardPartials(keep = part)
+        val have = part?.takeIf { it.isFile }?.length() ?: 0L
+        val into = part ?: target
         try {
-            client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-                require(resp.isSuccessful) { "download failed: ${resp.code}" }
+            val request = Request.Builder().url(url)
+                .apply { if (have > 0) header("Range", "bytes=$have-") }
+                .build()
+            client.newCall(request).execute().use { resp ->
+                val start = resumeOffset(resp.code, resp.header("Content-Range"), have)
+                if (start == null) {
+                    // What is kept is not a beginning the server will extend (all of it already,
+                    // or a file that changed underneath it): it is no use for the next try either.
+                    if (resp.code == 416) part?.delete()
+                    throw java.io.IOException("download failed: ${resp.code}")
+                }
+                if (start > 0) DebugLog.i(TAG, "resuming the download at $start bytes")
                 val body = resp.body!!
-                require(body.contentLength() <= MAX_APK_BYTES) { "download too large: ${body.contentLength()} bytes" }
-                val digest = java.security.MessageDigest.getInstance("SHA-256")
-                var total = 0L
+                require(start + body.contentLength() <= MAX_APK_BYTES) { "download too large: ${body.contentLength()} bytes" }
+                var total: Long = start
                 val buffer = ByteArray(64 * 1024)
                 body.byteStream().use { input ->
-                    target.outputStream().use { out ->
+                    java.io.FileOutputStream(into, start > 0).use { out ->
                         while (true) {
                             val n = input.read(buffer)
                             if (n < 0) break
                             total += n
                             require(total <= MAX_APK_BYTES) { "download too large: over $MAX_APK_BYTES bytes" }
-                            digest.update(buffer, 0, n)
                             out.write(buffer, 0, n)
                         }
                     }
                 }
-                val actual = digest.digest().joinToString("") { "%02x".format(it) }
-                require(apkDigestAccepted(expectedSha256, actual)) { "downloaded APK does not match the published sha256" }
+            }
+            // Over the whole file, now that it may have arrived in pieces.
+            val actual = sha256Of(into)
+            if (!apkDigestAccepted(expectedSha256, actual)) {
+                into.delete()
+                error("downloaded APK does not match the published sha256")
+            }
+            if (into != target) {
+                target.delete()
+                if (!into.renameTo(target)) throw java.io.IOException("could not move the download into place")
             }
         } catch (t: Throwable) {
-            discardStagedApk()
+            // An interrupted transfer keeps what arrived, to resume from; anything wrong with the
+            // bytes themselves (too many, the wrong ones) throws them all away.
+            if (part == null || t !is java.io.IOException) {
+                part?.delete()
+                discardStagedApk()
+            }
             throw t
         }
         DebugLog.i(TAG, "downloaded ${target.length()} bytes")
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** Where the bytes of the download announced with [sha256] collect until they are all there. */
+    private fun partFile(sha256: String): File =
+        File(context.cacheDir, "$PART_PREFIX${sha256.take(16).lowercase()}$PART_SUFFIX")
+
+    /** Pieces of downloads other than [keep]: a release that was superseded before it finished. */
+    private fun discardPartials(keep: File? = null) {
+        context.cacheDir.listFiles { f -> f.name.startsWith(PART_PREFIX) && f.name.endsWith(PART_SUFFIX) && f != keep }
+            ?.forEach { runCatching { it.delete() } }
     }
 
     private fun install(apk: File) {
@@ -421,9 +490,9 @@ class Updater(private val context: Context) {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(context.packageName)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Silent when the system allows it: always on Device Owner devices, and on the
-            // parent once Walcott is its own installer of record. Otherwise the system
-            // falls back to asking, which lands in InstallReceiver as pending-user-action.
+            // Silent on Device Owner devices. Anywhere else the system falls back to asking
+            // (this app does not declare UPDATE_PACKAGES_WITHOUT_USER_ACTION), which lands in
+            // InstallReceiver as pending-user-action.
             params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
         val sessionId = installer.createSession(params)
@@ -467,6 +536,10 @@ class Updater(private val context: Context) {
 
         /** Downloaded APK, deleted once the install reaches a terminal state (see InstallReceiver). */
         const val APK_FILE = "update.apk"
+
+        /** A download still arriving: `update-<digest prefix>.part` (see [download]). */
+        private const val PART_PREFIX = "update-"
+        private const val PART_SUFFIX = ".part"
 
         /** The install attempts record (see [InstallAttempts]). */
         private const val ATTEMPTS_FILE = "update-attempts.txt"

@@ -23,6 +23,14 @@
          acquired. Without it the SoC suspends the moment the alarm's receiver returns, which is
          the very hole that made the old timer-driven sampling drift (see LocationAlarm). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The moments the family can see — bedtime ending, an install window closing — fire on
+         time rather than up to an hour late (see OnTimeAlarm). USE_EXACT_ALARM is granted at
+         install from Android 13; Play would restrict it to alarm clocks, but this app is not on
+         Play. Android 12 has only SCHEDULE_EXACT_ALARM, granted by default there. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Lets the phone's owner give Walcott Do Not Disturb access, which is how the ringer guard
          lifts DND (see AudioGuard). Without the declaration the app is not even offered in that
@@ -128,6 +136,23 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Bound by the system for as long as this app is the Device Owner, and bound again when
+             the process dies: the platform's own way of keeping a DPC alive (see
+             WalcottDeviceAdminService). Only the system holds BIND_DEVICE_ADMIN. -->
+        <service
+            android:name=".enforcement.WalcottDeviceAdminService"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_SERVICE" />
+            </intent-filter>
+        </service>
+
+        <!-- The next start after an early crash (see CrashRevivalAlarm). -->
+        <receiver
+            android:name=".debug.CrashRevivalReceiver"
+            android:exported="false" />
 
         <service
             android:name=".enforcement.EnforcementService"

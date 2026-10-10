@@ -6,11 +6,16 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.setupDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_device_setup")
+/**
+ * The same file the `preferencesDataStore` delegate used, now through [dev.walcott.data.WalcottDataStores]
+ * so a damaged copy is started over instead of throwing from every read — which, from the setup
+ * cards on the home screen, was a crash on every launch.
+ */
+private val Context.setupDataStore: DataStore<Preferences>
+    get() = dev.walcott.data.WalcottDataStores.get(this, "walcott_device_setup")
 
 /**
  * Which setup nudges this device has been told to stop showing on the home screen.
@@ -25,6 +30,19 @@ class DeviceSetupStore(private val context: Context) {
 
     private val key = stringSetPreferencesKey("dismissed")
     private val journeyKey = longPreferencesKey("journey_done_at")
+    private val oemKey = longPreferencesKey("oem_background_visited_at")
+
+    /**
+     * When someone opened this phone maker's own background settings for Walcott from the setup
+     * card (0 = never). A visit and not a setting, because what was done there cannot be read
+     * (see OemPowerSettings); device-local, and not reset by a new enrollment, since the switch
+     * belongs to the phone.
+     */
+    val oemBackgroundVisitedAt: Flow<Long> = context.setupDataStore.data.map { it[oemKey] ?: 0L }
+
+    suspend fun markOemBackgroundVisited(atMs: Long = System.currentTimeMillis()) {
+        context.setupDataStore.edit { it[oemKey] = atMs }
+    }
 
     val dismissed: Flow<Set<String>> = context.setupDataStore.data.map { it[key] ?: emptySet() }
 

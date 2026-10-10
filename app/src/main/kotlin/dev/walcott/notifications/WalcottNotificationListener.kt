@@ -33,10 +33,12 @@ class WalcottNotificationListener : NotificationListenerService() {
         // Worth a line: this is the moment the permission actually starts doing something, and
         // without it "nothing is being recorded" has two indistinguishable causes.
         DebugLog.i(TAG, "notification listener connected")
+        connected = true
     }
 
     override fun onListenerDisconnected() {
         DebugLog.i(TAG, "notification listener disconnected")
+        connected = false
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -81,5 +83,31 @@ class WalcottNotificationListener : NotificationListenerService() {
 
     companion object {
         private const val TAG = "WalcottNotif"
+
+        /** Whether the system has this listener bound right now, in this process. */
+        @Volatile private var connected = false
+
+        /**
+         * Asks for the listener back when access is granted and nothing is bound.
+         *
+         * Several OEMs unbind notification listeners after an app update or a "clean-up" and do
+         * not bind them again until the access is toggled by hand. `requestRebind` is the one
+         * request the platform offers; on stock Android it only undoes this app's own
+         * `requestUnbind`, so it is no cure, but it costs nothing and some skins honour it.
+         * NOT the usual workaround of switching the component off and on: measured on Android 15,
+         * that takes the listener out of the access list for good — the grant the phone's owner
+         * gave is gone. Not in the first minutes of a process either, when the system simply has
+         * not bound it yet; the log line is what tells somebody to toggle it by hand.
+         */
+        fun rebindIfDropped(context: android.content.Context) {
+            if (connected || !NotificationLog.accessGranted(context)) return
+            val upMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
+            if (upMs < BIND_GRACE_MS) return
+            DebugLog.w(TAG, "notification access is granted but the listener is not bound; asking for it back")
+            runCatching { requestRebind(android.content.ComponentName(context, WalcottNotificationListener::class.java)) }
+                .onFailure { DebugLog.w(TAG, "could not ask for the listener back", it) }
+        }
+
+        private const val BIND_GRACE_MS = 2 * 60_000L
     }
 }

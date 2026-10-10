@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -184,6 +185,13 @@ class SyncManager(
     @Volatile private var connectedAtMs: Long = 0
     /** Wall clock of the last successful publish, so heartbeats can skip redundant ones. */
     @Volatile private var lastPublishAtMs: Long = 0
+
+
+    /** Commands run while the store refused to record them (see applyCommands); newest last. */
+    @Volatile private var commandsRunUnrecorded: Set<String> = emptySet()
+
+    /** The answer to the last command, while the store refuses to hold it (see applyCommands). */
+    @Volatile private var unrecordedAck: CommandAck? = null
     /**
      * The publish whose echo would prove something about this device's clock: its nonce, and
      * what the local clock read when it went out. Replaced by the next publish and cleared once
@@ -307,13 +315,31 @@ class SyncManager(
     val myPendingRequests: StateFlow<List<ExtraTimeRequest>> =
         syncStore.state.map { it.pendingRequests }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    /**
+     * Help asks the store refused to hold, and receipts it refused to record: a phone whose storage
+     * is full. Sent and shown from here until the store takes them, because the help button on a
+     * full phone (an elderly relative's, most often) is exactly when it must still work.
+     */
+    private val unrecordedAsks = MutableStateFlow<List<ChildRequest>>(emptyList())
+    private val unrecordedReceipts = MutableStateFlow<Set<String>>(emptySet())
+
+    /** The stored asks with [unrecordedAsks] on top; a help ask in memory supersedes a stored one. */
+    private fun asksWithUnrecorded(stored: List<ChildRequest>, extra: List<ChildRequest>): List<ChildRequest> {
+        if (extra.isEmpty()) return stored
+        val helpInMemory = extra.any { it.kind == ChildRequest.KIND_HELP }
+        val kept = stored.filterNot { s -> (helpInMemory && s.kind == ChildRequest.KIND_HELP) || extra.any { it.requestId == s.requestId } }
+        return kept + extra
+    }
+
     /** This device's own unanswered asks (apps, anything). */
     val myPendingAsks: StateFlow<List<ChildRequest>> =
-        syncStore.state.map { it.pendingAsks }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+        kotlinx.coroutines.flow.combine(syncStore.state, unrecordedAsks) { s, extra -> asksWithUnrecorded(s.pendingAsks, extra) }
+            .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /** Which of those asks the relay has confirmed it took (see [SyncState.askReceipts]). */
     val myAskReceipts: StateFlow<Set<String>> =
-        syncStore.state.map { it.askReceipts }.stateIn(scope, SharingStarted.Eagerly, emptySet())
+        kotlinx.coroutines.flow.combine(syncStore.state, unrecordedReceipts) { s, extra -> s.askReceipts + extra }
+            .stateIn(scope, SharingStarted.Eagerly, emptySet())
 
     /** The domain selection this device last sent, and how far it got (see [sendDomains]). */
     val domainDelivery: StateFlow<DomainBatch?> =
@@ -411,11 +437,33 @@ class SyncManager(
         if (!networkCallbackRegistered.compareAndSet(false, true)) return
         val manager = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return
         val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            // Only ever touched on the handler's single thread below.
+            private val validated = HashSet<android.net.Network>()
+
             override fun onAvailable(network: android.net.Network) {
                 transport?.onNetworkAvailable()
                 legacyTransport?.onNetworkAvailable()
                 flushUnsentHelp()
                 flushFailedPublish()
+            }
+
+            // A network arrives before it is any use when it sits behind a login page (a hotel,
+            // a train, a school). The reconnect [onAvailable] brought forward hit the portal and
+            // failed, the backoff grew, and when the person finished logging in nothing said so:
+            // up to five minutes more on a working connection. The moment the system validates
+            // the network is that missing "now".
+            override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) {
+                if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                    validated.remove(network)
+                    return
+                }
+                if (!validated.add(network)) return
+                transport?.onNetworkAvailable()
+                legacyTransport?.onNetworkAvailable()
+            }
+
+            override fun onLost(network: android.net.Network) {
+                validated.remove(network)
             }
         }
         val request = android.net.NetworkRequest.Builder()
@@ -462,7 +510,8 @@ class SyncManager(
     private fun flushUnsentHelp() {
         scope.launch {
             val state = syncStore.current()
-            if (HelpAsks.unconfirmed(state.pendingAsks, state.askReceipts).isEmpty()) return@launch
+            val asks = asksWithUnrecorded(state.pendingAsks, unrecordedAsks.value)
+            if (HelpAsks.unconfirmed(asks, state.askReceipts + unrecordedReceipts.value).isEmpty()) return@launch
             val now = System.currentTimeMillis()
             // Against a hand-off that flaps: one attempt a minute is already far faster than
             // anything that used to carry this, and a failed publish leaves the ask unconfirmed
@@ -506,7 +555,7 @@ class SyncManager(
     private fun republishIfBehind(snapshot: ChildSnapshot, parentVersion: Long) {
         if (snapshot.appliedPolicyVersion !in 1 until parentVersion) return
         val now = System.currentTimeMillis()
-        if (now - lastPublishAtMs < BEHIND_GRACE_MS) return
+        if (now - lastPublishAtMs in 0 until BEHIND_GRACE_MS) return
         val last = behindRepublishedAt[snapshot.deviceId] ?: 0L
         if (now - last < BEHIND_REPUBLISH_MIN_MS) return
         behindRepublishedAt[snapshot.deviceId] = now
@@ -514,8 +563,23 @@ class SyncManager(
         scope.launch { runCatching { publishSelf() } }
     }
 
-    private suspend fun connect(id: FamilyIdentity) {
+    /**
+     * One connect at a time. Between closing the old transport and installing the new one this
+     * reads the store, which suspends, and two connects interleaving there — the screen turning
+     * on as the heartbeat reconnects, say — each built a transport and only one was kept: the
+     * other lived on unreferenced, with its own socket, reconnect loop and thread, handing every
+     * message over twice for the rest of the process.
+     */
+    private val connectMutex = Mutex()
+
+    private suspend fun connect(id: FamilyIdentity) = connectMutex.withLock { connectLocked(id) }
+
+    private suspend fun connectLocked(id: FamilyIdentity) {
         transport?.close()
+        // Forgotten at once, not when its replacement is installed below: a connect cancelled in
+        // between (its caller's time ran out) left a closed transport in place, which every check
+        // for "no channel" reads as one that exists.
+        transport = null
         if (!id.isPaired) return
         // Released and still paired is a release interrupted before it forgot the family (see
         // PanicRelease.finishIfInterrupted). Reconnecting would publish this phone to a parent
@@ -650,7 +714,22 @@ class SyncManager(
      */
     suspend fun reconnectIfChannelStale() {
         val id = identityStore.current()
-        if (!id.isPaired || transport == null) return
+        if (!id.isPaired) return
+        // No transport at all is the stalest channel there is: the first connect of this process
+        // failed (a store read refused at start-up, say), and every path that rebuilds a socket
+        // starts from an existing one — so nothing would ever have tried again.
+        if (transport == null) {
+            if (id.released) return
+            dev.walcott.debug.DebugLog.w(TAG, "no relay connection at all; connecting")
+            connect(id)
+            runCatching { publishSelf() }
+            return
+        }
+        // A reconnect still sitting out its backoff is brought forward. Its timer only runs while
+        // the CPU does, so on a phone asleep in a pocket a three-second wait could last until the
+        // fallback below, an hour and a half later; this alarm is what wakes the phone anyway.
+        transport?.onNetworkAvailable()
+        legacyTransport?.onNetworkAvailable()
         val lastProof = maxOf(syncStore.current().lastChannelOkMs, connectedAtMs)
         if (!ChannelHealth.needsReconnect(lastProof, System.currentTimeMillis())) return
         dev.walcott.debug.DebugLog.w(TAG, "no message for ${ChannelHealth.RECONNECT_AFTER_MS / 60_000} min; reconnecting")
@@ -952,7 +1031,7 @@ class SyncManager(
             }
         }
         unlink(FamilyIdentity())
-        settingsStore.update { PolicySettings() }
+        settingsStore.update(overUnreadable = true) { PolicySettings() }
         syncStore.update { SyncState() }
         dev.walcott.debug.DebugLog.w(TAG, "unlinked and forgot this family's rules")
         // And the loop started again, because nothing else will start it. Going from a child to
@@ -988,7 +1067,7 @@ class SyncManager(
                 backupReminders = before.backupReminders,
             ),
         )
-        settingsStore.update { PolicySettings() }
+        settingsStore.update(overUnreadable = true) { PolicySettings() }
         syncStore.update { SyncState() }
     }
 
@@ -1054,7 +1133,8 @@ class SyncManager(
         syncStore.update { it.copy(parentSetupAtMs = System.currentTimeMillis()) }
         // A new family starts with child updates on Wi-Fi only (see PolicySettings.updateWifiOnly):
         // set here rather than as the field's default, which is what OLD policies decode to.
-        settingsStore.update { it.copy(familyName = familyName, updateWifiOnly = true) }
+        // A new family's policy is written whole, so a damaged file from before cannot stop it.
+        settingsStore.update(overUnreadable = true) { it.copy(familyName = familyName, updateWifiOnly = true) }
         repository.seedHardeningIfNeeded()
         // The other half of dropping the ordering dependency: if the PIN was set first, the key
         // is already here and the copies should exist from the moment the family does, not from
@@ -1141,7 +1221,12 @@ class SyncManager(
         identityStore.save(identity)
         // Joining a family is somebody at the phone choosing its rules: whatever this app did to
         // keep a phone it was crashing on usable (see CrashBreaker) has just been overruled.
-        dev.walcott.debug.CrashBreaker.leave("the phone joined a family")
+        if (dev.walcott.debug.CrashBreaker.leave("the phone joined a family")) {
+            // And enforcement brought back now: it refused to start while the phone was open, and a
+            // child that was already a child before this pairing is no mode change, so nothing
+            // else would start it before the next check-in, half an hour away.
+            runCatching { dev.walcott.enforcement.EnforcementService.start(context) }
+        }
         // A fresh pairing is a new trust bootstrap (the QR in hand IS the family): drop the
         // replay baseline so a new family's lower version counter isn't mistaken for replay.
         syncStore.update {
@@ -1159,12 +1244,13 @@ class SyncManager(
             )
         }
         sinceCache = 0
+        forgetUnrecorded()
         // Offer the guided setup again: a new family means new rules — possibly a web filter or
         // tracking the last one never asked for — and a different adult holding this phone.
         runCatching { dev.walcott.setup.DeviceSetupStore(context).resetJourney() }
         // Show the family name right away; the first parent snapshot confirms it.
         if (payload.familyName.isNotBlank()) {
-            settingsStore.update { it.copy(familyName = payload.familyName) }
+            settingsStore.update(overUnreadable = true) { it.copy(familyName = payload.familyName) }
         }
         connect(identity)
         // Waited on rather than fired and forgotten, because "paired" is the one word this
@@ -1220,25 +1306,35 @@ class SyncManager(
      */
     suspend fun askForHelp(text: String): HelpAskResult {
         val now = System.currentTimeMillis()
-        val existing = syncStore.current().pendingAsks.filter { it.kind == ChildRequest.KIND_HELP }
+        val existing = asksWithUnrecorded(syncStore.current().pendingAsks, unrecordedAsks.value)
+            .filter { it.kind == ChildRequest.KIND_HELP }
         val newest = existing.maxByOrNull { it.createdAtEpochMs }
         if (newest != null && !HelpAsks.reaskAllowed(newest.createdAtEpochMs, now)) {
             return HelpAskResult.TOO_SOON
         }
-        syncStore.update { s ->
-            val superseded = s.pendingAsks.filter { it.kind == ChildRequest.KIND_HELP }.toSet()
-            s.copy(
-                childVersion = s.childVersion + 1,
-                pendingAsks = s.pendingAsks - superseded + ChildRequest(
-                    requestId = UUID.randomUUID().toString(),
-                    kind = ChildRequest.KIND_HELP,
-                    text = text,
-                    createdAtEpochMs = now,
-                ),
-                // The replaced ask's receipt would otherwise sit in here until it expired, and
-                // this set is what the screen reads to say "sent" rather than "sending".
-                askReceipts = s.askReceipts - superseded.map { it.requestId }.toSet(),
-            )
+        val ask = ChildRequest(
+            requestId = UUID.randomUUID().toString(),
+            kind = ChildRequest.KIND_HELP,
+            text = text,
+            createdAtEpochMs = now,
+        )
+        runCatching {
+            syncStore.update { s ->
+                val superseded = s.pendingAsks.filter { it.kind == ChildRequest.KIND_HELP }.toSet()
+                s.copy(
+                    childVersion = s.childVersion + 1,
+                    pendingAsks = s.pendingAsks - superseded + ask,
+                    // The replaced ask's receipt would otherwise sit in here until it expired, and
+                    // this set is what the screen reads to say "sent" rather than "sending".
+                    askReceipts = s.askReceipts - superseded.map { it.requestId }.toSet(),
+                )
+            }
+        }.onSuccess {
+            unrecordedAsks.value = unrecordedAsks.value.filterNot { it.kind == ChildRequest.KIND_HELP }
+        }.onFailure {
+            // A full phone: the ask is sent from memory rather than lost (see unrecordedAsks).
+            dev.walcott.debug.DebugLog.w(TAG, "could not store the help ask; sending it from memory", it)
+            unrecordedAsks.value = unrecordedAsks.value.filterNot { a -> a.kind == ChildRequest.KIND_HELP } + ask
         }
         publishSelf()
         return HelpAskResult.SENT
@@ -2329,6 +2425,10 @@ class SyncManager(
         }
         val deadRequests = s.pendingRequests.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
         val deadAsks = s.pendingAsks.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }
+        unrecordedAsks.value.filter { SyncEngine.requestExpired(it.createdAtEpochMs, now) }.takeIf { it.isNotEmpty() }?.let { gone ->
+            unrecordedAsks.value = unrecordedAsks.value - gone.toSet()
+            unrecordedReceipts.value = unrecordedReceipts.value - gone.map { it.requestId }.toSet()
+        }
         if (deadRequests.isEmpty() && deadAsks.isEmpty()) return
         val newest = deadRequests.maxByOrNull { it.createdAtEpochMs }
         // A call for help that ran out is not the same sentence as a request nobody answered: it
@@ -2859,6 +2959,17 @@ class SyncManager(
                 usageHistory = s.usageHistory - deviceId,
                 usageByApp = s.usageByApp - deviceId,
                 blockLedgers = s.blockLedgers - deviceId,
+                // What else was kept about that phone. Not size so much as what it is: the
+                // messages it received, and its unlock PIN in clear, have no business staying
+                // on this phone once the phone itself has gone.
+                notificationPages = s.notificationPages - deviceId,
+                lastLockPin = s.lastLockPin - deviceId,
+                panicAlerted = s.panicAlerted - deviceId,
+                policyConfirmedVersion = s.policyConfirmedVersion - deviceId,
+                policyConfirmedAtMs = s.policyConfirmedAtMs - deviceId,
+                lostModeAsked = s.lostModeAsked - deviceId,
+                lastGaspNoted = s.lastGaspNoted - deviceId,
+                lowStorageNotified = s.lowStorageNotified - deviceId,
             )
         }
     }
@@ -3058,6 +3169,30 @@ class SyncManager(
         publishSelf()
     }
 
+    /**
+     * A parent whose stored rules cannot be read puts back the last ones it published.
+     *
+     * Those are what every child is running, and they live in a different file (the sync state's
+     * [SyncState.deployedPolicyJson]), so a damaged policy file costs at most the edits still being
+     * held when it broke. Run at start-up, before anything that edits the rules — the seeding
+     * included, which until this existed was what saved an empty family over the lost one (see
+     * [SettingsStore.update]). When the copy cannot be read either, the store stays as it is: the
+     * edits are refused, the home says why, and the children keep what they have.
+     */
+    suspend fun recoverUnreadablePolicy() {
+        if (identityStore.current().role != Role.PARENT) return
+        if (!settingsStore.current().fallback) return
+        val deployed = syncStore.current().deployedPolicyJson
+        val policy = deployed.takeIf { it.isNotBlank() }
+            ?.let { runCatching { json.decodeFromString(PolicySettings.serializer(), it) }.getOrNull() }
+        if (policy == null) {
+            dev.walcott.debug.DebugLog.e(TAG, "the stored rules cannot be read, and there is no readable copy of the last ones sent")
+            return
+        }
+        settingsStore.update(overUnreadable = true) { policy }
+        dev.walcott.debug.DebugLog.w(TAG, "the stored rules could not be read; put back the last ones sent to the children")
+    }
+
     // --- Family backup / restore (TODO #1, option (a)) ---
 
     /**
@@ -3082,6 +3217,8 @@ class SyncManager(
             recoveryTrio(id)
         }
         val settings = settingsStore.current()
+        // An empty stand-in saved as a backup would be written over the good copy in its slot.
+        check(!settings.fallback) { "the rules cannot be read; not backing up an empty stand-in" }
         return FamilyBackupPayload(
             familyName = settings.familyName,
             topic = id.topic,
@@ -3304,7 +3441,7 @@ class SyncManager(
             rotationCertB64 = payload.rotationCertB64,
             ntfyServer = payload.ntfyServer,
         )
-        settingsStore.update { policy }
+        settingsStore.update(overUnreadable = true) { policy }
         // A fresh slate for everything device-local: a stale auto-backup pointer would
         // clobber a previous family's file with this one's data, and ghost children or
         // reminder bookkeeping from a pre-restore life would mislead. Only the version
@@ -3765,7 +3902,9 @@ class SyncManager(
      * throttle keeps awake periods from double-publishing.
      */
     suspend fun publishHeartbeatIfStale(minIntervalMs: Long) {
-        if (System.currentTimeMillis() - lastPublishAtMs < minIntervalMs) return
+        // A range, not "less than": a stamp in the future is a clock moved back since, and read as
+        // "just published" it kept every heartbeat quiet for as long as the jump.
+        if (System.currentTimeMillis() - lastPublishAtMs in 0 until minIntervalMs) return
         if (routineHeldByQuota()) return
         publishSelf()
     }
@@ -3844,6 +3983,35 @@ class SyncManager(
 
     /** PIN check with escalating brute-force lockout (device-local state). */
     /**
+     * Drops everything held in memory because the store refused it (a full phone): asks, receipts,
+     * a rescue, commands run and their answer. Belongs to the family it was held for, so a new
+     * pairing starts without it, like the stored state it stood in for.
+     */
+    private fun forgetUnrecorded() {
+        unrecordedAsks.value = emptyList()
+        unrecordedReceipts.value = emptySet()
+        unrecordedRescue.value = 0L to 0L
+        rescueFailsUnrecorded = 0
+        rescueLockedUntilElapsedUnrecorded = 0
+        rescueSlotUnrecorded = Long.MIN_VALUE
+        commandsRunUnrecorded = emptySet()
+        unrecordedAck = null
+    }
+
+    /**
+     * What a rescue code did while the store refused to record it — a phone whose storage is full.
+     *
+     * Both directions are held here rather than lost. A code that was accepted still opens the
+     * phone (and its slot stays spent), because this is the door for a phone in trouble. A wrong
+     * code still counts towards the lockout, because a child who filled the storage on purpose
+     * must not get unlimited guesses for it.
+     */
+    private val unrecordedRescue = MutableStateFlow(0L to 0L)
+    @Volatile private var rescueFailsUnrecorded = 0
+    @Volatile private var rescueLockedUntilElapsedUnrecorded = 0L
+    @Volatile private var rescueSlotUnrecorded = Long.MIN_VALUE
+
+    /**
      * The two deadlines of a rescue code typed into this phone (wall, monotonic); both 0 when
      * none is running (see [RescueCode]).
      *
@@ -3852,7 +4020,10 @@ class SyncManager(
      * nothing else happened. Whoever asks brings their own clock.
      */
     val rescueDeadlines: StateFlow<Pair<Long, Long>> =
-        syncStore.state.map { it.rescueUntilWallMs to it.rescueUntilElapsedMs }
+        kotlinx.coroutines.flow.combine(
+            syncStore.state.map { it.rescueUntilWallMs to it.rescueUntilElapsedMs },
+            unrecordedRescue,
+        ) { stored, inMemory -> if (inMemory.first > stored.first) inMemory else stored }
             .stateIn(scope, SharingStarted.Eagerly, 0L to 0L)
 
     /** Whether a rescue code is holding this phone open at this instant. */
@@ -3862,6 +4033,7 @@ class SyncManager(
             wall, elapsed, System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(),
         )
     }
+
 
     /**
      * Types a rescue code into this phone.
@@ -3880,7 +4052,7 @@ class SyncManager(
         val remaining = PinLockout.remainingMs(
             s.rescueLockedUntilMs, nowWall, s.rescueLockedUntilElapsedMs, nowElapsed,
             sameBoot = boot >= 0 && boot == s.rescueLockBootCount,
-        )
+        ).coerceAtLeast(rescueLockedUntilElapsedUnrecorded - nowElapsed)
         if (remaining > 0) return PinResult.Locked(remaining)
 
         val keyB64 = identity.value.familyKeyB64
@@ -3891,18 +4063,25 @@ class SyncManager(
         val key = FamilyCrypto.familyKeyFromBytes(FamilyCrypto.fromB64(keyB64))
         // Bound to this phone: the code was read out for it and for no sibling's (see RescueCode).
         val accepted = RescueCode.verify(
-            key, entered, nowWall - s.effectiveClockSkewMs, s.rescueLastSlot, deviceId = identity.value.deviceId,
+            key, entered, nowWall - s.effectiveClockSkewMs, maxOf(s.rescueLastSlot, rescueSlotUnrecorded),
+            deviceId = identity.value.deviceId,
         )
         if (accepted == null) {
-            val attempts = s.rescueFails + 1
+            val attempts = maxOf(s.rescueFails, rescueFailsUnrecorded) + 1
             val lockMs = PinLockout.lockoutMs(attempts)
-            syncStore.update {
-                it.copy(
-                    rescueFails = attempts,
-                    rescueLockedUntilMs = if (lockMs > 0) nowWall + lockMs else it.rescueLockedUntilMs,
-                    rescueLockedUntilElapsedMs = if (lockMs > 0) nowElapsed + lockMs else it.rescueLockedUntilElapsedMs,
-                    rescueLockBootCount = if (lockMs > 0) boot else it.rescueLockBootCount,
-                )
+            runCatching {
+                syncStore.update {
+                    it.copy(
+                        rescueFails = attempts,
+                        rescueLockedUntilMs = if (lockMs > 0) nowWall + lockMs else it.rescueLockedUntilMs,
+                        rescueLockedUntilElapsedMs = if (lockMs > 0) nowElapsed + lockMs else it.rescueLockedUntilElapsedMs,
+                        rescueLockBootCount = if (lockMs > 0) boot else it.rescueLockBootCount,
+                    )
+                }
+            }.onFailure {
+                dev.walcott.debug.DebugLog.w(TAG, "could not record a wrong rescue code; counting it in memory", it)
+                rescueFailsUnrecorded = attempts
+                if (lockMs > 0) rescueLockedUntilElapsedUnrecorded = nowElapsed + lockMs
             }
             return PinResult.Wrong
         }
@@ -3913,7 +4092,10 @@ class SyncManager(
         // understands (see RescueCode.grantMinutes).
         if (minutes <= 0) return PinResult.Wrong
         val untilWall = nowWall + minutes * 60_000L
-        syncStore.update {
+        val untilElapsed = nowElapsed + minutes * 60_000L
+        rescueFailsUnrecorded = 0
+        rescueLockedUntilElapsedUnrecorded = 0
+        val recorded = runCatching { syncStore.update {
             it.copy(
                 // The slot is burnt whatever the action was, so a code cannot be typed twice.
                 rescueLastSlot = accepted.slot,
@@ -3923,11 +4105,7 @@ class SyncManager(
                 rescueLockBootCount = -1,
                 rescueUsedAtMs = nowWall,
                 rescueUntilWallMs = if (RescueCode.opensRules(accepted.action)) untilWall else it.rescueUntilWallMs,
-                rescueUntilElapsedMs = if (RescueCode.opensRules(accepted.action)) {
-                    nowElapsed + minutes * 60_000L
-                } else {
-                    it.rescueUntilElapsedMs
-                },
+                rescueUntilElapsedMs = if (RescueCode.opensRules(accepted.action)) untilElapsed else it.rescueUntilElapsedMs,
                 ruleEvents = ChildEventLog.plus(
                     it.ruleEvents,
                     listOf(ChildEvent(UUID.randomUUID().toString(), nowWall, ChildEvent.KIND_RESCUE)),
@@ -3935,6 +4113,13 @@ class SyncManager(
                 ),
                 childVersion = it.childVersion + 1,
             )
+        } }
+        if (recorded.isFailure) {
+            dev.walcott.debug.DebugLog.w(TAG, "could not record the rescue; holding it in memory", recorded.exceptionOrNull())
+            // Spent in memory only when the store could not spend it: held any longer, it outlived a
+            // new pairing in the same process and refused that family's codes for the same slot.
+            rescueSlotUnrecorded = maxOf(rescueSlotUnrecorded, accepted.slot)
+            if (RescueCode.opensRules(accepted.action)) unrecordedRescue.value = untilWall to untilElapsed
         }
         if (!RescueCode.opensRules(accepted.action)) {
             allowInstallsFor(minutes * 60_000L)
@@ -3953,6 +4138,7 @@ class SyncManager(
      * code would be a way to use one twice.
      */
     suspend fun clearRescueGrant() {
+        unrecordedRescue.value = 0L to 0L
         syncStore.update { it.copy(rescueUntilWallMs = 0, rescueUntilElapsedMs = 0) }
     }
 
@@ -4095,6 +4281,18 @@ class SyncManager(
                 // The PIN hash/salt travel with the policy so the parent's PIN also guards
                 // enrolled child devices (gate + leaving child mode).
                 val settings = settingsStore.current()
+                // A stand-in for rules this phone cannot read is not something to send: a child
+                // that adopts it — one pairing now, one recovering a broken file of its own — gets
+                // a family with no rules. What the children already have travels instead, so
+                // commands, answers and bonuses keep moving; with nothing deployed, nothing goes.
+                val policyJson = if (settings.fallback) {
+                    state.deployedPolicyJson.ifBlank {
+                        dev.walcott.debug.DebugLog.e(TAG, "the rules cannot be read and none were ever sent; not publishing")
+                        return null
+                    }
+                } else {
+                    json.encodeToString(PolicySettings.serializer(), settings)
+                }
                 // Ask for icons of apps shown in the list that aren't cached yet; empties out.
                 // The rotation slides the bounded request window over time, so a package no
                 // child can serve can't starve the ones behind it.
@@ -4107,7 +4305,7 @@ class SyncManager(
                 )
                 val snapshot = ParentSnapshot(
                     version = state.parentVersion,
-                    policyJson = json.encodeToString(PolicySettings.serializer(), settings),
+                    policyJson = policyJson,
                     // What travels is only what a child could still apply; the parent goes on
                     // REMEMBERING answers for much longer, so its own screens can still say who
                     // answered what (see ParentFit.RESOLUTION_KEEP_MS).
@@ -4184,8 +4382,21 @@ class SyncManager(
                 //
                 // The parent's side stays >= rather than >, because a child on an older build
                 // still does not do this and its genuine updates must keep landing.
-                syncStore.update { it.copy(childVersion = it.childVersion + 1) }
+                //
+                // The store write is not allowed to stop the publish: on a phone whose storage is
+                // full it fails, and when it came first and threw, the phone went silent — no
+                // check-in, no help ask, no emergency notice — while the parent saw only "not
+                // heard from". While it fails, every publish goes out under the same version, one
+                // past the stored one. Not a counter kept in memory: that climbed past what the
+                // store holds, and after a restart the phone published below what the parent had
+                // on file, which it drops — hours of check-ins ignored. A tie is accepted (the >=
+                // above), so the cost is only the replay rewind that rule describes, until the
+                // store takes a write again.
+                val bumped = runCatching { syncStore.update { it.copy(childVersion = it.childVersion + 1) } }
+                    .onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not record a new version; publishing anyway", it) }
+                    .isSuccess
                 val s = syncStore.current()
+                val version = if (bumped) s.childVersion else s.childVersion + 1
                 val today = LocalDate.now().toEpochDay()
                 // Stamped now and remembered with the local clock as it reads at this instant:
                 // when this message comes back, those two are what measure the clock.
@@ -4237,8 +4448,9 @@ class SyncManager(
                 // finished is invisible from the other side otherwise, because a device missing
                 // every permission still pairs, still publishes and still looks alive.
                 val setupUnmet = runCatching {
-                    dev.walcott.setup.DeviceSetup.unmet(dev.walcott.setup.DeviceSetupProbe.read(context))
-                        .map { it.key }
+                    dev.walcott.setup.DeviceSetup.reportable(
+                        dev.walcott.setup.DeviceSetup.unmet(dev.walcott.setup.DeviceSetupProbe.read(context)),
+                    ).map { it.key }
                 }.getOrDefault(emptyList())
                 // History off (the default) reports only the current position; on, the 48h
                 // trail is decimated so it can't push the snapshot past ntfy's message cap.
@@ -4278,7 +4490,7 @@ class SyncManager(
                     deviceId = id.deviceId,
                     displayName = id.displayName,
                     childId = id.childId,
-                    version = s.childVersion,
+                    version = version,
                     epochDay = today,
                     usage = UsageReport.cap(
                         repository.reportedUsageNow().map { UsageEntry(it.key, it.value.seconds) },
@@ -4287,7 +4499,7 @@ class SyncManager(
                     extra = repository.extraNow().map { UsageEntry(it.key, it.value.seconds) },
                     requests = s.pendingRequests,
                     history = history,
-                    asks = s.pendingAsks,
+                    asks = asksWithUnrecorded(s.pendingAsks, unrecordedAsks.value),
                     apps = apps,
                     locations = locations,
                     locationsTotal = locationsTotal,
@@ -4309,11 +4521,13 @@ class SyncManager(
                     enforcement = EnforcementBackends.status(context),
                     pinWrongTotal = s.pinWrongTotal,
                     lastWrongPinMs = s.lastWrongPinMs,
-                    lastCommand = s.lastCommandAck,
+                    // Whichever answer is newer: one the store refused, or one it has since taken.
+                    lastCommand = listOfNotNull(unrecordedAck, s.lastCommandAck).maxByOrNull { it.completedAtMs },
                     answeredLocationRequestMs = s.appliedLocationRequestMs,
                     appliedPolicyVersion = s.appliedParentVersion,
                     batteryPercent = batteryPercent(),
                     charging = batteryCharging(),
+                    storageFreeBytes = storageFreeBytes(),
                     updateError = s.updateError,
                     enforcementGaps = s.enforcementGaps,
                     restrictionGaps = s.restrictionGaps,
@@ -4363,7 +4577,7 @@ class SyncManager(
                     setupUnmet = setupUnmet,
                     lostMode = s.lostMode,
                     ringingSeconds = dev.walcott.enforcement.Ringer.secondsLeft(System.currentTimeMillis()),
-                    rescueUntilMs = if (rescueOpenNow()) s.rescueUntilWallMs else 0L,
+                    rescueUntilMs = if (rescueOpenNow()) rescueDeadlines.value.first else 0L,
                     lastGasp = s.lastGasp,
                     blocks = blockReport(today),
                 )
@@ -4380,14 +4594,23 @@ class SyncManager(
                 // reconnect. That is what moves the phone's own screen from "waiting to send" to
                 // "sent" the moment a message really leaves, without a retry path of its own to
                 // get wrong (see SyncState.askReceipts).
-                val confirming = HelpAsks.unconfirmed(s.pendingAsks, s.askReceipts)
+                val confirming = HelpAsks.unconfirmed(
+                    asksWithUnrecorded(s.pendingAsks, unrecordedAsks.value),
+                    s.askReceipts + unrecordedReceipts.value,
+                )
                 receiptWanted = forReceipt || confirming.isNotEmpty()
                 if (receiptWanted) {
                     // Blocking, so off this caller's thread — and the one place in this class
                     // that finds out whether a message really left the phone (see PanicProtocol).
                     receipt = withContext(Dispatchers.IO) { transport.publishForReceipt(fitted.encoded) }
                     if (receipt != null && confirming.isNotEmpty()) {
-                        syncStore.update { st -> st.copy(askReceipts = st.askReceipts + confirming) }
+                        // After the message is out, so a store that refuses the write (a full
+                        // phone) cannot turn a delivered ask into a reported failure.
+                        runCatching { syncStore.update { st -> st.copy(askReceipts = st.askReceipts + confirming) } }
+                            .onFailure {
+                                dev.walcott.debug.DebugLog.w(TAG, "could not record the ask receipt; keeping it in memory", it)
+                                unrecordedReceipts.value = unrecordedReceipts.value + confirming
+                            }
                     }
                 } else {
                     transport.publish(fitted.encoded)
@@ -4396,9 +4619,11 @@ class SyncManager(
                 // succeeded: charging a retry to a message that was never sent would burn the
                 // give-up budget on this device's own connectivity rather than on the parent.
                 if (snapshot.domainChunks.isNotEmpty() && (!receiptWanted || receipt != null)) {
-                    syncStore.update { st ->
-                        st.copy(domainBatch = st.domainBatch?.let { DomainDelivery.published(it) })
-                    }
+                    runCatching {
+                        syncStore.update { st ->
+                            st.copy(domainBatch = st.domainBatch?.let { DomainDelivery.published(it) })
+                        }
+                    }.onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not record the domain batch as sent", it) }
                 }
             }
             Role.UNPAIRED -> Unit
@@ -4532,6 +4757,8 @@ class SyncManager(
             charging = batteryCharging(),
             updateError = s.updateError,
             suspendFailures = dev.walcott.enforcement.Enforcer.recentSuspendFailures,
+            databaseRebuilt = dev.walcott.data.WalcottDatabase.wasRebuilt,
+            storageFreeBytes = storageFreeBytes(),
             appVersionCode = BuildConfig.VERSION_CODE,
             appVersionName = BuildConfig.VERSION_NAME,
             logLines = dev.walcott.debug.DebugLog.tail(DIAG_LOG_LINES),
@@ -4688,6 +4915,9 @@ class SyncManager(
     }
 
     /** Current battery percentage (0–100), or -1 if the platform won't say. */
+    /** What this app can still write (the space Android lets it use), or -1 if the platform won't say. */
+    private fun storageFreeBytes(): Long = runCatching { context.filesDir.usableSpace }.getOrDefault(-1L)
+
     private fun batteryPercent(): Int =
         runCatching {
             context.getSystemService(android.os.BatteryManager::class.java)
@@ -4737,13 +4967,17 @@ class SyncManager(
      */
     private suspend fun handleBacklog(backlog: List<RelayMessage>, connectedAs: FamilyIdentity) {
         // A message the relay kept as a file that could not be fetched is a hole in the batch, and
-        // it may be the newest parent snapshot — the one that withdrew a command. Picking the
-        // newest among the rest would then run exactly what was withdrawn, so a batch with a hole
-        // runs no commands at all: the rules still apply, and the parent's next publish brings the
-        // commands it still means.
-        val commandsAllowed = backlog.none { it.attachmentUrl.isNotBlank() }
-        if (!commandsAllowed) {
-            dev.walcott.debug.DebugLog.w(TAG, "a message in the backlog could not be fetched; running no commands from it")
+        // it may be a newer parent snapshot — the one that withdrew a command. A snapshot OLDER
+        // than a hole therefore runs no commands: the hole may have taken them back. One newer
+        // than every hole does, because nothing it could be contradicted by is missing.
+        //
+        // It used to be the whole batch. On ntfy.sh a large family's snapshots travel as files,
+        // and files are kept three hours against twelve for messages, so a phone that spent the
+        // night switched off came back to a hole — an old snapshot whose file had expired —
+        // and ran nothing at all: not the "locate", not the "ring", not the refusal of a release.
+        val newestHole = backlog.filter { it.attachmentUrl.isNotBlank() }.maxOfOrNull { it.timeSec }
+        if (newestHole != null) {
+            dev.walcott.debug.DebugLog.w(TAG, "a message in the backlog could not be fetched; no commands from anything older")
         }
         val decoded = backlog.mapNotNull { message ->
             runCatching { decodeIncoming(message.body, connectedAs) }.getOrNull()?.let { it to message.timeSec }
@@ -4755,6 +4989,7 @@ class SyncManager(
             )
         }
         for ((message, timeSec) in kept) {
+            val commandsAllowed = newestHole == null || timeSec > newestHole
             runCatching { handleDecoded(message, connectedAs, timeSec, commandsAllowed) }
                 .onFailure { dev.walcott.debug.DebugLog.e(TAG, "handling a backlog message failed", it) }
         }
@@ -5047,7 +5282,8 @@ class SyncManager(
             null
         }
         if (incoming != null) {
-            settingsStore.update { local ->
+            // Over an unreadable store too: the parent's copy is the truth this device lost.
+            settingsStore.update(overUnreadable = true) { local ->
                 incoming.resolveForChild(id.childId).copy(
                     pinHash = incoming.pinHash ?: local.pinHash,
                     pinSalt = incoming.pinSalt ?: local.pinSalt,
@@ -5115,7 +5351,16 @@ class SyncManager(
             if (progressed && next != null && !next.delivered && !next.abandoned) publishSelf()
         }
 
-        // On-demand: answer a fresh "locate now" addressed to this device.
+        // Remote fixes from the parent (update now, re-apply policy, nudge for permissions).
+        // Run before the grants below so a device whose enforcement had lapsed is repaired
+        // first; each command publishes its own acknowledgement.
+        // Nothing may follow a release: the stores it just wiped would be written back into
+        // existence by the bookkeeping below, on a device that is no longer part of any family.
+        if (live && applyCommands(snapshot, deviceId)) return
+
+        // On-demand: answer a fresh "locate now" addressed to this device. After the commands, not
+        // before: a fix can take forty seconds, and a refusal of an emergency release queued
+        // behind it could arrive after the phone had stopped listening for one.
         val locReq = if (live) SyncEngine.freshLocationRequest(snapshot, deviceId, s.appliedLocationRequestMs) else null
         if (locReq != null) {
             // Background location rides entirely on the location-typed foreground service (the
@@ -5146,13 +5391,6 @@ class SyncManager(
             publishSelf()
         }
 
-        // Remote fixes from the parent (update now, re-apply policy, nudge for permissions).
-        // Run before the grants below so a device whose enforcement had lapsed is repaired
-        // first; each command publishes its own acknowledgement.
-        // Nothing may follow a release: the stores it just wiped would be written back into
-        // existence by the bookkeeping below, on a device that is no longer part of any family.
-        if (live && applyCommands(snapshot, deviceId)) return
-
         // Answer the parent's app-icon requests for apps this child has (a bounded trickle).
         if (snapshot.iconRequests.isNotEmpty()) runCatching { answerIconRequests(snapshot.iconRequests, id) }
 
@@ -5171,8 +5409,10 @@ class SyncManager(
         }
 
         // Apply resolutions to our pending requests and asks, idempotently.
+        // The asks held only in memory too (a full phone, see unrecordedAsks): an answer to one
+        // would otherwise never count as fresh, and "on my way" would never reach the screen.
         val pendingIds = s.pendingRequests.map { it.requestId }.toSet() +
-            s.pendingAsks.map { it.requestId }
+            asksWithUnrecorded(s.pendingAsks, unrecordedAsks.value).map { it.requestId }
         val freshResolutions = SyncEngine.newResolutions(snapshot, pendingIds, s.appliedResolutionIds)
         for (resolution in freshResolutions) {
             if (!resolution.approved) continue
@@ -5196,7 +5436,9 @@ class SyncManager(
         }
         // The child home tells the child what was answered — a denial or a surprise bonus
         // must not just silently vanish or appear.
-        val summary = SyncEngine.latestResolutionSummary(freshResolutions, s.pendingRequests, s.pendingAsks)
+        val summary = SyncEngine.latestResolutionSummary(
+            freshResolutions, s.pendingRequests, asksWithUnrecorded(s.pendingAsks, unrecordedAsks.value),
+        )
         val noticeFromResolution = summary?.let {
             NoticeEntry(
                 kind = if (it.categoryId.isNotEmpty()) "time" else it.kind,
@@ -5216,6 +5458,8 @@ class SyncManager(
 
         val resolvedIds = freshResolutions.map { it.requestId }.toSet()
         val bonusIds = freshBonuses.map { it.id }.toSet()
+        unrecordedAsks.value = unrecordedAsks.value.filterNot { it.requestId in resolvedIds }
+        unrecordedReceipts.value = unrecordedReceipts.value - resolvedIds
         syncStore.update {
             it.copy(
                 pendingRequests = it.pendingRequests.filterNot { r -> r.requestId in resolvedIds },
@@ -5231,6 +5475,53 @@ class SyncManager(
     }
 
     /**
+     * The parent's "update now", run outside the command lock and answered twice: "checking" when
+     * it starts (see [RemoteAction.DETAIL_UPDATE_CHECKING]) and the outcome here, under the same
+     * command id, so the parent's screen goes from the one to the other.
+     *
+     * It used to run inside [applyCommands], whose lock is held by the single reader of every
+     * message from the parent. A download on a weak signal can take ten minutes, and for all of
+     * them no rule, no granted minute, no refusal of an emergency release was read — and a release
+     * waits only so long to hear one before it goes ahead.
+     */
+    private suspend fun finishForcedUpdate(command: RemoteCommand) {
+        val outcome = runCatching { dev.walcott.update.Updater(context).checkAndUpdate(force = true) }
+            .onFailure { dev.walcott.debug.DebugLog.e(TAG, "forced update failed", it) }
+            .getOrDefault(dev.walcott.update.UpdateCheckOutcome.TRANSIENT_FAILURE)
+        val (ok, detail) = RemoteCommandRunner.updateDetail(outcome)
+        val ack = CommandAck(
+            id = command.id,
+            action = command.action,
+            ok = ok,
+            detail = detail,
+            completedAtMs = System.currentTimeMillis(),
+            arg = command.arg,
+        )
+        // Only over its own first answer: a command run since then has the newer word. Decided
+        // inside the write, so a command acknowledged in the meantime cannot be written over.
+        fun stillLatest(stored: CommandAck?) =
+            listOfNotNull(unrecordedAck, stored).maxByOrNull { it.completedAtMs }?.id == command.id
+        var wrote = false
+        val stored = runCatching {
+            syncStore.update {
+                if (!stillLatest(it.lastCommandAck)) {
+                    it
+                } else {
+                    wrote = true
+                    it.copy(lastCommandAck = ack, childVersion = it.childVersion + 1)
+                }
+            }
+        }
+        when {
+            stored.isFailure && stillLatest(runCatching { syncStore.current().lastCommandAck }.getOrNull()) ->
+                unrecordedAck = ack
+            stored.isSuccess && wrote -> unrecordedAck = null
+            else -> return
+        }
+        runCatching { publishSelf() }
+    }
+
+    /**
      * Runs any remote commands addressed to this device. Each is marked applied *before* it
      * runs, so a command that kills the process midway (an update install restarts us) can't
      * loop forever; the parent sees the missing acknowledgement instead.
@@ -5242,6 +5533,7 @@ class SyncManager(
      */
     /** Returns true when the last thing it did was hand this device back (nothing may follow). */
     private suspend fun applyCommands(snapshot: ParentSnapshot, deviceId: String): Boolean = commandMutex.withLock {
+        var forcedUpdate: RemoteCommand? = null
         val runner by lazy {
             RemoteCommandRunner(
                 context,
@@ -5267,6 +5559,10 @@ class SyncManager(
                 setLostMode = { on, message -> if (on) enableLostMode(message) else disableLostMode() },
                 allowInstalls = { durationMs -> allowInstallsFor(durationMs) },
                 probeRelay = { server -> relayCarriesFamily(server) },
+                // Not inside this lock: the download can take minutes, and the lock is held by the
+                // only reader of everything the parent sends (see finishForcedUpdate). Started
+                // once its first answer is stored, below, so the outcome can only come after it.
+                startUpdate = { command -> forcedUpdate = command },
             )
         }
         val before = syncStore.current()
@@ -5274,17 +5570,42 @@ class SyncManager(
         // can set: a phone moved half an hour forward refused every lock-screen PIN as expired,
         // and one moved back took last week's ring as fresh (see ClockGuard).
         val nowCorrected = System.currentTimeMillis() - before.effectiveClockSkewMs
-        for (command in SyncEngine.newCommands(snapshot, deviceId, before.appliedCommandIds, before.appliedCommandMarks)) {
+        val applied = before.appliedCommandIds + commandsRunUnrecorded
+        // A refusal of the emergency release goes first, whatever its place in the queue: the
+        // release listens for one only so long (see releaseAfterListening), and a relay probe or
+        // anything else slow ahead of it must not use that time up. Stable, so the rest keep
+        // their order.
+        val queued = SyncEngine.newCommands(snapshot, deviceId, applied, before.appliedCommandMarks)
+            .sortedBy { if (it.action == RemoteAction.DENY_PANIC) 0 else 1 }
+        for (command in queued) {
             // Re-check under the lock: a concurrent handler may have claimed it since.
-            if (command.id in syncStore.current().appliedCommandIds) continue
-            syncStore.update {
-                it.copy(
-                    appliedCommandIds = SyncState.rememberApplied(it.appliedCommandIds, listOf(command.id)),
-                    appliedCommandMarks = SyncEngine.markApplied(it.appliedCommandMarks, command),
-                )
+            if (command.id in syncStore.current().appliedCommandIds || command.id in commandsRunUnrecorded) continue
+            // A phone whose storage is full refuses this write, and when it was allowed to throw
+            // no command ran at all — not a release, not an update, not the diagnosis that would
+            // have said why. Remembered in memory instead: the cost is a command that may run
+            // again if the process restarts before the disk has room, and every command is safe
+            // to repeat or expires on its own.
+            runCatching {
+                syncStore.update {
+                    it.copy(
+                        appliedCommandIds = SyncState.rememberApplied(it.appliedCommandIds, listOf(command.id)),
+                        appliedCommandMarks = SyncEngine.markApplied(it.appliedCommandMarks, command),
+                    )
+                }
+            }.onFailure {
+                dev.walcott.debug.DebugLog.w(TAG, "could not record ${command.action} as run; remembering it in memory", it)
+                commandsRunUnrecorded = (commandsRunUnrecorded + command.id).toList().takeLast(UNRECORDED_COMMANDS_KEPT).toSet()
             }
             val ack = runner.run(command, nowMs = nowCorrected)
-            syncStore.update { it.copy(lastCommandAck = ack, childVersion = it.childVersion + 1) }
+            unrecordedAck = runCatching { syncStore.update { it.copy(lastCommandAck = ack, childVersion = it.childVersion + 1) } }
+                .fold(onSuccess = { null }, onFailure = {
+                    dev.walcott.debug.DebugLog.w(TAG, "could not record the ${command.action} answer; sending it from memory", it)
+                    ack
+                })
+            forcedUpdate?.let { update ->
+                forcedUpdate = null
+                scope.launch { finishForcedUpdate(update) }
+            }
             // The release is run HERE, after its acknowledgement is on the wire, and it is the
             // last thing this device ever does on this channel: the teardown wipes the sync
             // state and closes the transport, so an ack published afterwards would go nowhere
@@ -5361,8 +5682,19 @@ class SyncManager(
         // From the device it was sent to, for the same reason as ackedId below: any holder of the
         // family key can publish as any device, and a line on the wall saying another phone's
         // command succeeded is a lie the parent would act on.
+        //
+        // Not an "update now" that has only started (RemoteAction.DETAIL_UPDATE_CHECKING): that
+        // first answer takes the command out of the queue, but the wall waits for the outcome,
+        // which comes later under the same id and is recognised by following the "checking" this
+        // device last reported. Counted at the first answer, every update read as done — the
+        // failed download and the full phone included.
+        val previousAck = before.children.firstOrNull { it.deviceId == snapshot.deviceId }?.lastCommand
         val ackCompleted = snapshot.lastCommand?.takeIf { ack ->
-            before.commands.any { it.id == ack.id && it.deviceId == snapshot.deviceId }
+            ack.detail != RemoteAction.DETAIL_UPDATE_CHECKING &&
+                (
+                    before.commands.any { it.id == ack.id && it.deviceId == snapshot.deviceId } ||
+                        (previousAck?.id == ack.id && previousAck.detail == RemoteAction.DETAIL_UPDATE_CHECKING)
+                    )
         }
         // Whose day is being filed under, and whether this device can believe it. A child's clock
         // can be wrong — or moved deliberately, which is a thing this app blocks apps over — and
@@ -5838,6 +6170,19 @@ class SyncManager(
             syncStore.update { it.copy(lowBatteryNotified = it.lowBatteryNotified - snapshot.deviceId) }
         }
 
+        // Nearly-full storage: the phone can no longer save what it is told (rules, answers,
+        // updates), and from here that only ever looked like a child gone quiet. Once per episode.
+        val storageAlerted = snapshot.deviceId in before.lowStorageNotified
+        if (HealthAlerts.shouldAlertLowStorage(snapshot.storageFreeBytes, storageAlerted)) {
+            SyncNotifications.notifyLowStorage(context, who, snapshot.storageFreeBytes, snapshot.deviceId, snapshot.childId)
+            syncStore.update {
+                it.copy(lowStorageNotified = it.lowStorageNotified + snapshot.deviceId)
+                    .plusEvent(event(ParentEvent.TYPE_LOW_STORAGE, snapshot, count = (snapshot.storageFreeBytes / (1024 * 1024)).toInt()))
+            }
+        } else if (storageAlerted && HealthAlerts.clearsLowStorage(snapshot.storageFreeBytes)) {
+            syncStore.update { it.copy(lowStorageNotified = it.lowStorageNotified - snapshot.deviceId) }
+        }
+
         // The phone's last word before going quiet (see LastGasp): said once per word, however
         // many times the snapshot carrying it is re-emitted, and forgotten once the phone is back.
         val gasp = snapshot.lastGasp
@@ -6221,6 +6566,8 @@ class SyncManager(
 
         /** The most the release waits for its last catch-up before listening (see [releaseAfterListening]). */
         private const val RELEASE_CATCH_UP_MS = 35_000L
+        /** How many commands [commandsRunUnrecorded] remembers; a parent queues a handful at most. */
+        private const val UNRECORDED_COMMANDS_KEPT = 50
 
         /** [NoticeEntry.kind] for a request that ran out of time unanswered. */
         const val NOTICE_EXPIRED = "expired"

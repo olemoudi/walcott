@@ -361,6 +361,9 @@ class NtfyTransport(
                 reconnectSoon()
             }
         })
+        // Closed while this socket was being opened: close() cancelled whatever was there before
+        // it, not this one, which would otherwise live on as a second listener on the topic.
+        if (closed.get()) webSocket?.cancel()
     }
 
     private fun reconnectSoon() {

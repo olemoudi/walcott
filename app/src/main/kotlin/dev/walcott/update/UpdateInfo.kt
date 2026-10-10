@@ -177,3 +177,23 @@ fun nextUpdateStep(
  */
 fun apkDigestAccepted(expectedHex: String, actualHex: String): Boolean =
     expectedHex.isBlank() || expectedHex.equals(actualHex, ignoreCase = true)
+
+/**
+ * Where the body of a download response starts, given [have] bytes of it already on disk; null
+ * when the response cannot be used at all.
+ *
+ * A 200 is the whole file whatever was asked for — a server that ignores ranges, or a request
+ * that asked for none — so it starts over at 0. A 206 continues only from exactly where the file
+ * on disk ends: a range starting anywhere else would leave a hole or a seam in the APK, which the
+ * digest would reject only after the whole thing had been fetched.
+ */
+fun resumeOffset(code: Int, contentRange: String?, have: Long): Long? = when (code) {
+    200 -> 0L
+    206 -> contentRange
+        ?.removePrefix("bytes ")
+        ?.substringBefore('-')
+        ?.trim()
+        ?.toLongOrNull()
+        ?.takeIf { it == have }
+    else -> null
+}

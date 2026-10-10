@@ -85,9 +85,20 @@ class WalcottRepository(
      * using a limited app; Room's invalidation tracker pushes the same numbers for free the
      * moment they change, and the loop's own writes are what change them.
      */
-    val usageTodayAllFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
+    val usageTodayAllFlow: Flow<Map<String, Duration>> get() = usageByDayFlow.map { it.second }
+
+    /**
+     * [usageTodayAllFlow] with the day each emission belongs to.
+     *
+     * The day is re-checked once a minute of AWAKE time ([todayFlow] runs on `delay`), so for the
+     * first minute a phone is used after midnight this is still yesterday's query — and Room
+     * re-emits it on every write. Laid over today's counters, that blocked an app that had used up
+     * YESTERDAY's budget on the first switch of the morning. Consumers that decide with these
+     * numbers drop emissions for a day that is no longer today (see EnforcementService).
+     */
+    val usageByDayFlow: Flow<Pair<Long, Map<String, Duration>>> = todayFlow.flatMapLatest { day ->
         db.usage().observeDay(day)
-            .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+            .map { rows -> day to rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
 
     // usageTodayFlow used to sit here: the same map with every key containing a dot removed,
@@ -98,9 +109,12 @@ class WalcottRepository(
     // fired at all). Deleted rather than fixed: there is no caller that wants usage with the
     // usage taken out, and leaving it would only wait for a third.
 
-    val extraTodayFlow: Flow<Map<String, Duration>> = todayFlow.flatMapLatest { day ->
+    val extraTodayFlow: Flow<Map<String, Duration>> get() = extraByDayFlow.map { it.second }
+
+    /** [extraTodayFlow] with the day each emission belongs to (see [usageByDayFlow]). */
+    val extraByDayFlow: Flow<Pair<Long, Map<String, Duration>>> = todayFlow.flatMapLatest { day ->
         db.usage().observeExtraDay(day)
-            .map { rows -> rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
+            .map { rows -> day to rows.associate { it.categoryId to Duration.ofSeconds(it.seconds) } }
     }
 
     /**
@@ -261,8 +275,14 @@ class WalcottRepository(
         // keeps the wire's HOLIDAY slot equal to WEEKEND on every write — the UI only edits
         // weekdays/weekends, and calendar special days behave like weekends (see
         // withHolidayMirroringWeekend for why the key itself must keep travelling).
-        settingsStore.update { current ->
-            transform(current).withHolidayMirroringWeekend().copy(version = current.version + 1)
+        try {
+            settingsStore.update { current ->
+                transform(current).withHolidayMirroringWeekend().copy(version = current.version + 1)
+            }
+        } catch (e: PolicyUnreadableException) {
+            // Not saved, on purpose (see SettingsStore.update): the edit would have been made to an
+            // empty policy and published to every child. The home says so (PolicyUnreadableCard).
+            dev.walcott.debug.DebugLog.e("WalcottRepo", "rule edit not saved: the stored rules cannot be read", e)
         }
     }
 
@@ -334,7 +354,7 @@ class WalcottRepository(
      * like a fresh install rather than a device that was once enrolled.
      */
     suspend fun wipeLocalData() {
-        settingsStore.update { PolicySettings() }
+        settingsStore.update(overUnreadable = true) { PolicySettings() }
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             db.clearAllTables()
         }

@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * can take minutes (a retry ladder), so the broadcast is released at [HOLD_MS] whether or not it
  * has finished, by which time the service the work started is what keeps the process alive.
  */
-fun BroadcastReceiver.runHeld(work: suspend () -> Unit) {
+fun BroadcastReceiver.runHeld(holdMs: Long = HOLD_MS, work: suspend () -> Unit) {
     val pending = goAsync()
     val finished = AtomicBoolean(false)
     fun finishOnce() {
@@ -30,12 +30,19 @@ fun BroadcastReceiver.runHeld(work: suspend () -> Unit) {
     }
     val scope = CoroutineScope(Dispatchers.IO)
     scope.launch {
-        delay(HOLD_MS)
+        delay(holdMs)
         finishOnce()
     }
     scope.launch {
         try {
             work()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            // Caught here because nothing above this coroutine would: a throw from a scope with no
+            // handler is an uncaught exception, which takes the whole process down — the alarm
+            // that was meant to revive a service killing it instead.
+            dev.walcott.debug.DebugLog.e("WalcottReceiver", "${this@runHeld.javaClass.simpleName} work failed", t)
         } finally {
             finishOnce()
         }

@@ -406,6 +406,17 @@ class PolicySeedReceiver : BroadcastReceiver() {
                     pending.finish()
                     android.os.Process.killProcess(android.os.Process.myPid())
                 }
+                // `--ei crash_drill N`: the next N starts of this app die at start-up for real (see
+                // CrashBreaker.crashDrill), and this process is killed so the first of them begins.
+                // Unlike the drill above, Android itself sees crashes: two inside a minute and it
+                // stops restarting the app, which is what the breaker has to survive.
+                val crashes = intent.getIntExtra("crash_drill", -1)
+                if (crashes >= 0) {
+                    java.io.File(context.filesDir, dev.walcott.debug.CrashBreaker.CRASH_DRILL_FILE).writeText(crashes.toString())
+                    DebugLog.w("WalcottSeed", "crash drill: the next $crashes start(s) will die; dying now")
+                    pending.finish()
+                    if (crashes > 0) android.os.Process.killProcess(android.os.Process.myPid())
+                }
                 // `--es last_gasp battery|shutdown`: the phone's last word, without faking the
                 // battery or pulling the plug (see LastGasp). `--es ring_stop now` ends a ring.
                 intent.getStringExtra("last_gasp")?.let { kind ->

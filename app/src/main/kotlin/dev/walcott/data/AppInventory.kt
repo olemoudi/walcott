@@ -102,7 +102,10 @@ class AppInventory(private val context: Context) {
     fun browserPackages(): Set<String> {
         val now = android.os.SystemClock.elapsedRealtime()
         if (browsersReadAt == 0L || now - browsersReadAt > REACH_OUT_TTL_MS) {
-            browsers = readBrowsers()
+            val readAs = generation.get()
+            val fresh = readBrowsers()
+            if (generation.get() != readAs) return fresh
+            browsers = fresh
             browsersReadAt = now
         }
         return browsers
@@ -146,14 +149,27 @@ class AppInventory(private val context: Context) {
     fun launchableApps(): List<InstalledApp> {
         val now = android.os.SystemClock.elapsedRealtime()
         launchable?.let { if (now - launchableReadAt <= LAUNCHABLE_TTL_MS) return it }
+        val readAs = generation.get()
         val fresh = readLaunchableApps()
-        launchable = fresh
-        launchableReadAt = now
+        // Kept only if nothing was installed or removed while it was being read (see [generation]).
+        if (generation.get() == readAs) {
+            launchable = fresh
+            launchableReadAt = now
+        }
         return fresh
     }
 
+    /**
+     * Moves on every [invalidate], so a read that was in progress when a package came or went is
+     * not cached. The enforcement loop reads these lists on its own thread while the package
+     * receiver invalidates them on the main one: a list read just before an install and stored
+     * just after its invalidation was the stale list for ten minutes, and the new app had no rule.
+     */
+    private val generation = java.util.concurrent.atomic.AtomicLong()
+
     /** Drops the cached app lists; call when a package is added or removed. */
     fun invalidate() {
+        generation.incrementAndGet()
         launchable = null
         labels.clear()
         // The browsers too, and for the same event: installing one is exactly how a phone
@@ -266,7 +282,10 @@ class AppInventory(private val context: Context) {
     fun infrastructurePackages(): Set<String> {
         val now = android.os.SystemClock.elapsedRealtime()
         if (infrastructureReadAt == 0L || now - infrastructureReadAt > INFRASTRUCTURE_TTL_MS) {
-            infrastructure = (setOfNotNull(homePackage()) + enabledInputMethods() + alarmClockPackages()) - ownPackage
+            val readAs = generation.get()
+            val fresh = (setOfNotNull(homePackage()) + enabledInputMethods() + alarmClockPackages()) - ownPackage
+            if (generation.get() != readAs) return fresh
+            infrastructure = fresh
             infrastructureReadAt = now
         }
         return infrastructure

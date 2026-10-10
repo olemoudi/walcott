@@ -112,8 +112,18 @@ class AppBlockerService : AccessibilityService() {
         // a daily budget never ran down and never blocked. Bedtime and screen-free windows read
         // the clock, so they kept working, which is what made it survive: the one backend that
         // could not enforce a budget looked like it was enforcing everything else.
-        scope.launch { app.repository.usageTodayAllFlow.collectLatest { usage = it } }
-        scope.launch { app.repository.effectiveExtraTodayFlow.collectLatest { extra = it } }
+        // Yesterday's numbers count as none: for the first minute of a new day these can still be
+        // yesterday's (see WalcottRepository.usageByDayFlow), and a new day starts from zero.
+        scope.launch {
+            app.repository.usageByDayFlow.collectLatest { (day, u) ->
+                usage = if (day == java.time.LocalDate.now().toEpochDay()) u else emptyMap()
+            }
+        }
+        scope.launch {
+            app.repository.extraByDayFlow.collectLatest { (day, e) ->
+                extra = if (day == java.time.LocalDate.now().toEpochDay()) e else emptyMap()
+            }
+        }
         ContextCompat.registerReceiver(
             this,
             packageReceiver,
@@ -232,13 +242,37 @@ class AppBlockerService : AccessibilityService() {
         /** True while the accessibility blocker is connected. */
         fun isConnected(): Boolean = INSTANCE != null
 
-        /** True if the user has enabled Walcott's accessibility service in system settings. */
+        /**
+         * True if the user has enabled Walcott's accessibility service in system settings.
+         *
+         * Compared as components, not as text: the setting may hold the short form
+         * (`dev.walcott/.enforcement.AppBlockerService`), which a string match on the full class
+         * name read as "off" (see NotificationLog.accessGranted, which already did this).
+         */
         fun isEnabled(context: Context): Boolean {
             val enabled = Settings.Secure.getString(
                 context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
             ) ?: return false
-            val component = "${context.packageName}/${AppBlockerService::class.java.name}"
-            return enabled.split(':').any { it.equals(component, ignoreCase = true) }
+            val ours = android.content.ComponentName(context, AppBlockerService::class.java)
+            return enabled.split(':').any { android.content.ComponentName.unflattenFromString(it.trim()) == ours }
         }
+
+        /**
+         * Whether the blocker is not only switched on but running — what the parent is told.
+         *
+         * Switched on is a line in a settings string, and some phones leave that line in place
+         * while the service is not running at all (the "not working" state several OEMs show
+         * under accessibility). This runs in the process the service lives in, so "on and not
+         * connected" means exactly that — apart from the first moments after a start, before the
+         * system has bound it, which are given the benefit of the doubt.
+         */
+        fun isWorking(context: Context): Boolean {
+            if (!isEnabled(context)) return false
+            if (isConnected()) return true
+            val sinceStart = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
+            return sinceStart < BIND_GRACE_MS
+        }
+
+        private const val BIND_GRACE_MS = 30_000L
     }
 }

@@ -5,11 +5,13 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.whatsNewDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_whats_new")
+// Through WalcottDataStores (same file as the old delegate) for its corruption handler: a damaged
+// file otherwise throws from every read, and this one is read as the app opens.
+private val Context.whatsNewDataStore: DataStore<Preferences>
+    get() = WalcottDataStores.get(this, "walcott_whats_new")
 
 /**
  * The newest build whose changes this device has already been shown.

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.CloudOff
@@ -59,7 +60,7 @@ internal fun eventRenderable(event: ParentEvent): Boolean = event.type in RENDER
 
 private val RENDERABLE_TYPES = setOf(
     ParentEvent.TYPE_UNPROTECTED, ParentEvent.TYPE_PROTECTION_DEGRADED, ParentEvent.TYPE_USAGE_ACCESS_OFF,
-    ParentEvent.TYPE_MOCK_LOCATION, ParentEvent.TYPE_LOW_BATTERY, ParentEvent.TYPE_ENFORCEMENT_GAP,
+    ParentEvent.TYPE_MOCK_LOCATION, ParentEvent.TYPE_LOW_BATTERY, ParentEvent.TYPE_LOW_STORAGE, ParentEvent.TYPE_ENFORCEMENT_GAP,
     ParentEvent.TYPE_ENFORCEMENT_GAP_CLEARED, ParentEvent.TYPE_CLOCK_TAMPER, ParentEvent.TYPE_INDOOR_LOCATION_OFF,
     ParentEvent.TYPE_NEW_APP, ParentEvent.TYPE_WRONG_PIN, ParentEvent.TYPE_STALE, ParentEvent.TYPE_NEVER_REPORTED,
     ParentEvent.TYPE_BACK, ParentEvent.TYPE_LAST_GASP, ParentEvent.TYPE_LOST_MODE,
@@ -155,6 +156,7 @@ private fun eventBadge(event: ParentEvent): Pair<ImageVector, Color> {
         ParentEvent.TYPE_USAGE_ACCESS_OFF -> Icons.Filled.Warning to error
         ParentEvent.TYPE_MOCK_LOCATION -> Icons.Outlined.LocationOff to warn
         ParentEvent.TYPE_LOW_BATTERY -> Icons.Outlined.BatteryAlert to warn
+        ParentEvent.TYPE_LOW_STORAGE -> Icons.Outlined.Storage to warn
         ParentEvent.TYPE_ENFORCEMENT_GAP -> Icons.Filled.Warning to error
         ParentEvent.TYPE_ENFORCEMENT_GAP_CLEARED -> Icons.Filled.CheckCircle to good
         ParentEvent.TYPE_CLOCK_TAMPER -> Icons.Outlined.Schedule to error
@@ -206,6 +208,7 @@ private fun eventText(event: ParentEvent, name: String): String? = when (event.t
     ParentEvent.TYPE_USAGE_ACCESS_OFF -> stringResource(R.string.usage_access_off_title, name)
     ParentEvent.TYPE_MOCK_LOCATION -> stringResource(R.string.mock_location_title, name)
     ParentEvent.TYPE_LOW_BATTERY -> stringResource(R.string.event_low_battery, name, event.count)
+    ParentEvent.TYPE_LOW_STORAGE -> stringResource(R.string.event_low_storage, name, event.count)
     ParentEvent.TYPE_ENFORCEMENT_GAP ->
         pluralStringResource(R.plurals.event_enforcement_gap, event.count, name, event.count)
     ParentEvent.TYPE_ENFORCEMENT_GAP_CLEARED -> stringResource(R.string.event_enforcement_gap_cleared, name)

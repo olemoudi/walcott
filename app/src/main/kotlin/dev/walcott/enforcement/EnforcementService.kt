@@ -94,9 +94,19 @@ class EnforcementService : LifecycleService() {
 
     /** Set when a package is (un)installed, so the managed-set cache refreshes immediately. */
     @Volatile private var inventoryDirty = true
+
+    /**
+     * Set when a package is installed, so the next tick applies — with a full sweep — whatever it
+     * decides, even if the decision looks unchanged. A fresh install is never suspended, and an
+     * app removed and put back between two ticks left both sets exactly as they were: the loop,
+     * comparing them, and the enforcer, remembering what it had done, both took the new copy for
+     * the suspended old one, and it stayed open until the five-minute sweep.
+     */
+    @Volatile private var packageAdded = false
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             inventoryDirty = true
+            if (intent?.action == Intent.ACTION_PACKAGE_ADDED) packageAdded = true
             val app = application as WalcottApplication
             // The app list itself is cached now, and this is the event it is cached against.
             app.repository.inventory.invalidate()
@@ -219,7 +229,13 @@ class EnforcementService : LifecycleService() {
         }
         observeCounters()
         observeChangesThatGiveBack()
-        lifecycleScope.launch { runLoopResilient() }
+        // Off the main thread: every tick makes binder calls (usage events, package queries, the
+        // device policy calls that suspend apps), and the child's own screens share this process's
+        // main thread. Run there, a slow phone stuttered on every tick and could freeze long enough
+        // for an ANR — which kills the process and is not counted as a crash by anything.
+        loopJob = lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) { runLoopResilient() }
+        // Counted together with the loop it stands for (see onDestroy).
+        running.value = liveLoops.incrementAndGet() > 0
         observeWebFilter()
         observeBlocklists()
         observeAssistance()
@@ -238,11 +254,19 @@ class EnforcementService : LifecycleService() {
         lifecycleScope.launch {
             runCatching { (application as WalcottApplication).syncManager.reconcileInstalls() }
         }
-        running.value = true
     }
 
     override fun onDestroy() {
-        running.value = false
+        // Stopped means the loop has FINISHED, not that it was told to. It runs off the main thread,
+        // so a tick can be half-way through suspending apps when this is called — and whoever waits
+        // on [running] (the hand-back, see stopAndAwait) is about to take off exactly what that tick
+        // would then put back. Cancellation lands at the tick's next suspension point.
+        //
+        // Counted, not set: an instance's loop can finish after the next instance has started,
+        // and a plain false from the old one would tell a hand-back waiting on it that nothing is
+        // running while the new loop ticks.
+        val loop = loopJob
+        if (loop != null) loop.invokeOnCompletion { running.value = liveLoops.decrementAndGet() > 0 }
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(packageReceiver) }
         runCatching { unregisterReceiver(powerReceiver) }
@@ -268,6 +292,7 @@ class EnforcementService : LifecycleService() {
                         when (outcome) {
                             UpdateCheckOutcome.TRANSIENT_FAILURE -> "download_failed"
                             UpdateCheckOutcome.INSTALL_FAILURE -> "install_failed"
+                            UpdateCheckOutcome.NO_SPACE -> "no_space"
                             // Not a failure, but the parent should see WHY the child is
                             // behind: it is deliberately waiting for the canary.
                             UpdateCheckOutcome.WAITING_FOR_PARENT -> "waiting_parent"
@@ -429,8 +454,15 @@ class EnforcementService : LifecycleService() {
             runCatching { usageToday = repo.usageNow() }
             runCatching { extraToday = repo.effectiveExtraNow() }
         }
-        lifecycleScope.launch { repo.usageTodayAllFlow.collect { usageToday = it } }
-        lifecycleScope.launch { repo.effectiveExtraTodayFlow.collect { extraToday = it } }
+        // Yesterday's numbers are dropped, not applied: for the first minute after midnight these
+        // still watch yesterday (see WalcottRepository.usageByDayFlow), and the loop reads today's
+        // straight from the database the first tick of a new day.
+        lifecycleScope.launch {
+            repo.usageByDayFlow.collect { (day, usage) -> if (day == java.time.LocalDate.now().toEpochDay()) usageToday = usage }
+        }
+        lifecycleScope.launch {
+            repo.extraByDayFlow.collect { (day, extra) -> if (day == java.time.LocalDate.now().toEpochDay()) extraToday = extra }
+        }
     }
 
     /** Starts/stops the DNS filter VPN as web-filter rules appear or disappear. */
@@ -717,19 +749,35 @@ class EnforcementService : LifecycleService() {
         // Usage access, re-read at most every USAGE_ACCESS_TTL_MILLIS (an AppOps binder call).
         var usageAccessCached = true
         var usageAccessCheckedAt = 0L
-        // Last direct database read of the counters (see the resync below).
+        // Last direct database read of the counters (see the resync below), and the day it read.
         var lastCounterResyncAt = 0L
+        var countersDay = java.time.LocalDate.now().toEpochDay()
         // Last time what the filter and the rules blocked was written down (see BlockCounters).
         var lastBlockFlushAt = 0L
         // Last time the credited screen time was written down (see UsageBatch).
         var lastUsageFlushAt = SystemClock.elapsedRealtime()
+        // Last time a write of the credited screen time failed (a full phone, say); see flushUsage.
+        var lastUsageFlushFailedAt = -USAGE_FLUSH_MILLIS
         // Written, then read straight back, so the next decision stands on the database again
         // rather than on an overlay that has just been emptied.
+        //
+        // A credit the database refuses goes back into the batch rather than being dropped. Dropped,
+        // it was a fail-OPEN: on a phone whose storage was full every minute of use vanished, no
+        // limit ever ran out, and a child who filled the storage had found unlimited time. Back in
+        // the batch it still counts through the overlay, and the next flush tries again — not on
+        // the next tick, though (see lastUsageFlushFailedAt), and never for days long gone.
         suspend fun flushUsage() {
+            val today = java.time.LocalDate.now().toEpochDay()
+            var failed = false
             for (credit in usageBatch.drain()) {
                 runCatching { repo.addUsageSeconds(credit.pkg, credit.epochDay, credit.seconds) }
-                    .onFailure { DebugLog.w(TAG, "could not write ${credit.seconds}s for ${credit.pkg}", it) }
+                    .onFailure {
+                        DebugLog.w(TAG, "could not write ${credit.seconds}s for ${credit.pkg}; keeping it", it)
+                        failed = true
+                        if (credit.epochDay >= today - 1) usageBatch.credit(credit.pkg, credit.epochDay, credit.seconds)
+                    }
             }
+            if (failed) lastUsageFlushFailedAt = SystemClock.elapsedRealtime()
             runCatching { usageToday = repo.usageNow() }
         }
         // Managed-set cache: enumerating PackageManager (launchable apps + labels) on every
@@ -874,14 +922,22 @@ class EnforcementService : LifecycleService() {
             // delivering would fail OPEN — frozen counters mean budgets that never run out, which
             // is the failure a child would least mind and most notice. One query a minute against
             // thirty is still the whole saving, and it makes the freeze self-correcting.
-            if (nowClock - lastCounterResyncAt > COUNTER_RESYNC_MILLIS) {
+            //
+            // And at once on the first tick of a new day, which is when what the subscription last
+            // pushed is yesterday's (see observeCounters).
+            val countersToday = java.time.LocalDate.now().toEpochDay()
+            if (nowClock - lastCounterResyncAt > COUNTER_RESYNC_MILLIS || countersToday != countersDay) {
                 usageToday = repo.usageNow()
                 extraToday = repo.effectiveExtraNow()
                 lastCounterResyncAt = nowClock
+                countersDay = countersToday
             }
             val usage = usageBatch.overlay(usageToday, java.time.LocalDate.now().toEpochDay())
             val extra = extraToday // manually granted + idle-earned
             if (inventoryDirty || nowClock - managedFetchedAt > INVENTORY_TTL_MILLIS) {
+                // Cleared BEFORE the read, not after: an install landing while it runs sets it
+                // again and is picked up on the next tick, where clearing afterwards lost it.
+                inventoryDirty = false
                 managed = repo.managedPackagesNow()
                 tracked = repo.trackedPackagesNow()
                 // The preinstalled apps this phone is NOT managing, so a withdrawn opt-in gives
@@ -891,7 +947,6 @@ class EnforcementService : LifecycleService() {
                 // installed and uninstalled, which is exactly what invalidates this block.
                 browsers = repo.inventory.browserPackages()
                 managedFetchedAt = nowClock
-                inventoryDirty = false
             }
 
             // Credit time only on consecutive sightings of the same app, so the slow idle tick
@@ -910,7 +965,7 @@ class EnforcementService : LifecycleService() {
             val todayEpoch = java.time.LocalDate.now().toEpochDay()
             if (creditedUsage) usageBatch.credit(foreground!!, todayEpoch, deltaSeconds)
             // Written down once a minute, when the app in front changes, and at midnight.
-            if (!usageBatch.isEmpty && (
+            if (!usageBatch.isEmpty && nowClock - lastUsageFlushFailedAt > USAGE_FLUSH_MILLIS && (
                     foreground != lastForeground ||
                         nowClock - lastUsageFlushAt > USAGE_FLUSH_MILLIS ||
                         usageBatch.holdsDayBefore(todayEpoch)
@@ -1156,22 +1211,30 @@ class EnforcementService : LifecycleService() {
             // nobody is there to read is just a notification waiting to confuse them later.
             // Skipped while failing closed, where "when does this end" has no honest answer.
             if (!failingClosed && foreground != null && foreground != packageName) {
-                val closing = if (foreground in managed) {
-                    dev.walcott.rules.CloseWatch.nextClose(config, foreground, now, usage, extra)
-                } else {
-                    // Nothing Walcott limits, so only the rules that close the whole phone apply.
-                    dev.walcott.rules.CloseWatch.nextDeviceWideClose(config, now)
-                }
+                val closing = runCatching {
+                    if (foreground in managed) {
+                        dev.walcott.rules.CloseWatch.nextClose(config, foreground, now, usage, extra)
+                    } else {
+                        // Nothing Walcott limits, so only the rules that close the whole phone apply.
+                        dev.walcott.rules.CloseWatch.nextDeviceWideClose(config, now)
+                    }
+                }.onFailure { DebugLog.w(TAG, "could not work out the next close", it) }.getOrNull()
                 warnings.due(closing, System.currentTimeMillis() / 60_000)?.let {
-                    TimeWarningNotifications.notify(
-                        this, closing!!,
-                        // What is actually left, rounded up — not the threshold that triggered
-                        // it. A child who picks the phone up 22 minutes before bedtime crosses
-                        // the 30-minute mark on the first look, and "in 30 minutes" would be
-                        // a lie the clock disproves.
-                        minutes = ((closing.left.seconds + 59) / 60).toInt().coerceAtLeast(1),
-                        appLabel = repo.inventory.label(closing.packageName) ?: closing.packageName,
-                    )
+                    // Guarded, like the opening banner above: a heads-up that fails must not stop
+                    // the apply below. Unguarded, a warning that threw every tick (a malformed
+                    // translation is enough) left the rules unapplied, and five of those in a row
+                    // were taken for a broken loop and opened the phone (see CrashBreaker).
+                    runCatching {
+                        TimeWarningNotifications.notify(
+                            this, closing!!,
+                            // What is actually left, rounded up — not the threshold that triggered
+                            // it. A child who picks the phone up 22 minutes before bedtime crosses
+                            // the 30-minute mark on the first look, and "in 30 minutes" would be
+                            // a lie the clock disproves.
+                            minutes = ((closing.left.seconds + 59) / 60).toInt().coerceAtLeast(1),
+                            appLabel = repo.inventory.label(closing.packageName) ?: closing.packageName,
+                        )
+                    }.onFailure { DebugLog.w(TAG, "closing warning failed", it) }
                 }
             }
 
@@ -1182,8 +1245,11 @@ class EnforcementService : LifecycleService() {
             // the blocked side because no rule will ever ask for it — an app nobody approved
             // has no policy, only a verdict.
             val quarantined = app.syncManager.quarantined.value
+            // Read and cleared before the apply, so an install landing during it is not lost.
+            val freshInstall = packageAdded.also { if (it) packageAdded = false }
             if (blocked != lastAppliedBlocked || managed != lastAppliedManaged ||
-                quarantined != lastAppliedQuarantine || nowClock - lastApplyAt > REASSERT_MILLIS
+                quarantined != lastAppliedQuarantine || nowClock - lastApplyAt > REASSERT_MILLIS ||
+                freshInstall
             ) {
                 // An app that LEAVES the managed set while suspended would stay suspended for
                 // ever: the reconciliation only ever looks at what is managed now, and nothing
@@ -1196,7 +1262,9 @@ class EnforcementService : LifecycleService() {
                     DebugLog.i(TAG, "no longer managed, giving back: ${leftManaged.joinToString()}")
                     enforcer.release(leftManaged.toList())
                 }
-                val fullSweep = nowClock - lastFullSweepAt > FULL_SWEEP_MILLIS
+                // And a full sweep after an install: the enforcer remembers what it left each app
+                // as, and a new copy of an app it suspended is not suspended (see packageAdded).
+                val fullSweep = nowClock - lastFullSweepAt > FULL_SWEEP_MILLIS || freshInstall
                 enforcer.apply(managed + quarantined, blocked + quarantined, giveBack = reclaimable, fullSweep = fullSweep)
                 dev.walcott.debug.CrashBreaker.markEnforced()
                 firstPass = false
@@ -1206,6 +1274,8 @@ class EnforcementService : LifecycleService() {
                 lastAppliedQuarantine = quarantined
                 lastApplyAt = nowClock
             }
+            // The decision for this moment is on the phone: whoever woke it for this can let it sleep.
+            EnforcementWakeAlarm.passDone()
 
             // Flush accrued idle into earned time about once a minute (batched to spare DataStore).
             if (idleCfg != null && idleAccumSeconds > 0 &&
@@ -1269,7 +1339,10 @@ class EnforcementService : LifecycleService() {
     }
 
     /** What the ongoing notification currently says, so it is only re-posted when that changes. */
-    private var statusText: String? = null
+    @Volatile private var statusText: String? = null
+
+    /** The enforcement loop of this instance, so stopping can wait for it (see onDestroy). */
+    private var loopJob: kotlinx.coroutines.Job? = null
 
     /**
      * Re-posts the ongoing notification when [status] reads differently from what is on screen.
@@ -1280,11 +1353,23 @@ class EnforcementService : LifecycleService() {
      */
     private fun updateStatusNotification(status: PhoneStatus, appLabel: (String) -> String?) {
         val text = statusTextOf(status, appLabel)
-        if (text == statusText) return
-        statusText = text
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID, buildStatusNotification(text))
+        postStatus(text, onlyIfChanged = true)
     }
+
+    /**
+     * The one place the ongoing notification's line is written. The loop runs off the main thread
+     * and the lost-mode and close-tracking banners on it, so the check and the post are taken
+     * together, or one could post over the other with a line that was already out of date.
+     */
+    private fun postStatus(text: String, onlyIfChanged: Boolean = false) = synchronized(statusLock) {
+        if (onlyIfChanged && text == statusText) return@synchronized
+        statusText = text
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification(text))
+        }
+    }
+
+    private val statusLock = Any()
 
     /**
      * Whether a close-tracking session is running, which the ongoing notification says outright.
@@ -1313,10 +1398,7 @@ class EnforcementService : LifecycleService() {
                     liveTrackingActive -> getString(R.string.status_live_tracking)
                     else -> getString(R.string.service_notif_text)
                 }
-                statusText = text
-                runCatching {
-                    getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification(text))
-                }
+                postStatus(text)
             }
         }
     }
@@ -1329,10 +1411,7 @@ class EnforcementService : LifecycleService() {
             active -> getString(R.string.status_live_tracking)
             else -> getString(R.string.service_notif_text)
         }
-        statusText = text
-        runCatching {
-            getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification(text))
-        }
+        postStatus(text)
     }
 
     /**
@@ -1542,6 +1621,9 @@ class EnforcementService : LifecycleService() {
          * onDestroy. What a release waits on, because stopService returns before either happens.
          */
         val running = MutableStateFlow(false)
+
+        /** Instances whose loop has started and not yet finished (see onDestroy). */
+        private val liveLoops = java.util.concurrent.atomic.AtomicInteger(0)
 
         fun start(context: Context, recheck: Boolean = false) {
             // Eight callers, not all of them gated on the device's identity (a remote "re-apply

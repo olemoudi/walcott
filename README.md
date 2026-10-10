@@ -171,6 +171,13 @@ Rules you change on your phone reach theirs within about half a minute: edits ma
 - **One parent phone manages a family.** Restoring the backup on a second phone does not add a
   second parent: the children start following the phone that restored it, and the first one is
   told so and offered the family back. Walcott asks before it does this.
+- **Samsung, Xiaomi, OPPO, vivo, Huawei and their sub-brands** close apps in the background on
+  their own. On those phones Walcott asks, in its setup list, for one more step: allowing it to
+  start by itself ("Autostart" / "Auto launch") and setting its battery use to "Unrestricted".
+  On a Samsung with **Auto Blocker** on (the default since One UI 6.1.1), installing Walcott on the
+  parent's phone, and its updates there, need Auto Blocker switched off in Settings › Security and
+  privacy. Samsung exempts the app that manages a phone, so a child's phone set up with the QR
+  code should not be affected.
 
 ## No accounts, no servers of ours
 

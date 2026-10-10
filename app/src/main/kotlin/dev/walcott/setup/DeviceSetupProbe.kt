@@ -55,6 +55,9 @@ object DeviceSetupProbe {
             assistedWithoutRules = settings != null &&
                 settings.isAssistedMember(identity?.childId) &&
                 !settings.toFamilyConfig(emptySet()).hasAnyRule,
+            oemKillsApps = OemPowerSettings.thisPhone() != null,
+            oemBackgroundVisited = runCatching { DeviceSetupStore(context).oemBackgroundVisitedAt.first() > 0L }
+                .getOrDefault(true),
         )
     }
 
@@ -97,7 +100,14 @@ object DeviceSetupProbe {
      * app's own settings page, which every OEM has, rather than failing silently.
      */
     fun openFix(context: Context, requirement: DeviceRequirement) {
-        val intent = fixIntent(context, requirement)
+        openOrAppPage(context, fixIntent(context, requirement))
+    }
+
+    /**
+     * Starts [intent], or this app's own settings page when the phone has no screen for it — a
+     * settings action an OEM skin left out throws, and an unguarded tap on a button is a crash.
+     */
+    fun openOrAppPage(context: Context, intent: Intent) {
         if (runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isFailure) {
             runCatching { context.startActivity(appDetails(context).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
@@ -127,6 +137,9 @@ object DeviceSetupProbe {
             DeviceRequirement.WEB_FILTER, DeviceRequirement.LOCATION_PERMISSION -> appDetails(context)
             // The app's own page is where its battery usage is changed, on every OEM.
             DeviceRequirement.BACKGROUND_RESTRICTION -> appDetails(context)
+            // The best guess for a PendingIntent; the button itself tries the maker's own screens
+            // first (see OemPowerSettings.open).
+            DeviceRequirement.OEM_BACKGROUND -> appDetails(context)
         }
         return intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }

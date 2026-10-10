@@ -25,9 +25,8 @@ import kotlinx.coroutines.launch
  * phone BY DESIGN (see [AppUpdateWindowAlarm]), and the eight-hour "I don't know how long I
  * need" PIN window ends on one by accident often enough.
  *
- * Inexact and allow-while-idle, like every other alarm here: Doze honours it, may batch it by a
- * few minutes, and a block that comes back three minutes late is a different order of problem
- * from one that comes back eight hours late. The service's own countdown stays as the precise
+ * Exact and allow-while-idle (see [dev.walcott.OnTimeAlarm]): an inexact alarm may come up to an
+ * hour late, an hour of installs nobody approved. The service's own countdown stays as the precise
  * path while the phone is awake; this is the one that survives it not being.
  */
 object InstallBlockAlarm {
@@ -46,7 +45,7 @@ object InstallBlockAlarm {
             return
         }
         runCatching {
-            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, untilMs + SLACK_MS, pendingIntent(context))
+            dev.walcott.OnTimeAlarm.set(alarms, untilMs + SLACK_MS, pendingIntent(context))
         }.onFailure { DebugLog.e(TAG, "could not schedule the install block re-arm", it) }
     }
 

@@ -598,6 +598,7 @@
     <string name="update_state_downloading">Descargando %1$s…</string>
     <string name="update_state_pending">Falta confirmar la instalación — mira tus notificaciones</string>
     <string name="update_state_failed">La actualización falló (%1$s)</string>
+    <string name="update_samsung_auto_blocker">En los móviles Samsung, «Auto Blocker» impide las actualizaciones que no vienen de una tienda de apps. Desactívalo en Ajustes › Seguridad y privacidad › Auto Blocker y vuelve a intentarlo.</string>
     <string name="update_silent_note">Este dispositivo instala las actualizaciones en silencio</string>
     <string name="update_state_installing">Instalando %1$s…</string>
     <string name="update_state_waiting_wifi">Ya está disponible %1$s — esperando al Wi-Fi para descargarla</string>
@@ -629,10 +630,13 @@
     <string name="mock_location_text">Las ubicaciones recientes vienen de una app de GPS simulado</string>
     <string name="low_battery_title">Al móvil de %1$s le queda poca batería</string>
     <string name="low_battery_text">Batería al %1$d%% y sin enchufar — podría agotarse y quedarse sin conexión</string>
+    <string name="low_storage_title">El móvil de %1$s está casi lleno</string>
+    <string name="low_storage_text">Solo quedan %1$s libres. Sin espacio, Walcott no puede guardar reglas nuevas ni dar señales, y las actualizaciones se paran. Libera espacio en el móvil.</string>
     <string name="net_location_off_title">No se puede localizar a %1$s en interiores</string>
     <string name="net_location_off_text">La ubicación por Wi-Fi/red está apagada en su móvil, así que solo funciona en exteriores con GPS</string>
     <string name="child_battery">Batería %1$d%%</string>
     <string name="child_battery_charging">Batería %1$d%% · cargando</string>
+    <string name="child_storage_low">Almacenamiento casi lleno: %1$s libres</string>
     <string name="new_app_title">App nueva en el dispositivo de %1$s</string>
     <string name="new_app_text">Se instaló "%1$s" — todavía sin límite propio</string>
     <string name="new_app_text_more">Se instalaron "%1$s" y %2$d más — todavía sin límite propio</string>
@@ -811,6 +815,8 @@
     <string name="req_location_service_body">La ubicación está apagada para todo el móvil, así que este dispositivo no se puede encontrar.</string>
     <string name="req_battery_title">Deja que Walcott funcione en segundo plano</string>
     <string name="req_battery_body">La optimización de batería retrasa los check-in horas con la app cerrada — de noche, eso son mensajes que nadie ve hasta la mañana.</string>
+    <string name="req_oem_background_title">Deja que Walcott arranque solo</string>
+    <string name="req_oem_background_body">El fabricante de este móvil cierra las apps en segundo plano por su cuenta y puede impedir que Walcott vuelva a arrancar. Pulsa Activar y, en la pantalla que se abre, deja que Walcott se inicie solo («Inicio automático») y pon su uso de batería en «Sin restricciones».</string>
     <string name="setup_action_turn_on">Activar</string>
     <string name="setup_action_not_now">Ahora no</string>
     <string name="setup_dismiss_title">¿Ocultar este recordatorio?</string>
@@ -1107,6 +1113,8 @@
     <string name="remote_result_installing">actualización descargada, instalando</string>
     <string name="remote_result_download_failed">no se pudo descargar la actualización</string>
     <string name="remote_result_install_failed">la instalación fue rechazada</string>
+    <string name="remote_result_no_space">no hay espacio libre en el móvil para descargar la actualización</string>
+    <string name="remote_result_update_checking">buscando la actualización…</string>
     <string name="remote_result_reapplied">protección reaplicada</string>
     <string name="remote_result_nothing_missing">nada que arreglar</string>
     <string name="remote_result_notified">se avisó al hijo</string>
@@ -1384,6 +1392,9 @@
     <string name="diag_filter_lists_pending">Sin descargar todavía: %1$s</string>
     <string name="diag_battery">Batería</string>
     <string name="diag_battery_value">%1$d%%</string>
+    <string name="diag_storage">Almacenamiento libre</string>
+    <string name="diag_database">Datos locales</string>
+    <string name="diag_database_rebuilt">Empezados de cero: se perdieron los contadores de hoy</string>
     <string name="diag_battery_charging">%1$d%% (cargando)</string>
     <string name="diag_version">Versión de la app</string>
     <string name="diag_version_value">%1$s (%2$d)</string>
@@ -1451,6 +1462,7 @@
     <string name="event_enforcement_gap_cleared">%1$s: el bloqueo vuelve a funcionar</string>
     <string name="event_clock_tamper">El reloj de %1$s parece cambiado (%2$s)</string>
     <string name="event_low_battery">La batería de %1$s está al %2$d%%</string>
+    <string name="event_low_storage">El móvil de %1$s está casi lleno (%2$d MB libres)</string>
     <string name="event_new_app">Nueva app en el móvil de %1$s: %2$s</string>
     <string name="event_new_app_more">Nuevas apps en el móvil de %1$s: %2$s y %3$d más</string>
     <plurals name="event_wrong_pin">
@@ -1918,6 +1930,16 @@
         <item>El muro de actividad se filtra por miembro y se agrupa por días.</item>
         <item>Borrar un día especial, un dominio bloqueado o un horario se puede deshacer desde el propio mensaje que lo cuenta.</item>
     </string-array>
+        <string-array name="whats_new_0_120_0">
+        <item>Si el móvil de un hijo se queda sin espacio, ahora te enteras, y Walcott sigue funcionando en él: da señales, hace lo que le mandas, cuenta el tiempo de pantalla, y su botón de ayuda y el código de rescate siguen funcionando. Antes, un móvil lleno se callaba y parecía desconectado.</item>
+        <item>Las apps cerradas por la hora de dormir, un tiempo sin pantalla o una pausa vuelven en el minuto exacto aunque el móvil esté dormido. Podían volver hasta una hora tarde.</item>
+        <item>Si alguna vez Walcott se cerrara una y otra vez en el móvil de un hijo, el móvil se abre en uno o dos minutos, sin el mensaje «se detiene continuamente» delante del niño. Podía tardar horas.</item>
+        <item>En móviles Samsung, Xiaomi, OPPO, vivo y Huawei la lista de configuración pide un paso más para que el móvil no cierre Walcott en segundo plano. En un Samsung, una actualización fallida avisa cuando la causa es Auto Blocker.</item>
+        <item>«Actualizar ahora» responde al momento y después con el resultado, y el móvil sigue oyendo todo lo demás que le mandas mientras descarga. Una descarga cortada sigue donde se quedó en vez de empezar de cero.</item>
+        <item>Si alguna vez se dañan las reglas guardadas en este móvil, recupera las últimas que envió, y nunca envía reglas vacías a los hijos.</item>
+        <item>Un móvil que pasó la noche apagado hace el «Localizar», «Hacer sonar» o «Modo perdido» que mandaste mientras tanto, también en familias grandes. Y una negativa a una liberación de emergencia siempre se oye primero.</item>
+        <item>El mapa guarda como mucho 50 MB de teselas en este móvil.</item>
+    </string-array>
         <string-array name="whats_new_0_119_0">
         <item>Una liberación que retiras — o un móvil que das por robado — ya no la ejecuta ese móvil por haber estado apagado cuando lo hiciste: solo hace caso de lo último que pediste.</item>
         <item>Las apps cerradas por la hora de dormir, un tiempo sin pantalla o una pausa vuelven en cuanto termina, aunque el móvil esté en un bolsillo. Antes seguían cerradas hasta que alguien encendía la pantalla, y una app cerrada no puede sonar.</item>
@@ -2243,6 +2265,8 @@
     <string name="superseded_text_family">Los hijos de %1$s siguen ahora a ese móvil. Las reglas que cambies aquí no les llegarán hasta que recuperes la familia.</string>
     <string name="superseded_card_title">Otro móvil está gestionando esta familia</string>
     <string name="superseded_card_body">Alguien restauró la copia de esta familia en otro móvil, así que los hijos toman de allí sus reglas. Lo que cambies aquí se queda en este móvil.</string>
+    <string name="policy_unreadable_title">Este móvil no puede leer las reglas de la familia</string>
+    <string name="policy_unreadable_body">Las reglas guardadas en este móvil están dañadas, así que los cambios que hagas aquí no se guardan ni se envían: enviarlos dejaría a los hijos sin reglas. Los hijos siguen con las últimas que recibieron. Suele arreglarlo una actualización de Walcott; si no, restaura una copia de seguridad en este móvil.</string>
     <string name="superseded_card_take">Recuperarla</string>
     <string name="superseded_children_title">Tus cambios de reglas no llegan a los hijos</string>
     <string name="superseded_children_text">El móvil de un hijo tiene reglas más nuevas que todas las que ha enviado este móvil: o este móvil perdió su historial, o hay otro móvil gestionando la familia. Recupéralo para que sigan las reglas de este móvil.</string>

@@ -42,7 +42,14 @@ object ChannelHealth {
      *
      * Reconnecting is cheap and self-healing: the new socket replays from the `since=` cursor,
      * so nothing published during the silence is lost.
+     *
+     * A proof stamped in the future also counts as stale. It means the clock was moved back after
+     * it was taken, and without this the silence would have to outlast the jump before anything
+     * was rebuilt — hours, for a clock someone moved by hours.
      */
     fun needsReconnect(lastProofMs: Long, nowMs: Long): Boolean =
-        lastProofMs > 0 && nowMs - lastProofMs >= RECONNECT_AFTER_MS
+        lastProofMs > 0 && (nowMs - lastProofMs >= RECONNECT_AFTER_MS || lastProofMs - nowMs > FUTURE_SLACK_MS)
+
+    /** How far ahead of the clock a proof may sit before it is taken for a clock moved back. */
+    private const val FUTURE_SLACK_MS = 5 * 60 * 1000L
 }

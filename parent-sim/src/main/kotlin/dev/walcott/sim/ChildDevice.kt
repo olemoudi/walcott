@@ -312,6 +312,21 @@ class ChildDevice(
     fun safeModeDrill(earlyCrashes: Int) = seed("--ei", "safe_mode_drill", earlyCrashes.toString())
 
     /**
+     * The next [starts] starts of the app die at start-up for real (see CrashBreaker.crashDrill),
+     * beginning now. Written with `run-as` when asked to stop, because a process that is crashing
+     * at every start never gets as far as reading a broadcast.
+     */
+    fun crashDrill(starts: Int) {
+        if (starts > 0) {
+            seed("--ei", "crash_drill", starts.toString())
+        } else {
+            // One string, quoted for the device: adb joins its arguments, and an unquoted redirect
+            // is taken by the device's own shell, in its working directory rather than the app's.
+            runCatching { run("shell", "run-as $PACKAGE sh -c 'echo 0 > /data/user/0/$PACKAGE/files/crash-drill.txt'") }
+        }
+    }
+
+    /**
      * Wakes the screen and keeps it awake.
      *
      * Not cosmetic, and not optional: the enforcement loop deliberately PARKS while the screen is

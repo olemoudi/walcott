@@ -295,8 +295,8 @@ object DeviceHandback {
         step("screen capture") { dpm.setScreenCaptureDisabled(admin, false) }
         step("status bar") { dpm.setStatusBarDisabled(admin, false) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // "This app cannot be force-stopped or have its data cleared." Nothing here sets it,
-            // and a phone left carrying it has an app it cannot get rid of.
+            // "This app cannot be force-stopped or have its data cleared." Set for this app by
+            // DeviceRestrictions.apply, and a phone left carrying it has an app it cannot get rid of.
             step("user-control exemptions") { dpm.setUserControlDisabledPackages(admin, emptyList()) }
         }
         // And the marks management leaves on the screens the owner reads: the organisation name

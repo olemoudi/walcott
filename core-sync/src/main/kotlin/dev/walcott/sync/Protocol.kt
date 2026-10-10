@@ -853,6 +853,13 @@ object RemoteAction {
     const val DETAIL_LOCK_REFUSED = "lock_refused"
     const val DETAIL_EXPIRED = "expired"
 
+    /**
+     * An [UPDATE_NOW] that has started. The child answers this at once and the outcome later,
+     * as a second answer with the same command id: a download can take minutes on a weak signal,
+     * and waiting for it held up every other message the parent sent in the meantime.
+     */
+    const val DETAIL_UPDATE_CHECKING = "update_checking"
+
     /** [UNINSTALL_APP]/[ALLOW_APP] outcomes. "removing" = the uninstall was handed to the OS. */
     const val DETAIL_REMOVING = "removing"
     const val DETAIL_NOT_INSTALLED = "not_installed"
@@ -1045,6 +1052,14 @@ data class ChildSnapshot(
     val appliedPolicyVersion: Long = 0,
     /** Battery level 0–100, or -1 when unknown/legacy. Lets the parent be warned before a child dies. */
     val batteryPercent: Int = -1,
+    /**
+     * Bytes this app can still write on the phone, or -1 when unknown/legacy.
+     *
+     * A full phone is a silent failure otherwise: nothing it is told can be saved, so rules stop
+     * being adopted and updates stop downloading, and from the parent's side it only looks quiet.
+     * See [HealthAlerts.shouldAlertLowStorage].
+     */
+    val storageFreeBytes: Long = -1,
     /**
      * Until when the nightly update window is open on this phone, or 0.
      *
@@ -1469,6 +1484,10 @@ data class DiagPayload(
     val updateError: String = "",
     /** Packages the OS recently refused to suspend (a real enforcement gap). */
     val suspendFailures: List<String> = emptyList(),
+    /** The local database could not be opened and was started over in this run: that day's counters were lost. */
+    val databaseRebuilt: Boolean = false,
+    /** See [ChildSnapshot.storageFreeBytes]. */
+    val storageFreeBytes: Long = -1,
     val appVersionCode: Int = 0,
     val appVersionName: String = "",
     /** Tail of the child's debug log, oldest first, trimmed to fit the message cap. */

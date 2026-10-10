@@ -20,6 +20,7 @@ class SafeModeScenarioTest : DeviceScenario() {
     @AfterEach
     fun leaveSafeMode() {
         // Whatever happened above: back to a clean breaker and a running app for the next scenario.
+        runCatching { device.crashDrill(0) }
         runCatching { device.safeModeDrill(0) }
         Thread.sleep(2_000)
         runCatching { device.startWalcott() }
@@ -53,6 +54,22 @@ class SafeModeScenarioTest : DeviceScenario() {
     }
 
     @Test
+    fun `a build that really crashes at every start opens the phone in minutes, not when Android next lets it run`() {
+        app = installFixtureApp(Fixture.STARTABLE)
+        parent.pushPolicy(PolicyJson.build(version = 2, dailyMinutes = mapOf(app to 0)))
+        childEventuallyReports { it.appliedPolicyVersion >= parent.currentVersion() }
+        awaitDevice("the app shut by the rule", timeoutMs = APPLY_TIMEOUT_MS) { device.isSuspended(app) }
+
+        // Real crashes this time, three starts in a row. Left to Android, two inside a minute put
+        // up "keeps stopping" and mark the process bad: no sticky restart, no alarms, no
+        // broadcasts. Nothing here starts an activity or touches the dialog — that is what clears
+        // the mark, and a child's phone in a drawer has nobody to do either.
+        device.crashDrill(3)
+        awaitDevice("the phone opened by the breaker", timeoutMs = CRASH_LOOP_TIMEOUT_MS) { !device.isSuspended(app) }
+        childEventuallyReports { it.safeModeSinceMs > 0 }
+    }
+
+    @Test
     fun `two starts that died are not enough to open anything`() {
         app = installFixtureApp(Fixture.STARTABLE)
         parent.pushPolicy(PolicyJson.build(version = 2, dailyMinutes = mapOf(app to 0)))
@@ -71,5 +88,13 @@ class SafeModeScenarioTest : DeviceScenario() {
 
     private companion object {
         const val APPLY_TIMEOUT_MS = 90_000L
+
+        /**
+         * Three crashed starts and the one that opens the phone, each brought by an ordinary
+         * restart: well under a minute. Left to Android's crash handling (0.119), the second crash
+         * put "keeps stopping" on the screen for five minutes and then marked the process bad, and
+         * the phone stayed shut past this whole window — measured, not assumed.
+         */
+        const val CRASH_LOOP_TIMEOUT_MS = 5 * 60_000L
     }
 }

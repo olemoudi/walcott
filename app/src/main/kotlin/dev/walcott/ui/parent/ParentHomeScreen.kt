@@ -93,6 +93,7 @@ fun ParentHomeScreen(
     var showRenameFamily by remember { mutableStateOf(false) }
     val superseded by viewModel.supersededByAnotherParent.collectAsStateWithLifecycle()
     val supersededByChildren by viewModel.supersededByChildren.collectAsStateWithLifecycle()
+    val policyUnreadable by viewModel.policyUnreadable.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         WalcottTopBar(title, onBack) {
             // The family name is user data, not chrome — let the parent change it in place.
@@ -107,8 +108,10 @@ fun ParentHomeScreen(
                 .padding(bottom = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            // Above everything: while this is up, every rule on the screens below is one this
-            // phone is keeping to itself (see SyncManager.noteForeignParent).
+            // Above everything: no edit on the screens below is being saved while it is up.
+            if (!childDevice && policyUnreadable) PolicyUnreadableCard()
+            // While this is up, every rule on the screens below is one this phone is keeping to
+            // itself (see SyncManager.noteForeignParent).
             if (!childDevice && superseded) {
                 SupersededCard(
                     byChildren = supersededByChildren,
@@ -295,6 +298,37 @@ private fun ProtectionBanner(deviceOwner: Boolean) {
             if (!deviceOwner) {
                 Text(stringResource(R.string.protection_enable_action), style = MaterialTheme.typography.labelLarge, color = color)
             }
+        }
+    }
+}
+
+/**
+ * Says that the rules stored on this phone cannot be read, so nothing edited here is saved or sent.
+ *
+ * The other half of the guard in dev.walcott.data.SettingsStore.update: refusing to save an edit of
+ * an empty stand-in protects the children, and without this card it would look like a broken app.
+ */
+@Composable
+private fun PolicyUnreadableCard() {
+    val spacing = Tokens.spacing
+    val color = MaterialTheme.colorScheme.error
+    WalcottCard(color = color.copy(alpha = 0.12f), modifier = Modifier.padding(top = spacing.md)) {
+        Column(Modifier.padding(spacing.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(spacing.sm))
+                Text(
+                    stringResource(R.string.policy_unreadable_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = color,
+                )
+            }
+            Spacer(Modifier.height(spacing.xs))
+            Text(
+                stringResource(R.string.policy_unreadable_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }

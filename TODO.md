@@ -3,6 +3,79 @@
 Nothing outstanding on the domain viewer. What was in flight on 2026-07-30 shipped as **v0.22.0**
 (versionCode 63); the notes below are kept only so none of it gets redone or re-litigated.
 
+## Shipped in v0.120.0 — the phone that is full, asleep, made by somebody else, or crashing
+
+A robustness review on 2026-10-10, asked for by ole ("errores en las APIs de manera grácil, evolución
+de la app a lo largo del tiempo, fugas de memoria, fugas de espacio en disco, respuesta ante disco
+lleno… distintos OEM"), then "haz los cuatro lotes … lo más universal posible". Five read-only
+reviews in parallel, every finding read in the code; an independent review of the diff found 4 bugs
+and 7 risks, all handled. Memory and long-term disk growth came out clean: one shared OkHttp client,
+bounded collections, receivers and callbacks unregistered, Room and SyncState pruned.
+
+- **A parent with an unreadable policy published an empty one to every child.** `SettingsStore.update`
+  refuses an edit of the stand-in (`PolicyUnreadableException`) unless the write replaces the policy
+  wholesale (`overUnreadable`); the unreadable blob is set aside; the corruption handler leaves a
+  `walcott_file_replaced` mark ON DISK (a child used to read a replaced file as a fresh install after
+  a restart and clear every restriction); the parent puts back `deployedPolicyJson` at start-up
+  (`recoverUnreadablePolicy`), publishes the deployed copy instead of a stand-in, refuses to back one
+  up, and says so on the home (`PolicyUnreadableCard`). `SettingsStoreGuardTest` (real DataStore).
+- **A full phone went silent and stopped obeying.** Publishing bumped the version in the store
+  first; commands were marked applied before running; the help ask and the rescue code crashed the
+  app. Now: a publish that cannot record its version goes out one past the stored one (a tie the
+  parent accepts — an in-memory counter regressed after a restart and the parent dropped hours of
+  snapshots); commands and their answers are held in memory; help asks and receipts too
+  (`unrecordedAsks`, answers matched to them); a rescue code opens in memory and a wrong one still
+  counts towards the lockout; usage credits that fail to write go back into the batch (it was a
+  fail-open: no budget ran out on a full phone). `storageFreeBytes` (snapshot + diagnostics) and a
+  parent alert under 300 MB (`HealthAlerts`), "no space" said as itself by the updater (`NO_SPACE`).
+- **Apps due back came up to an hour late, and the pass could be cut by the CPU sleeping.**
+  `OnTimeAlarm` (exact + allow-while-idle, `USE_EXACT_ALARM`, `SCHEDULE_EXACT_ALARM` ≤ API 32) for
+  apps due back, the install-block re-arm and the panic steps; `EnforcementWakeReceiver` holds a
+  wakelock until the loop reports the pass (`passCount`). Midnight: counter flows carry their day and
+  the loop re-reads on a new day (yesterday's budget used to block an app on the first switch).
+- **A crash loop opened the phone after hours, not minutes (AVD, red then green).** Measured: the
+  second crash inside a minute put "Walcott keeps stopping" on screen for five minutes and then marked
+  the process bad — no restarts, no alarms. The breaker now takes early crashes on a Device Owner out
+  of Android's crash handling (quiet `killProcess`), and arms `CrashRevivalAlarm` (+30 s) as the last
+  resort. A JobScheduler job was tried first: it revived one crash, but a process that died while its
+  own job was binding left the next job pending for minutes. Measured green: first failed start to
+  open phone in 70 s, no dialog. `SafeModeScenarioTest` + `--ei crash_drill N` (debug only).
+  Leaving safe mode by pairing now starts enforcement (it waited for the next check-in).
+- **The enforcement loop ran on the main thread**: now `Dispatchers.Default`; `running` counts live
+  loops and goes false only when a loop has finished (the hand-back waits on it).
+- **Network and updates**: UPDATE_NOW answers "update_checking" at once and the outcome later under
+  the same id, outside the command lock (it held the only reader of the relay for up to ten minutes);
+  the wall records the outcome, not the start; DENY_PANIC runs first and "locate" after the commands;
+  a backlog hole blocks only the snapshots older than it; the heartbeat brings forward a reconnect
+  sitting out its backoff and connects when there is no transport; a validated network reconnects
+  (captive portals); `connect()` serialised; receivers held at most 50 s by a timer (`runHeld`);
+  relay events with odd shapes skipped; the APK download resumes (`.part` named by sha256, Range,
+  `resumeOffset`); one-off update work is unique (a week offline queued ~300 of them).
+- **OEMs**: `WalcottDeviceAdminService` (measured: the system rebinds it ~1 s after the process is
+  killed); `setUserControlDisabledPackages(self)` (measured: even `pm disable` from adb is refused);
+  `OEM_BACKGROUND` setup step on Xiaomi/Huawei/OPPO/vivo/Samsung families (`OemPowerSettings`,
+  satisfied by visiting, never notified or reported); Samsung Auto Blocker hint on a failed parent
+  update; restrictions gated by API (CHANGE_WIFI_STATE 33, CONFIG_DEFAULT_APPS 34 — false "refused"
+  cards on Android 10–13); accessibility reported as working only when connected; `requestRebind` for
+  a dropped notification listener — NOT the component off/on trick, which on Android 15 removes the
+  listener from the access list (measured).
+- **Found by the e2e sweeps of this batch, both real:** an app removed and reinstalled between two
+  ticks came back unsuspended for up to five minutes — the loop's sets looked unchanged and the
+  enforcer remembered the old copy as suspended (`packageAdded` forces an apply with a full sweep);
+  and the app-list caches could keep a list read just before an install for ten minutes once the
+  loop read them off the main thread (`AppInventory.generation`; the service's dirty flag is
+  cleared before the read). And one of mine: a spent rescue slot held in memory outlived a new
+  pairing and refused the next family's codes (`forgetUnrecorded`, memory only on a failed write).
+- Small: atomic small files (`AtomicText`), orphaned blocklists pruned, stores without a corruption
+  handler moved to `WalcottDataStores`, `retryingReads` for long-lived store flows, icon cache by
+  bytes and trimmed, osmdroid cache 50 MB, removed devices forget their PIN and notification pages,
+  `DebugLog` usable in JVM tests.
+
+Needs a real phone, in this order: Xiaomi/HyperOS child (does it come back after "clean-up"; does
+the silent self-update install; does the OEM step's page hold both switches), any phone after ≥2 h
+of Doze for the apps-due-back timing, a Samsung One UI 6.1.1+ parent (Auto Blocker), OPPO/ColorOS.
+Platform: Google's developer verification (global in 2027) — ole to register `dev.walcott`.
+
 ## Shipped in v0.119.0 — what a phone does when nobody is looking, and the installs a family actually does
 
 A full reliability review on 2026-10-09, asked for by ole ("revisión completa de fiabilidad y buen

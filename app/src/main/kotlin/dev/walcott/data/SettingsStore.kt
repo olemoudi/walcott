@@ -1,6 +1,8 @@
 package dev.walcott.data
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
@@ -12,11 +14,15 @@ import kotlinx.serialization.json.Json
  * Persists one family's [PolicySettings] as a single JSON blob in Preferences DataStore.
  * [familyId] picks the file; the first family keeps the original name (see [FamilyIds.DEFAULT]).
  */
-class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
+class SettingsStore internal constructor(private val dataStore: DataStore<Preferences>) {
 
-    private val fileName = WalcottDataStores.fileName(FILE, familyId)
-    private val dataStore = WalcottDataStores.get(context, fileName)
+    constructor(context: Context, familyId: String = FamilyIds.DEFAULT) :
+        this(WalcottDataStores.get(context, WalcottDataStores.fileName(FILE, familyId)))
+
     private val key = stringPreferencesKey("policy_json")
+
+    /** Where a blob this build could not read is set aside, once, before anything is written over it. */
+    private val unreadableKey = stringPreferencesKey("policy_json_unreadable")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = PolicySettings.serializer()
 
@@ -66,7 +72,8 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
 
     @Volatile private var cache: Decoded? = null
 
-    private fun decode(raw: String?): PolicySettings {
+    private fun decode(prefs: Preferences): PolicySettings {
+        val raw = prefs[key]
         if (raw == null) {
             // Nothing stored is normally a fresh install. It is something else entirely when the
             // FILE itself was unreadable and had to be started over (see WalcottDataStores): this
@@ -74,7 +81,7 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
             // version the replay gate would reject — so it would sit on an empty policy until
             // somebody happened to edit a rule. Raising the same flag a bad blob raises is what
             // makes the next parent snapshot adopted whatever its version.
-            if (WalcottDataStores.wasReplaced(fileName)) {
+            if (prefs[WalcottDataStores.REPLACED] == true) {
                 corruptionSeen = true
                 return lastGood() ?: PolicySettings(fallback = true)
             }
@@ -106,13 +113,37 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
      */
     private fun lastGood(): PolicySettings? = cache?.settings
 
-    val settings: Flow<PolicySettings> = dataStore.data.map { prefs -> decode(prefs[key]) }
+    val settings: Flow<PolicySettings> = with(WalcottDataStores) { dataStore.data.map { prefs -> decode(prefs) }.retryingReads() }
 
-    suspend fun current(): PolicySettings = settings.first()
+    suspend fun current(): PolicySettings = dataStore.data.map { prefs -> decode(prefs) }.first()
 
-    suspend fun update(transform: (PolicySettings) -> PolicySettings) {
+    /**
+     * Saves `transform` of the stored policy.
+     *
+     * Refused with [PolicyUnreadableException] while there is no real policy to start from — the
+     * stored one does not decode and none decoded earlier in this process — unless the caller
+     * says the result does not depend on it ([overUnreadable]). An edit applied to the stand-in
+     * is an edit applied to an EMPTY policy, and saving it saved the emptiness: on a parent the
+     * first such write was the start-up seeding itself, the version went up, and every child
+     * adopted a family with no rules at all. The writers that replace the policy wholesale (a
+     * reset, a restore, a child adopting its parent's rules) pass [overUnreadable]: they are
+     * exactly how it gets better.
+     *
+     * A blob that will not decode is set aside before anything is written over it, so what was
+     * lost is still on the phone for whoever comes to look.
+     */
+    suspend fun update(overUnreadable: Boolean = false, transform: (PolicySettings) -> PolicySettings) {
         dataStore.edit { prefs ->
-            prefs[key] = json.encodeToString(serializer, transform(decode(prefs[key])))
+            val current = decode(prefs)
+            if (current.fallback && !overUnreadable) throw PolicyUnreadableException()
+            val raw = prefs[key]
+            if (raw != null && prefs[unreadableKey] == null &&
+                runCatching { json.decodeFromString(serializer, raw) }.isFailure
+            ) {
+                prefs[unreadableKey] = raw
+            }
+            prefs[key] = json.encodeToString(serializer, transform(current))
+            prefs.remove(WalcottDataStores.REPLACED)
         }
     }
 
@@ -121,3 +152,6 @@ class SettingsStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
         const val FILE = "walcott_policy"
     }
 }
+
+/** See [SettingsStore.update]: the stored policy cannot be read, so an edit to it would save an empty one. */
+class PolicyUnreadableException : IllegalStateException("the stored policy cannot be read; refusing to save an edit of an empty stand-in")

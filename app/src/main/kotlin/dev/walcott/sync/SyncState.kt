@@ -55,6 +55,7 @@ data class ParentEvent(
         const val TYPE_USAGE_ACCESS_OFF = "usage_access_off"
         const val TYPE_MOCK_LOCATION = "mock_location"
         const val TYPE_LOW_BATTERY = "low_battery"
+        const val TYPE_LOW_STORAGE = "low_storage"
         const val TYPE_ENFORCEMENT_GAP = "enforcement_gap"
         const val TYPE_ENFORCEMENT_GAP_CLEARED = "enforcement_gap_cleared"
         const val TYPE_CLOCK_TAMPER = "clock_tamper"
@@ -574,6 +575,8 @@ data class SyncState(
     val mockLocationNotified: Set<String> = emptySet(),
     /** deviceIds already alerted for low battery (cleared when charged/plugged in — see HealthAlerts). */
     val lowBatteryNotified: Set<String> = emptySet(),
+    /** PARENT: devices already alerted for nearly-full storage (cleared once they free some up). */
+    val lowStorageNotified: Set<String> = emptySet(),
     /** deviceId -> the [LastGasp.atMs] already announced, so a re-emitted snapshot says it once. */
     val lastGaspNoted: Map<String, Long> = emptyMap(),
     /**
@@ -881,9 +884,9 @@ class SyncStore(context: Context, familyId: String = dev.walcott.data.FamilyIds.
         }
     }
 
-    val state: Flow<SyncState> = dataStore.data.map { decode(it[key]) }
+    val state: Flow<SyncState> = with(dev.walcott.data.WalcottDataStores) { dataStore.data.map { decode(it[key]) }.retryingReads() }
 
-    suspend fun current(): SyncState = state.first()
+    suspend fun current(): SyncState = dataStore.data.map { decode(it[key]) }.first()
 
     suspend fun update(transform: (SyncState) -> SyncState) {
         dataStore.edit { prefs ->

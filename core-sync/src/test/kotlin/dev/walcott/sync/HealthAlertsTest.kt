@@ -44,4 +44,26 @@ class HealthAlertsTest {
         assertTrue(HealthAlerts.clearsLowBattery(25, charging = false))
         assertTrue(HealthAlerts.clearsLowBattery(10, charging = true))
     }
+
+    private val mb = 1024L * 1024
+
+    @Test
+    fun `low storage fires below the threshold, once`() {
+        assertTrue(HealthAlerts.shouldAlertLowStorage(150 * mb, alreadyAlerted = false))
+        assertFalse(HealthAlerts.shouldAlertLowStorage(150 * mb, alreadyAlerted = true))
+        assertTrue(HealthAlerts.shouldAlertLowStorage(0, alreadyAlerted = false))
+    }
+
+    @Test
+    fun `low storage does not fire at or above the threshold, nor on an unknown reading`() {
+        assertFalse(HealthAlerts.shouldAlertLowStorage(HealthAlerts.LOW_STORAGE_BYTES, alreadyAlerted = false))
+        assertFalse(HealthAlerts.shouldAlertLowStorage(-1, alreadyAlerted = false))
+    }
+
+    @Test
+    fun `low storage clears only past the recover mark, so a phone hovering at the line does not flap`() {
+        assertFalse(HealthAlerts.clearsLowStorage(HealthAlerts.LOW_STORAGE_BYTES + mb))
+        assertFalse(HealthAlerts.clearsLowStorage(-1))
+        assertTrue(HealthAlerts.clearsLowStorage(HealthAlerts.STORAGE_RECOVER_BYTES))
+    }
 }

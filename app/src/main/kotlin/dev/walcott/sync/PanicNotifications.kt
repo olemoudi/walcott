@@ -116,6 +116,10 @@ class PanicDenyReceiver : BroadcastReceiver() {
                 val family = runCatching { app.hub.scopeForDevice(deviceId) }.getOrNull() ?: app.hub.own
                 family.syncManager.denyPanicRequest(deviceId, requestId)
                 NotificationManagerCompat.from(context).cancel(SyncNotifications.panicNotifId(deviceId))
+            } catch (t: Throwable) {
+                // The alert stays up, so the refusal can be tapped again or made from the app; a
+                // throw left unhandled here used to take the app down with the refusal unsaid.
+                dev.walcott.debug.DebugLog.e("WalcottPanic", "refusing the emergency release failed", t)
             } finally {
                 pending.finish()
             }

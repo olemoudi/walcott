@@ -175,11 +175,12 @@ object DeviceRestrictions {
         Feature(KEY_LOCALE, listOf(UserManager.DISALLOW_CONFIG_LOCALE), Group.SETTINGS),
         Feature(KEY_BRIGHTNESS, listOf(UserManager.DISALLOW_CONFIG_BRIGHTNESS), Group.SETTINGS),
         Feature(KEY_SCREEN_TIMEOUT, listOf(UserManager.DISALLOW_CONFIG_SCREEN_TIMEOUT), Group.SETTINGS),
-        Feature(
-            KEY_WIFI,
-            listOf(UserManager.DISALLOW_CONFIG_WIFI, UserManager.DISALLOW_CHANGE_WIFI_STATE),
-            Group.SETTINGS,
-        ),
+        // The second half exists from Android 13, the default-apps lock below from 14. Asked for
+        // on an older phone, the platform ignores the key, the read-back finds it missing, and the
+        // parent got a "the phone refused this" card for a lock that was never possible there —
+        // by default for every assisted adult on Android 13 or older. Listed by version, like
+        // the user restrictions above.
+        Feature(KEY_WIFI, wifiRestrictions(), Group.SETTINGS),
         Feature(KEY_MOBILE_NETWORKS, listOf(UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS), Group.SETTINGS),
         Feature(KEY_NETWORK_RESET, listOf(UserManager.DISALLOW_NETWORK_RESET), Group.SETTINGS),
         Feature(KEY_ACCOUNTS, listOf(UserManager.DISALLOW_MODIFY_ACCOUNTS), Group.SETTINGS),
@@ -189,8 +190,20 @@ object DeviceRestrictions {
         Feature(KEY_UNKNOWN_SOURCES, listOf(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY), Group.APPS),
         Feature(KEY_UNINSTALL, listOf(UserManager.DISALLOW_UNINSTALL_APPS), Group.APPS),
         Feature(KEY_APPS_CONTROL, listOf(UserManager.DISALLOW_APPS_CONTROL), Group.APPS),
-        Feature(KEY_DEFAULT_APPS, listOf(UserManager.DISALLOW_CONFIG_DEFAULT_APPS), Group.APPS),
+        Feature(KEY_DEFAULT_APPS, defaultAppsRestrictions(), Group.APPS),
     )
+
+    private fun wifiRestrictions(): List<String> = buildList {
+        add(UserManager.DISALLOW_CONFIG_WIFI)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(UserManager.DISALLOW_CHANGE_WIFI_STATE)
+    }
+
+    private fun defaultAppsRestrictions(): List<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            listOf(UserManager.DISALLOW_CONFIG_DEFAULT_APPS)
+        } else {
+            emptyList()
+        }
 
     private fun addUserRestrictions(): List<String> = buildList {
         add(UserManager.DISALLOW_ADD_USER)
@@ -264,6 +277,19 @@ object DeviceRestrictions {
             if (!dpm.isUninstallBlocked(admin, context.packageName)) {
                 dpm.setUninstallBlocked(admin, context.packageName, true)
             }
+        }
+        // Nor force-stopped or wiped from Settings. Stock Settings already greys "Force stop" out
+        // for a device admin; several OEM skins do not, and a stopped app gets back only when an
+        // alarm or the watchdog happens to run. It is also the standard mark of a package its
+        // device owner keeps running, which some platform versions and skins consult when choosing
+        // what to kill. Taken off again by the hand-back (see DeviceHandback).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                val protected = dpm.getUserControlDisabledPackages(admin)
+                if (context.packageName !in protected) {
+                    dpm.setUserControlDisabledPackages(admin, protected + context.packageName)
+                }
+            }.onFailure { dev.walcott.debug.DebugLog.w(TAG, "could not protect this app from being stopped", it) }
         }
 
         // Null when the system will not say: then every restriction is written, as before.

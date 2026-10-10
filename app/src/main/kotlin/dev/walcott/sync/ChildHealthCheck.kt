@@ -71,7 +71,8 @@ object ChildHealthCheck {
         // Notifications are the one requirement this channel cannot report: a phone that can't
         // post a notification can't be told by a notification that it can't post notifications.
         // The card on its home screen is what covers that one.
-        val reportable = unmet.filterNot { it == DeviceRequirement.NOTIFICATIONS }
+        // Nor what only the screen itself asks about (see DeviceSetup.reportable).
+        val reportable = DeviceSetup.reportable(unmet).filterNot { it == DeviceRequirement.NOTIFICATIONS }
         val broken = reportable.map { it.key }.toSet()
 
         val previous = app.syncManager.state.value.childFixNotifiedAt

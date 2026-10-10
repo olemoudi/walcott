@@ -5,14 +5,16 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /** How the app resolves light/dark. A device-local preference, never part of family policy. */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-private val Context.themeDataStore: DataStore<Preferences> by preferencesDataStore(name = "walcott_theme")
+// Through WalcottDataStores (same file as the old delegate) for its corruption handler: a damaged
+// file otherwise throws from every read, and this one is read as the app opens.
+private val Context.themeDataStore: DataStore<Preferences>
+    get() = WalcottDataStores.get(this, "walcott_theme")
 
 /** Persists the manual theme choice; SYSTEM (follow the device) is the default. */
 class ThemeStore(private val context: Context) {

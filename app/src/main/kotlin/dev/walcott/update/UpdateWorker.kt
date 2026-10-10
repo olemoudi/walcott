@@ -7,6 +7,7 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
@@ -35,6 +36,9 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     companion object {
         private const val PERIODIC = "walcott-update-periodic"
+        private const val AUTOMATIC = "walcott-update-now"
+        private const val MANUAL = "walcott-update-manual"
+        private const val INSTALL = "walcott-update-install"
         private const val MAX_RETRIES = 5
         private const val KEY_FORCE = "force"
         private const val KEY_STAGED_ONLY = "staged_only"
@@ -56,7 +60,10 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         /** One-off immediate check (app launch / boot). Bypasses the guard. */
         fun runNow(context: Context) {
             lastEnqueueMs.set(SystemClock.elapsedRealtime())
-            enqueue(context, connected, Data.EMPTY)
+            // KEEP: a check already waiting for a network is this one. These used to be plain
+            // enqueues, one per heartbeat, so a phone a week without signal came back to some
+            // three hundred of them queued, all fired at once.
+            enqueue(context, AUTOMATIC, ExistingWorkPolicy.KEEP, connected, Data.EMPTY)
         }
 
         /**
@@ -69,12 +76,13 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
          */
         fun checkNow(context: Context) {
             lastEnqueueMs.set(SystemClock.elapsedRealtime())
-            enqueue(context, Constraints.NONE, workDataOf(KEY_FORCE to true))
+            // REPLACE: a tap is answered now, not queued behind whatever was waiting.
+            enqueue(context, MANUAL, ExistingWorkPolicy.REPLACE, Constraints.NONE, workDataOf(KEY_FORCE to true))
         }
 
         /** Installs the APK already in the cache. Needs no network, so it asks for none. */
         fun installStagedNow(context: Context) {
-            enqueue(context, Constraints.NONE, workDataOf(KEY_STAGED_ONLY to true))
+            enqueue(context, INSTALL, ExistingWorkPolicy.REPLACE, Constraints.NONE, workDataOf(KEY_STAGED_ONLY to true))
         }
 
         /** Focus-triggered check: runs at most once per guard window. */
@@ -88,13 +96,19 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             runNow(context)
         }
 
-        private fun enqueue(context: Context, constraints: Constraints, input: Data) {
+        private fun enqueue(
+            context: Context,
+            name: String,
+            policy: ExistingWorkPolicy,
+            constraints: Constraints,
+            input: Data,
+        ) {
             val request = OneTimeWorkRequestBuilder<UpdateWorker>()
                 .setConstraints(constraints)
                 .setInputData(input)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
                 .build()
-            WorkManager.getInstance(context).enqueue(request)
+            WorkManager.getInstance(context).enqueueUniqueWork(name, policy, request)
         }
     }
 }

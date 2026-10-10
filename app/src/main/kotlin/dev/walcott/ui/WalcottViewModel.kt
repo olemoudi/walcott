@@ -1412,6 +1412,11 @@ class WalcottViewModel(
     val settings: StateFlow<PolicySettings> =
         repository.settingsFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PolicySettings())
 
+    /** The stored rules cannot be read, so edits are not being saved (see dev.walcott.data.SettingsStore.update). */
+    val policyUnreadable: StateFlow<Boolean> =
+        repository.settingsFlow.map { it.fallback }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     val hasPin: StateFlow<Boolean> =
         repository.settingsFlow.map { it.pinHash != null }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)

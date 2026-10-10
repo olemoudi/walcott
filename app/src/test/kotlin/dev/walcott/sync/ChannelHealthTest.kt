@@ -39,6 +39,13 @@ class ChannelHealthTest {
     }
 
     @Test
+    fun `a proof from the future means the clock went back, and the socket is rebuilt`() {
+        assertTrue(ChannelHealth.needsReconnect(lastProofMs = now + 3 * 60 * 60 * 1000L, nowMs = now))
+        // A few seconds of disagreement between two readings is not that.
+        assertFalse(ChannelHealth.needsReconnect(lastProofMs = now + 1_000, nowMs = now))
+    }
+
+    @Test
     fun `nothing to judge means nothing to reconnect`() {
         // Zero is "no socket and no message ever": the caller passes the connect time once there
         // is one, so this can only be an unpaired device.

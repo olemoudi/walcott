@@ -240,6 +240,20 @@ private fun ReportRows(stored: StoredDiag, appLabels: Map<String, String>) {
             ok = report.charging || report.batteryPercent >= LOW_BATTERY_PERCENT,
         )
     }
+    if (report.storageFreeBytes >= 0) {
+        DiagRow(
+            label = stringResource(R.string.diag_storage),
+            value = android.text.format.Formatter.formatShortFileSize(context, report.storageFreeBytes),
+            ok = !dev.walcott.sync.HealthAlerts.storageLow(report.storageFreeBytes),
+        )
+    }
+    if (report.databaseRebuilt) {
+        DiagRow(
+            label = stringResource(R.string.diag_database),
+            value = stringResource(R.string.diag_database_rebuilt),
+            ok = false,
+        )
+    }
     if (report.appVersionCode > 0) {
         DiagRow(
             label = stringResource(R.string.diag_version),
@@ -312,6 +326,8 @@ internal fun DiagPayload.problems(seenAtVersionCode: Int): Int {
     if (!gpsOn) count++
     if (!networkLocationOn) count++
     if (batteryPercent in 0 until LOW_BATTERY_PERCENT && !charging) count++
+    if (dev.walcott.sync.HealthAlerts.storageLow(storageFreeBytes)) count++
+    if (databaseRebuilt) count++
     if (updateError.isNotBlank() && updateError !in UPDATE_WAITS_ON_PURPOSE) count++
     if (StoredDiag(this, seenAtVersionCode).versionWasBehind()) count++
     if (suspendFailures.isNotEmpty()) count++

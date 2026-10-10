@@ -601,6 +601,7 @@
     <string name="update_state_downloading">Downloading %1$s…</string>
     <string name="update_state_pending">Waiting for you to confirm the install — check your notifications</string>
     <string name="update_state_failed">Update failed (%1$s)</string>
+    <string name="update_samsung_auto_blocker">On Samsung phones, Auto Blocker stops updates that don\'t come from an app store. Turn it off in Settings › Security and privacy › Auto Blocker, then try again.</string>
     <string name="update_silent_note">This device installs updates silently</string>
     <string name="update_state_installing">Installing %1$s…</string>
     <string name="update_state_waiting_wifi">%1$s is out — waiting for Wi-Fi to download it</string>
@@ -632,10 +633,13 @@
     <string name="mock_location_text">Recent locations came from a mock-GPS app</string>
     <string name="low_battery_title">%1$s\'s phone is low on battery</string>
     <string name="low_battery_text">Battery at %1$d%% and unplugged — it may run out and go offline</string>
+    <string name="low_storage_title">%1$s\'s phone is almost full</string>
+    <string name="low_storage_text">Only %1$s free. With no space, Walcott can\'t save new rules or report in, and updates stop. Free up space on the phone.</string>
     <string name="net_location_off_title">Can\'t locate %1$s indoors</string>
     <string name="net_location_off_text">Wi-Fi/network location is off on their phone, so tracking only works outdoors with GPS</string>
     <string name="child_battery">Battery %1$d%%</string>
     <string name="child_battery_charging">Battery %1$d%% · charging</string>
+    <string name="child_storage_low">Storage almost full: %1$s free</string>
     <string name="new_app_title">New app on %1$s\'s device</string>
     <string name="new_app_text">"%1$s" was installed — no limit of its own yet</string>
     <string name="new_app_text_more">"%1$s" and %2$d more were installed — no limit of their own yet</string>
@@ -814,6 +818,8 @@
     <string name="req_location_service_body">Location is switched off for the whole phone, so this device can\'t be found.</string>
     <string name="req_battery_title">Let Walcott run in the background</string>
     <string name="req_battery_body">Battery optimisation delays check-ins by hours while the app is closed — overnight, that means messages nobody sees until morning.</string>
+    <string name="req_oem_background_title">Let Walcott start by itself</string>
+    <string name="req_oem_background_body">This phone\'s maker closes apps in the background on its own and can stop Walcott from coming back. Tap Turn on and, on the screen that opens, allow Walcott to start automatically (\"Autostart\" or \"Auto launch\") and set its battery use to \"Unrestricted\".</string>
     <string name="setup_action_turn_on">Turn on</string>
     <string name="setup_action_not_now">Not now</string>
     <string name="setup_dismiss_title">Hide this reminder?</string>
@@ -1110,6 +1116,8 @@
     <string name="remote_result_installing">update downloaded, installing</string>
     <string name="remote_result_download_failed">could not download the update</string>
     <string name="remote_result_install_failed">the install was rejected</string>
+    <string name="remote_result_no_space">not enough free space on the phone to download the update</string>
+    <string name="remote_result_update_checking">checking for the update…</string>
     <string name="remote_result_reapplied">protection re-applied</string>
     <string name="remote_result_nothing_missing">nothing to fix</string>
     <string name="remote_result_notified">the child was notified</string>
@@ -1387,6 +1395,9 @@
     <string name="diag_filter_lists_pending">Not downloaded yet: %1$s</string>
     <string name="diag_battery">Battery</string>
     <string name="diag_battery_value">%1$d%%</string>
+    <string name="diag_storage">Free storage</string>
+    <string name="diag_database">Local data</string>
+    <string name="diag_database_rebuilt">Started over: today\'s counters were lost</string>
     <string name="diag_battery_charging">%1$d%% (charging)</string>
     <string name="diag_version">App version</string>
     <string name="diag_version_value">%1$s (%2$d)</string>
@@ -1454,6 +1465,7 @@
     <string name="event_enforcement_gap_cleared">%1$s: blocking works again</string>
     <string name="event_clock_tamper">%1$s\'s clock looks changed (%2$s)</string>
     <string name="event_low_battery">%1$s\'s battery is at %2$d%%</string>
+    <string name="event_low_storage">%1$s\'s phone is almost full (%2$d MB free)</string>
     <string name="event_new_app">New on %1$s\'s device: %2$s</string>
     <string name="event_new_app_more">New on %1$s\'s device: %2$s and %3$d more</string>
     <plurals name="event_wrong_pin">
@@ -1927,6 +1939,16 @@
         <item>The activity wall filters by member and is grouped by day.</item>
         <item>Deleting a special day, a blocked domain or a schedule can be undone from the message that says it happened.</item>
     </string-array>
+        <string-array name="whats_new_0_120_0">
+        <item>If a child\'s phone runs out of storage you are now told, and Walcott keeps working on it: it still checks in, runs what you send, counts screen time, and its help button and rescue code still work. Before, a full phone went quiet and simply looked offline.</item>
+        <item>Apps closed at bedtime, in a screen-free time or by a pause come back on the minute even with the phone asleep. They could come back up to an hour late.</item>
+        <item>If Walcott ever crashed again and again on a child\'s phone, the phone is now opened within a minute or two, with no “keeps stopping” message in front of the child. It could take hours.</item>
+        <item>On Samsung, Xiaomi, OPPO, vivo and Huawei phones the setup list asks for one more step, so the phone does not close Walcott in the background. On a Samsung, a failed update says when Auto Blocker is the reason.</item>
+        <item>“Update now” answers at once and then with the result, and the phone keeps hearing everything else you send while it downloads. A download cut short resumes where it stopped instead of starting over.</item>
+        <item>If the rules saved on this phone are ever damaged, it puts back the last ones it sent, and it never sends empty rules to the children.</item>
+        <item>A phone that was switched off all night runs the “Locate”, “Ring” or “Lost mode” you sent meanwhile, also in large families. A refusal of an emergency release is always heard first.</item>
+        <item>The map keeps at most 50 MB of saved tiles on this phone.</item>
+    </string-array>
         <string-array name="whats_new_0_119_0">
         <item>A release you take back — or a phone you write off as stolen — is no longer carried out by that phone because it was switched off when you did: it acts only on what you asked for last.</item>
         <item>Apps closed at bedtime, in a screen-free time or by a pause come back the moment it ends, even with the phone in a pocket. They used to stay closed until somebody turned the screen on, and a closed app cannot ring.</item>
@@ -2252,6 +2274,8 @@
     <string name="superseded_text_family">The children in %1$s now follow that phone. Rules you change here will not reach them until you take the family back.</string>
     <string name="superseded_card_title">Another phone is managing this family</string>
     <string name="superseded_card_body">Someone restored this family\'s backup on another phone, so the children take their rules from there now. Anything you change here stays on this phone.</string>
+    <string name="policy_unreadable_title">This phone can\'t read the family\'s rules</string>
+    <string name="policy_unreadable_body">The rules saved on this phone are damaged, so changes made here aren\'t saved or sent: sending them would give the children an empty set of rules. The children keep the last rules they received. A Walcott update usually fixes this; if not, restore a backup on this phone.</string>
     <string name="superseded_card_take">Take it back</string>
     <string name="superseded_children_title">Your rule changes are not reaching the children</string>
     <string name="superseded_children_text">A child\'s phone is on newer rules than this phone has ever sent — this phone lost its history, or another phone is managing the family. Take it back to make this phone\'s rules the ones they follow.</string>

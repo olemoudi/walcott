@@ -73,6 +73,18 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
             }
             .build()
 
+    /**
+     * Memory nobody is looking at, given back. A child's process lives for weeks behind a
+     * foreground service; once its screens are gone the decoded app icons are the only sizeable
+     * thing it keeps that it does not need (see trimAppIconCache).
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            dev.walcott.ui.components.trimAppIconCache()
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         DebugLog.init(this)
@@ -82,6 +94,8 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
         // Before anything that could be what is crashing (see CrashBreaker): a build that dies at
         // start-up on a child's phone must not be able to leave it frozen in its rules.
         dev.walcott.debug.CrashBreaker.onProcessStart(this)
+        // Debug builds only: the harness's crash-loop drill (see CrashBreaker.crashDrill).
+        if (BuildConfig.DEBUG) dev.walcott.debug.CrashBreaker.crashDrill(this)
         themeStore = ThemeStore(this)
         dev.walcott.ui.format.DurationUnits.load(this)
         // The database is opened — and, if it cannot be, thrown away and rebuilt — off the main
@@ -105,6 +119,11 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
         // One-time seeding on the parent (children receive it via sync).
         appScope.launch {
             if (identityStore.current().role == Role.PARENT) {
+                // Before the seeding, which edits the rules (see SyncManager.recoverUnreadablePolicy).
+                hub.allNow().forEach { family ->
+                    runCatching { family.syncManager.recoverUnreadablePolicy() }
+                        .onFailure { DebugLog.e("WalcottApp", "could not recover the family's rules", it) }
+                }
                 repository.seedHardeningIfNeeded()
                 // Every family this phone runs, not only its own: an adult who inherits a bedtime
                 // is the same mistake whichever family they were added to.
@@ -280,8 +299,15 @@ class WalcottApplication : Application(), androidx.work.Configuration.Provider {
     private fun installCrashLogger() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching { dev.walcott.debug.CrashBreaker.recordCrash() }
+            val breakerHandles = runCatching { dev.walcott.debug.CrashBreaker.recordCrash() }.getOrDefault(false)
             runCatching { DebugLog.crash(TAG, "uncaught exception on thread ${thread.name}", error) }
+            if (breakerHandles) {
+                // An early crash the breaker is counting: die without Android's crash handling,
+                // whose dialog and "bad process" mark would hold the next start back for minutes
+                // or hours (see CrashBreaker.recordCrash). Logged above; nothing else is lost.
+                android.os.Process.killProcess(android.os.Process.myPid())
+                kotlin.system.exitProcess(10)
+            }
             previous?.uncaughtException(thread, error)
         }
     }

@@ -88,8 +88,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.content.Intent
-import android.provider.Settings
 import dev.walcott.R
 import dev.walcott.ui.components.ActionChip
 import dev.walcott.ui.components.LocalSnackbar
@@ -381,10 +379,7 @@ fun FamiliesScreen(
                     text = stringResource(R.string.perm_parent_notifications_missing),
                     action = stringResource(R.string.perm_notifications_fix),
                     onFix = {
-                        context.startActivity(
-                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-                        )
+                        dev.walcott.setup.DeviceSetupProbe.openFix(context, dev.walcott.setup.DeviceRequirement.NOTIFICATIONS)
                     },
                 )
             }

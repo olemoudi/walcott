@@ -449,6 +449,19 @@ object SyncNotifications {
             dest = childDest(childId),
         )
 
+    /** A child's storage is nearly full: it can no longer save rules or download updates (see HealthAlerts). */
+    fun notifyLowStorage(context: Context, childName: String, freeBytes: Long, deviceId: String, childId: String = "") =
+        post(
+            context, STATUS_CHANNEL, R.string.status_channel_name,
+            title = context.getString(R.string.low_storage_title, childName),
+            text = context.getString(
+                R.string.low_storage_text,
+                android.text.format.Formatter.formatShortFileSize(context, freeBytes),
+            ),
+            notifId = "storage".hashCode() + deviceId.hashCode(),
+            dest = childDest(childId),
+        )
+
     /**
      * A phone's last word before going quiet (see [LastGasp]): [word] is the sentence
      * ([LastGaspText]), and the text says where to look when the word came with a position.

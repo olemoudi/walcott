@@ -7,7 +7,7 @@ import dev.walcott.sync.EnforcementStatus
 object EnforcementBackends {
     fun status(context: Context): String = when {
         Enforcer(context).isDeviceOwner() -> EnforcementStatus.DEVICE_OWNER
-        AppBlockerService.isEnabled(context) -> EnforcementStatus.ACCESSIBILITY
+        AppBlockerService.isWorking(context) -> EnforcementStatus.ACCESSIBILITY
         else -> EnforcementStatus.NONE
     }
 }

@@ -25,9 +25,9 @@ class IdentityStore(context: Context, familyId: String = FamilyIds.DEFAULT) {
     private fun decode(raw: String?): FamilyIdentity =
         raw?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() } ?: FamilyIdentity()
 
-    val identity: Flow<FamilyIdentity> = dataStore.data.map { decode(it[key]) }
+    val identity: Flow<FamilyIdentity> = with(dev.walcott.data.WalcottDataStores) { dataStore.data.map { decode(it[key]) }.retryingReads() }
 
-    suspend fun current(): FamilyIdentity = identity.first()
+    suspend fun current(): FamilyIdentity = dataStore.data.map { decode(it[key]) }.first()
 
     suspend fun save(identity: FamilyIdentity) {
         dataStore.edit { it[key] = json.encodeToString(serializer, identity) }

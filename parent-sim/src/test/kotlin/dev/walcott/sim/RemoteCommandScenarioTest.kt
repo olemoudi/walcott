@@ -113,6 +113,10 @@ class RemoteCommandScenarioTest : DeviceScenario() {
         val ack = parent.awaitAck(commandId)
         assertEquals(RemoteAction.UPDATE_NOW, ack.action)
         assertTrue(ack.detail.isNotBlank(), "an update attempt must say what happened")
+        // Answered at once and then with the outcome, under the same id: the download runs
+        // outside the lock every other message from the parent waits on.
+        val outcome = parent.awaitAck(commandId) { it.detail != RemoteAction.DETAIL_UPDATE_CHECKING }
+        assertTrue(outcome.detail.isNotBlank(), "the outcome of the update never followed its first answer")
     }
 
     @Test

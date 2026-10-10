@@ -7,10 +7,8 @@ import android.content.Context
 import android.content.Intent
 import dev.walcott.WalcottApplication
 import dev.walcott.debug.DebugLog
+import dev.walcott.runHeld
 import dev.walcott.update.UpdateWorker
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 /**
  * The child's guaranteed ~30-minute check-in.
@@ -92,6 +90,7 @@ object HeartbeatAlarm {
         // filter, say) reaches the parent in the same wakeup.
         runCatching { ChildHealthCheck.run(context) }
             .onFailure { DebugLog.e(TAG, "child health check failed", it) }
+        runCatching { dev.walcott.notifications.WalcottNotificationListener.rebindIfDropped(context) }
         // Requests nobody answered, retired before the publish so the snapshot goes out without
         // them (see SyncEngine.REQUEST_TTL_MS — an unanswered one blocks asking again).
         runCatching { app.syncManager.expireStaleRequests() }
@@ -126,13 +125,14 @@ class HeartbeatReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         // Re-arm before doing any work: if the check-in below throws, the chain still survives.
         HeartbeatAlarm.schedule(context)
-        val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                HeartbeatAlarm.runCheckIn(context)
-            } finally {
-                pending.finish()
-            }
-        }
+        // The broadcast is held for the check-in, but never past [RECEIVER_BUDGET_MS], under the
+        // minute a background broadcast gets: held longer (a relay answering slowly, a publish
+        // waiting on a receipt) it is an ANR, and an ANR kills the process — the one this alarm
+        // exists to keep alive. A timer releases it, because a blocking network call cannot be
+        // cancelled from outside; the check-in carries on behind it in the service's process.
+        runHeld(holdMs = RECEIVER_BUDGET_MS) { HeartbeatAlarm.runCheckIn(context) }
     }
 }
+
+/** How long an alarm's receiver may keep its broadcast open: under the minute a background one gets. */
+internal const val RECEIVER_BUDGET_MS = 50_000L

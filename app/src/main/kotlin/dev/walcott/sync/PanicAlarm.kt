@@ -16,9 +16,10 @@ import dev.walcott.debug.DebugLog
  *
  * An alarm rather than a timer, for the reason every cadence in this app is an alarm: a
  * `delay()` stops counting the moment the phone suspends, and a phone in a drawer overnight is
- * exactly the phone serving out a twelve-hour countdown. `setAndAllowWhileIdle` is the primitive
- * Doze honours with no special permission; on a Device Owner child — the normal case — the power
- * allowlist means it is not subject to the roughly-one-per-nine-minutes quota either.
+ * exactly the phone serving out a twelve-hour countdown. Exact and allow-while-idle where the
+ * platform lets it be (see [dev.walcott.OnTimeAlarm]), so each step lands when the parent was told
+ * it would; Doze still limits how often an app's allow-while-idle alarms fire, which these steps,
+ * minutes apart at their closest, stay well clear of.
  *
  * Alarms do not survive a reboot, so [sync] is called from the boot receiver and from the
  * half-hourly heartbeat as well as from each step: a request whose alarm was lost would
@@ -45,7 +46,7 @@ object PanicAlarm {
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return
         val at = System.currentTimeMillis() + delayMs.coerceAtLeast(0)
         runCatching {
-            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pendingIntent(context))
+            dev.walcott.OnTimeAlarm.set(alarms, at, pendingIntent(context))
             DebugLog.i(TAG, "next emergency-release step in ${delayMs / 1000}s")
         }.onFailure { DebugLog.e(TAG, "could not schedule the emergency-release step", it) }
     }
@@ -108,7 +109,9 @@ class PanicStepReceiver : BroadcastReceiver() {
                 // the release itself has begun — its next wake-up is already overdue, so re-arming
                 // would fire at once, and the next start-up finishes it anyway.
                 val app = context.applicationContext as WalcottApplication
-                if (!app.identityStore.current().released) runCatching { PanicAlarm.sync(context) }
+                if (runCatching { !app.identityStore.current().released }.getOrDefault(true)) {
+                    runCatching { PanicAlarm.sync(context) }
+                }
             } finally {
                 runCatching { lock?.release() }
             }

@@ -58,6 +58,11 @@ class RemoteCommandRunner(
     private val allowInstalls: suspend (durationMs: Long) -> Unit = { },
     /** Whether this family can be heard on the relay at [server] (see [RemoteAction.SET_RELAY]). */
     private val probeRelay: suspend (server: String) -> Boolean = { true },
+    /**
+     * Runs a forced update without holding the caller, which answers the outcome itself (see
+     * [RemoteAction.DETAIL_UPDATE_CHECKING]). Null runs it here and waits for it.
+     */
+    private val startUpdate: ((RemoteCommand) -> Unit)? = null,
 ) {
 
     /**
@@ -85,7 +90,7 @@ class RemoteCommandRunner(
         }
         val result = runCatching {
             when (command.action) {
-                RemoteAction.UPDATE_NOW -> updateNow()
+                RemoteAction.UPDATE_NOW -> updateNow(command)
                 RemoteAction.REAPPLY_POLICY -> reapplyPolicy()
                 RemoteAction.REQUEST_PERMISSIONS -> requestPermissions()
                 RemoteAction.INSTALL_APP -> installApp(command.arg, command.id, command.label)
@@ -140,21 +145,15 @@ class RemoteCommandRunner(
      * Forces the self-update. Reports the outcome verbatim so a child stuck on an old build
      * is diagnosable from the parent's phone (network failure vs a rejected install).
      */
-    private suspend fun updateNow(): Pair<Boolean, String> =
+    private suspend fun updateNow(command: RemoteCommand): Pair<Boolean, String> {
+        startUpdate?.let { start ->
+            start(command)
+            return true to RemoteAction.DETAIL_UPDATE_CHECKING
+        }
         // force=true: a parent explicitly asking to update now overrides the Wi-Fi-only
         // policy AND the canary gate (so WAITING_FOR_PARENT can't actually occur here).
-        when (Updater(context).checkAndUpdate(force = true)) {
-            UpdateCheckOutcome.UP_TO_DATE -> true to "up_to_date"
-            UpdateCheckOutcome.INSTALL_STARTED -> true to "installing"
-            UpdateCheckOutcome.TRANSIENT_FAILURE -> false to "download_failed"
-            UpdateCheckOutcome.INSTALL_FAILURE -> false to "install_failed"
-            UpdateCheckOutcome.WAITING_FOR_PARENT -> true to "waiting_parent"
-            UpdateCheckOutcome.WAITING_FOR_WIFI -> true to "waiting_wifi"
-            // Another check was already running, so this one stood aside rather than fighting
-            // it for the same session. Reported as itself: acking "up_to_date" for a device
-            // that is nothing of the sort is exactly what makes a stuck child undiagnosable.
-            UpdateCheckOutcome.BUSY -> false to "busy"
-        }
+        return updateDetail(Updater(context).checkAndUpdate(force = true))
+    }
 
     /**
      * Re-asserts everything enforcement depends on: the location grant, the Device Owner
@@ -392,13 +391,30 @@ class RemoteCommandRunner(
         // The same list the child's own home screen and its periodic self-check use, so a parent
         // tapping "Ask to fix" can't be told about a different set of problems than the ones the
         // child is looking at. It used to check three of them, with its own idea of each.
-        val missing = dev.walcott.setup.DeviceSetup.unmet(dev.walcott.setup.DeviceSetupProbe.read(context))
+        val missing = dev.walcott.setup.DeviceSetup.reportable(
+            dev.walcott.setup.DeviceSetup.unmet(dev.walcott.setup.DeviceSetupProbe.read(context)),
+        )
         if (missing.isEmpty()) return true to "nothing_missing"
         missing.forEach { ChildFixNotifications.notify(context, it) }
         return true to missing.joinToString(",") { it.key }
     }
 
-    private companion object {
+    companion object {
         private const val TAG = "WalcottSync"
+
+        /** What a forced update's [outcome] tells the parent, as (ok, detail). */
+        fun updateDetail(outcome: UpdateCheckOutcome): Pair<Boolean, String> = when (outcome) {
+            UpdateCheckOutcome.UP_TO_DATE -> true to "up_to_date"
+            UpdateCheckOutcome.INSTALL_STARTED -> true to "installing"
+            UpdateCheckOutcome.TRANSIENT_FAILURE -> false to "download_failed"
+            UpdateCheckOutcome.INSTALL_FAILURE -> false to "install_failed"
+            UpdateCheckOutcome.NO_SPACE -> false to "no_space"
+            UpdateCheckOutcome.WAITING_FOR_PARENT -> true to "waiting_parent"
+            UpdateCheckOutcome.WAITING_FOR_WIFI -> true to "waiting_wifi"
+            // Another check was already running, so this one stood aside rather than fighting
+            // it for the same session. Reported as itself: acking "up_to_date" for a device
+            // that is nothing of the sort is exactly what makes a stuck child undiagnosable.
+            UpdateCheckOutcome.BUSY -> false to "busy"
+        }
     }
 }

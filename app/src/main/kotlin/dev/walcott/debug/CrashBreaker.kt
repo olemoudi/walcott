@@ -124,6 +124,7 @@ object CrashBreaker {
 
     @Volatile private var file: File? = null
     @Volatile private var state = BreakerState.CLEAN
+    @Volatile private var appContext: Context? = null
 
     /** Whether enforcement has applied the rules at least once in this process. */
     @Volatile private var enforcedOnce = false
@@ -148,6 +149,7 @@ object CrashBreaker {
      */
     fun onProcessStart(context: Context) {
         runCatching {
+            appContext = context.applicationContext
             val f = File(context.filesDir, FILE_NAME)
             file = f
             val stored = BreakerStateFormat.parse(f.takeIf { it.exists() }?.readText())
@@ -162,13 +164,35 @@ object CrashBreaker {
         }.onFailure { DebugLog.e(TAG, "the crash breaker could not start", it) }
     }
 
-    /** From the uncaught-exception handler, on the dying thread: counts the crash if it is early. */
-    fun recordCrash() {
-        runCatching {
+    /**
+     * From the uncaught-exception handler, on the dying thread: counts the crash if it is early,
+     * and makes sure there will be a next start to count. Answers whether this crash is one the
+     * breaker is handling — an early one, on a Device Owner phone not yet opened — in which case
+     * the process should die quietly rather than through Android's crash handling (see
+     * WalcottApplication.installCrashLogger).
+     *
+     * Android's own handling is what made a crash loop slow to break, measured on an emulator: the
+     * second crash inside a minute puts "Walcott keeps stopping" in front of whoever holds the
+     * phone, holds the dying process until somebody dismisses it (five minutes otherwise), and
+     * then marks the process bad — no sticky restart, its alarms and broadcasts dropped. The
+     * third start the count waits for then came from whatever next ran a job, hours away under
+     * Doze, with the phone frozen in its rules the whole time. Dying quietly, the process is
+     * restarted like any other that was killed: the sticky service, the device-admin binding (see
+     * WalcottDeviceAdminService), and the alarm armed here as the last resort, half a minute out
+     * (see [CrashRevivalAlarm]).
+     */
+    fun recordCrash(): Boolean {
+        return runCatching {
             val early = CrashBreakerRules.countsAsEarly(enforcedOnce, screenShown)
-            if (!early) return
+            if (!early) return@runCatching false
             write(CrashBreakerRules.afterCrash(state, early = true).also { state = it })
-        }
+            // Only where the breaker can trip: on any other phone nothing is frozen, and a build
+            // that dies at every start would be started again every half minute for nothing.
+            val context = appContext ?: return@runCatching false
+            if (active || !isDeviceOwner(context)) return@runCatching false
+            CrashRevivalAlarm.schedule(context)
+            true
+        }.getOrDefault(false)
     }
 
     /**
@@ -231,6 +255,22 @@ object CrashBreaker {
             .onFailure { DebugLog.e(TAG, "safe mode could not let the always-on VPN go", it) }
         runCatching { dev.walcott.net.WalcottVpnService.stop(context) }
     }
+
+    /**
+     * Debug builds only (see the call in WalcottApplication): dies at start-up while the drill
+     * file says so, one count per start, the way a broken build would. What the harness needs to
+     * see Android's own crash handling — the process marked bad, the sticky restart withheld —
+     * which the counting drill (an ordinary kill) never reaches (see SafeModeScenarioTest).
+     */
+    fun crashDrill(context: Context) {
+        val drill = File(context.filesDir, CRASH_DRILL_FILE)
+        val left = runCatching { drill.readText().trim().toInt() }.getOrDefault(0)
+        if (left <= 0) return
+        runCatching { drill.writeText((left - 1).toString()) }
+        throw IllegalStateException("crash drill: $left start(s) left to die")
+    }
+
+    internal const val CRASH_DRILL_FILE = "crash-drill.txt"
 
     private fun isDeviceOwner(context: Context): Boolean = runCatching {
         context.getSystemService(DevicePolicyManager::class.java)?.isDeviceOwnerApp(context.packageName) == true

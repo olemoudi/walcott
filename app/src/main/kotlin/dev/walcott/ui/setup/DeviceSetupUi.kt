@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.BatteryAlert
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Timer
@@ -359,6 +360,19 @@ internal fun rememberFixAction(requirement: DeviceRequirement, onFixed: () -> Un
                 }
             }
         }
+        DeviceRequirement.OEM_BACKGROUND -> {
+            {
+                // Counted as done once the screen has been opened: what is switched there cannot
+                // be read back (see OemPowerSettings), and a card that could never clear would
+                // teach people to ignore the ones that can.
+                if (dev.walcott.setup.OemPowerSettings.open(context)) {
+                    scope.launch {
+                        runCatching { dev.walcott.setup.DeviceSetupStore(context.applicationContext).markOemBackgroundVisited() }
+                        onFixed()
+                    }
+                }
+            }
+        }
         else -> {
             { DeviceSetupProbe.openFix(context, requirement) }
         }
@@ -379,6 +393,7 @@ internal fun iconFor(requirement: DeviceRequirement): ImageVector = when (requir
     DeviceRequirement.DND_ACCESS -> Icons.Outlined.DoNotDisturbOn
     DeviceRequirement.BATTERY_OPTIMIZATION -> Icons.Outlined.BatteryAlert
     DeviceRequirement.BACKGROUND_RESTRICTION -> Icons.Outlined.BatteryAlert
+    DeviceRequirement.OEM_BACKGROUND -> Icons.Outlined.RestartAlt
 }
 
 internal fun warningIcon(): ImageVector = Icons.Filled.Warning

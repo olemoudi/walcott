@@ -30,6 +30,8 @@ class BackupReminderReceiver : BroadcastReceiver() {
                         },
                     )
                 }
+            } catch (t: Throwable) {
+                dev.walcott.debug.DebugLog.e("WalcottBackup", "muting the backup reminders failed", t)
             } finally {
                 pending.finish()
             }
